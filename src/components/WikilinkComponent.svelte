@@ -3,7 +3,12 @@
   import { next } from '$lib/utils';
   import { getExtra } from 'svelte-asciidoc';
 
-  export let attrs: { [_: string]: string };
+  interface Props {
+    attrs: { [_: string]: string };
+    children?: import('svelte').Snippet;
+  }
+
+  let { attrs, children }: Props = $props();
 
   const { href } = attrs;
 
@@ -14,6 +19,7 @@
     createChild: undefined
   };
 
+  // svelte-ignore non_reactive_update
   let wikitarget: string;
   if (href.startsWith('wikilink:')) {
     wikitarget = href.substring(9);
@@ -30,12 +36,12 @@
   <button
     class="text-indigo-600 underline"
     title={`wikilink to: "${wikitarget}"`}
-    on:click={handleWikilinkClick}><slot /></button
+    onclick={handleWikilinkClick}>{@render children?.()}</button
   >
 {:else}
-  <!-- svelte-ignore a11y-missing-attribute -->
+  <!-- svelte-ignore a11y_missing_attribute -->
   <a target="_blank" {...attrs}>
-    <slot />
+    {@render children?.()}
     <svg
       class="align-text-top h-3.5 inline pl-1"
       viewBox="0 0 24 24"

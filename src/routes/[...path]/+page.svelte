@@ -1,17 +1,17 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { page } from '$app/stores';
+  import { normalizeURL } from '@nostr/tools/utils';
+  import { decode } from '@nostr/tools/nip19';
 
+  import { page } from '$app/state';
   import { cards } from '$lib/state';
   import { next, scrollCardIntoView } from '$lib/utils';
-  import { normalizeURL } from 'nostr-tools/utils';
   import type { ArticleCard, Card, EditorCard, RelayCard, SearchCard, UserCard } from '$lib/types';
-  import { decode } from 'nostr-tools/nip19';
 
   onMount(() => {
     if ($cards.length !== 0) return;
 
-    $page.url.pathname
+    page.url.pathname
       .split('/')
       .filter((str) => str !== '')
       .forEach((pathPart: string) => {
@@ -23,45 +23,45 @@
     if ($cards.length) {
       scrollCardIntoView($cards[$cards.length - 1].id, true);
     }
+  });
 
+  $effect(() => {
     let prevP: string[] = [];
-    return page.subscribe((v) => {
-      let nextP = v.params.path.split('/').filter((str) => str !== '');
+    let nextP = page.params.path.split('/').filter((str) => str !== '');
 
-      let nextCards: Card[] = [];
-      for (let n = 0; n < nextP.length; n++) {
-        // for all the path parts in the next url we try to find them in the previous
-        let found = false;
-        for (let p = 0; p < prevP.length; p++) {
-          if (prevP[p] === nextP[n]) {
-            // when we find something that means we will keep the corresponding card
-            // but at the new index (which is likely to be the same, but not always)
-            nextCards[n] = $cards[p];
-            found = true;
+    let nextCards: Card[] = [];
+    for (let n = 0; n < nextP.length; n++) {
+      // for all the path parts in the next url we try to find them in the previous
+      let found = false;
+      for (let p = 0; p < prevP.length; p++) {
+        if (prevP[p] === nextP[n]) {
+          // when we find something that means we will keep the corresponding card
+          // but at the new index (which is likely to be the same, but not always)
+          nextCards[n] = $cards[p];
+          found = true;
 
-            // we also null this, so repeated pathnames cannot be re-found
-            prevP[p] = '___';
+          // we also null this, so repeated pathnames cannot be re-found
+          prevP[p] = '___';
 
-            break;
-          }
-        }
-
-        if (!found) {
-          // when we didn't find we either
-          if (v.state && (v.state as [number, Card])[0] === n) {
-            // get a card from the routing state and assign it to this place
-            // (this is preferrable as that card in the state might contain hints that are no available in the URL)
-            nextCards[n] = (v.state as [number, Card])[1];
-          } else {
-            // or create a new card from the path and assign it to this place
-            nextCards[n] = cardFromPathPart(nextP[n]);
-          }
+          break;
         }
       }
 
-      cards.set(nextCards);
-      prevP = nextP;
-    });
+      if (!found) {
+        // when we didn't find we either
+        if (page.state && (page.state as [number, Card])[0] === n) {
+          // get a card from the routing state and assign it to this place
+          // (this is preferrable as that card in the state might contain hints that are no available in the URL)
+          nextCards[n] = (page.state as [number, Card])[1];
+        } else {
+          // or create a new card from the path and assign it to this place
+          nextCards[n] = cardFromPathPart(nextP[n]);
+        }
+      }
+    }
+
+    cards.set(nextCards);
+    prevP = nextP;
   });
 
   function cardFromPathPart(pathPart: string): Card {

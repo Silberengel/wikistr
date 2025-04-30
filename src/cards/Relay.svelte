@@ -1,18 +1,23 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { debounce } from 'debounce';
-  import type { NostrEvent } from 'nostr-tools/pure';
+  import debounce from 'debounce';
+  import type { NostrEvent } from '@nostr/tools/pure';
+  import { pool } from '@nostr/gadgets/global';
 
   import type { ArticleCard, Card } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next, urlWithoutScheme } from '$lib/utils';
-  import { _pool, wikiKind } from '$lib/nostr';
+  import { wikiKind } from '$lib/nostr';
   import ArticleListItem from '$components/ArticleListItem.svelte';
 
-  export let card: Card;
-  export let replaceSelf: (card: Card) => void;
-  export let createChild: (card: Card) => void;
-  let results: NostrEvent[] = [];
-  let tried = false;
+  interface Props {
+    card: Card;
+    replaceSelf: (card: Card) => void;
+    createChild: (card: Card) => void;
+  }
+
+  let { card, replaceSelf, createChild }: Props = $props();
+  let results = $state<NostrEvent[]>([]);
+  let tried = $state(false);
 
   onMount(() => {
     const update = debounce(() => {
@@ -23,7 +28,7 @@
       tried = true;
     }, 1500);
 
-    let sub = _pool.subscribeMany(
+    let sub = pool.subscribeMany(
       [card.data],
       [
         {

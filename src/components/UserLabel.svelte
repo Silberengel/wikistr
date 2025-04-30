@@ -1,13 +1,18 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { loadNostrUser, type NostrUser } from '$lib/metadata';
+  import { loadNostrUser, type NostrUser } from '@nostr/gadgets/metadata';
+
   import type { Card, UserCard } from '$lib/types';
   import { next } from '$lib/utils';
 
-  export let pubkey: string;
-  let user: NostrUser | null = null;
+  let user = $state<NostrUser | null>(null);
 
-  export let createChild: ((card: Card) => void) | undefined = undefined;
+  interface Props {
+    pubkey: string;
+    createChild?: ((card: Card) => void) | undefined;
+  }
+
+  let { pubkey, createChild = undefined }: Props = $props();
 
   onMount(async () => {
     user = await loadNostrUser(pubkey);
@@ -20,11 +25,11 @@
   }
 </script>
 
-<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div
   class="inline-flex items-center h-3 max-w-[45%]"
   class:cursor-pointer={!!createChild}
-  on:click={handleClick}
+  onclick={handleClick}
 >
   {#if user?.image}
     <img src={user.image} class="h-full ml-1" alt="user avatar" />&nbsp;

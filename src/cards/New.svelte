@@ -1,9 +1,15 @@
 <script lang="ts">
+  import { preventDefault } from 'svelte/legacy';
+
   import { next, normalizeArticleName } from '$lib/utils';
   import type { SearchCard, Card } from '$lib/types';
 
-  export let replaceNewCard: (card: Card) => void;
-  let query = '';
+  interface Props {
+    replaceNewCard: (card: Card) => void;
+  }
+
+  let { replaceNewCard }: Props = $props();
+  let query = $state('');
 
   function search() {
     if (query) {
@@ -19,7 +25,7 @@
   }
 </script>
 
-<form on:submit|preventDefault={search} class="mt- flex rounded-md shadow-sm">
+<form onsubmit={preventDefault(search)} class="mt- flex rounded-md shadow-sm">
   <div class="relative flex items-stretch flex-grow focus-within:z-10">
     <input
       bind:value={query}

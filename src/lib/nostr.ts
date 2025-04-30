@@ -1,18 +1,22 @@
 import { derived, readable } from 'svelte/store';
 import * as idbkv from 'idb-keyval';
-import type { EventTemplate, Event } from 'nostr-tools/pure';
-import { SimplePool } from 'nostr-tools/pool';
-import { loadNostrUser, type NostrUser } from './metadata';
+
+import type { EventTemplate, Event } from '@nostr/tools/pure';
 import { DEFAULT_WIKI_RELAYS } from './defaults';
-import { loadContactList, loadRelayList, loadWikiAuthors, loadWikiRelaysList } from './lists';
 import { unique } from './utils';
+import {
+  loadFollowsList,
+  loadRelayList,
+  loadWikiAuthors,
+  loadWikiRelays,
+  type Result
+} from '@nostr/gadgets/lists';
+import { loadNostrUser, type NostrUser } from '@nostr/gadgets/metadata';
 
 const startTime = Math.round(Date.now() / 1000);
 
 export const reactionKind = 7;
 export const wikiKind = 30818;
-
-export const _pool = new SimplePool();
 
 export const signer = {
   getPublicKey: async () => {
@@ -40,14 +44,14 @@ export const wot = readable<{ [pubkey: string]: number }>({}, (set) => {
 
     const scoremap: { [pubkey: string]: number } = {};
     await Promise.all([
-      recurse(loadContactList, 10, pubkey, 30),
+      recurse(loadFollowsList, 10, pubkey, 30),
       recurse(loadWikiAuthors, 6, pubkey, 30)
     ]);
     idbkv.set(`wikistr:wot`, { when: startTime, scoremap });
     set(scoremap);
 
     async function recurse(
-      fetch: (srcpk: string) => Promise<string[]>,
+      fetch: (srcpk: string) => Promise<Result<string>>,
       degrade: number,
       src: string,
       score: number
@@ -58,7 +62,7 @@ export const wot = readable<{ [pubkey: string]: number }>({}, (set) => {
 
       const nextkeys = await fetch(src);
       await Promise.all(
-        nextkeys.map(async (next) => {
+        nextkeys.items.map(async (next) => {
           return recurse(fetch, degrade, next, score - degrade);
         })
       );
@@ -102,11 +106,12 @@ export const userWikiRelays = derived(
   DEFAULT_WIKI_RELAYS
 );
 
-export async function getBasicUserWikiRelays(pubkey: string) {
+export async function getBasicUserWikiRelays(pubkey: string): Promise<string[]> {
   const [rl1, rl2] = await Promise.all([
-    loadWikiRelaysList(pubkey),
-    Promise.all((await loadWikiAuthors(pubkey)).map(loadRelayList)).then((rll) =>
+    loadWikiRelays(pubkey).then((rl) => rl.items),
+    Promise.all((await loadWikiAuthors(pubkey)).items.map((pk) => loadRelayList(pk))).then((rll) =>
       rll
+        .map((rl) => rl.items)
         .flat()
         .filter((ri) => ri.write)
         .map((ri) => ri.url)

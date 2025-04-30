@@ -1,13 +1,10 @@
 <script lang="ts">
-  import type { EventTemplate } from 'nostr-tools/pure';
-  import { onMount } from 'svelte';
+  import type { EventTemplate } from '@nostr/tools/pure';
   import SvelteAsciidoc from 'svelte-asciidoc';
 
-  import ArticleContent from '$components/ArticleContent.svelte';
   import WikilinkComponent from '$components/WikilinkComponent.svelte';
   import { DEFAULT_WIKI_RELAYS } from '$lib/defaults';
-  import { loadRelayList } from '$lib/lists';
-  import { wikiKind, account, signer, _pool } from '$lib/nostr';
+  import { wikiKind, account, signer } from '$lib/nostr';
   import type { ArticleCard, Card, EditorCard, EditorData } from '$lib/types.ts';
   import {
     getTagOr,
@@ -17,24 +14,27 @@
     unique,
     urlWithoutScheme
   } from '$lib/utils';
+  import { pool } from '@nostr/gadgets/global';
+  import { loadRelayList } from '@nostr/gadgets/lists';
 
-  export let replaceSelf: (card: Card) => void;
-  export let card: Card;
+  interface Props {
+    replaceSelf: (card: Card) => void;
+    card: Card;
+  }
+
+  let { replaceSelf, card }: Props = $props();
 
   const editorCard = card as EditorCard;
 
-  let data: EditorData;
-  let error: string | undefined;
-  let targets: { url: string; status: 'pending' | 'success' | 'failure'; message?: string }[] = [];
-  let previewing = false;
-
-  onMount(() => {
-    data = { ...editorCard.data };
-  });
+  let data = $state<EditorData>({ ...editorCard.data });
+  let error = $state<string | undefined>();
+  let targets: { url: string; status: 'pending' | 'success' | 'failure'; message?: string }[] =
+    $state([]);
+  let previewing = $state(false);
 
   async function publish() {
     targets = unique(
-      (await loadRelayList($account!.pubkey)).filter((ri) => ri.write).map((ri) => ri.url),
+      (await loadRelayList($account!.pubkey)).items.filter((ri) => ri.write).map((ri) => ri.url),
       DEFAULT_WIKI_RELAYS
     ).map((url) => ({ url, status: 'pending' }));
     error = undefined;
@@ -57,7 +57,7 @@
       await Promise.all(
         targets.map(async (target, i) => {
           try {
-            const r = await _pool.ensureRelay(target.url);
+            const r = await pool.ensureRelay(target.url);
             await r.publish(event);
             target.status = 'success';
             successes.push(target.url);
@@ -108,14 +108,14 @@
     >
   </div>
   <div class="mt-2">
-    <!-- svelte-ignore a11y-label-has-associated-control -->
+    <!-- svelte-ignore a11y_label_has_associated_control -->
     <label>
       Article
       {#if previewing}
         <div class="prose prose-p:my-0 prose-li:my-0">
           <SvelteAsciidoc
             source={turnWikilinksIntoAsciidocLinks(data.content)}
-            naturalRenderers={{ a: WikilinkComponent }}
+            naturalRenderers={{ a: WikilinkComponent as any }}
           />
         </div>
       {:else}
@@ -123,7 +123,7 @@
           placeholder="The **Greek alphabet** has been used to write the [[Greek language]] sincie the late 9th or early 8th century BC. The Greek alphabet is the ancestor of the [[Latin]] and [[Cyrillic]] scripts."
           bind:value={data.content}
           class="h-64 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-        />
+        ></textarea>
       {/if}
     </label>
   </div>
@@ -136,7 +136,7 @@
           bind:value={data.summary}
           placeholder="The Greek alphabet is the earliest known alphabetic script to have distict letters for vowels. The Greek alphabet existed in many local variants."
           class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-        /></label
+        ></textarea></label
       >
     </details>
   </div>
@@ -170,12 +170,12 @@
   {/if}
   <div class="mt-2 flex justify-between">
     <button
-      on:click={publish}
+      onclick={publish}
       class="cursor-pointer inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
       >Save</button
     >
     <button
-      on:click={() => {
+      onclick={() => {
         previewing = !previewing;
       }}
       class="cursor-pointer inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-sky-600 hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500"

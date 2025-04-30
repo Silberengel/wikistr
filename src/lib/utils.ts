@@ -1,6 +1,4 @@
-import type { NostrEvent } from 'nostr-tools/pure';
-import LRUCache from 'mnemonist/lru-cache';
-import type { CacheMap } from 'dataloader';
+import type { NostrEvent } from '@nostr/tools/pure';
 
 export function formatDate(unixtimestamp: number) {
   const months = [
@@ -97,12 +95,6 @@ export function normalizeArticleName(input: string): string {
 export function getA(event: NostrEvent) {
   const dTag = event.tags.find(([t, v]) => t === 'd' && v)?.[1] || '';
   return `${event.kind}:${event.pubkey}:${dTag}`;
-}
-
-export function dataloaderCache<V>(): CacheMap<string, Promise<V>> {
-  const cache = new LRUCache<string, Promise<V>>(2000);
-  (cache as any).delete = (_key: string) => {};
-  return cache as unknown as CacheMap<string, Promise<V>>;
 }
 
 export function hashbow(input: string, lightness: number): string {
