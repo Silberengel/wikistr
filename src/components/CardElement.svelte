@@ -3,7 +3,7 @@
 
   import { goto } from '$app/navigation';
   import { cards } from '$lib/state';
-  import type { EditorCard, Card } from '$lib/types';
+  import { type EditorCard, type Card, serializeCardForRouter } from '$lib/types';
   import { scrollCardIntoView, isElementInViewport, hashbow, urlWithoutScheme } from '$lib/utils';
   import Article from '$cards/Article.svelte';
   import Editor from '$cards/Editor.svelte';
@@ -43,7 +43,7 @@
       .concat(newChild)
       .concat($cards.slice(index + 1));
     goto('/' + newCards.map((card) => toURL(card)).join('/'), {
-      state: [index + 1, newChild]
+      state: [index + 1, serializeCardForRouter(newChild)]
     });
 
     setTimeout(() => {
@@ -64,7 +64,7 @@
           .filter((v) => v)
           .join('/'),
       {
-        state: [index, updatedCard]
+        state: [index, serializeCardForRouter(updatedCard)]
       }
     );
   }
@@ -78,7 +78,7 @@
           .filter((v) => v)
           .join('/'),
       {
-        state: [$cards.length, newCard]
+        state: [$cards.length, serializeCardForRouter(newCard)]
       }
     );
 

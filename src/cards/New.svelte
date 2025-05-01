@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { next, normalizeIdentifier } from '$lib/utils';
+  import { next } from '$lib/utils';
 
   import type { SearchCard, Card } from '$lib/types';
+  import { normalizeIdentifier } from '@nostr/tools/nip54';
 
   interface Props {
     replaceNewCard: (card: Card) => void;

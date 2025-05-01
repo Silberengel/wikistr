@@ -9,13 +9,13 @@
   import {
     getTagOr,
     next,
-    normalizeIdentifier,
     turnWikilinksIntoAsciidocLinks,
     unique,
     urlWithoutScheme
   } from '$lib/utils';
   import { pool } from '@nostr/gadgets/global';
   import { loadRelayList } from '@nostr/gadgets/lists';
+  import { normalizeIdentifier } from '@nostr/tools/nip54';
 
   interface Props {
     replaceSelf: (card: Card) => void;

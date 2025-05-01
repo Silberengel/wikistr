@@ -5,6 +5,7 @@
   import { loadRelayList } from '@nostr/gadgets/lists';
   import { bareNostrUser, loadNostrUser, type NostrUser } from '@nostr/gadgets/metadata';
   import { naddrEncode } from '@nostr/tools/nip19';
+  import { normalizeIdentifier } from '@nostr/tools/nip54';
 
   import { account, reactionKind, wikiKind, signer } from '$lib/nostr';
   import { formatDate, getA, getTagOr, next } from '$lib/utils';
@@ -12,7 +13,6 @@
   import UserLabel from '$components/UserLabel.svelte';
   import ArticleContent from '$components/ArticleContent.svelte';
   import RelayItem from '$components/RelayItem.svelte';
-  import { normalizeIdentifier } from '@nostr/tools/nip54';
 
   interface Props {
     card: Card;

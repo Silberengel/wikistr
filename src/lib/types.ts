@@ -7,28 +7,50 @@ export type EditorData = {
   previous: ArticleCard | undefined;
 };
 
-export type CardType =
-  | 'welcome'
-  | 'find'
-  | 'article'
-  | 'relay'
-  | 'user'
-  | 'settings'
-  | 'editor'
-  | 'new';
+export type Card =
+  | WelcomeCard
+  | NewCard
+  | SearchCard
+  | ArticleCard
+  | RelayCard
+  | SettingsCard
+  | UserCard
+  | EditorCard;
 
-export interface Card {
-  id: number;
-  type: CardType;
-  back?: Card;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data?: any;
+export function serializeCardForRouter(card: Card) {
+  const serialized = { ...card };
+
+  if (serialized.back) {
+    serialized.back = serializeCardForRouter(serialized.back);
+  }
+
+  switch (serialized.type) {
+    case 'find':
+      if (serialized.results) serialized.results = [...serialized.results].map(eventOutFromProxy);
+      break;
+    case 'article':
+      if (serialized.actualEvent)
+        serialized.actualEvent = eventOutFromProxy(serialized.actualEvent);
+      break;
+  }
+
+  return serialized;
+}
+
+function eventOutFromProxy(event: NostrEvent): NostrEvent {
+  return { ...event, tags: [...event.tags].map((tag) => [...tag]) };
 }
 
 export type WelcomeCard = {
   id: number;
   type: 'welcome';
   back?: Card;
+};
+
+export type NewCard = {
+  id: number;
+  type: 'new';
+  back: undefined;
 };
 
 export type SearchCard = {
