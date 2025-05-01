@@ -1,24 +1,26 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import type { NostrEvent } from 'nostr-tools/pure';
+  import type { NostrEvent } from '@nostr/tools/pure';
   import SvelteAsciidoc from 'svelte-asciidoc';
+  import { onMount } from 'svelte';
+  import { loadWikiAuthors } from '@nostr/gadgets/lists';
 
+  import WikilinkComponent from './WikilinkComponent.svelte';
   import type { Card } from '$lib/types';
-  import { turnWikilinksIntoAsciidocLinks, appendLinkMacroToNostrLinks } from '$lib/utils';
-  import { loadWikiAuthors } from '$lib/lists';
+  import { turnWikilinksIntoAsciidocLinks } from '$lib/utils';
 
-  import CustomLinkComponent from './CustomLinkComponent.svelte';
+  interface Props {
+    event: NostrEvent;
+    createChild: (card: Card) => void;
+  }
 
-  export let event: NostrEvent;
-  export let createChild: (card: Card) => void;
+  let { event, createChild }: Props = $props();
 
-  let authorPreferredWikiAuthors: string[] = [];
-
-  const content = turnWikilinksIntoAsciidocLinks(appendLinkMacroToNostrLinks(event.content));
+  let authorPreferredWikiAuthors = $state<string[]>([]);
+  const content = turnWikilinksIntoAsciidocLinks(event.content);
 
   onMount(() => {
     loadWikiAuthors(event.pubkey).then((ps) => {
-      authorPreferredWikiAuthors = ps;
+      authorPreferredWikiAuthors = ps.items;
     });
   });
 </script>
@@ -26,7 +28,6 @@
 <SvelteAsciidoc
   supportMarkdownTransition={event.created_at < 1725137951}
   source={content}
-  naturalRenderers={{ a: CustomLinkComponent }}
-  customRenderers={{}}
+  naturalRenderers={{ a: WikilinkComponent as any }}
   extra={{ createChild, preferredAuthors: [event.pubkey, ...authorPreferredWikiAuthors] }}
 />

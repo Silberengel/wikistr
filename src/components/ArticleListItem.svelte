@@ -1,27 +1,33 @@
 <script lang="ts">
-  import type { NostrEvent } from 'nostr-tools/pure';
+  import type { NostrEvent } from '@nostr/tools/pure';
 
   import UserLabel from './UserLabel.svelte';
   import { formatDate } from '$lib/utils';
 
-  export let openArticle: (event: NostrEvent, ev: MouseEvent) => void;
-  export let event: NostrEvent;
+  interface Props {
+    openArticle: (event: NostrEvent, ev: MouseEvent) => void;
+    event: NostrEvent;
+  }
 
-  $: plainText = event.content
-    .slice(0, 210)
-    .replace(/\[\[(.*?)\]\]/g, (_: any, content: any) => {
-      return content;
-    })
-    .slice(0, 190);
+  let { openArticle, event }: Props = $props();
+
+  let plainText = $derived(
+    event.content
+      .slice(0, 210)
+      .replace(/\[\[(.*?)\]\]/g, (_: any, content: any) => {
+        return content;
+      })
+      .slice(0, 190)
+  );
 
   function handleClick(ev: MouseEvent) {
     openArticle(event, ev);
   }
 </script>
 
-<!-- svelte-ignore a11y-no-static-element-interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div
-  on:mouseup|preventDefault={handleClick}
+  onmouseup={handleClick}
   class="cursor-pointer p-4 bg-white border-2 border-stone-200 hover:bg-stone-50 rounded-lg mt-2"
 >
   <h1>
@@ -30,7 +36,7 @@
       : event.tags.find((e) => e[0] == 'd')?.[1]}
   </h1>
   <p class="text-xs my-1">
-    by <span class="-ml-1"><UserLabel pubkey={event.pubkey} /></span>
+    by&nbsp;<span class="-ml-1"><UserLabel pubkey={event.pubkey} /></span>
     {formatDate(event.created_at)}
   </p>
   <p class="text-xs text-wrap break-words whitespace-pre-wrap">

@@ -1,20 +1,24 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { debounce } from 'debounce';
-  import type { NostrEvent } from 'nostr-tools/pure';
+  import debounce from 'debounce';
+  import type { NostrEvent } from '@nostr/tools/pure';
 
   import type { ArticleCard, Card } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next } from '$lib/utils';
-  import { _pool, wikiKind } from '$lib/nostr';
+  import { wikiKind } from '$lib/nostr';
   import ArticleListItem from '$components/ArticleListItem.svelte';
   import UserLabel from '$components/UserLabel.svelte';
   import { subscribeOutbox } from '$lib/outbox';
 
-  export let card: Card;
-  export let createChild: (card: Card) => void;
+  interface Props {
+    card: Card;
+    createChild: (card: Card) => void;
+  }
+
+  let { card, createChild }: Props = $props();
   let seenCache: { [id: string]: string[] } = {};
-  let results: NostrEvent[] = [];
-  let tried = false;
+  let results = $state<NostrEvent[]>([]);
+  let tried = $state(false);
 
   onMount(() => {
     const update = debounce(() => {

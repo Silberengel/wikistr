@@ -1,4 +1,4 @@
-import type { NostrEvent } from 'nostr-tools/pure';
+import type { NostrEvent } from '@nostr/tools/pure';
 
 export type EditorData = {
   title: string;

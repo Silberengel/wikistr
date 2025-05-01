@@ -5,6 +5,11 @@
   import { cards } from '$lib/state';
   import { isElementInViewport, getParentCard } from '$lib/utils';
   import CardElement from '$components/CardElement.svelte';
+  interface Props {
+    children?: import('svelte').Snippet;
+  }
+
+  let { children }: Props = $props();
 
   let dragging = false;
   let startX: number;
@@ -62,7 +67,7 @@
   <title>wikistr</title>
 </svelte:head>
 
-<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="flex overflow-x-scroll pb-2" draggable="false" bind:this={slider}>
   <CardElement card={{ type: 'welcome', id: -1 }} />
 
@@ -71,7 +76,7 @@
   {/each}
 
   <!-- this is just empty -->
-  <slot />
+  {@render children?.()}
 
   <CardElement card={{ type: 'new', id: -1 }} />
 </div>

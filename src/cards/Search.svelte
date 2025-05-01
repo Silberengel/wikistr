@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { debounce } from 'debounce';
-  import type { NostrEvent, Event } from 'nostr-tools/pure';
-  import type { AbstractRelay } from 'nostr-tools/abstract-relay';
-  import type { SubCloser } from 'nostr-tools/abstract-pool';
+  import debounce from 'debounce';
+  import type { NostrEvent, Event } from '@nostr/tools/pure';
+  import type { AbstractRelay } from '@nostr/tools/abstract-relay';
+  import type { SubCloser } from '@nostr/tools/abstract-pool';
 
-  import { _pool, wot, wikiKind, userWikiRelays } from '$lib/nostr';
+  import { wot, wikiKind, userWikiRelays } from '$lib/nostr';
   import type { ArticleCard, SearchCard, Card } from '$lib/types';
   import {
     addUniqueTaggedReplaceable,
@@ -16,10 +16,11 @@
   } from '$lib/utils';
   import { DEFAULT_SEARCH_RELAYS } from '$lib/defaults';
   import ArticleListItem from '$components/ArticleListItem.svelte';
-  import { loadRelayList } from '$lib/lists';
   import { replaceState } from '$app/navigation';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { cards } from '$lib/state';
+  import { pool } from '@nostr/gadgets/global';
+  import { loadRelayList } from '@nostr/gadgets/lists';
 
   export let card: Card;
   export let replaceSelf: (card: Card) => void;
@@ -97,7 +98,8 @@
     }, 500);
 
     const relaysFromPreferredAuthors = unique(
-      (await Promise.all((searchCard.preferredAuthors || []).map(loadRelayList)))
+      (await Promise.all((searchCard.preferredAuthors || []).map((pk) => loadRelayList(pk))))
+        .map((rl) => rl.items)
         .flat()
         .filter((ri) => ri.write)
         .map((ri) => ri.url)
@@ -125,7 +127,7 @@
 
       if (relaysToUseNow.length === 0) return;
 
-      let subc = _pool.subscribeMany(
+      let subc = pool.subscribeMany(
         relaysToUseNow,
         [{ kinds: [wikiKind], '#d': [normalizeIdentifier(query)], limit: 25 }],
         {
@@ -149,7 +151,7 @@
       subs.push(subc);
     });
 
-    search = _pool.subscribeMany(
+    search = pool.subscribeMany(
       DEFAULT_SEARCH_RELAYS,
       [{ kinds: [wikiKind], search: query, limit: 10 }],
       {
@@ -219,10 +221,10 @@
     if (query !== searchCard.data) {
       // replace browser url and history
       let index = $cards.findIndex((t) => t.id === card.id);
-      let replacementURL = $page.url.pathname.split('/').slice(1);
+      let replacementURL = page.url.pathname.split('/').slice(1);
       replacementURL[index] = query;
 
-      let currentState = $page.state as [number, Card];
+      let currentState = page.state as [number, Card];
       replaceState('/' + replacementURL.join('/'), currentState[0] === index ? [] : currentState);
 
       // update stored card state
@@ -243,7 +245,7 @@
     on:keydown={preventKeys}
     contenteditable="plaintext-only"
     bind:textContent={query}
-  />"
+  ></span>"
 </div>
 {#each results as result (result.id)}
   <ArticleListItem event={result} {openArticle} />

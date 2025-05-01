@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { npubEncode } from '@nostr/tools/nip19';
+
   import { goto } from '$app/navigation';
   import { cards } from '$lib/state';
   import type { EditorCard, Card } from '$lib/types';
@@ -11,9 +13,12 @@
   import Relay from '$cards/Relay.svelte';
   import New from '$cards/New.svelte';
   import User from '$cards/User.svelte';
-  import { npubEncode } from 'nostr-tools/nip19';
 
-  export let card: Card;
+  interface Props {
+    card: Card;
+  }
+
+  let { card }: Props = $props();
 
   function close() {
     if (card.type === 'editor' && card.data.previous) replaceSelf(card.data.previous);
@@ -105,7 +110,7 @@
   }
 </script>
 
-<!-- svelte-ignore a11y-no-static-element-interactions -->
+<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 <div
   id={`wikicard-${card.id}`}
   class="
@@ -117,7 +122,7 @@
   h-[calc(100vh_-_32px)]
   p-4
   scrollbar-thin scrollbar-thumb-stone-300 scrollbar-track-stone-100 hover:scrollbar-thumb-stone-400"
-  on:dblclick={scrollIntoViewIfNecessary}
+  ondblclick={scrollIntoViewIfNecessary}
   style:border-color={card.type === 'article'
     ? hashbow(card.data[0], 84)
     : card.type === 'find'
@@ -127,7 +132,7 @@
   {#if card.type !== 'welcome' && card.type !== 'new'}
     <div class="flex" class:justify-between={card.back} class:justify-end={!card.back}>
       {#if card.back}
-        <button on:click={back}>
+        <button aria-label="back" onclick={back}>
           <svg
             xmlns="http://www.w3.org/2000/svg"
             class="w-6 h-6 stroke-stone-500"
@@ -139,7 +144,7 @@
           </svg>
         </button>
       {/if}
-      <button on:click={close}>
+      <button aria-label="close" onclick={close}>
         <svg
           xmlns="http://www.w3.org/2000/svg"
           fill="none"

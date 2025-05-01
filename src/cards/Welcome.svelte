@@ -1,15 +1,14 @@
 <script lang="ts">
-  import { debounce } from 'debounce';
+  import debounce from 'debounce';
   import { onDestroy } from 'svelte';
-  import type { SubCloser } from 'nostr-tools/abstract-pool';
-  import type { AbstractRelay } from 'nostr-tools/abstract-relay';
-  import type { Event, NostrEvent } from 'nostr-tools/pure';
+  import type { SubCloser } from '@nostr/tools/abstract-pool';
+  import type { AbstractRelay } from '@nostr/tools/abstract-relay';
+  import type { Event, NostrEvent } from '@nostr/tools/pure';
 
   import {
     signer,
     wikiKind,
     account,
-    _pool,
     wot,
     getBasicUserWikiRelays,
     userWikiRelays
@@ -20,13 +19,18 @@
   import ArticleListItem from '$components/ArticleListItem.svelte';
   import RelayItem from '$components/RelayItem.svelte';
   import { DEFAULT_WIKI_RELAYS } from '$lib/defaults';
+  import { pool } from '@nostr/gadgets/global';
 
-  export let createChild: (card: Card) => void;
+  interface Props {
+    createChild: (card: Card) => void;
+  }
+
+  let { createChild }: Props = $props();
   let seenCache: { [id: string]: string[] } = {};
 
-  let results: Event[] = [];
+  let results = $state<Event[]>([]);
   const feeds = [normalFeed, followsFeed];
-  let current = 0;
+  let current = $state(0);
 
   const update = debounce(() => {
     // sort by an average of newness and wotness
@@ -74,7 +78,7 @@
     let cancel = account.subscribe(async (account) => {
       if (sub) sub.close();
 
-      sub = _pool.subscribeMany(
+      sub = pool.subscribeMany(
         account ? await getBasicUserWikiRelays(account.pubkey) : DEFAULT_WIKI_RELAYS,
         [
           {
@@ -147,7 +151,7 @@
     </div>
     <div class="mt-2">
       <button
-        on:click={() => {
+        onclick={() => {
           current = (current + 1) % feeds.length;
           restart();
         }}
@@ -163,7 +167,7 @@
     </div>
   {:else}
     <button
-      on:click={doLogin}
+      onclick={doLogin}
       type="submit"
       class="inline-flex items-center space-x-2 px-3 py-2 border border-gray-300 text-sm font-medium rounded-md bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 text-white"
       >Login</button

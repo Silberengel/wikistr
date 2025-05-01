@@ -1,38 +1,44 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import type { Event, EventTemplate, NostrEvent } from 'nostr-tools/pure';
-  import { naddrEncode } from 'nostr-tools/nip19';
+  import type { EventTemplate, NostrEvent } from '@nostr/tools/pure';
+  import { pool } from '@nostr/gadgets/global';
+  import { loadRelayList } from '@nostr/gadgets/lists';
+  import { bareNostrUser, loadNostrUser, type NostrUser } from '@nostr/gadgets/metadata';
+  import { naddrEncode } from '@nostr/tools/nip19';
 
-  import { account, reactionKind, _pool, wikiKind, signer } from '$lib/nostr';
-  import { formatDate, getA, getTagOr, next, normalizeIdentifier } from '$lib/utils';
+  import { account, reactionKind, wikiKind, signer } from '$lib/nostr';
+  import { formatDate, getA, getTagOr, next } from '$lib/utils';
   import type { ArticleCard, SearchCard, Card } from '$lib/types';
   import UserLabel from '$components/UserLabel.svelte';
   import ArticleContent from '$components/ArticleContent.svelte';
-  import { loadRelayList } from '$lib/lists';
-  import { loadNostrUser, bareNostrUser, type NostrUser } from '$lib/metadata';
   import RelayItem from '$components/RelayItem.svelte';
+  import { normalizeIdentifier } from '@nostr/tools/nip54';
 
-  export let card: Card;
-  export let createChild: (card: Card) => void;
-  export let replaceSelf: (card: Card) => void;
-  export let back: () => void;
-  let event: Event | null = null;
-  let nOthers: number | undefined = undefined;
-  let copied = false;
+  interface Props {
+    card: Card;
+    createChild: (card: Card) => void;
+    replaceSelf: (card: Card) => void;
+    back: () => void;
+  }
+
+  let { card, createChild, replaceSelf, back }: Props = $props();
+  let event = $state<NostrEvent | null>(null);
+  let nOthers = $state<number | undefined>(undefined);
+  let copied = $state(false);
   let likeStatus: 'liked' | 'disliked' | unknown;
-  let canLike: boolean | undefined;
-  let seenOn: string[] = [];
-  let view: 'formatted' | 'asciidoc' | 'raw' = 'formatted';
+  let canLike = $state<boolean | undefined>();
+  let seenOn = $state<string[]>([]);
+  let view = $state<'formatted' | 'asciidoc' | 'raw'>('formatted');
 
   const articleCard = card as ArticleCard;
   const dTag = articleCard.data[0];
   const pubkey = articleCard.data[1];
 
-  let author: NostrUser = bareNostrUser(pubkey);
+  let author = $state<NostrUser>(bareNostrUser(pubkey));
 
-  $: title = event?.tags.find(([k]) => k === 'title')?.[1] || dTag;
-  $: summary = event?.tags.find(([k]) => k === 'summary')?.[1];
-  $: rawEvent = event ? JSON.stringify(event, null, 2) : '{...}';
+  let title = $derived(event?.tags?.find?.(([k]) => k === 'title')?.[1] || dTag);
+  let summary = $derived(event?.tags?.find(([k]) => k === 'summary')?.[1]);
+  let rawEvent = $derived(event ? JSON.stringify(event, null, 2) : '{...}');
 
   function edit() {
     replaceSelf({
@@ -94,11 +100,11 @@
     (async () => {
       let relays = await loadRelayList(pubkey);
 
-      _pool.subscribeMany(
-        relays
+      pool.subscribeMany(
+        relays.items
           .filter((ri) => ri.write)
           .map((ri) => ri.url)
-          .concat((card as ArticleCard).relayHints),
+          .concat((card as ArticleCard).relayHints || []),
         [
           {
             authors: [pubkey],
@@ -138,12 +144,12 @@
     // help nostr stay by publishing articles from others into their write relays
     let to = setTimeout(async () => {
       if (event) {
-        (await loadRelayList(event.pubkey))
+        (await loadRelayList(event.pubkey)).items
           .filter((ri) => ri.write)
           .map((ri) => ri.url)
           .slice(0, 3)
           .forEach(async (url) => {
-            let relay = await _pool.ensureRelay(url);
+            let relay = await pool.ensureRelay(url);
             relay.publish(event!);
           });
       }
@@ -214,7 +220,9 @@
       created_at: Math.round(Date.now() / 1000)
     };
 
-    let inboxRelays = (await loadRelayList(pubkey)).filter((ri) => ri.read).map((ri) => ri.url);
+    let inboxRelays = (await loadRelayList(pubkey)).items
+      .filter((ri) => ri.read)
+      .map((ri) => ri.url);
     let relays = [...(card as ArticleCard).relayHints, ...inboxRelays, ...seenOn];
 
     let like: NostrEvent;
@@ -227,7 +235,7 @@
 
     relays.forEach(async (url) => {
       try {
-        const r = await _pool.ensureRelay(url);
+        const r = await pool.ensureRelay(url);
         await r.publish(like);
       } catch (err) {
         console.warn('failed to publish like', event, 'to', url, err);
@@ -237,9 +245,9 @@
 </script>
 
 <div>
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <!-- svelte-ignore a11y-missing-attribute -->
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_missing_attribute -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
   {#if event === null}
     Loading article {dTag} from {author.shortName}
   {:else}
@@ -250,9 +258,10 @@
           class:hidden={$account?.pubkey === event.pubkey}
         >
           <a
+            aria-label="like"
             title={canLike ? '' : likeStatus === 'like' ? 'you considered this a good article' : ''}
             class:cursor-pointer={canLike}
-            on:click={() => vote('+')}
+            onclick={() => vote('+')}
           >
             <svg
               class:fill-stone-600={canLike}
@@ -264,13 +273,14 @@
             >
           </a>
           <a
+            aria-label="dislike"
             title={canLike
               ? 'this is a bad article'
               : likeStatus === 'disliked'
                 ? 'you considered this a bad article'
                 : ''}
             class:cursor-pointer={canLike}
-            on:click={() => vote('-')}
+            onclick={() => vote('-')}
           >
             <svg
               class:fill-stone-600={canLike}
@@ -292,7 +302,7 @@
           {/if}
         </div>
         <div>
-          <a class="cursor-pointer underline" on:click={edit}>
+          <a class="cursor-pointer underline" onclick={edit}>
             {#if event?.pubkey === $account?.pubkey}
               Edit
             {:else}
@@ -300,13 +310,11 @@
             {/if}
           </a>
           &nbsp;• &nbsp;
-          <a class="cursor-pointer underline" on:click={shareCopy}>
+          <a class="cursor-pointer underline" onclick={shareCopy}>
             {#if copied}Copied!{:else}Share{/if}
           </a>
           &nbsp;• &nbsp;
-          <a class="cursor-pointer underline" on:mouseup|preventDefault={seeOthers}
-            >{nOthers || ''} Versions</a
-          >
+          <a class="cursor-pointer underline" onmouseup={seeOthers}>{nOthers || ''} Versions</a>
         </div>
       </div>
     </div>
@@ -328,7 +336,7 @@
           <RelayItem url={r} {createChild} />
         {/each}
         <button
-          on:click={() => {
+          onclick={() => {
             view = view === 'formatted' ? 'asciidoc' : view === 'asciidoc' ? 'raw' : 'formatted';
           }}
           class="font-normal text-xs px-1 py-0.5 mr-1 my-0.5 rounded cursor-pointer transition-colors bg-purple-300 hover:bg-purple-400 focus:outline-none"

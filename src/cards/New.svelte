@@ -1,11 +1,18 @@
 <script lang="ts">
   import { next, normalizeIdentifier } from '$lib/utils';
+
   import type { SearchCard, Card } from '$lib/types';
 
-  export let replaceNewCard: (card: Card) => void;
-  let query = '';
+  interface Props {
+    replaceNewCard: (card: Card) => void;
+  }
 
-  function search() {
+  let { replaceNewCard }: Props = $props();
+  let query = $state('');
+
+  function search(ev: SubmitEvent) {
+    ev.preventDefault();
+
     if (query) {
       const newCard: SearchCard = {
         id: next(),
@@ -19,7 +26,7 @@
   }
 </script>
 
-<form on:submit|preventDefault={search} class="mt- flex rounded-md shadow-sm">
+<form onsubmit={search} class="mt- flex rounded-md shadow-sm">
   <div class="relative flex items-stretch flex-grow focus-within:z-10">
     <input
       bind:value={query}
