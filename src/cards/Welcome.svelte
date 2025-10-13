@@ -1,42 +1,91 @@
 <script lang="ts">
-  import debounce from 'debounce';
+  // Svelte
   import { onDestroy } from 'svelte';
+  
+  // External Libraries
+  import debounce from 'debounce';
   import type { SubCloser } from '@nostr/tools/abstract-pool';
   import type { AbstractRelay } from '@nostr/tools/abstract-relay';
   import type { Event, NostrEvent } from '@nostr/tools/pure';
+  import { pool } from '@nostr/gadgets/global';
+  import { loadRelayList } from '@nostr/gadgets/lists';
 
+  // Local Imports
   import {
     signer,
     wikiKind,
     account,
     wot,
     getBasicUserWikiRelays,
-    userWikiRelays
+    setAccount
   } from '$lib/nostr';
   import type { ArticleCard, Card } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next } from '$lib/utils';
-  import { subscribeAllOutbox } from '$lib/outbox';
+  import { DEFAULT_WIKI_RELAYS } from '$lib/defaults';
+  
+  // Components
   import ArticleListItem from '$components/ArticleListItem.svelte';
   import RelayItem from '$components/RelayItem.svelte';
-  import { DEFAULT_WIKI_RELAYS } from '$lib/defaults';
-  import { pool } from '@nostr/gadgets/global';
 
+  // Types
   interface Props {
     createChild: (card: Card) => void;
   }
 
-  let { createChild }: Props = $props();
-  let seenCache: { [id: string]: string[] } = {};
+  interface FeedConfig {
+    id: string;
+    label: string;
+    title: string;
+    function: () => SubCloser;
+  }
 
+  interface SubscriptionFilter {
+    kinds: number[];
+    authors?: string[];
+    limit: number;
+    [key: `#${string}`]: string | string[];
+  }
+
+  interface SeenCache {
+    [eventId: string]: string[];
+  }
+
+  // Props and State
+  let { createChild }: Props = $props();
+  let seenCache: SeenCache = {};
   let results = $state<Event[]>([]);
-  const feeds = [normalFeed, followsFeed, allRelaysFeed, selfFeed];
-  const feedLabels = [
-    'your web of trust',
-    'your inboxes', 
-    'all relays',
-    'yourself'
+  let current = $state(2); // Default to "all relays"
+  let currentRelays = $state<string[]>([]);
+
+  // Feed Configuration
+  const FEED_CONFIGS: FeedConfig[] = [
+    {
+      id: 'web-of-trust',
+      label: 'your web of trust',
+      title: 'Articles from your web of trust',
+      function: createWebOfTrustFeed
+    },
+    {
+      id: 'inboxes',
+      label: 'your inboxes',
+      title: 'Recent Articles',
+      function: createInboxFeed
+    },
+    {
+      id: 'all-relays',
+      label: 'all relays',
+      title: 'Articles from all relays',
+      function: createAllRelaysFeed
+    },
+    {
+      id: 'yourself',
+      label: 'yourself',
+      title: 'Your articles',
+      function: createSelfFeed
+    }
   ];
-  let current = $state(0);
+
+  const currentFeed = $derived(FEED_CONFIGS[current]);
 
   const update = debounce(() => {
     // sort by an average of newness and wotness
@@ -51,14 +100,23 @@
     seenCache = seenCache;
   }, 500);
 
-  let close = () => {};
+  let close: SubCloser = { close: () => {} };
 
   onDestroy(() => {
-    close();
+    close.close();
   });
 
   function doLogin() {
     signer.getPublicKey();
+  }
+
+  function doLogout() {
+    // Clear the account from local storage
+    import('idb-keyval').then(({ del }) => {
+      del('wikistr:loggedin');
+    });
+    // Reset the account store
+    setAccount(null);
   }
 
   function openArticle(result: Event) {
@@ -71,129 +129,163 @@
     } as ArticleCard);
   }
 
+  // Helper Functions
+  async function getUserInboxRelays(pubkey: string): Promise<string[]> {
+    const relayList = await loadRelayList(pubkey);
+    return relayList.items
+      .filter((ri) => ri.read)
+      .map((ri) => ri.url);
+  }
+
+  async function getCombinedRelays(pubkey: string): Promise<string[]> {
+    const inboxRelays = await getUserInboxRelays(pubkey);
+    return [...new Set([...inboxRelays, ...DEFAULT_WIKI_RELAYS])];
+  }
+
+  function createSubscription(
+    relays: string[],
+    filter: SubscriptionFilter,
+    id: string,
+    onComplete?: () => void
+  ): SubCloser {
+    return pool.subscribeMany(relays, [filter as any], {
+      id,
+      onevent,
+      receivedEvent: receivedEvent as any,
+      ...(onComplete && { oneose: onComplete })
+    });
+  }
+
+  // Feed Functions
+  function createInboxFeed(): SubCloser {
+    let sub: SubCloser | undefined;
+    let cancel = account.subscribe(async (account) => {
+      if (sub) sub.close();
+      if (!account) return;
+
+      const inboxRelays = await getUserInboxRelays(account.pubkey);
+      const relays = inboxRelays.length > 0 ? inboxRelays : await getBasicUserWikiRelays(account.pubkey);
+      currentRelays = relays;
+
+      console.log('Inbox feed - relays:', relays);
+
+      sub = createSubscription(
+        relays,
+        { kinds: [wikiKind], limit: 15 },
+        'inbox'
+      );
+    });
+
+    return {
+      close: () => {
+        if (sub) sub.close();
+        cancel();
+      }
+    };
+  }
+
+  function createWebOfTrustFeed(): SubCloser {
+    let sub: SubCloser | undefined;
+    let wotsubclose: () => void;
+    let cancel = account.subscribe(async (account) => {
+      if (sub) sub.close();
+      if (wotsubclose) wotsubclose();
+      if (!account) return;
+
+      const allRelays = await getCombinedRelays(account.pubkey);
+      currentRelays = allRelays;
+
+      wotsubclose = wot.subscribe((wot) => {
+        if (sub) sub.close();
+
+        const eligibleKeys = Object.entries(wot)
+          .filter(([_, v]) => v >= 20)
+          .map(([k]) => k);
+
+        console.log('Web of Trust feed - Eligible authors:', eligibleKeys.length, eligibleKeys);
+        
+        if (eligibleKeys.length > 0) {
+          sub = createSubscription(
+            allRelays,
+            { kinds: [wikiKind], authors: eligibleKeys, limit: 20 },
+            'follows',
+            () => console.log('Web of Trust feed completed')
+          );
+        } else {
+          console.log('No eligible authors found in Web of Trust');
+        }
+      });
+    });
+
+    return {
+      close: () => {
+        if (sub) sub.close();
+        if (wotsubclose) wotsubclose();
+        cancel();
+      }
+    };
+  }
+
+  function createAllRelaysFeed(): SubCloser {
+    let sub: SubCloser | undefined;
+    let cancel = account.subscribe(async (account) => {
+      if (sub) sub.close();
+      if (!account) return;
+
+      const allRelays = await getCombinedRelays(account.pubkey);
+      currentRelays = allRelays;
+      console.log('All relays feed - relays:', allRelays);
+
+      sub = createSubscription(
+        allRelays,
+        { kinds: [wikiKind], limit: 15 },
+        'allrelays'
+      );
+    });
+
+    return {
+      close: () => {
+        if (sub) sub.close();
+        cancel();
+      }
+    };
+  }
+
+  function createSelfFeed(): SubCloser {
+    let sub: SubCloser | undefined;
+    let cancel = account.subscribe(async (account) => {
+      if (sub) sub.close();
+      if (!account) return;
+
+      const allRelays = await getCombinedRelays(account.pubkey);
+      currentRelays = allRelays;
+      console.log('Self feed - relays:', allRelays);
+
+      sub = createSubscription(
+        allRelays,
+        { kinds: [wikiKind], authors: [account.pubkey], limit: 15 },
+        'self'
+      );
+    });
+
+    return {
+      close: () => {
+        if (sub) sub.close();
+        cancel();
+      }
+    };
+  }
+
+  // Feed Management
   function restart() {
-    close();
+    close.close();
     results = [];
-    close = feeds[current]();
+    seenCache = {};
+    console.log('Switching to feed:', currentFeed.label);
+    close = currentFeed.function();
   }
 
   setTimeout(restart, 400);
-
-  function normalFeed() {
-    let sub: SubCloser | undefined;
-    let cancel = account.subscribe(async (account) => {
-      if (sub) sub.close();
-
-      sub = pool.subscribeMany(
-        account ? await getBasicUserWikiRelays(account.pubkey) : DEFAULT_WIKI_RELAYS,
-        [
-          {
-            kinds: [wikiKind],
-            limit: 15
-          }
-        ],
-        {
-          id: 'recent',
-          onevent,
-          receivedEvent: receivedEvent as any
-        }
-      );
-    });
-
-    return () => {
-      if (sub) sub.close();
-      cancel();
-    };
-  }
-
-  function followsFeed() {
-    let sub: SubCloser | undefined;
-    let cancel = account.subscribe(async (account) => {
-      if (sub) sub.close();
-
-      if (!account) return;
-
-      // Get user's relays and combine with defaults
-      const userRelays = await getBasicUserWikiRelays(account.pubkey);
-      const allRelays = [...new Set([...userRelays, ...DEFAULT_WIKI_RELAYS])];
-
-      sub = pool.subscribeMany(
-        allRelays,
-        [
-          {
-            kinds: [wikiKind],
-            limit: 20
-          }
-        ],
-        {
-          id: 'follows',
-          onevent,
-          receivedEvent: receivedEvent as any
-        }
-      );
-    });
-
-    return () => {
-      if (sub) sub.close();
-      cancel();
-    };
-  }
-
-  function allRelaysFeed() {
-    let sub: SubCloser | undefined;
-    let cancel = account.subscribe(async (account) => {
-      if (sub) sub.close();
-
-      sub = pool.subscribeMany(
-        DEFAULT_WIKI_RELAYS,
-        [
-          {
-            kinds: [wikiKind],
-            limit: 15
-          }
-        ],
-        {
-          id: 'allrelays',
-          onevent,
-          receivedEvent: receivedEvent as any
-        }
-      );
-    });
-
-    return () => {
-      if (sub) sub.close();
-      cancel();
-    };
-  }
-
-  function selfFeed() {
-    let sub: SubCloser | undefined;
-    let cancel = account.subscribe(async (account) => {
-      if (sub) sub.close();
-      if (!account) return;
-
-      sub = pool.subscribeMany(
-        await getBasicUserWikiRelays(account.pubkey),
-        [
-          {
-            kinds: [wikiKind],
-            authors: [account.pubkey],
-            limit: 15
-          }
-        ],
-        {
-          id: 'self',
-          onevent,
-          receivedEvent: receivedEvent as any
-        }
-      );
-    });
-
-    return () => {
-      if (sub) sub.close();
-      cancel();
-    };
-  }
 
   function onevent(evt: NostrEvent) {
     if (addUniqueTaggedReplaceable(results, evt)) update();
@@ -205,19 +297,38 @@
   }
 </script>
 
-<div class="font-bold text-4xl">Account</div>
-<div class="mb-4 mt-2">
+<!-- Account Section -->
+<section class="mb-4">
+  <h1 class="font-bold text-4xl">Account</h1>
+  
   {#if $account}
-    <div class="flex h-12">
-      {#if $account.image}
-        <img class="full-h" src={$account.image} alt="user avatar" />
-      {/if}
-      <div class="ml-2">
-        <p class="w-64 text-ellipsis overflow-hidden">{$account.npub}</p>
-        <p>{$account.shortName}</p>
+    <!-- User Profile -->
+    <div class="mt-2 flex items-center justify-between">
+      <div class="flex items-center space-x-4">
+        {#if $account.image}
+          <img 
+            class="h-12 w-12 rounded-full" 
+            src={$account.image} 
+            alt="user avatar"
+            onerror={(e) => (e.target as HTMLImageElement).style.display = 'none'}
+          />
+        {/if}
+        <div>
+          <p class="text-sm font-medium text-gray-900">{$account.shortName}</p>
+          <p class="text-xs text-gray-500 truncate w-48">{$account.npub}</p>
+        </div>
       </div>
+      <button
+        onclick={doLogout}
+        type="button"
+        class="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-white"
+      >
+        Logout
+      </button>
     </div>
-    <div class="mt-2 flex items-center space-x-2">
+
+    <!-- Feed Selector -->
+    <div class="mt-4 flex items-center space-x-2">
       <label for="feed-select" class="text-sm font-medium text-gray-700">
         Browse articles from:
       </label>
@@ -225,40 +336,45 @@
         id="feed-select"
         bind:value={current}
         onchange={restart}
-        class="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+        class="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
       >
-        {#each feedLabels as label, index}
-          <option value={index}>{label}</option>
+        {#each FEED_CONFIGS as feed, index}
+          <option value={index}>{feed.label}</option>
         {/each}
       </select>
     </div>
   {:else}
-    <button
-      onclick={doLogin}
-      type="submit"
-      class="inline-flex items-center space-x-2 px-3 py-2 border border-gray-300 text-sm font-medium rounded-md bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 text-white"
-      >Login</button
-    >
-  {/if}
-</div>
-
-<div class="mb-2 font-bold text-4xl">
-  {#if feeds[current] === normalFeed}
-    Recent Articles
-    <div class="flex items-center flex-wrap">
-      <div class="mr-1 font-normal text-xs">from</div>
-      {#each $userWikiRelays as url}
-        <RelayItem {url} {createChild} />
-      {/each}
+    <!-- Login Button -->
+    <div class="mt-2">
+      <button
+        onclick={doLogin}
+        type="submit"
+        class="btn-primary"
+      >
+        Login
+      </button>
     </div>
-  {:else if feeds[current] === followsFeed}
-    Articles from your web of trust
-  {:else if feeds[current] === allRelaysFeed}
-    Articles from all relays
-  {:else if feeds[current] === selfFeed}
-    Your articles
   {/if}
-</div>
-{#each results as result (result.id)}
-  <ArticleListItem event={result} {openArticle} />
-{/each}
+</section>
+
+<!-- Articles Section -->
+<section>
+  <h2 class="mb-2 font-bold text-4xl">
+    {currentFeed.title}
+  </h2>
+  
+  <!-- Relay List -->
+  <div class="flex items-center flex-wrap mt-2">
+    <div class="mr-1 font-normal text-xs">from</div>
+    {#each currentRelays as url}
+      <RelayItem {url} {createChild} />
+    {/each}
+  </div>
+
+  <!-- Article List -->
+  <div class="mt-4">
+    {#each results as result (result.id)}
+      <ArticleListItem event={result} {openArticle} />
+    {/each}
+  </div>
+</section>

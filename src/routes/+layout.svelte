@@ -20,6 +20,13 @@
     document.addEventListener('mousedown', onMouseDown);
     document.addEventListener('mouseup', onMouseUp);
     document.addEventListener('mousemove', onMouseMove);
+    
+    // Global image error handler
+    document.addEventListener('error', (e) => {
+      if (e.target instanceof HTMLImageElement) {
+        e.target.style.display = 'none';
+      }
+    }, true);
 
     return () => {
       document.removeEventListener('mousedown', onMouseDown);
@@ -78,5 +85,5 @@
   <!-- this is just empty -->
   {@render children?.()}
 
-  <CardElement card={{ type: 'new', id: -1 }} />
+  <CardElement card={{ type: 'new', id: -1, back: undefined }} />
 </div>

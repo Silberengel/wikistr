@@ -19,21 +19,6 @@ const startTime = Math.round(Date.now() / 1000);
 export const reactionKind = 7;
 export const wikiKind = 30818;
 
-export const signer = {
-  getPublicKey: async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pubkey = await (window as any).nostr.getPublicKey();
-    setAccount(pubkey);
-    return pubkey;
-  },
-  signEvent: async (event: EventTemplate): Promise<Event> => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const se: Event = await (window as any).nostr.signEvent(event);
-    setAccount(se.pubkey);
-    return se;
-  }
-};
-
 let setWOT: (_: string) => Promise<void>;
 export const wot = readable<{ [pubkey: string]: number }>({}, (set) => {
   setWOT = async (pubkey) => {
@@ -71,12 +56,16 @@ export const wot = readable<{ [pubkey: string]: number }>({}, (set) => {
   };
 });
 
-let setAccount: (_: string) => Promise<void>;
+let setAccount: (_: string | null) => Promise<void>;
 export const account = readable<NostrUser | null>(null, (set) => {
-  setAccount = async (pubkey: string) => {
-    const account = await loadNostrUser(pubkey);
-    idbkv.set('wikistr:loggedin', account);
-    set(account);
+  setAccount = async (pubkey: string | null) => {
+    if (pubkey) {
+      const account = await loadNostrUser(pubkey);
+      idbkv.set('wikistr:loggedin', account);
+      set(account);
+    } else {
+      set(null);
+    }
   };
 
   // try to load account from local storage on startup
@@ -167,3 +156,20 @@ export async function getBasicUserWikiRelays(pubkey: string): Promise<string[]> 
 
   return list;
 }
+
+export { setAccount };
+
+export const signer = {
+  getPublicKey: async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pubkey = await (window as any).nostr.getPublicKey();
+    setAccount(pubkey);
+    return pubkey;
+  },
+  signEvent: async (event: EventTemplate): Promise<Event> => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const se: Event = await (window as any).nostr.signEvent(event);
+    setAccount(se.pubkey);
+    return se;
+  }
+};
