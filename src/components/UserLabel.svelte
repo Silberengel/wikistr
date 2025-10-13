@@ -27,19 +27,19 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div
-  class="inline-flex items-center h-3 max-w-[45%]"
+  class="inline-flex items-center"
   class:cursor-pointer={!!createChild}
   onclick={handleClick}
 >
       {#if user?.image && !user.image.includes('void.cat')}
         <img 
           src={user.image} 
-          class="h-full ml-1" 
+          class="w-8 h-8 rounded-full object-cover ml-1" 
           alt="user avatar"
           onerror={(e) => (e.target as HTMLImageElement).style.display = 'none'}
         />&nbsp;
       {/if}
-  <span class="text-gray-600 font-[600] text-ellipsis truncate" title={user?.npub}
+  <span class="text-gray-600 font-[600]" title={user?.npub}
     >{user?.shortName || pubkey}</span
   >
 </div>

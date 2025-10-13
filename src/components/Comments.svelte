@@ -437,27 +437,27 @@
   
   <!-- Comment Form -->
   {#if $account}
-    <div class="mb-6 p-4 bg-gray-50 rounded-lg">
+    <div class="mb-6 py-4">
       <textarea
         bind:value={commentText}
         placeholder="Write a comment..."
-        class="w-full p-3 border border-gray-300 rounded-md resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-        rows="3"
+        class="w-full p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base"
+        rows="4"
         disabled={isSubmitting}
       ></textarea>
       <div class="mt-3 flex justify-end">
         <button
           onclick={submitComment}
           disabled={!commentText.trim() || isSubmitting}
-          class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-base transition-colors"
         >
           {isSubmitting ? 'Submitting...' : 'Post Comment'}
         </button>
       </div>
     </div>
   {:else}
-    <div class="mb-6 p-4 bg-gray-50 rounded-lg text-center text-gray-600">
-      <p>Please connect your Nostr account to comment.</p>
+    <div class="mb-6 py-4 text-center text-gray-600">
+      <p class="text-base">Please connect your Nostr account to comment.</p>
     </div>
   {/if}
 
@@ -472,173 +472,163 @@
     <div class="space-y-4">
       {#each threadedComments as threadedComment (threadedComment.comment.id)}
         {@const comment = threadedComment.comment}
-        <div class="border border-gray-200 rounded-lg p-4">
-          <div class="flex items-start space-x-3">
-            <div class="flex-shrink-0">
-              {#if users.has(comment.pubkey)}
-                {@const user = users.get(comment.pubkey)}
-                {#if (user as any)?.picture}
-                  <img
-                    src={(user as any).picture}
-                    alt=""
-                    class="w-8 h-8 rounded-full object-cover"
-                    onerror={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                  />
-                {:else}
-                  <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-sm font-medium">
-                    {((user as any)?.display_name || (user as any)?.name || comment.pubkey.slice(0, 2)).toUpperCase()}
-                  </div>
-                {/if}
-              {:else}
-                <div class="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-gray-600 text-sm font-medium">
-                  {comment.pubkey.slice(0, 2).toUpperCase()}
-                </div>
+        <div class="border-l-4 border-blue-500 pl-4 py-3">
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center space-x-3">
+                <UserLabel pubkey={comment.pubkey} createChild={() => {}} />
+                <span class="text-gray-500">•</span>
+                <span class="text-base text-gray-700 font-semibold">
+                  {formatDate(comment.created_at)}
+                </span>
+              </div>
+              
+              {#if $account}
+                <button
+                  onclick={() => startReply(comment.id)}
+                  class="text-base text-blue-600 hover:text-blue-800 font-medium px-3 py-1 rounded-lg hover:bg-blue-50 transition-colors"
+                  disabled={isSubmitting}
+                >
+                  Reply
+                </button>
               {/if}
             </div>
             
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center justify-between mb-2">
-                <div class="flex items-center space-x-2">
-                  <UserLabel pubkey={comment.pubkey} createChild={() => {}} />
-                  <span class="text-sm text-gray-500">
-                    {formatDate(comment.created_at)}
-                  </span>
-                </div>
-                
-                {#if $account}
+            <div class="text-base text-gray-900 leading-relaxed">
+              {comment.content}
+            </div>
+
+            <!-- Reply Form -->
+            {#if replyingTo === comment.id && $account}
+              <div class="mt-3 border-l-4 border-blue-400 pl-4 py-3">
+                <textarea
+                  bind:value={replyText}
+                  placeholder="Write a reply..."
+                  class="w-full p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base"
+                  rows="3"
+                  disabled={isSubmitting}
+                ></textarea>
+                <div class="mt-3 flex justify-end space-x-3">
                   <button
-                    onclick={() => startReply(comment.id)}
-                    class="text-sm text-blue-600 hover:text-blue-800"
+                    onclick={cancelReply}
+                    class="px-4 py-2 text-base text-gray-600 hover:text-gray-800 font-medium rounded-lg hover:bg-gray-100 transition-colors"
                     disabled={isSubmitting}
                   >
-                    Reply
+                    Cancel
                   </button>
-                {/if}
-              </div>
-              
-              <div class="prose prose-sm max-w-none">
-                <p class="whitespace-pre-wrap">{comment.content}</p>
-              </div>
-
-              <!-- Reply Form -->
-              {#if replyingTo === comment.id && $account}
-                <div class="mt-4 p-3 bg-gray-50 rounded-lg">
-                  <textarea
-                    bind:value={replyText}
-                    placeholder="Write a reply..."
-                    class="w-full p-2 border border-gray-300 rounded-md resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    rows="2"
-                    disabled={isSubmitting}
-                  ></textarea>
-                  <div class="mt-2 flex justify-end space-x-2">
-                    <button
-                      onclick={cancelReply}
-                      class="px-3 py-1 text-sm text-gray-600 hover:text-gray-800"
-                      disabled={isSubmitting}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onclick={() => submitReply(comment)}
-                      disabled={!replyText.trim() || isSubmitting}
-                      class="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isSubmitting ? 'Submitting...' : 'Reply'}
-                    </button>
-                  </div>
+                  <button
+                    onclick={() => submitReply(comment)}
+                    disabled={!replyText.trim() || isSubmitting}
+                    class="px-4 py-2 text-base bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+                  >
+                    {isSubmitting ? 'Submitting...' : 'Reply'}
+                  </button>
                 </div>
-              {/if}
+              </div>
+            {/if}
 
-              <!-- Replies -->
-              {#if threadedComment.replies.length > 0}
-                <div class="mt-4 ml-6 space-y-3">
-                  {#each threadedComment.replies as replyThread (replyThread.comment.id)}
-                    {@const reply = replyThread.comment}
-                    <div class="border-l-2 border-gray-200 pl-4 py-2">
-                      <div class="flex items-start space-x-3">
-                        <div class="flex-shrink-0">
-                          {#if users.has(reply.pubkey)}
-                            {@const user = users.get(reply.pubkey)}
-                            {#if (user as any)?.picture}
-                              <img
-                                src={(user as any).picture}
-                                alt=""
-                                class="w-6 h-6 rounded-full object-cover"
-                                onerror={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                              />
-                            {:else}
-                              <div class="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-xs font-medium">
-                                {((user as any)?.display_name || (user as any)?.name || reply.pubkey.slice(0, 2)).toUpperCase()}
-                              </div>
-                            {/if}
-                          {:else}
-                            <div class="w-6 h-6 rounded-full bg-gray-300 flex items-center justify-center text-gray-600 text-xs font-medium">
-                              {reply.pubkey.slice(0, 2).toUpperCase()}
-                            </div>
-                          {/if}
+            <!-- Replies -->
+            {#if threadedComment.replies.length > 0}
+              <div class="mt-4 ml-4 border-l-4 border-purple-400 pl-4 space-y-3">
+                {#each threadedComment.replies as replyThread (replyThread.comment.id)}
+                  {@const reply = replyThread.comment}
+                  <div class="py-2">
+                    <div class="space-y-2">
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                          <UserLabel pubkey={reply.pubkey} createChild={() => {}} />
+                          <span class="text-gray-500">•</span>
+                          <span class="text-base text-gray-700 font-semibold">
+                            {formatDate(reply.created_at)}
+                          </span>
                         </div>
                         
-                        <div class="flex-1 min-w-0">
-                          <div class="flex items-center justify-between mb-1">
-                            <div class="flex items-center space-x-2">
-                              <UserLabel pubkey={reply.pubkey} createChild={() => {}} />
-                              <span class="text-xs text-gray-500">
-                                {formatDate(reply.created_at)}
-                              </span>
-                            </div>
-                            
-                            {#if $account}
-                              <button
-                                onclick={() => startReply(reply.id)}
-                                class="text-xs text-blue-600 hover:text-blue-800"
-                                disabled={isSubmitting}
-                              >
-                                Reply
-                              </button>
-                            {/if}
-                          </div>
-                          
-                          <div class="prose prose-xs max-w-none">
-                            <p class="whitespace-pre-wrap text-sm">{reply.content}</p>
-                          </div>
+                        {#if $account}
+                          <button
+                            onclick={() => startReply(reply.id)}
+                            class="text-base text-purple-600 hover:text-purple-800 font-medium px-3 py-1 rounded-lg hover:bg-purple-50 transition-colors"
+                            disabled={isSubmitting}
+                          >
+                            Reply
+                          </button>
+                        {/if}
+                      </div>
+                      
+                      <div class="text-base text-gray-900 leading-relaxed">
+                        {reply.content}
+                      </div>
 
-                          <!-- Nested Reply Form -->
-                          {#if replyingTo === reply.id && $account}
-                            <div class="mt-2 p-2 bg-gray-50 rounded">
-                              <textarea
-                                bind:value={replyText}
-                                placeholder="Write a reply..."
-                                class="w-full p-2 border border-gray-300 rounded text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                rows="2"
-                                disabled={isSubmitting}
-                              ></textarea>
-                              <div class="mt-1 flex justify-end space-x-2">
-                                <button
-                                  onclick={cancelReply}
-                                  class="px-2 py-1 text-xs text-gray-600 hover:text-gray-800"
-                                  disabled={isSubmitting}
-                                >
-                                  Cancel
-                                </button>
-                                <button
-                                  onclick={() => submitReply(reply)}
-                                  disabled={!replyText.trim() || isSubmitting}
-                                  class="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                  {isSubmitting ? 'Submitting...' : 'Reply'}
-                                </button>
+                      <!-- Nested Reply Form -->
+                      {#if replyingTo === reply.id && $account}
+                        <div class="mt-3 border-l-4 border-purple-400 pl-4 py-3">
+                          <textarea
+                            bind:value={replyText}
+                            placeholder="Write a reply..."
+                            class="w-full p-3 border border-gray-300 rounded-lg text-base resize-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                            rows="3"
+                            disabled={isSubmitting}
+                          ></textarea>
+                          <div class="mt-3 flex justify-end space-x-3">
+                            <button
+                              onclick={cancelReply}
+                              class="px-4 py-2 text-base text-gray-600 hover:text-gray-800 font-medium rounded-lg hover:bg-gray-100 transition-colors"
+                              disabled={isSubmitting}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onclick={() => submitReply(reply)}
+                              disabled={!replyText.trim() || isSubmitting}
+                              class="px-4 py-2 text-base bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+                            >
+                              {isSubmitting ? 'Submitting...' : 'Reply'}
+                            </button>
+                          </div>
+                        </div>
+                      {/if}
+
+                      <!-- Nested Replies (replies to replies) -->
+                      {#if replyThread.replies.length > 0}
+                        <div class="mt-3 ml-4 border-l-4 border-green-400 pl-4 space-y-2">
+                          {#each replyThread.replies as nestedReplyThread (nestedReplyThread.comment.id)}
+                            {@const nestedReply = nestedReplyThread.comment}
+                            <div class="py-1">
+                              <div class="space-y-1">
+                                <div class="flex items-center justify-between">
+                                  <div class="flex items-center space-x-3">
+                                    <UserLabel pubkey={nestedReply.pubkey} createChild={() => {}} />
+                                    <span class="text-gray-500">•</span>
+                                    <span class="text-base text-gray-700 font-semibold">
+                                      {formatDate(nestedReply.created_at)}
+                                    </span>
+                                  </div>
+                                  
+                                  {#if $account}
+                                    <button
+                                      onclick={() => startReply(nestedReply.id)}
+                                      class="text-base text-green-600 hover:text-green-800 font-medium px-3 py-1 rounded-lg hover:bg-green-50 transition-colors"
+                                      disabled={isSubmitting}
+                                    >
+                                      Reply
+                                    </button>
+                                  {/if}
+                                </div>
+                                
+                                <div class="text-base text-gray-900 leading-relaxed">
+                                  {nestedReply.content}
+                                </div>
                               </div>
                             </div>
-                          {/if}
+                          {/each}
                         </div>
-                      </div>
+                      {/if}
                     </div>
-                  {/each}
-                </div>
-              {/if}
+                  </div>
+                {/each}
+              </div>
+            {/if}
             </div>
           </div>
-        </div>
       {/each}
     </div>
   {/if}

@@ -18,20 +18,40 @@ export function formatDate(unixtimestamp: number) {
   ];
 
   const date = new Date(unixtimestamp * 1000);
-  const dateday = date.toISOString().split('T')[0];
-
   const now = Date.now();
+  const diffInSeconds = Math.floor((now / 1000) - unixtimestamp);
 
+  // Handle very recent times
+  if (diffInSeconds < 60) {
+    return 'just now';
+  }
+
+  if (diffInSeconds < 3600) {
+    const minutes = Math.floor(diffInSeconds / 60);
+    return minutes === 1 ? '1 minute ago' : `${minutes} minutes ago`;
+  }
+
+  if (diffInSeconds < 86400) {
+    const hours = Math.floor(diffInSeconds / 3600);
+    return hours === 1 ? '1 hour ago' : `${hours} hours ago`;
+  }
+
+  // Check if it's today
   const today = new Date(now).toISOString().split('T')[0];
+  const dateday = date.toISOString().split('T')[0];
   if (dateday === today) return 'today';
 
+  // Check if it's yesterday
   const yesterday = new Date(now - 24 * 3600 * 1000).toISOString().split('T')[0];
   if (dateday === yesterday) return 'yesterday';
 
-  if (unixtimestamp > now / 1000 - 24 * 3600 * 90) {
-    return Math.round((now / 1000 - unixtimestamp) / (24 * 3600)) + ' days ago';
+  // For older dates within 90 days
+  if (diffInSeconds < 90 * 24 * 3600) {
+    const days = Math.floor(diffInSeconds / 86400);
+    return days === 1 ? '1 day ago' : `${days} days ago`;
   }
 
+  // For very old dates, show the actual date
   const day = date.getDate();
   const month = months[date.getMonth()];
   const year = date.getFullYear();
