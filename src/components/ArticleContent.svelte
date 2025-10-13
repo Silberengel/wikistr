@@ -5,6 +5,7 @@
   import type { Card } from '$lib/types';
   import { preprocessContentForAsciidoc } from '$lib/utils';
   import AsciidocContent from './AsciidocContent.svelte';
+  import Comments from './Comments.svelte';
 
   interface Props {
     event: NostrEvent;
@@ -23,3 +24,6 @@
 </script>
 
 <AsciidocContent {event} {createChild} />
+
+<!-- Comments Section -->
+<Comments {event} />
