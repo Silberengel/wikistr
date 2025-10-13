@@ -46,6 +46,100 @@
       };
     }
 
+    // Global error handler for unhandled promise rejections (like auth-required errors)
+    window.addEventListener('unhandledrejection', (event) => {
+      const error = event.reason;
+      if (error && typeof error === 'object' && error.message) {
+        const message = error.message.toLowerCase();
+        
+        // Handle auth-required errors gracefully
+        if (message.includes('auth-required') || message.includes('auth required')) {
+          // Try to extract relay information from error stack or context
+          let relayUrl = 'Unknown relay';
+          let relayInfo = '';
+          
+          // Check if error has relay information
+          if (error.relay) {
+            relayUrl = error.relay;
+            relayInfo = `Failed relay: ${relayUrl}`;
+          } else if (error.url) {
+            relayUrl = error.url;
+            relayInfo = `Failed relay: ${relayUrl}`;
+          } else {
+            // Try to extract from stack trace
+            const stack = error.stack || '';
+            const relayMatch = stack.match(/wss?:\/\/[^\s\)]+/);
+            if (relayMatch) {
+              relayUrl = relayMatch[0];
+              relayInfo = `Failed relay: ${relayUrl}`;
+            } else {
+              relayInfo = 'Could not determine which relay failed';
+            }
+          }
+          
+          console.info('ℹ️ Relay Authentication Required:', {
+            message: error.message,
+            relay: relayUrl,
+            details: `A relay (${relayUrl}) requires authentication for write access. This is normal for many relays and doesn't affect reading articles.`,
+            commonAuthRequiredRelays: [
+              'wss://relay.damus.io (often requires auth)',
+              'wss://freelay.sovbit.host (write-only auth)',
+              'wss://bevo.nostr1.com (may require auth)'
+            ],
+            action: 'You can still read articles from this relay. Publishing may require authentication with a Nostr client.',
+            stack: error.stack ? error.stack.split('\n').slice(0, 3).join('\n') : undefined
+          });
+          
+          // Prevent the error from showing in console
+          event.preventDefault();
+          return;
+        }
+        
+        // Handle other common relay errors gracefully
+        if (message.includes('rate-limited') || message.includes('rate limited')) {
+          // Extract relay info for rate limiting
+          let relayUrl = 'Unknown relay';
+          if (error.relay) relayUrl = error.relay;
+          else if (error.url) relayUrl = error.url;
+          else {
+            const stack = error.stack || '';
+            const relayMatch = stack.match(/wss?:\/\/[^\s\)]+/);
+            if (relayMatch) relayUrl = relayMatch[0];
+          }
+          
+          console.info('ℹ️ Relay Rate Limited:', {
+            message: error.message,
+            relay: relayUrl,
+            details: `This relay (${relayUrl}) is temporarily rate limiting requests. This is normal behavior.`,
+            action: 'Please wait a moment before trying again.'
+          });
+          event.preventDefault();
+          return;
+        }
+        
+        if (message.includes('connection') || message.includes('network')) {
+          // Extract relay info for connection issues
+          let relayUrl = 'Unknown relay';
+          if (error.relay) relayUrl = error.relay;
+          else if (error.url) relayUrl = error.url;
+          else {
+            const stack = error.stack || '';
+            const relayMatch = stack.match(/wss?:\/\/[^\s\)]+/);
+            if (relayMatch) relayUrl = relayMatch[0];
+          }
+          
+          console.info('ℹ️ Relay Connection Issue:', {
+            message: error.message,
+            relay: relayUrl,
+            details: `There was a temporary connection issue with relay ${relayUrl}.`,
+            action: 'The app will automatically retry. This is normal behavior.'
+          });
+          event.preventDefault();
+          return;
+        }
+      }
+    });
+
     return () => {
       document.removeEventListener('mousedown', onMouseDown);
       document.removeEventListener('mouseup', onMouseUp);

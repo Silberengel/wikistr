@@ -91,7 +91,6 @@
         }, 3000);
       });
       
-      console.log('Direct metadata fetch result:', { pubkey, user });
       
       if (user) {
         userCache.set(pubkey, user);
@@ -102,7 +101,6 @@
         return `npub1${pubkey.slice(0, 8)}...`;
       }
     } catch (e) {
-      console.log('Direct metadata fetch error:', { pubkey, error: e });
       // If fetch fails, return shortened npub
       return `npub1${pubkey.slice(0, 8)}...`;
     }

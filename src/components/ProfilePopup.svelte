@@ -34,8 +34,6 @@
     loading = true;
     userData = null;
     
-    console.log('ProfilePopup: Starting metadata fetch for pubkey:', pubkey);
-    
     try {
       const user = await new Promise((resolve) => {
         let userResult: any = null;
@@ -46,33 +44,30 @@
           [{ kinds: [0], authors: [pubkey], limit: 1 }],
           {
             onevent(event) {
-              console.log('ProfilePopup: Received event:', event.pubkey, event.kind);
-                if (event.pubkey === pubkey && event.kind === 0) {
-                  try {
-                    const content = JSON.parse(event.content);
-                    // Generate npub from pubkey
-                    const npub = nip19.npubEncode(event.pubkey);
-                    userResult = {
-                      pubkey: event.pubkey,
-                      npub: npub,
-                      display_name: content.display_name,
-                      name: content.name,
-                      about: content.about,
-                      picture: content.picture,
-                      banner: content.banner,
-                      website: content.website,
-                      lud16: content.lud16,
-                      nip05: content.nip05,
-                      ...content
-                    };
-                    console.log('ProfilePopup: Parsed user data:', userResult);
+              if (event.pubkey === pubkey && event.kind === 0) {
+                try {
+                  const content = JSON.parse(event.content);
+                  // Generate npub from pubkey
+                  const npub = nip19.npubEncode(event.pubkey);
+                  userResult = {
+                    pubkey: event.pubkey,
+                    npub: npub,
+                    display_name: content.display_name,
+                    name: content.name,
+                    about: content.about,
+                    picture: content.picture,
+                    banner: content.banner,
+                    website: content.website,
+                    lud16: content.lud16,
+                    nip05: content.nip05,
+                    ...content
+                  };
                 } catch (e) {
                   console.error('Failed to parse user metadata:', e);
                 }
               }
             },
             oneose() {
-              console.log('ProfilePopup: Subscription ended, userResult:', userResult);
               if (!resolved) {
                 resolved = true;
                 sub.close();
@@ -84,7 +79,6 @@
         
         // Timeout after 3 seconds
         setTimeout(() => {
-          console.log('ProfilePopup: Timeout reached, userResult:', userResult);
           if (!resolved) {
             resolved = true;
             sub.close();
@@ -93,13 +87,11 @@
         }, 3000);
       });
       
-      console.log('ProfilePopup: Final user data:', user);
       userData = user;
     } catch (e) {
       console.error('ProfilePopup: Failed to fetch user data:', e);
     } finally {
       loading = false;
-      console.log('ProfilePopup: Loading completed, userData:', userData);
     }
   }
 
