@@ -38,8 +38,13 @@
       const originalError = console.error;
       console.error = (...args) => {
         const message = args.join(' ');
-        // Filter out void.cat DNS resolution errors
-        if (message.includes('void.cat') && message.includes('ERR_NAME_NOT_RESOLVED')) {
+        // Filter out common image loading errors
+        if (
+          (message.includes('void.cat') && message.includes('ERR_NAME_NOT_RESOLVED')) ||
+          (message.includes('ERR_BLOCKED_BY_RESPONSE') && message.includes('NotSameOrigin')) ||
+          (message.includes('GET') && message.includes('403 (Forbidden)')) ||
+          (message.includes('net::ERR_BLOCKED_BY_RESPONSE'))
+        ) {
           return; // Suppress these specific errors
         }
         originalError.apply(console, args);
@@ -133,6 +138,39 @@
             relay: relayUrl,
             details: `There was a temporary connection issue with relay ${relayUrl}.`,
             action: 'The app will automatically retry. This is normal behavior.'
+          });
+          event.preventDefault();
+          return;
+        }
+        
+        // Handle "Account is timed out" errors
+        if (message.includes('account is timed out') || message.includes('timeout')) {
+          // Extract relay info for timeout issues
+          let relayUrl = 'Unknown relay';
+          if (error.relay) relayUrl = error.relay;
+          else if (error.url) relayUrl = error.url;
+          else {
+            const stack = error.stack || '';
+            const relayMatch = stack.match(/wss?:\/\/[^\s\)]+/);
+            if (relayMatch) relayUrl = relayMatch[0];
+          }
+          
+          console.info('ℹ️ Relay Timeout:', {
+            message: error.message,
+            relay: relayUrl,
+            details: `Connection to relay ${relayUrl} timed out. This is normal behavior.`,
+            action: 'The app will automatically retry. This is normal behavior.'
+          });
+          event.preventDefault();
+          return;
+        }
+        
+        // Handle WebSocket connection failures (especially undefined URLs)
+        if (message.includes('websocket') || message.includes('failed') && error.stack?.includes('wss://undefined')) {
+          console.info('ℹ️ Invalid Relay URL:', {
+            message: 'Attempted to connect to undefined relay URL',
+            details: 'A relay URL was not properly configured. This has been filtered out.',
+            action: 'The app will continue with valid relays only.'
           });
           event.preventDefault();
           return;

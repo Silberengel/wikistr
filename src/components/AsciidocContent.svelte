@@ -8,8 +8,11 @@
   import hljs from 'highlight.js';
   import { nip19 } from '@nostr/tools';
   import { pool } from '@nostr/gadgets/global';
-  import { DEFAULT_METADATA_QUERY_RELAYS } from '$lib/defaults';
+  import { DEFAULT_METADATA_QUERY_RELAYS, DEFAULT_WIKI_RELAYS } from '$lib/defaults';
   import ProfilePopup from './ProfilePopup.svelte';
+  import { next } from '$lib/utils';
+  import type { ArticleCard } from '$lib/types';
+  import EmbeddedEvent from './EmbeddedEvent.svelte';
 
   interface Props {
     event: NostrEvent;
@@ -27,6 +30,7 @@
   let profilePopupOpen = $state(false);
   let selectedUserPubkey = $state('');
   let selectedUserBech32 = $state('');
+  let embeddedEvents = $state<Array<{id: string, bech32: string, type: 'nevent' | 'note' | 'naddr'}>>([]);
 
   // Reactive statement to apply highlighting when content changes
   $effect(() => {
@@ -105,17 +109,99 @@
       return `npub1${pubkey.slice(0, 8)}...`;
     }
   }
-  2
+
+  // Fetch and display an embedded event
+  async function openEmbeddedEvent(bech32: string, type: string) {
+    try {
+      const decoded = decodeNostrLink(bech32);
+      if (!decoded) return;
+      
+      const { data } = decoded;
+      let eventId: string | null = null;
+      let author: string | null = null;
+      
+      if (type === 'nevent') {
+        eventId = data.id;
+        author = data.author || null;
+      } else if (type === 'note') {
+        eventId = data;
+        // For notes, we need to fetch to get the author
+      } else if (type === 'naddr') {
+        // For naddr, we need to fetch by kind + author + d-tag
+        const kind = data.kind;
+        author = data.pubkey;
+        const dTag = data.identifier;
+        
+        // Create a search card for the naddr
+        const searchCard = {
+          id: next(),
+          type: 'find' as const,
+          data: dTag,
+          preferredAuthors: author ? [author] : []
+        };
+        createChild(searchCard);
+        return;
+      }
+      
+      if (!eventId) return;
+      
+      // Fetch the event by ID
+      const fetchedEvent = await new Promise<NostrEvent | null>((resolve) => {
+        let eventData: NostrEvent | null = null;
+        const relays = [...DEFAULT_WIKI_RELAYS];
+        
+        const sub = pool.subscribeMany(
+          relays,
+          [{ ids: [eventId], limit: 1 }],
+          {
+            onevent(evt) {
+              if (evt.id === eventId) {
+                eventData = evt;
+              }
+            },
+            oneose() {
+              sub.close();
+              resolve(eventData);
+            }
+          }
+        );
+        
+        // Timeout after 5 seconds
+        setTimeout(() => {
+          sub.close();
+          resolve(eventData);
+        }, 5000);
+      });
+      
+      if (fetchedEvent) {
+        // Create an ArticleCard for the fetched event
+        const dTag = fetchedEvent.tags.find(([k]) => k === 'd')?.[1] || fetchedEvent.id;
+        const articleCard: ArticleCard = {
+          id: next(),
+          type: 'article',
+          data: [dTag, fetchedEvent.pubkey],
+          relayHints: [],
+          actualEvent: fetchedEvent
+        };
+        createChild(articleCard);
+      } else {
+        console.log(`Event ${bech32} not found`);
+      }
+    } catch (e) {
+      console.error('Failed to fetch embedded event:', e);
+    }
+  }
+
   // Process Nostr links in HTML (async version)
   async function processNostrLinks(html: string): Promise<string> {
     let processed = html;
     
-    // Process link:nostr: and nostr: links
-    const linkMatches = processed.match(/<a[^>]*href="(?:link:)?nostr:([^"]+)"[^>]*>([^<]*)<\/a>/g);
+    // Process anchor links with nostr: data (our new format)
+    const anchorMatches = processed.match(/<a[^>]*href="#nostr-([^"]+)"[^>]*>([^<]*)<\/a>/g);
     
-    if (linkMatches) {
-      for (const match of linkMatches) {
-        const bech32Match = match.match(/href="(?:link:)?nostr:([^"]+)"/);
+    if (anchorMatches) {
+      for (const match of anchorMatches) {
+        const bech32Match = match.match(/href="#nostr-([^"]+)"/);
         if (!bech32Match) continue;
         
         const bech32 = bech32Match[1];
@@ -129,13 +215,55 @@
           const displayName = await getDisplayName(pubkey);
           const replacement = `<span class="nostr-user-link" data-pubkey="${pubkey}" data-bech32="${bech32}" style="color: #059669; cursor: pointer; text-decoration: underline;">@${displayName}</span>`;
           processed = processed.replace(match, replacement);
-        } else if (type === 'nevent' || type === 'naddr' || type === 'note') {
-          const identifier = data.identifier || data.id || bech32.slice(0, 16) + '...';
+        } else if (type === 'nevent' || type === 'note') {
+          // For nevent and note, show the full bech32 format
+          const displayText = bech32.slice(0, 20) + '...';
+          const replacement = `<span class="nostr-event-link" data-bech32="${bech32}" data-type="${type}" style="color: #059669; cursor: pointer; text-decoration: underline;">${displayText}</span>`;
+          processed = processed.replace(match, replacement);
+        } else if (type === 'naddr') {
+          // For naddr, show the identifier or shortened bech32
+          const identifier = data.identifier || bech32.slice(0, 20) + '...';
           const replacement = `<span class="nostr-event-link" data-bech32="${bech32}" data-type="${type}" style="color: #059669; cursor: pointer; text-decoration: underline;">${identifier}</span>`;
           processed = processed.replace(match, replacement);
         }
       }
     }
+    
+    // Also handle direct nostr: links (fallback for any that might still exist)
+    const linkMatches = processed.match(/<a[^>]*href="nostr:([^"]+)"[^>]*>([^<]*)<\/a>/g);
+    
+    if (linkMatches) {
+      for (const match of linkMatches) {
+        const bech32Match = match.match(/href="nostr:([^"]+)"/);
+        if (!bech32Match) continue;
+        
+        const bech32 = bech32Match[1];
+        const decoded = decodeNostrLink(bech32);
+        if (!decoded) continue;
+        
+        const { type, data } = decoded;
+        
+        if (type === 'npub' || type === 'nprofile') {
+          const pubkey = type === 'npub' ? data : data.pubkey;
+          const displayName = await getDisplayName(pubkey);
+          const replacement = `<span class="nostr-user-link" data-pubkey="${pubkey}" data-bech32="${bech32}" style="color: #059669; cursor: pointer; text-decoration: underline;">@${displayName}</span>`;
+          processed = processed.replace(match, replacement);
+        } else if (type === 'nevent' || type === 'note') {
+          // For nevent and note, show the full bech32 format
+          const displayText = bech32.slice(0, 20) + '...';
+          const replacement = `<span class="nostr-event-link" data-bech32="${bech32}" data-type="${type}" style="color: #059669; cursor: pointer; text-decoration: underline;">${displayText}</span>`;
+          processed = processed.replace(match, replacement);
+        } else if (type === 'naddr') {
+          // For naddr, show the identifier or shortened bech32
+          const identifier = data.identifier || bech32.slice(0, 20) + '...';
+          const replacement = `<span class="nostr-event-link" data-bech32="${bech32}" data-type="${type}" style="color: #059669; cursor: pointer; text-decoration: underline;">${identifier}</span>`;
+          processed = processed.replace(match, replacement);
+        }
+      }
+    }
+    
+    // Clean up any remaining placeholder text
+    processed = processed.replace(/PLACEHOLDER_NOSTR_LINK/g, '');
     
     return processed;
   }
@@ -257,7 +385,7 @@
   });
 
   // Handle clicks on links to create child cards
-  function handleLinkClick(clickEvent: MouseEvent) {
+  async function handleLinkClick(clickEvent: MouseEvent) {
     const target = clickEvent.target as HTMLElement;
     
     // Handle wikilinks
@@ -272,6 +400,91 @@
           data: identifier,
           preferredAuthors: [event.pubkey, ...authorPreferredWikiAuthors]
         } as any);
+      } else if (href?.startsWith('#nostr-')) {
+        // Handle our special nostr anchor links
+        clickEvent.preventDefault();
+        const bech32 = href.replace('#nostr-', '');
+        const decoded = decodeNostrLink(bech32);
+        if (decoded) {
+          const { type, data } = decoded;
+          if (type === 'npub' || type === 'nprofile') {
+            const pubkey = type === 'npub' ? data : data.pubkey;
+            selectedUserPubkey = pubkey;
+            selectedUserBech32 = bech32;
+            profilePopupOpen = true;
+          } else if (type === 'nevent' || type === 'note') {
+            // Add embedded event for nevent and note
+            const eventId = `embedded-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            embeddedEvents = [...embeddedEvents, { id: eventId, bech32, type: type as 'nevent' | 'note' }];
+          } else if (type === 'naddr') {
+            // For naddr, fetch the event first to check its actual kind
+            const { data } = decoded;
+            
+            // Fetch the event to determine its real kind
+            const eventPromise = new Promise<NostrEvent | null>((resolve) => {
+              let eventData: NostrEvent | null = null;
+              const relays = [...DEFAULT_WIKI_RELAYS];
+              
+              const sub = pool.subscribeMany(
+                relays,
+                [{ 
+                  authors: [data.pubkey],
+                  '#d': [data.identifier],
+                  kinds: [data.kind],
+                  limit: 1 
+                }],
+                {
+                  onevent(evt) {
+                    if (evt.pubkey === data.pubkey && 
+                        evt.tags.some(([tag, value]) => tag === 'd' && value === data.identifier) &&
+                        evt.kind === data.kind) {
+                      eventData = evt;
+                    }
+                  },
+                  oneose() {
+                    sub.close();
+                    resolve(eventData);
+                  }
+                }
+              );
+              
+              // Timeout after 3 seconds
+              setTimeout(() => {
+                sub.close();
+                resolve(null);
+              }, 3000);
+            });
+            
+            try {
+              const actualEvent = await eventPromise;
+              
+              if (actualEvent?.kind === 30818) {
+                // 30818 wiki events: treat as normal d-tag wikilinks
+                const wikilinkCard = {
+                  id: next(),
+                  type: 'article' as const,
+                  data: [data.identifier, data.pubkey] as [string, string],
+                  relayHints: []
+                };
+                createChild(wikilinkCard);
+              } else {
+                // Everything else (30041, etc.): embedded events
+                const eventId = `embedded-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                embeddedEvents = [...embeddedEvents, { id: eventId, bech32, type: 'naddr' }];
+              }
+            } catch (error) {
+              // If fetch fails, default to wikilink behavior
+              console.warn('Failed to fetch naddr event, defaulting to wikilink:', error);
+              const wikilinkCard = {
+                id: next(),
+                type: 'article' as const,
+                data: [data.identifier, data.pubkey] as [string, string],
+                relayHints: []
+              };
+              createChild(wikilinkCard);
+            }
+          }
+        }
       }
     }
     
@@ -293,8 +506,81 @@
       const bech32 = target.getAttribute('data-bech32');
       const type = target.getAttribute('data-type');
       if (bech32 && type) {
-        // For now, just log the event - we could add event display later
-        console.log('Clicked event:', type, bech32);
+        if (type === 'nevent' || type === 'note') {
+          // Add embedded event for nevent and note
+          const eventId = `embedded-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          embeddedEvents = [...embeddedEvents, { id: eventId, bech32, type: type as 'nevent' | 'note' }];
+        } else if (type === 'naddr') {
+          // For naddr, fetch the event first to check its actual kind
+          const decoded = decodeNostrLink(bech32);
+          if (decoded && decoded.type === 'naddr') {
+            const { data } = decoded;
+            
+            // Fetch the event to determine its real kind
+            const eventPromise = new Promise<NostrEvent | null>((resolve) => {
+              let eventData: NostrEvent | null = null;
+              const relays = [...DEFAULT_WIKI_RELAYS];
+              
+              const sub = pool.subscribeMany(
+                relays,
+                [{ 
+                  authors: [data.pubkey],
+                  '#d': [data.identifier],
+                  kinds: [data.kind],
+                  limit: 1 
+                }],
+                {
+                  onevent(evt) {
+                    if (evt.pubkey === data.pubkey && 
+                        evt.tags.some(([tag, value]) => tag === 'd' && value === data.identifier) &&
+                        evt.kind === data.kind) {
+                      eventData = evt;
+                    }
+                  },
+                  oneose() {
+                    sub.close();
+                    resolve(eventData);
+                  }
+                }
+              );
+              
+              // Timeout after 3 seconds
+              setTimeout(() => {
+                sub.close();
+                resolve(null);
+              }, 3000);
+            });
+            
+            try {
+              const actualEvent = await eventPromise;
+              
+              if (actualEvent?.kind === 30818) {
+                // 30818 wiki events: treat as normal d-tag wikilinks
+                const wikilinkCard = {
+                  id: next(),
+                  type: 'article' as const,
+                  data: [data.identifier, data.pubkey] as [string, string],
+                  relayHints: []
+                };
+                createChild(wikilinkCard);
+              } else {
+                // Everything else (30041, etc.): embedded events
+                const eventId = `embedded-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                embeddedEvents = [...embeddedEvents, { id: eventId, bech32, type: 'naddr' }];
+              }
+            } catch (error) {
+              // If fetch fails, default to wikilink behavior
+              console.warn('Failed to fetch naddr event, defaulting to wikilink:', error);
+              const wikilinkCard = {
+                id: next(),
+                type: 'article' as const,
+                data: [data.identifier, data.pubkey] as [string, string],
+                relayHints: []
+              };
+              createChild(wikilinkCard);
+            }
+          }
+        }
       }
     }
   }
@@ -307,7 +593,17 @@
   bind:this={contentDiv}
   class="prose prose-sm max-w-none"
   onclick={handleLinkClick}
+  role="document"
+  tabindex="-1"
 >{@html htmlContent}</div>
+
+<!-- Embedded Events -->
+{#each embeddedEvents as embeddedEvent (embeddedEvent.id)}
+  <EmbeddedEvent 
+    bech32={embeddedEvent.bech32} 
+    type={embeddedEvent.type}
+  />
+{/each}
 
 <!-- Profile Popup -->
 <ProfilePopup 

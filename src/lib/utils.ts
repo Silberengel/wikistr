@@ -237,15 +237,37 @@ export function preprocessContentForAsciidoc(content: string): string {
 }
 
 export function appendLinkMacroToNostrLinks(content: string): string {
-  // Handle both link:nostr: and nostr: prefixes
-  let processed = content.replace(/nostr:/g, 'link:nostr:');
-  // Also handle standalone nostr links that might not have been caught
-  processed = processed.replace(/(?<!link:)nostr:(npub|nprofile|nevent|naddr|note)[a-zA-Z0-9]+/g, 'link:$&');
+  // Handle nostr: links that don't already have link: prefix
+  // Use a more reliable approach: first replace link:nostr: with a placeholder, then process nostr:, then restore
+  let processed = content;
+  
+  // Step 1: Temporarily replace existing link:nostr: with a placeholder
+  processed = processed.replace(/link:nostr:/g, 'LINK_NOSTR_PLACEHOLDER:');
+  
+  // Step 2: Convert standalone nostr: to link:nostr:
+  processed = processed.replace(/nostr:(npub|nprofile|nevent|naddr|note)([a-zA-Z0-9]+)/g, 'link:nostr:$1$2');
+  
+  // Step 3: Restore the original link:nostr: links
+  processed = processed.replace(/LINK_NOSTR_PLACEHOLDER:/g, 'link:nostr:');
+  
+  // Step 4: Convert link:nostr: to AsciiDoc links with placeholder text
+  processed = processed.replace(/link:nostr:([a-zA-Z0-9]+)/g, 'link:#nostr-$1[PLACEHOLDER_NOSTR_LINK]');
+  
   return processed;
 }
 
 export function normalizeRelayUrl(url: string): string {
+  // Handle undefined, null, or empty strings
+  if (!url || typeof url !== 'string') {
+    return '';
+  }
+  
   let normalized = url.trim();
+  
+  // Skip if empty after trimming
+  if (!normalized) {
+    return '';
+  }
   
   // Ensure it starts with ws:// or wss://
   if (!normalized.startsWith('ws://') && !normalized.startsWith('wss://')) {
@@ -259,6 +281,6 @@ export function normalizeRelayUrl(url: string): string {
 }
 
 export function deduplicateRelays(relays: string[]): string[] {
-  const normalized = relays.map(normalizeRelayUrl);
+  const normalized = relays.map(normalizeRelayUrl).filter(url => url !== '');
   return Array.from(new Set(normalized));
 }
