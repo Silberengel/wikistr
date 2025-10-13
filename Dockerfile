@@ -1,14 +1,39 @@
-FROM node:18.7.0
+# Multi-stage build for wikistr
+FROM node:18-alpine AS builder
 
+# Set working directory
 WORKDIR /app
 
-COPY package.json package.json
-COPY yarn.lock yarn.lock
+# Copy package files
+COPY package*.json ./
 
-RUN yarn
+# Install dependencies
+RUN npm ci --only=production=false
 
+# Copy source code
 COPY . .
 
-RUN yarn build
+# Build the application
+RUN npm run build
 
-CMD [ "yarn", "preview", "--host" ]
+# Production stage
+FROM httpd:alpine AS production
+
+# Install curl for health checks
+RUN apk add --no-cache curl
+
+# Copy built application from builder stage
+COPY --from=builder /app/build /usr/local/apache2/htdocs/
+
+# Copy Apache configuration
+COPY apache.conf /usr/local/apache2/conf/httpd.conf
+
+# Expose port 80
+EXPOSE 80
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost/health || exit 1
+
+# Start Apache
+CMD ["httpd", "-D", "FOREGROUND"]
