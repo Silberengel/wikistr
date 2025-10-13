@@ -33,6 +33,9 @@
     $state([]);
   let previewing = $state(false);
 
+  // Type cast for Svelte 5 component compatibility with svelte-asciidoc
+  const naturalRenderers = { a: WikilinkComponent } as any;
+
   async function publish() {
     const [relayListItems, blockedRelays] = await Promise.all([
       loadRelayList($account!.pubkey),
@@ -128,7 +131,7 @@
         <div class="prose prose-p:my-0 prose-li:my-0">
           <SvelteAsciidoc
             source={turnWikilinksIntoAsciidocLinks(data.content)}
-            naturalRenderers={{ a: WikilinkComponent as any }}
+            naturalRenderers={naturalRenderers}
           />
         </div>
       {:else}
