@@ -37,8 +37,23 @@ export const DEFAULT_WIKI_RELAYS = [
   'wss://relay.nostr.band',
   'wss://thecitadel.nostr1.com',
   'wss://orly-relay.imwald.eu',
-  'wss://nostr.land',
-  'wss://nostr.wine'
+  'wss://nostr.land'
 ];
 
-export const DEFAULT_SEARCH_RELAYS = ['wss://relay.wikifreedia.xyz', 'wss://custom.fiatjaf.com', 'wss://aggr.nostr.land', 'wss://orly-relay.imwald.eu'];
+export const DEFAULT_SOCIAL_RELAYS = [
+  'wss://relay.theforest.nostr1.com',
+  'wss://nostr.wine',
+  'wss://nostr21.com',
+  'wss://nostr.sovbit.host',
+  'wss://orly-relay.imwald.eu',
+  'wss://nostr.land',
+  'wss://aggr.nostr.land'
+];
+
+export const DEFAULT_WRITE_RELAYS = [
+  'wss://relay.damus.io',
+  'wss://freelay.sovbit.host',
+  'wss://bevo.nostr1.com'
+];
+
+export const DEFAULT_SEARCH_RELAYS = ['wss://relay.wikifreedia.xyz', 'wss://custom.fiatjaf.com', 'wss://aggr.nostr.land', 'wss://orly-relay.imwald.eu', 'wss://nostr.wine'];

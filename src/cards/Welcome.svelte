@@ -107,29 +107,35 @@
   }
 
   function followsFeed() {
-    let exited = false;
+    let sub: SubCloser | undefined;
+    let cancel = account.subscribe(async (account) => {
+      if (sub) sub.close();
 
-    let subc: SubCloser;
-    let wotsubclose = wot.subscribe((wot) => {
-      if (exited) {
-        return;
-      }
+      if (!account) return;
 
-      const eligibleKeys = Object.entries(wot)
-        .filter(([_, v]) => v >= 20) // Include direct follows and closer connections
-        .map(([k]) => k);
+      // Get user's relays and combine with defaults
+      const userRelays = await getBasicUserWikiRelays(account.pubkey);
+      const allRelays = [...new Set([...userRelays, ...DEFAULT_WIKI_RELAYS])];
 
-      subc = subscribeAllOutbox(
-        eligibleKeys,
-        { kinds: [wikiKind], limit: 20 },
-        { id: 'alloutbox', onevent, receivedEvent }
+      sub = pool.subscribeMany(
+        allRelays,
+        [
+          {
+            kinds: [wikiKind],
+            limit: 20
+          }
+        ],
+        {
+          id: 'follows',
+          onevent,
+          receivedEvent: receivedEvent as any
+        }
       );
     });
 
     return () => {
-      exited = true;
-      wotsubclose();
-      subc?.close?.();
+      if (sub) sub.close();
+      cancel();
     };
   }
 
