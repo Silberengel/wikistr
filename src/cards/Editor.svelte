@@ -4,14 +4,15 @@
 
   import WikilinkComponent from '$components/WikilinkComponent.svelte';
   import { DEFAULT_WIKI_RELAYS } from '$lib/defaults';
-  import { wikiKind, account, signer } from '$lib/nostr';
+  import { wikiKind, account, signer, loadBlockedRelays } from '$lib/nostr';
   import type { ArticleCard, Card, EditorCard, EditorData } from '$lib/types.ts';
   import {
     getTagOr,
     next,
     turnWikilinksIntoAsciidocLinks,
     unique,
-    urlWithoutScheme
+    urlWithoutScheme,
+    deduplicateRelays
   } from '$lib/utils';
   import { pool } from '@nostr/gadgets/global';
   import { loadRelayList } from '@nostr/gadgets/lists';
@@ -33,10 +34,22 @@
   let previewing = $state(false);
 
   async function publish() {
-    targets = unique(
-      (await loadRelayList($account!.pubkey)).items.filter((ri) => ri.write).map((ri) => ri.url),
-      DEFAULT_WIKI_RELAYS
-    ).map((url) => ({ url, status: 'pending' }));
+    const [relayListItems, blockedRelays] = await Promise.all([
+      loadRelayList($account!.pubkey),
+      loadBlockedRelays($account!.pubkey)
+    ]);
+    
+    const writeRelays = relayListItems.items.filter((ri) => ri.write).map((ri) => ri.url);
+    const normalizedBlocked = new Set(deduplicateRelays(blockedRelays));
+    
+    // Combine write relays with defaults, normalize and deduplicate
+    const allRelays = unique(writeRelays, DEFAULT_WIKI_RELAYS);
+    const normalizedRelays = deduplicateRelays(allRelays);
+    
+    // Filter out blocked relays
+    const finalRelays = normalizedRelays.filter(url => !normalizedBlocked.has(url));
+    
+    targets = finalRelays.map((url) => ({ url, status: 'pending' }));
     error = undefined;
 
     data.title = data.title.trim();

@@ -2,8 +2,8 @@ import { derived, readable } from 'svelte/store';
 import * as idbkv from 'idb-keyval';
 
 import type { EventTemplate, Event } from '@nostr/tools/pure';
-import { DEFAULT_WIKI_RELAYS } from './defaults';
-import { unique } from './utils';
+import { DEFAULT_WIKI_RELAYS, DEFAULT_METADATA_QUERY_RELAYS } from './defaults';
+import { unique, deduplicateRelays } from './utils';
 import {
   loadFollowsList,
   loadRelayList,
@@ -12,6 +12,7 @@ import {
   type Result
 } from '@nostr/gadgets/lists';
 import { loadNostrUser, type NostrUser } from '@nostr/gadgets/metadata';
+import { pool } from '@nostr/gadgets/global';
 
 const startTime = Math.round(Date.now() / 1000);
 
@@ -106,8 +107,38 @@ export const userWikiRelays = derived(
   DEFAULT_WIKI_RELAYS
 );
 
+export async function loadBlockedRelays(pubkey: string): Promise<string[]> {
+  return new Promise((resolve) => {
+    const blockedRelays: string[] = [];
+    const sub = pool.subscribeMany(
+      DEFAULT_METADATA_QUERY_RELAYS,
+      [{ kinds: [10006], authors: [pubkey], limit: 1 }],
+      {
+        onevent(event) {
+          // Extract relay URLs from 't' tags
+          event.tags.forEach(([tag, value]) => {
+            if (tag === 't' && value) {
+              blockedRelays.push(value);
+            }
+          });
+        },
+        oneose() {
+          sub.close();
+          resolve(blockedRelays);
+        }
+      }
+    );
+
+    // Timeout after 3 seconds if no response
+    setTimeout(() => {
+      sub.close();
+      resolve(blockedRelays);
+    }, 3000);
+  });
+}
+
 export async function getBasicUserWikiRelays(pubkey: string): Promise<string[]> {
-  const [rl1, rl2] = await Promise.all([
+  const [rl1, rl2, blockedRelays] = await Promise.all([
     loadWikiRelays(pubkey).then((rl) => rl.items),
     Promise.all((await loadWikiAuthors(pubkey)).items.map((pk) => loadRelayList(pk))).then((rll) =>
       rll
@@ -115,12 +146,23 @@ export async function getBasicUserWikiRelays(pubkey: string): Promise<string[]> 
         .flat()
         .filter((ri) => ri.write)
         .map((ri) => ri.url)
-    )
+    ),
+    loadBlockedRelays(pubkey)
   ]);
 
+  const normalizedBlocked = new Set(deduplicateRelays(blockedRelays));
   let list = unique(rl1, rl2);
+  
+  // Normalize all relay URLs first
+  list = deduplicateRelays(list);
+  
+  // Filter out blocked relays (using normalized comparison)
+  list = list.filter(url => !normalizedBlocked.has(url));
+  
   if (list.length < 2) {
     list = unique(list, DEFAULT_WIKI_RELAYS);
+    list = deduplicateRelays(list);
+    list = list.filter(url => !normalizedBlocked.has(url));
   }
 
   return list;

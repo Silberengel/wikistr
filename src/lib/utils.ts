@@ -160,3 +160,22 @@ export function turnWikilinksIntoAsciidocLinks(content: string): string {
 export function appendLinkMacroToNostrLinks(content: string): string {
   return content.replace(/nostr:/g, 'link:nostr:');
 }
+
+export function normalizeRelayUrl(url: string): string {
+  let normalized = url.trim();
+  
+  // Ensure it starts with ws:// or wss://
+  if (!normalized.startsWith('ws://') && !normalized.startsWith('wss://')) {
+    normalized = 'wss://' + normalized;
+  }
+  
+  // Remove trailing slashes
+  normalized = normalized.replace(/\/+$/, '');
+  
+  return normalized;
+}
+
+export function deduplicateRelays(relays: string[]): string[] {
+  const normalized = relays.map(normalizeRelayUrl);
+  return Array.from(new Set(normalized));
+}
