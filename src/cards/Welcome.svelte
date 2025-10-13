@@ -305,7 +305,7 @@
     <!-- User Profile -->
     <div class="mt-2 flex items-center justify-between">
       <div class="flex items-center space-x-4">
-        {#if $account.image}
+        {#if $account.image && !$account.image.includes('void.cat')}
           <img 
             class="h-12 w-12 rounded-full" 
             src={$account.image} 

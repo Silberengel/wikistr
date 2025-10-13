@@ -31,14 +31,14 @@
   class:cursor-pointer={!!createChild}
   onclick={handleClick}
 >
-  {#if user?.image}
-    <img 
-      src={user.image} 
-      class="h-full ml-1" 
-      alt="user avatar"
-      onerror={(e) => (e.target as HTMLImageElement).style.display = 'none'}
-    />&nbsp;
-  {/if}
+      {#if user?.image && !user.image.includes('void.cat')}
+        <img 
+          src={user.image} 
+          class="h-full ml-1" 
+          alt="user avatar"
+          onerror={(e) => (e.target as HTMLImageElement).style.display = 'none'}
+        />&nbsp;
+      {/if}
   <span class="text-gray-600 font-[600] text-ellipsis truncate" title={user?.npub}
     >{user?.shortName || pubkey}</span
   >

@@ -21,12 +21,30 @@
     document.addEventListener('mouseup', onMouseUp);
     document.addEventListener('mousemove', onMouseMove);
     
-    // Global image error handler
+    // Global image error handler - silently hide broken images
     document.addEventListener('error', (e) => {
       if (e.target instanceof HTMLImageElement) {
-        e.target.style.display = 'none';
+        const img = e.target as HTMLImageElement;
+        // Hide broken images silently, especially void.cat which is often down
+        img.style.display = 'none';
+        // Prevent the error from bubbling up to avoid console spam
+        e.stopPropagation();
+        e.preventDefault();
       }
     }, true);
+
+    // Suppress known problematic network errors in console during development
+    if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+      const originalError = console.error;
+      console.error = (...args) => {
+        const message = args.join(' ');
+        // Filter out void.cat DNS resolution errors
+        if (message.includes('void.cat') && message.includes('ERR_NAME_NOT_RESOLVED')) {
+          return; // Suppress these specific errors
+        }
+        originalError.apply(console, args);
+      };
+    }
 
     return () => {
       document.removeEventListener('mousedown', onMouseDown);
