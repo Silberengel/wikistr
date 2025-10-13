@@ -29,7 +29,13 @@
   let seenCache: { [id: string]: string[] } = {};
 
   let results = $state<Event[]>([]);
-  const feeds = [normalFeed, followsFeed];
+  const feeds = [normalFeed, followsFeed, allRelaysFeed, selfFeed];
+  const feedLabels = [
+    'your web of trust',
+    'your inboxes', 
+    'all relays',
+    'yourself'
+  ];
   let current = $state(0);
 
   const update = debounce(() => {
@@ -89,7 +95,7 @@
         {
           id: 'recent',
           onevent,
-          receivedEvent
+          receivedEvent: receivedEvent as any
         }
       );
     });
@@ -110,7 +116,7 @@
       }
 
       const eligibleKeys = Object.entries(wot)
-        .filter(([_, v]) => v > 170)
+        .filter(([_, v]) => v >= 20) // Include direct follows and closer connections
         .map(([k]) => k);
 
       subc = subscribeAllOutbox(
@@ -124,6 +130,62 @@
       exited = true;
       wotsubclose();
       subc?.close?.();
+    };
+  }
+
+  function allRelaysFeed() {
+    let sub: SubCloser | undefined;
+    let cancel = account.subscribe(async (account) => {
+      if (sub) sub.close();
+
+      sub = pool.subscribeMany(
+        DEFAULT_WIKI_RELAYS,
+        [
+          {
+            kinds: [wikiKind],
+            limit: 15
+          }
+        ],
+        {
+          id: 'allrelays',
+          onevent,
+          receivedEvent: receivedEvent as any
+        }
+      );
+    });
+
+    return () => {
+      if (sub) sub.close();
+      cancel();
+    };
+  }
+
+  function selfFeed() {
+    let sub: SubCloser | undefined;
+    let cancel = account.subscribe(async (account) => {
+      if (sub) sub.close();
+      if (!account) return;
+
+      sub = pool.subscribeMany(
+        await getBasicUserWikiRelays(account.pubkey),
+        [
+          {
+            kinds: [wikiKind],
+            authors: [account.pubkey],
+            limit: 15
+          }
+        ],
+        {
+          id: 'self',
+          onevent,
+          receivedEvent: receivedEvent as any
+        }
+      );
+    });
+
+    return () => {
+      if (sub) sub.close();
+      cancel();
     };
   }
 
@@ -149,21 +211,20 @@
         <p>{$account.shortName}</p>
       </div>
     </div>
-    <div class="mt-2">
-      <button
-        onclick={() => {
-          current = (current + 1) % feeds.length;
-          restart();
-        }}
-        type="submit"
-        class="inline-flex items-center space-x-2 px-3 py-2 border border-gray-300 text-sm font-medium rounded-md bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 text-white"
+    <div class="mt-2 flex items-center space-x-2">
+      <label for="feed-select" class="text-sm font-medium text-gray-700">
+        Browse articles from:
+      </label>
+      <select
+        id="feed-select"
+        bind:value={current}
+        onchange={restart}
+        class="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
       >
-        {#if feeds[current] === normalFeed}
-          Browse articles from contacts
-        {:else if feeds[current] === followsFeed}
-          Browse articles from your relays
-        {/if}
-      </button>
+        {#each feedLabels as label, index}
+          <option value={index}>{label}</option>
+        {/each}
+      </select>
     </div>
   {:else}
     <button
@@ -185,7 +246,11 @@
       {/each}
     </div>
   {:else if feeds[current] === followsFeed}
-    Articles from Contacts
+    Articles from your web of trust
+  {:else if feeds[current] === allRelaysFeed}
+    Articles from all relays
+  {:else if feeds[current] === selfFeed}
+    Your articles
   {/if}
 </div>
 {#each results as result (result.id)}
