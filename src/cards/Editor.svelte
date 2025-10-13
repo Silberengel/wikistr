@@ -1,15 +1,13 @@
 <script lang="ts">
   import type { EventTemplate } from '@nostr/tools/pure';
-  import SvelteAsciidoc from 'svelte-asciidoc';
-
-  import WikilinkComponent from '$components/WikilinkComponent.svelte';
+  import AsciidocContent from '$components/AsciidocContent.svelte';
   import { DEFAULT_WIKI_RELAYS } from '$lib/defaults';
   import { wikiKind, account, signer, loadBlockedRelays } from '$lib/nostr';
   import type { ArticleCard, Card, EditorCard, EditorData } from '$lib/types.ts';
   import {
     getTagOr,
     next,
-    turnWikilinksIntoAsciidocLinks,
+    preprocessContentForAsciidoc,
     unique,
     urlWithoutScheme,
     deduplicateRelays
@@ -33,8 +31,6 @@
     $state([]);
   let previewing = $state(false);
 
-  // Type cast for Svelte 5 component compatibility with svelte-asciidoc
-  const naturalRenderers = { a: WikilinkComponent } as any;
 
   async function publish() {
     const [relayListItems, blockedRelays] = await Promise.all([
@@ -129,9 +125,17 @@
       Article
       {#if previewing}
         <div class="prose prose-p:my-0 prose-li:my-0">
-          <SvelteAsciidoc
-            source={turnWikilinksIntoAsciidocLinks(data.content)}
-            naturalRenderers={naturalRenderers}
+          <AsciidocContent 
+            event={{ 
+              content: data.content, 
+              pubkey: $account?.pubkey || '', 
+              created_at: Math.floor(Date.now() / 1000),
+              kind: 30023,
+              tags: [],
+              id: '',
+              sig: ''
+            } as any}
+            createChild={() => {}}
           />
         </div>
       {:else}

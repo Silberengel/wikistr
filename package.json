@@ -30,13 +30,15 @@
   },
   "type": "module",
   "dependencies": {
+    "@asciidoctor/core": "^3.0.4",
+    "@asciidoctor/reveal.js": "^5.2.0",
     "@nostr/gadgets": "npm:@jsr/nostr__gadgets@^0.0.21",
     "@nostr/tools": "npm:@jsr/nostr__tools@^2.12.0",
     "@tailwindcss/forms": "^0.5.6",
     "@tailwindcss/typography": "^0.5.9",
     "debounce": "^2.2.0",
+    "highlight.js": "^11.11.1",
     "idb-keyval": "^6.2.1",
-    "svelte-asciidoc": "^0.3.0",
     "tailwind-scrollbar": "^3.1.0"
   }
 }
