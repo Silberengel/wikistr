@@ -10,9 +10,10 @@
   interface Props {
     pubkey: string;
     createChild?: ((card: Card) => void) | undefined;
+    showAvatar?: boolean;
   }
 
-  let { pubkey, createChild = undefined }: Props = $props();
+  let { pubkey, createChild = undefined, showAvatar = true }: Props = $props();
 
   onMount(async () => {
     user = await loadNostrUser(pubkey);
@@ -31,10 +32,11 @@
   class:cursor-pointer={!!createChild}
   onclick={handleClick}
 >
-      {#if user?.image && !user.image.includes('void.cat')}
+      {#if showAvatar && user?.image && !user.image.includes('void.cat')}
         <img 
           src={user.image} 
-          class="w-8 h-8 rounded-full object-cover ml-1" 
+          class="w-8 h-8 rounded-full object-cover border border-gray-300 ml-1" 
+          style="aspect-ratio: 1/1;"
           alt="user avatar"
           onerror={(e) => (e.target as HTMLImageElement).style.display = 'none'}
         />&nbsp;

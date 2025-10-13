@@ -36,8 +36,7 @@
       : event.tags.find((e) => e[0] == 'd')?.[1]}
   </h1>
   <p class="text-xs my-1">
-    by&nbsp;<span class="-ml-1"><UserLabel pubkey={event.pubkey} /></span>
-    {formatDate(event.created_at)}
+    <UserLabel pubkey={event.pubkey} showAvatar={false} /> • {formatDate(event.created_at)}
   </p>
   <p class="text-xs text-wrap break-words whitespace-pre-wrap">
     {#if event.tags.find((e) => e[0] == 'summary')?.[0] && event.tags.find((e) => e[0] == 'summary')?.[1]}

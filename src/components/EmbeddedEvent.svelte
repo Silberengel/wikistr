@@ -195,7 +195,6 @@
             
             <!-- Author and Date -->
             <div class="flex items-center space-x-4 text-base text-gray-800">
-              <span class="text-gray-700 font-medium">by</span>
               <span class="text-gray-800 font-semibold">{user?.shortName || pubkey.slice(0, 8)}</span>
               <span class="text-gray-500">•</span>
               <span class="text-gray-700 font-semibold">{formatDate(event.created_at)}</span>
