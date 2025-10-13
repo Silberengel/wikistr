@@ -32,6 +32,21 @@
   let selectedUserBech32 = $state('');
   let embeddedEvents = $state<Array<{id: string, bech32: string, type: 'nevent' | 'note' | 'naddr'}>>([]);
 
+  // Function to add embedded event (prevents duplicates)
+  function addEmbeddedEvent(bech32: string, type: 'nevent' | 'note' | 'naddr') {
+    // Check if this bech32 is already embedded
+    const exists = embeddedEvents.some(event => event.bech32 === bech32);
+    if (!exists) {
+      const eventId = `embedded-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      embeddedEvents = [...embeddedEvents, { id: eventId, bech32, type }];
+    }
+  }
+
+  // Function to remove embedded event
+  function removeEmbeddedEvent(eventId: string) {
+    embeddedEvents = embeddedEvents.filter(event => event.id !== eventId);
+  }
+
   // Reactive statement to apply highlighting when content changes
   $effect(() => {
     if (htmlContent && contentDiv) {
@@ -414,8 +429,7 @@
             profilePopupOpen = true;
           } else if (type === 'nevent' || type === 'note') {
             // Add embedded event for nevent and note
-            const eventId = `embedded-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-            embeddedEvents = [...embeddedEvents, { id: eventId, bech32, type: type as 'nevent' | 'note' }];
+            addEmbeddedEvent(bech32, type as 'nevent' | 'note');
           } else if (type === 'naddr') {
             // For naddr, fetch the event first to check its actual kind
             const { data } = decoded;
@@ -469,8 +483,7 @@
                 createChild(wikilinkCard);
               } else {
                 // Everything else (30041, etc.): embedded events
-                const eventId = `embedded-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-                embeddedEvents = [...embeddedEvents, { id: eventId, bech32, type: 'naddr' }];
+                addEmbeddedEvent(bech32, 'naddr');
               }
             } catch (error) {
               // If fetch fails, default to wikilink behavior
@@ -508,8 +521,7 @@
       if (bech32 && type) {
         if (type === 'nevent' || type === 'note') {
           // Add embedded event for nevent and note
-          const eventId = `embedded-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-          embeddedEvents = [...embeddedEvents, { id: eventId, bech32, type: type as 'nevent' | 'note' }];
+          addEmbeddedEvent(bech32, type as 'nevent' | 'note');
         } else if (type === 'naddr') {
           // For naddr, fetch the event first to check its actual kind
           const decoded = decodeNostrLink(bech32);
@@ -565,8 +577,7 @@
                 createChild(wikilinkCard);
               } else {
                 // Everything else (30041, etc.): embedded events
-                const eventId = `embedded-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-                embeddedEvents = [...embeddedEvents, { id: eventId, bech32, type: 'naddr' }];
+                addEmbeddedEvent(bech32, 'naddr');
               }
             } catch (error) {
               // If fetch fails, default to wikilink behavior
@@ -602,6 +613,7 @@
   <EmbeddedEvent 
     bech32={embeddedEvent.bech32} 
     type={embeddedEvent.type}
+    onClose={() => removeEmbeddedEvent(embeddedEvent.id)}
   />
 {/each}
 

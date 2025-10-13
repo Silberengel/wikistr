@@ -11,9 +11,10 @@
   interface Props {
     bech32: string;
     type: 'nevent' | 'note' | 'naddr';
+    onClose?: () => void;
   }
 
-  let { bech32, type }: Props = $props();
+  let { bech32, type, onClose }: Props = $props();
   
   let event = $state<NostrEvent | null>(null);
   let loading = $state(true);
@@ -167,9 +168,10 @@
     <!-- Rendered View -->
       <div class="space-y-4">
         <!-- Header with small round profile pic and title -->
-        <div class="flex items-center space-x-3">
-          <!-- Small round profile picture using Tailwind avatar -->
-          <div class="flex-shrink-0">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-3">
+            <!-- Small round profile picture using Tailwind avatar -->
+            <div class="flex-shrink-0">
             {#if user?.image}
               <img 
                 src={user.image} 
@@ -200,6 +202,20 @@
               <span class="text-gray-700 font-semibold">{formatDate(event.created_at)}</span>
             </div>
           </div>
+          </div>
+          
+          <!-- Close Button -->
+          {#if onClose}
+            <button
+              onclick={onClose}
+              class="flex-shrink-0 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Close embedded event"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          {/if}
         </div>
 
         <!-- Summary -->
