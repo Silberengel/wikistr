@@ -1,0 +1,299 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { pool } from '@nostr/gadgets/global';
+  import { DEFAULT_METADATA_QUERY_RELAYS } from '$lib/defaults';
+  import { nip19 } from '@nostr/tools';
+
+  interface Props {
+    pubkey: string;
+    bech32: string;
+    isOpen: boolean;
+    onClose: () => void;
+  }
+
+  let { pubkey, bech32, isOpen, onClose }: Props = $props();
+  
+  let userData = $state<any>(null);
+  let loading = $state(true);
+  let isMobile = $state(false);
+
+  // Detect if we're on mobile
+  onMount(() => {
+    const checkMobile = () => {
+      isMobile = window.innerWidth < 768; // Tailwind md breakpoint
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  });
+
+  // Fetch user profile data when popup opens
+  async function fetchUserData() {
+    if (!isOpen || !pubkey) return;
+    
+    loading = true;
+    userData = null;
+    
+    console.log('ProfilePopup: Starting metadata fetch for pubkey:', pubkey);
+    
+    try {
+      const user = await new Promise((resolve) => {
+        let userResult: any = null;
+        let resolved = false;
+        
+        const sub = pool.subscribeMany(
+          DEFAULT_METADATA_QUERY_RELAYS,
+          [{ kinds: [0], authors: [pubkey], limit: 1 }],
+          {
+            onevent(event) {
+              console.log('ProfilePopup: Received event:', event.pubkey, event.kind);
+                if (event.pubkey === pubkey && event.kind === 0) {
+                  try {
+                    const content = JSON.parse(event.content);
+                    // Generate npub from pubkey
+                    const npub = nip19.npubEncode(event.pubkey);
+                    userResult = {
+                      pubkey: event.pubkey,
+                      npub: npub,
+                      display_name: content.display_name,
+                      name: content.name,
+                      about: content.about,
+                      picture: content.picture,
+                      banner: content.banner,
+                      website: content.website,
+                      lud16: content.lud16,
+                      nip05: content.nip05,
+                      ...content
+                    };
+                    console.log('ProfilePopup: Parsed user data:', userResult);
+                } catch (e) {
+                  console.error('Failed to parse user metadata:', e);
+                }
+              }
+            },
+            oneose() {
+              console.log('ProfilePopup: Subscription ended, userResult:', userResult);
+              if (!resolved) {
+                resolved = true;
+                sub.close();
+                resolve(userResult);
+              }
+            }
+          }
+        );
+        
+        // Timeout after 3 seconds
+        setTimeout(() => {
+          console.log('ProfilePopup: Timeout reached, userResult:', userResult);
+          if (!resolved) {
+            resolved = true;
+            sub.close();
+            resolve(userResult);
+          }
+        }, 3000);
+      });
+      
+      console.log('ProfilePopup: Final user data:', user);
+      userData = user;
+    } catch (e) {
+      console.error('ProfilePopup: Failed to fetch user data:', e);
+    } finally {
+      loading = false;
+      console.log('ProfilePopup: Loading completed, userData:', userData);
+    }
+  }
+
+  // Watch for changes to isOpen and pubkey
+  $effect(() => {
+    if (isOpen && pubkey) {
+      fetchUserData();
+    }
+  });
+
+  function handleBackdropClick(event: MouseEvent) {
+    if (event.target === event.currentTarget) {
+      onClose();
+    }
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape') {
+      onClose();
+    }
+  }
+</script>
+
+{#if isOpen}
+  <!-- Backdrop -->
+  <div 
+    class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+    class:items-center={!isMobile}
+    class:items-end={isMobile}
+    onclick={handleBackdropClick}
+    onkeydown={handleKeydown}
+    tabindex="-1"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="profile-title"
+  >
+    <!-- Popup/Drawer Content -->
+    <div 
+      class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-hidden"
+      class:rounded-t-lg={isMobile}
+      class:rounded-b-none={isMobile}
+      class:max-w-md={!isMobile}
+      class:w-full={isMobile}
+      class:max-h-[70vh]={!isMobile}
+      class:max-h-[85vh]={isMobile}
+    >
+      <!-- Header -->
+      <div class="flex items-center justify-between p-4 border-b">
+        <h2 id="profile-title" class="text-lg font-semibold text-gray-900">
+          Profile
+        </h2>
+        <button
+          onclick={onClose}
+          class="text-gray-400 hover:text-gray-600 transition-colors"
+          aria-label="Close profile"
+        >
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Content -->
+      <div class="p-4 overflow-y-auto">
+        {#if loading}
+          <div class="flex items-center justify-center py-8">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+            <span class="ml-2 text-gray-600">Loading profile...</span>
+          </div>
+        {:else if userData}
+          <!-- Profile Picture and Basic Info -->
+          <div class="flex flex-col items-center text-center mb-6">
+            {#if userData.picture && !userData.picture.includes('void.cat')}
+              <img 
+                src={userData.picture} 
+                alt=""
+                class="w-24 h-24 rounded-full mb-4 object-cover"
+                onerror={(e) => (e.target as HTMLImageElement).style.display = 'none'}
+              />
+            {:else}
+              <div class="w-24 h-24 rounded-full bg-gray-200 mb-4 flex items-center justify-center">
+                <svg class="w-12 h-12 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                </svg>
+              </div>
+            {/if}
+            
+            <h3 class="text-xl font-bold text-gray-900 mb-1">
+              {userData.display_name || userData.name || 'Anonymous'}
+            </h3>
+            
+            {#if userData.name && userData.name !== userData.display_name}
+              <p class="text-gray-600">@{userData.name}</p>
+            {/if}
+          </div>
+
+          <!-- About Section -->
+          {#if userData.about}
+            <div class="mb-6">
+              <h4 class="font-semibold text-gray-900 mb-2">About</h4>
+              <p class="text-gray-700 whitespace-pre-wrap">{userData.about}</p>
+            </div>
+          {/if}
+
+          <!-- Contact Info -->
+          <div class="space-y-3">
+            {#if userData.website}
+              <div>
+                <h4 class="font-semibold text-gray-900 mb-1">Website</h4>
+                <a 
+                  href={userData.website.startsWith('http') ? userData.website : `https://${userData.website}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-green-600 hover:text-green-700 underline break-all"
+                >
+                  {userData.website}
+                </a>
+              </div>
+            {/if}
+
+            {#if userData.nip05}
+              <div>
+                <h4 class="font-semibold text-gray-900 mb-1">NIP-05</h4>
+                <span class="text-gray-700 font-mono">{userData.nip05}</span>
+              </div>
+            {/if}
+
+            {#if userData.lud16}
+              <div>
+                <h4 class="font-semibold text-gray-900 mb-1">Lightning</h4>
+                <span class="text-gray-700 font-mono">{userData.lud16}</span>
+              </div>
+            {/if}
+          </div>
+
+          <!-- Technical Info -->
+          <div class="mt-6 pt-4 border-t border-gray-200">
+            <h4 class="font-semibold text-gray-900 mb-2">Technical Info</h4>
+            <div class="text-sm text-gray-600 space-y-1">
+              {#if bech32.startsWith('npub1')}
+                <p><span class="font-medium">Npub:</span> 
+                  <a 
+                    href="https://jumble.imwald.eu/users/{bech32}" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    class="font-mono break-all text-green-600 hover:text-green-700 underline"
+                  >
+                    {bech32}
+                  </a>
+                </p>
+              {:else if bech32.startsWith('nprofile1')}
+                <p><span class="font-medium">Nprofile:</span> <span class="font-mono break-all">{bech32}</span></p>
+                <p><span class="font-medium">Npub:</span> 
+                  <a 
+                    href="https://jumble.imwald.eu/users/{userData.npub}" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    class="font-mono break-all text-green-600 hover:text-green-700 underline"
+                  >
+                    {userData.npub}
+                  </a>
+                </p>
+              {/if}
+              <p><span class="font-medium">Public Key:</span> <span class="font-mono break-all">{userData.pubkey}</span></p>
+            </div>
+          </div>
+        {:else}
+          <div class="text-center py-8">
+            <p class="text-gray-500">Failed to load profile data</p>
+            <p class="text-sm text-gray-400 mt-1">The user may not have published their profile information</p>
+          </div>
+        {/if}
+      </div>
+    </div>
+  </div>
+{/if}
+
+<style>
+  /* Custom scrollbar for the content area */
+  .overflow-y-auto::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  .overflow-y-auto::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+  }
+  
+  .overflow-y-auto::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+  }
+  
+  .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+  }
+</style>

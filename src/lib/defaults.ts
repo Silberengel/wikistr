@@ -2,7 +2,9 @@ export const DEFAULT_METADATA_QUERY_RELAYS = [
   'wss://purplepag.es',
   'wss://relay.nos.social',
   'wss://user.kindpag.es',
-  'wss://profiles.nostr1.com'
+  'wss://profiles.nostr1.com',
+  'wss://relay.damus.io',
+  'wss://relay.nostr.band'
 ];
 
 export const DEFAULT_RELAYLIST_RELAYS = [
