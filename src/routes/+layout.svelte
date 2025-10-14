@@ -555,6 +555,21 @@
       color: #b91c1c !important; /* direct burgundy color */
     }
     
+    /* LaTeX styling */
+    .katex {
+      font-size: 1em !important;
+    }
+    
+    /* Ensure LaTeX expressions are visible with proper colors */
+    .katex, .katex * {
+      color: var(--theme-text) !important;
+    }
+    
+    /* Override any global color inheritance for LaTeX */
+    code .katex, code .katex * {
+      color: var(--theme-text) !important;
+    }
+    
     /* Make only highlighted/selected text lighter than panel back */
     ::selection, ::-moz-selection,
     .highlight, .highlighted, [class*="highlight"],

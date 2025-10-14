@@ -7,6 +7,7 @@
   import { preprocessContentForAsciidoc } from '$lib/utils';
   import hljs from 'highlight.js';
   import { nip19 } from '@nostr/tools';
+  import katex from 'katex';
   import { pool } from '@nostr/gadgets/global';
   import { DEFAULT_METADATA_QUERY_RELAYS, DEFAULT_WIKI_RELAYS } from '$lib/defaults';
   import { next } from '$lib/utils';
@@ -479,6 +480,34 @@
     }
   }
 
+  // Render LaTeX expressions in inline code
+  function renderLatexExpressions() {
+    if (contentDiv) {
+      contentDiv.querySelectorAll('code:not(pre code)').forEach((element) => {
+        const htmlElement = element as HTMLElement;
+        const text = htmlElement.textContent || '';
+        
+        // Check if this is a LaTeX expression (starts with latex and ends with [/latex])
+        const latexMatch = text.match(/^latex(.+?)\[\/latex\]$/);
+        if (latexMatch && !htmlElement.dataset.latexRendered) {
+          try {
+            const latexContent = latexMatch[1];
+            const rendered = katex.renderToString(latexContent, {
+              throwOnError: false,
+              displayMode: false, // inline mode
+              output: 'html'
+            });
+            htmlElement.innerHTML = rendered;
+            htmlElement.dataset.latexRendered = 'yes';
+          } catch (error) {
+            console.warn('LaTeX rendering error:', error);
+            // Keep original text if rendering fails
+          }
+        }
+      });
+    }
+  }
+
   onMount(async () => {
     // Load preferred authors
     loadWikiAuthors(event.pubkey).then((ps) => {
@@ -508,9 +537,10 @@
     html = await postprocessHtml(html);
     htmlContent = html;
     
-    // Apply syntax highlighting after the HTML is rendered
+    // Apply syntax highlighting and LaTeX rendering after the HTML is rendered
     setTimeout(() => {
       applySyntaxHighlighting();
+      renderLatexExpressions();
     }, 0);
   });
 
