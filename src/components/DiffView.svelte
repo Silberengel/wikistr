@@ -9,7 +9,7 @@
   let { diffResult }: Props = $props();
 </script>
 
-<div class="diff-container bg-white border border-gray-200 rounded-lg overflow-hidden">
+<div class="diff-container border border-gray-200 rounded-lg overflow-hidden" style="background-color: var(--theme-bg);">
   <!-- Header -->
   <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
     <h3 class="text-lg font-semibold text-gray-900">

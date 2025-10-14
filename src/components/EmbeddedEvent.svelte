@@ -158,7 +158,7 @@
 
 </script>
 
-<div class="embedded-event border-2 border-gray-300 rounded-2xl p-6 my-6 bg-white shadow-lg hover:shadow-xl transition-all duration-300 max-w-5xl mx-auto">
+<div class="embedded-event border-2 rounded-2xl p-6 my-6 shadow-lg hover:shadow-xl transition-all duration-300 max-w-5xl mx-auto" style="background-color: var(--theme-bg); border-color: var(--theme-border);">
   {#if loading}
     <div class="flex items-center space-x-2">
       <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>

@@ -358,7 +358,7 @@
     <h3 class="text-lg font-semibold text-espresso-900 mb-3">📖 Bible Search</h3>
     <div class="text-sm text-espresso-800 space-y-2">
       <p><strong>Search for Bible passages using standard notation:</strong></p>
-      <div class="bg-white p-3 rounded border border-brown-300 font-mono text-xs space-y-1">
+      <div class="p-3 rounded border border-brown-300 font-mono text-xs space-y-1" style="background-color: var(--theme-bg);">
         <div>John 3:16</div>
         <div>John 3:16 | KJV</div>
         <div>Psalm 23:1</div>
@@ -384,7 +384,7 @@
       <p class="text-xs text-espresso-600 mt-2">
         <strong>Compare Bible versions:</strong> Use <code>diff::</code> prefix in the main search bar:
       </p>
-      <div class="bg-white p-3 rounded border border-brown-300 font-mono text-xs mt-1">
+      <div class="p-3 rounded border border-brown-300 font-mono text-xs mt-1" style="background-color: var(--theme-bg);">
         <div>diff::John 3:16 KJV | NIV</div>
         <div>diff::bible:Romans 1:16 KJV | ESV</div>
         <div>diff::Psalm 23:1 KJV | DRB</div>

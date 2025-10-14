@@ -77,7 +77,7 @@
     <p class="text-xs text-espresso-600 mt-2">
       <strong>Compare content with diff:</strong>
     </p>
-    <div class="bg-white p-3 rounded border border-brown-300 font-mono text-xs mt-1">
+    <div class="p-3 rounded border border-brown-300 font-mono text-xs mt-1" style="background-color: var(--theme-bg);">
       <div>diff::article1 | article2</div>
       <div>diff::John 3:16 KJV | NIV</div>
       <div>diff::article1; article2; article3</div>

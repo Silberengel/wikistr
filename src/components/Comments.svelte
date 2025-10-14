@@ -562,7 +562,7 @@
             <div class="mt-6 ml-4 border-l-2 border-espresso-400 pl-4 space-y-3">
               {#each threadedComment.replies as replyThread (replyThread.comment.id)}
                 {@const reply = replyThread.comment}
-                <div class="py-3 px-3 bg-white rounded-lg border border-gray-100">
+                <div class="py-3 px-3 rounded-lg border border-gray-100" style="background-color: var(--theme-bg);">
                   <div class="flex items-center mb-1">
                     <div class="flex items-center space-x-3 flex-1 min-w-0">
                       <UserBadge pubkey={reply.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" />
@@ -698,7 +698,7 @@
 <!-- Publish Status Dialog -->
 {#if publishStatus.show}
   <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+    <div class="rounded-lg p-6 max-w-md w-full mx-4" style="background-color: var(--theme-bg);">
       <h3 class="text-lg font-semibold mb-4">{publishStatus.title}</h3>
       
       <div class="space-y-3 mb-6">

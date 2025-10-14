@@ -28,7 +28,8 @@
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div
   onmouseup={handleClick}
-  class="cursor-pointer p-4 bg-white border-2 border-stone-200 hover:bg-stone-50 rounded-lg mt-2"
+  class="cursor-pointer p-4 border-2 border-stone-200 rounded-lg mt-2"
+  style="background-color: var(--theme-bg);"
 >
   <h1>
     {event.tags.find((e) => e[0] == 'title')?.[0] && event.tags.find((e) => e[0] == 'title')?.[1]

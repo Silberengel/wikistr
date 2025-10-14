@@ -69,7 +69,7 @@
   <ArticleListItem event={result} {openArticle} />
 {/each}
 {#if tried && results.length === 0}
-  <div class="px-4 py-5 bg-white border-2 border-stone rounded-lg mt-2 min-h-[48px]">
+  <div class="px-4 py-5 border-2 border-stone rounded-lg mt-2 min-h-[48px]" style="background-color: var(--theme-bg);">
     <p class="mb-2">No articles found for this user.</p>
   </div>
 {:else if !tried}
