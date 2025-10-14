@@ -15,7 +15,8 @@ export type Card =
   | RelayCard
   | SettingsCard
   | UserCard
-  | EditorCard;
+  | EditorCard
+  | BibleCard;
 
 export function serializeCardForRouter(card: Card) {
   const serialized = { ...card };
@@ -98,4 +99,13 @@ export type EditorCard = {
   type: 'editor';
   back?: Card;
   data: EditorData;
+};
+
+export type BibleCard = {
+  id: number;
+  type: 'bible';
+  back?: Card;
+  data: string; // Bible query like "John 3:16" or "[[John 1–3; 3:16; 6:14, 44 | KJV]]"
+  results?: NostrEvent[];
+  seenCache?: { [id: string]: string[] };
 };

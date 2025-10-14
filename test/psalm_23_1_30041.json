@@ -1,0 +1,42 @@
+{
+  "created_at": 1737031204,
+  "content": "[%hardbreaks]\n^1^ The LORD is my shepherd; I shall not want.",
+  "tags": [
+    [
+      "d",
+      "psalm-23-1-king-james-version"
+    ],
+    [
+      "title",
+      "Psalm 23:1"
+    ],
+    [
+      "author",
+      "Cambridge"
+    ],
+    [
+      "type",
+      "bible"
+    ],
+    [
+      "bible-book",
+      "Psalms"
+    ],
+    [
+      "bible-chapter",
+      "23"
+    ],
+    [
+      "bible-verses",
+      "1"
+    ],
+    [
+      "bible-version",
+      "King James Version"
+    ]
+  ],
+  "kind": 30041,
+  "pubkey": "573634b648634cbad10f2451776089ea21090d9407f715e83c577b4611ae6edc",
+  "id": "e5f6789012345678901234567890abcdef1234567890abcdef1234567890abcd",
+  "sig": "567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12345"
+}

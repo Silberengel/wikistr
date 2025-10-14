@@ -1,0 +1,42 @@
+{
+  "created_at": 1737031206,
+  "content": "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life. (John 3:16 KJV)",
+  "tags": [
+    [
+      "type",
+      "bible"
+    ],
+    [
+      "bible-book",
+      "John"
+    ],
+    [
+      "bible-chapter",
+      "3"
+    ],
+    [
+      "bible-verses",
+      "16"
+    ],
+    [
+      "bible-version",
+      "King James Version"
+    ],
+    [
+      "t",
+      "bible"
+    ],
+    [
+      "t",
+      "john"
+    ],
+    [
+      "t",
+      "gospel"
+    ]
+  ],
+  "kind": 1,
+  "pubkey": "573634b648634cbad10f2451776089ea21090d9407f715e83c577b4611ae6edc",
+  "id": "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456",
+  "sig": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+}

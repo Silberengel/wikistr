@@ -13,6 +13,8 @@
   import { next } from '$lib/utils';
   import type { ArticleCard } from '$lib/types';
   import EmbeddedEvent from './EmbeddedEvent.svelte';
+  import BibleSearch from './BibleSearch.svelte';
+  import { parseBibleWikilink } from '$lib/bible';
 
   interface Props {
     event: NostrEvent;
@@ -31,6 +33,7 @@
   let selectedUserPubkey = $state('');
   let selectedUserBech32 = $state('');
   let embeddedEvents = $state<Array<{id: string, bech32: string, type: 'nevent' | 'note' | 'naddr'}>>([]);
+  let bibleSearchResults = $state<Array<{id: string, query: string, results: any[]}>>([]);
 
   // Function to add embedded event (prevents duplicates)
   function addEmbeddedEvent(bech32: string, type: 'nevent' | 'note' | 'naddr') {
@@ -45,6 +48,28 @@
   // Function to remove embedded event
   function removeEmbeddedEvent(eventId: string) {
     embeddedEvents = embeddedEvents.filter(event => event.id !== eventId);
+  }
+
+  // Function to add Bible search (prevents duplicates)
+  function addBibleSearch(query: string) {
+    // Check if this query is already being searched
+    const exists = bibleSearchResults.some(search => search.query === query);
+    if (!exists) {
+      const searchId = `bible-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      bibleSearchResults = [...bibleSearchResults, { id: searchId, query, results: [] }];
+    }
+  }
+
+  // Function to remove Bible search
+  function removeBibleSearch(searchId: string) {
+    bibleSearchResults = bibleSearchResults.filter(search => search.id !== searchId);
+  }
+
+  // Function to update Bible search results
+  function updateBibleSearchResults(searchId: string, results: any[]) {
+    bibleSearchResults = bibleSearchResults.map(search => 
+      search.id === searchId ? { ...search, results } : search
+    );
   }
 
   // Reactive statement to apply highlighting when content changes
@@ -415,6 +440,10 @@
           data: identifier,
           preferredAuthors: [event.pubkey, ...authorPreferredWikiAuthors]
         } as any);
+      } else if (href?.startsWith('bible:')) {
+        clickEvent.preventDefault();
+        const bibleQuery = href.replace('bible:', '');
+        addBibleSearch(bibleQuery);
       } else if (href?.startsWith('#nostr-')) {
         // Handle our special nostr anchor links
         clickEvent.preventDefault();
@@ -624,6 +653,28 @@
   isOpen={profilePopupOpen}
   onClose={() => profilePopupOpen = false}
 />
+
+<!-- Bible Search Results -->
+{#each bibleSearchResults as bibleSearch (bibleSearch.id)}
+  <div class="mt-6 p-4 border border-blue-200 rounded-lg bg-blue-50">
+    <div class="flex justify-between items-center mb-3">
+      <h3 class="text-lg font-semibold text-blue-800">
+        Bible Search: {bibleSearch.query}
+      </h3>
+      <button
+        onclick={() => removeBibleSearch(bibleSearch.id)}
+        class="text-blue-600 hover:text-blue-800 text-sm underline"
+      >
+        Close
+      </button>
+    </div>
+    <BibleSearch 
+      query={bibleSearch.query}
+      {createChild}
+      onResults={(results) => updateBibleSearchResults(bibleSearch.id, results)}
+    />
+  </div>
+{/each}
 
 <style>
   :global(.prose code) {

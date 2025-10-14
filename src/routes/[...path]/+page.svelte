@@ -6,7 +6,7 @@
   import { page } from '$app/state';
   import { cards } from '$lib/state';
   import { next, scrollCardIntoView } from '$lib/utils';
-  import type { ArticleCard, Card, EditorCard, RelayCard, SearchCard, UserCard } from '$lib/types';
+  import type { ArticleCard, Card, EditorCard, RelayCard, SearchCard, UserCard, BibleCard } from '$lib/types';
 
   onMount(() => {
     if ($cards.length !== 0) return;
@@ -27,7 +27,7 @@
 
   $effect(() => {
     let prevP: string[] = [];
-    let nextP = page.params.path.split('/').filter((str) => str !== '');
+    let nextP = (page.params.path || '').split('/').filter((str) => str !== '');
 
     let nextCards: Card[] = [];
     for (let n = 0; n < nextP.length; n++) {
@@ -72,6 +72,8 @@
         type: 'editor',
         data: { title: ditem.substring(5), summary: '', content: '' }
       } as EditorCard;
+    } else if (ditem.startsWith('bible:')) {
+      return { id: next(), type: 'bible', data: ditem.substring(6) } as BibleCard;
     } else if (ditem.startsWith('npub1')) {
       return { id: next(), type: 'user', data: decode(ditem).data as string } as UserCard;
     } else if (

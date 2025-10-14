@@ -13,6 +13,7 @@
   import Relay from '$cards/Relay.svelte';
   import New from '$cards/New.svelte';
   import User from '$cards/User.svelte';
+  import Bible from '$cards/Bible.svelte';
 
   interface Props {
     card: Card;
@@ -105,6 +106,8 @@
         return npubEncode(card.data);
       case 'editor':
         return 'edit:' + (card as EditorCard).data.title;
+      case 'bible':
+        return 'bible:' + encodeURIComponent(card.data);
     }
     return null;
   }
@@ -127,7 +130,9 @@
     ? hashbow(card.data[0], 84)
     : card.type === 'find'
       ? hashbow(card.data, 88)
-      : '#e5e7eb'}
+      : card.type === 'bible'
+        ? hashbow(card.data, 92)
+        : '#e5e7eb'}
 >
   {#if card.type !== 'welcome' && card.type !== 'new'}
     <div class="flex" class:justify-between={card.back} class:justify-end={!card.back}>
@@ -173,6 +178,8 @@
       <Settings />
     {:else if card.type === 'editor'}
       <Editor {replaceSelf} {card} />
+    {:else if card.type === 'bible'}
+      <Bible {createChild} {replaceSelf} {card} />
     {/if}
   </article>
 </div>

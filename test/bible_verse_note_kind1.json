@@ -1,0 +1,32 @@
+{
+  "created_at": 1737031300,
+  "content": "The most famous Bible verse is John 3:16. It speaks of God's love for the world and the gift of eternal life through faith in Jesus Christ.",
+  "tags": [
+    [
+      "e",
+      "b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef12345678",
+      "",
+      "mention"
+    ],
+    [
+      "p",
+      "573634b648634cbad10f2451776089ea21090d9407f715e83c577b4611ae6edc"
+    ],
+    [
+      "t",
+      "bible"
+    ],
+    [
+      "t",
+      "john"
+    ],
+    [
+      "t",
+      "christianity"
+    ]
+  ],
+  "kind": 1,
+  "pubkey": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+  "id": "d4e5f6789012345678901234567890abcdef1234567890abcdef1234567890ab",
+  "sig": "4567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234"
+}

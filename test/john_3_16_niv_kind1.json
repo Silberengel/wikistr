@@ -1,0 +1,42 @@
+{
+  "created_at": 1737031209,
+  "content": "For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life. (John 3:16 NIV)",
+  "tags": [
+    [
+      "type",
+      "bible"
+    ],
+    [
+      "bible-book",
+      "John"
+    ],
+    [
+      "bible-chapter",
+      "3"
+    ],
+    [
+      "bible-verses",
+      "16"
+    ],
+    [
+      "bible-version",
+      "New International Version"
+    ],
+    [
+      "t",
+      "bible"
+    ],
+    [
+      "t",
+      "john"
+    ],
+    [
+      "t",
+      "gospel"
+    ]
+  ],
+  "kind": 1,
+  "pubkey": "573634b648634cbad10f2451776089ea21090d9407f715e83c577b4611ae6edc",
+  "id": "d4e5f6789012345678901234567890abcdef1234567890abcdef1234567890ab",
+  "sig": "4567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234"
+}

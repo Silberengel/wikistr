@@ -1,0 +1,38 @@
+{
+  "created_at": 1737031401,
+  "content": "= Bible Versions Comparison\n\nThis page compares different Bible versions and their characteristics.\n\n== King James Version (KJV)\n\nThe King James Version, published in 1611, is one of the most widely used English translations.\n\n== Douay-Rheims Bible (DRB)\n\nThe Douay-Rheims Bible is the traditional Catholic English translation, including the Deuterocanonical books.\n\n== Key Differences\n\n* **Canon**: KJV follows the Protestant canon, while DRB includes additional books\n* **Language**: KJV uses Early Modern English, DRB uses more traditional language\n* **Translation Philosophy**: Both are formal equivalence translations\n\n== Usage in Nostr\n\nBible events on Nostr are tagged with version information to help users find their preferred translation.",
+  "tags": [
+    [
+      "d",
+      "bible-versions-comparison"
+    ],
+    [
+      "title",
+      "Bible Versions Comparison"
+    ],
+    [
+      "author",
+      "Bible Scholar"
+    ],
+    [
+      "subject",
+      "bible-versions"
+    ],
+    [
+      "subject",
+      "translation"
+    ],
+    [
+      "subject",
+      "kjv"
+    ],
+    [
+      "subject",
+      "douay-rheims"
+    ]
+  ],
+  "kind": 30818,
+  "pubkey": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+  "id": "789012345678901234567890abcdef1234567890abcdef1234567890abcdef1234",
+  "sig": "7890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567"
+}

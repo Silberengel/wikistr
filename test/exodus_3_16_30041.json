@@ -1,0 +1,42 @@
+{
+  "created_at": 1737031200,
+  "content": "[%hardbreaks]\n^16^ Go, and gather the elders of Israel together, and say unto them, The LORD God of your fathers, the God of Abraham, of Isaac, and of Jacob, appeared unto me, saying, I have surely visited you, and seen that which is done to you in Egypt:",
+  "tags": [
+    [
+      "d",
+      "exodus-3-16-king-james-version"
+    ],
+    [
+      "title",
+      "Exodus 3:16"
+    ],
+    [
+      "author",
+      "Cambridge"
+    ],
+    [
+      "type",
+      "bible"
+    ],
+    [
+      "bible-book",
+      "Exodus"
+    ],
+    [
+      "bible-chapter",
+      "3"
+    ],
+    [
+      "bible-verses",
+      "16"
+    ],
+    [
+      "bible-version",
+      "King James Version"
+    ]
+  ],
+  "kind": 30041,
+  "pubkey": "573634b648634cbad10f2451776089ea21090d9407f715e83c577b4611ae6edc",
+  "id": "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456",
+  "sig": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+}

@@ -139,7 +139,10 @@
             if (addUniqueTaggedReplaceable(results, evt)) update();
           },
           oneose,
-          receivedEvent
+          receivedEvent: (relay: any, id: string) => {
+            if (!(id in seenCache)) seenCache[id] = [];
+            if (seenCache[id].indexOf(relay.url) === -1) seenCache[id].push(relay.url);
+          }
         }
       );
 
@@ -155,7 +158,10 @@
           if (addUniqueTaggedReplaceable(results, evt)) update();
         },
         oneose,
-        receivedEvent
+        receivedEvent: (relay: any, id: string) => {
+          if (!(id in seenCache)) seenCache[id] = [];
+          if (seenCache[id].indexOf(relay.url) === -1) seenCache[id].push(relay.url);
+        }
       }
     );
 
@@ -242,6 +248,35 @@
     bind:textContent={query}
   ></span>"
 </div>
+{#if !tried && results.length === 0}
+  <!-- Bible Search Instructions -->
+  <div class="px-4 py-6 bg-blue-50 border border-blue-200 rounded-lg mt-4">
+    <h3 class="text-lg font-semibold text-blue-900 mb-3">📖 Bible Search Instructions</h3>
+    <div class="text-sm text-blue-800 space-y-2">
+      <p><strong>This search finds wiki articles only.</strong> To search for Bible passages, use:</p>
+      <div class="bg-white p-3 rounded border border-blue-200 font-mono text-xs">
+        <div>/bible:John 3:16</div>
+        <div>/bible:John 3:16 | KJV</div>
+        <div>/bible:Psalm 23:1</div>
+        <div>/bible:Genesis 1:1 | KJV</div>
+        <div>/bible:Romans 1:16-25; Psalm 19:2-3</div>
+        <div>/bible:Romans 1:16-25 | KJV DRB</div>
+      </div>
+      <p><strong>In wiki articles, use Bible wikilinks:</strong></p>
+      <div class="bg-white p-3 rounded border border-blue-200 font-mono text-xs">
+        <div>[[bible:John 3:16 | KJV]]</div>
+        <div>[[bible:Psalm 23:1]]</div>
+        <div>[[bible:Genesis 1:1 | KJV]]</div>
+        <div>[[bible:Romans 1:16-25; Psalm 19:2-3]]</div>
+        <div>[[bible:Romans 1:16-25 | KJV DRB]]</div>
+      </div>
+      <p class="text-xs text-blue-600 mt-2">
+        💡 Use <code>bible:</code> prefix to avoid false positives with names like "John Smith". Case and whitespace are flexible: <code>john3:16</code> works the same as <code>John 3:16</code>
+      </p>
+    </div>
+  </div>
+{/if}
+
 {#each results as result (result.id)}
   <ArticleListItem event={result} {openArticle} />
 {/each}
@@ -252,7 +287,7 @@
     </p>
     <button
       on:click={() => {
-        replaceSelf({ id: next(), type: 'editor', data: { title: query, previous: card } });
+        replaceSelf({ id: next(), type: 'editor', data: { title: query, previous: card } } as any);
       }}
       class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
     >
