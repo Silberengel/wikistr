@@ -1,8 +1,12 @@
 <script lang="ts">
   import { next } from '$lib/utils';
+  import { getThemeConfig } from '$lib/themes';
 
   import type { SearchCard, Card } from '$lib/types';
   import { normalizeIdentifier } from '@nostr/tools/nip54';
+
+  // Theme configuration
+  const theme = getThemeConfig();
 
   interface Props {
     replaceNewCard: (card: Card) => void;
@@ -31,20 +35,21 @@
   <div class="relative flex items-stretch flex-grow focus-within:z-10">
     <input
       bind:value={query}
-      class="focus:ring-burgundy-500 focus:border-burgundy-500 block w-full rounded-none rounded-l-md sm:text-sm border-espresso-300 bg-brown-50 text-espresso-900 placeholder-espresso-500"
+      class="focus:ring-burgundy-500 focus:border-burgundy-500 block w-full rounded-none rounded-l-md sm:text-sm border-espresso-300 bg-brown-50 text-espresso-900 placeholder-espresso-500 {theme.styling.inputStyle}"
+      style="font-family: {theme.typography.fontFamily}; font-size: {theme.typography.fontSize.sm};"
       placeholder="article name or search term"
     />
   </div>
   <button
     type="submit"
-    class="-ml-px inline-flex items-center space-x-2 px-3 py-2 border border-brown-300 text-sm font-medium rounded-r-md bg-espresso-700 hover:bg-espresso-800 focus:outline-none focus:ring-1 focus:ring-espresso-500 focus:border-espresso-500 text-white"
-    >Go</button
-  >
+    class="-ml-px inline-flex items-center space-x-2 px-3 py-2 text-sm font-medium rounded-r-md {theme.styling.buttonStyle}"
+    style="font-family: {theme.typography.fontFamily}; font-size: {theme.typography.fontSize.sm};"
+    >Go</button>
 </form>
 
 <!-- Search Instructions -->
 <div class="px-4 py-6 bg-brown-200 border border-brown-300 rounded-lg mt-4">
-  <h3 class="text-lg font-semibold text-espresso-900 mb-3">🔍 Search Instructions</h3>
+  <h3 class="text-lg font-semibold text-espresso-900 mb-3">Search Instructions</h3>
   <div class="text-sm text-espresso-800 space-y-2">
     <p><strong>This unified search finds both wiki articles and Bible passages:</strong></p>
     <ul class="text-xs text-espresso-700 ml-4 space-y-1">
@@ -60,7 +65,7 @@
       <div>bible:Romans 1:16-25; Psalm 19:2-3</div>
     </div>
     <p class="text-xs text-espresso-600 mt-2">
-      💡 <strong>Use <code>bible:</code> prefix for more reliable results</strong> - avoids false positives with names like "John Smith". Case and whitespace are flexible: <code>bible:john3:16</code> works the same as <code>bible:John 3:16</code>
+      <strong>Use <code>bible:</code> prefix for more reliable results</strong> - avoids false positives with names like "John Smith". Case and whitespace are flexible: <code>bible:john3:16</code> works the same as <code>bible:John 3:16</code>
     </p>
     <p><strong>In wiki articles, use Bible wikilinks:</strong></p>
     <div class="bg-brown-100 p-3 rounded border border-brown-300 font-mono text-xs">
@@ -70,7 +75,7 @@
       <div>[[bible:Romans 1:16-25; Psalm 19:2-3]]</div>
     </div>
     <p class="text-xs text-espresso-600 mt-2">
-      🔍 <strong>Compare content with diff:</strong>
+      <strong>Compare content with diff:</strong>
     </p>
     <div class="bg-white p-3 rounded border border-brown-300 font-mono text-xs mt-1">
       <div>diff::article1 | article2</div>
@@ -79,7 +84,7 @@
       <div>diff::John 3:16 KJV | ESV</div>
     </div>
     <p class="text-xs text-espresso-600 mt-1">
-      💡 Use <code>diff::</code> prefix to compare wiki articles, Bible versions, or any content. Supports pipe <code>|</code> and semicolon <code>;</code> separation.
+      Use <code>diff::</code> prefix to compare wiki articles, Bible versions, or any content. Supports pipe <code>|</code> and semicolon <code>;</code> separation.
     </p>
   </div>
 </div>

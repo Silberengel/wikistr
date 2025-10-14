@@ -9,6 +9,10 @@
   import { DEFAULT_SOCIAL_RELAYS } from '$lib/defaults';
   import { loadRelayList } from '@nostr/gadgets/lists';
   import { formatDate } from '$lib/utils';
+  import { getThemeConfig } from '$lib/themes';
+
+  // Theme configuration
+  const theme = getThemeConfig();
 
   interface NostrEvent {
     id: string;
@@ -446,7 +450,8 @@
           <textarea
             bind:value={commentText}
             placeholder="Write a comment..."
-            class="w-full p-3 border border-espresso-300 rounded-lg bg-brown-50 text-espresso-900 placeholder-espresso-500 focus:ring-2 focus:ring-burgundy-500 focus:border-burgundy-500 hover:bg-brown-100 transition-colors resize-none"
+            class="w-full p-3 border rounded-lg focus:ring-2 transition-colors resize-none"
+            style="border-color: {theme.textColor}; background-color: {theme.backgroundColor}; color: {theme.textColor}; font-family: {theme.typography.fontFamily}; focus:ring-color: {theme.highlightColor}; border-color: {theme.highlightColor};"
             rows="3"
             disabled={isSubmitting}
           ></textarea>
@@ -454,7 +459,8 @@
         <div class="flex justify-end">
           <button
             type="submit"
-            class="px-4 py-2 bg-burgundy-700 text-white rounded-lg hover:bg-burgundy-800 focus:ring-2 focus:ring-burgundy-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            class="px-4 py-2 text-white rounded-lg focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            style="background-color: {theme.highlightColor}; font-family: {theme.typography.fontFamily};"
             disabled={!commentText.trim() || isSubmitting}
           >
             {isSubmitting ? 'Posting...' : 'Post Comment'}

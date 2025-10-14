@@ -15,6 +15,10 @@
   import { pool } from '@nostr/gadgets/global';
   import { loadRelayList } from '@nostr/gadgets/lists';
   import { normalizeIdentifier } from '@nostr/tools/nip54';
+  import { getThemeConfig } from '$lib/themes';
+
+  // Theme configuration
+  const theme = getThemeConfig();
 
   interface Props {
     replaceSelf: (card: Card) => void;
@@ -191,15 +195,15 @@
   <div class="mt-2 flex justify-between">
     <button
       onclick={publish}
-      class="cursor-pointer inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-      >Save</button
-    >
+      class="cursor-pointer inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2"
+      style="font-family: {theme.typography.fontFamily}; focus:ring-color: {theme.highlightColor};"
+      >Save</button>
     <button
       onclick={() => {
         previewing = !previewing;
       }}
-      class="cursor-pointer inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-primary-500 hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-400"
-      >{#if previewing}Edit{:else}Preview{/if}</button
-    >
+      class="cursor-pointer inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2"
+      style="font-family: {theme.typography.fontFamily}; focus:ring-color: {theme.highlightColor};"
+      >{#if previewing}Edit{:else}Preview{/if}</button>
   </div>
 {/if}

@@ -167,7 +167,7 @@
   {:else if error}
     <div class="text-center p-4 bg-gray-50 rounded-lg border border-gray-200">
       <div class="text-gray-600 text-sm mb-3">
-        ⚠️ Could not load embedded event
+        Could not load embedded event
       </div>
       <a 
         href="https://next-alexandria.gitcitadel.eu/events?id={bech32}" 
@@ -221,14 +221,14 @@
         <!-- Summary -->
         {#if getTagValue(event, 'summary')}
           <div class="text-lg text-gray-900 italic bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-xl border-l-6 border-blue-500 font-semibold shadow-sm">
-            💡 {getTagValue(event, 'summary')}
+            {getTagValue(event, 'summary')}
           </div>
         {/if}
 
         <!-- Description -->
         {#if getTagValue(event, 'description')}
           <div class="text-lg text-gray-900 leading-relaxed font-semibold bg-gray-50 p-4 rounded-lg">
-            📝 {getTagValue(event, 'description')}
+            {getTagValue(event, 'description')}
           </div>
         {/if}
 
@@ -244,7 +244,7 @@
           <div class="flex flex-wrap gap-3">
             {#each getAllTagValues(event, 't') as hashtag}
               <span class="inline-block px-4 py-2 text-base bg-gradient-to-r from-blue-200 to-purple-200 text-blue-900 rounded-full font-bold border-2 border-blue-400 shadow-sm hover:shadow-md transition-all">
-                🏷️ #{hashtag}
+                #{hashtag}
               </span>
             {/each}
           </div>

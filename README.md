@@ -1,6 +1,6 @@
-# Biblestr
+# Wikistr / Biblestr
 
-Biblestr is a decentralized Bible study and wiki system built on Nostr that supports both traditional wiki articles and comprehensive Bible study functionality with powerful diff capabilities.
+Biblestr is a decentralized Bible study and wiki system built on Nostr that supports both traditional wiki articles and comprehensive Bible study functionality with powerful diff capabilities. It is a fork of Wikistr.
 
 ## Features
 

@@ -9,5 +9,8 @@ export default defineConfig({
         stabilityThreshold: 700
       }
     }
+  },
+  define: {
+    __THEME__: JSON.stringify(process.env.THEME || 'wikistr')
   }
 });

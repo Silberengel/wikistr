@@ -1,18 +1,18 @@
-# Production Docker Compose for wikistr.imwald.eu
+# Production Docker Compose for biblestr.imwald.eu
 # Based on Stella's deployment guide
 
 version: '3.8'
 
 services:
-  wikistr:
+  biblestr:
     image: silberengel/wikistr:latest
-    container_name: wikistr-app
+    container_name: biblestr-app
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3000:80"  # Bind to localhost only, Apache will proxy
+      - "127.0.0.1:3001:80"  # Different port for biblestr
     environment:
       - NODE_ENV=production
-      - THEME=wikistr
+      - THEME=biblestr
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/health"]
       interval: 30s
@@ -20,8 +20,8 @@ services:
       retries: 3
       start_period: 40s
     labels:
-      - "com.docker.compose.project=wikistr"
-      - "com.docker.compose.service=wikistr"
+      - "com.docker.compose.project=biblestr"
+      - "com.docker.compose.service=biblestr"
     
     # Resource limits
     deploy:
@@ -41,9 +41,9 @@ services:
         max-file: "3"
 
 volumes:
-  wikistr_logs:
+  biblestr_logs:
     driver: local
 
 networks:
   default:
-    name: wikistr-network
+    name: biblestr-network

@@ -12,11 +12,15 @@
   import type { ArticleCard, SearchCard, Card } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next, unique } from '$lib/utils';
   import { DEFAULT_SEARCH_RELAYS, DEFAULT_WIKI_RELAYS, DEFAULT_METADATA_QUERY_RELAYS } from '$lib/defaults';
+  import { getThemeConfig } from '$lib/themes';
   import ArticleListItem from '$components/ArticleListItem.svelte';
   import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import { cards } from '$lib/state';
   import { isDiffQuery } from '$lib/diff';
+
+  // Theme configuration
+  const theme = getThemeConfig();
 
   export let card: Card;
   export let replaceSelf: (card: Card) => void;
@@ -313,9 +317,9 @@
   ></span>"
 </div>
 {#if !tried && results.length === 0}
-  <!-- Bible Search Instructions -->
+  <!-- Search Instructions -->
   <div class="px-4 py-6 bg-brown-200 border border-brown-300 rounded-lg mt-4">
-    <h3 class="text-lg font-semibold text-espresso-900 mb-3">🔍 Search Instructions</h3>
+    <h3 class="text-lg font-semibold text-espresso-900 mb-3">Search Instructions</h3>
     <div class="text-sm text-espresso-800 space-y-2">
       <p><strong>This search finds wiki articles using multi-tier search:</strong></p>
       <ul class="text-xs text-espresso-700 ml-4 space-y-1">
@@ -324,28 +328,34 @@
         <li>• <strong>summary</strong> (summary tag matches)</li>
         <li>• <strong>full-text</strong> (content search)</li>
       </ul>
-      <p><strong>To search for Bible passages, use:</strong></p>
-      <div class="bg-brown-100 p-3 rounded border border-brown-300 font-mono text-xs">
-        <div>/bible:John 3:16</div>
-        <div>/bible:John 3:16 | KJV</div>
-        <div>/bible:Psalm 23:1</div>
-        <div>/bible:Genesis 1:1 | KJV</div>
-        <div>/bible:Romans 1:16-25; Psalm 19:2-3</div>
-        <div>/bible:Romans 1:16-25 | KJV DRB</div>
-      </div>
-      <p><strong>In wiki articles, use Bible wikilinks:</strong></p>
-      <div class="bg-brown-100 p-3 rounded border border-brown-300 font-mono text-xs">
-        <div>[[bible:John 3:16 | KJV]]</div>
-        <div>[[bible:Psalm 23:1]]</div>
-        <div>[[bible:Genesis 1:1 | KJV]]</div>
-        <div>[[bible:Romans 1:16-25; Psalm 19:2-3]]</div>
-        <div>[[bible:Romans 1:16-25 | KJV DRB]]</div>
-      </div>
+      {#if theme.showBibleLinks}
+        <p><strong>To search for Bible passages, use:</strong></p>
+        <div class="bg-brown-100 p-3 rounded border border-brown-300 font-mono text-xs">
+          <div>/bible:John 3:16</div>
+          <div>/bible:John 3:16 | KJV</div>
+          <div>/bible:Psalm 23:1</div>
+          <div>/bible:Genesis 1:1 | KJV</div>
+          <div>/bible:Romans 1:16-25; Psalm 19:2-3</div>
+          <div>/bible:Romans 1:16-25 | KJV DRB</div>
+        </div>
+      {/if}
+      {#if theme.showBibleLinks}
+        <p><strong>In wiki articles, use Bible wikilinks:</strong></p>
+        <div class="bg-brown-100 p-3 rounded border border-brown-300 font-mono text-xs">
+          <div>[[bible:John 3:16 | KJV]]</div>
+          <div>[[bible:Psalm 23:1]]</div>
+          <div>[[bible:Genesis 1:1 | KJV]]</div>
+          <div>[[bible:Romans 1:16-25; Psalm 19:2-3]]</div>
+          <div>[[bible:Romans 1:16-25 | KJV DRB]]</div>
+        </div>
+      {/if}
+      {#if theme.showBibleLinks}
+        <p class="text-xs text-espresso-600 mt-2">
+          Use <code>bible:</code> prefix to avoid false positives with names like "John Smith". Case and whitespace are flexible: <code>john3:16</code> works the same as <code>John 3:16</code>
+        </p>
+      {/if}
       <p class="text-xs text-espresso-600 mt-2">
-        💡 Use <code>bible:</code> prefix to avoid false positives with names like "John Smith". Case and whitespace are flexible: <code>john3:16</code> works the same as <code>John 3:16</code>
-      </p>
-      <p class="text-xs text-espresso-600 mt-2">
-        🔍 <strong>Compare content with diff:</strong>
+        <strong>Compare content with diff:</strong>
       </p>
       <div class="bg-white p-3 rounded border border-brown-300 font-mono text-xs mt-1">
         <div>diff::article1 | article2</div>
@@ -354,7 +364,7 @@
         <div>diff::John 3:16 KJV | ESV</div>
       </div>
       <p class="text-xs text-espresso-600 mt-1">
-        💡 Use <code>diff::</code> prefix to compare wiki articles, Bible versions, or any content. Supports pipe <code>|</code> and semicolon <code>;</code> separation.
+        Use <code>diff::</code> prefix to compare wiki articles, Bible versions, or any content. Supports pipe <code>|</code> and semicolon <code>;</code> separation.
       </p>
     </div>
   </div>
@@ -372,7 +382,8 @@
       onclick={() => {
         replaceSelf({ id: next(), type: 'editor', data: { title: query, previous: card } } as any);
       }}
-      class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-espresso-700 hover:bg-espresso-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-espresso-500"
+      class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm"
+      style="font-family: {theme.typography.fontFamily};"
     >
       Create this article!
     </button>

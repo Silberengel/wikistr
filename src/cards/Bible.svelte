@@ -379,10 +379,10 @@
         <li>• Multiple versions: <code>Romans 1:16-25 | KJV DRB</code></li>
       </ul>
       <p class="text-xs text-espresso-600 mt-2">
-        💡 Use abbreviations like Gen, Exod, Ps, Rev, etc. Case and whitespace are flexible: <code>john3:16</code> works the same as <code>John 3:16</code>
+        Use abbreviations like Gen, Exod, Ps, Rev, etc. Case and whitespace are flexible: <code>john3:16</code> works the same as <code>John 3:16</code>
       </p>
       <p class="text-xs text-espresso-600 mt-2">
-        🔍 <strong>Compare Bible versions:</strong> Use <code>diff::</code> prefix in the main search bar:
+        <strong>Compare Bible versions:</strong> Use <code>diff::</code> prefix in the main search bar:
       </p>
       <div class="bg-white p-3 rounded border border-brown-300 font-mono text-xs mt-1">
         <div>diff::John 3:16 KJV | NIV</div>

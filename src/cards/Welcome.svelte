@@ -25,10 +25,14 @@
   import type { ArticleCard, Card } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next } from '$lib/utils';
   import { DEFAULT_WIKI_RELAYS } from '$lib/defaults';
+  import { getThemeConfig, getCurrentTheme } from '$lib/themes';
   
   // Components
   import ArticleListItem from '$components/ArticleListItem.svelte';
   import RelayItem from '$components/RelayItem.svelte';
+
+  // Theme configuration
+  const theme = getThemeConfig();
 
   // Types
   interface Props {
@@ -309,21 +313,21 @@
   }
 </script>
 
-<!-- Biblestr Header -->
-<section class="mb-8 text-center">
-  <h1 class="font-serif text-6xl font-bold text-espresso-900 mb-2">Biblestr</h1>
-  <p class="text-lg text-espresso-700 italic font-serif">READ THE ORIGINAL. MAKE CONNECTIONS. CULTIVATE KNOWLEDGE.</p>
-  <div class="mt-4 text-sm text-espresso-600">
-    A decentralized Bible study and wiki system built on Nostr
+<!-- Theme-aware Header -->
+<section class="mb-8 text-center" style="font-family: {theme.typography.fontFamilyHeading};">
+  <h1 class="text-6xl font-bold mb-2 {theme.styling.headerStyle}" style="font-size: {theme.typography.fontSize['6xl']}; color: {theme.textColor};">{theme.title}</h1>
+  <p class="text-lg italic" style="font-size: {theme.typography.fontSize.lg}; color: {theme.textColor}; opacity: 0.8;">{theme.tagline}</p>
+  <div class="mt-4 text-sm" style="font-size: {theme.typography.fontSize.sm}; color: {theme.textColor}; opacity: 0.7;">
+    {theme.description}
   </div>
-  <div class="mt-3 text-xs text-espresso-500 border-t border-espresso-200 pt-3">
+  <div class="mt-3 text-xs border-t pt-3" style="color: {theme.textColor}; opacity: 0.9; border-color: {theme.textColor}; opacity: 0.3;">
     A <a href="https://jumble.imwald.eu/users/npub1s3ht77dq4zqnya8vjun5jp3p44pr794ru36d0ltxu65chljw8xjqd975wz" class="text-burgundy-700 hover:text-burgundy-800 underline">GitCitadel</a> fork of <a href="https://github.com/fiatjaf/wikistr" class="text-burgundy-700 hover:text-burgundy-800 underline">WikiStr</a>
   </div>
 </section>
 
 <!-- Account Section -->
 <section class="mb-4">
-  <h2 class="font-bold text-2xl text-espresso-900">Account</h2>
+  <h2 class="font-bold text-2xl" style="color: {theme.textColor};">Account</h2>
   
   {#if $account}
     <!-- User Profile -->
@@ -342,14 +346,15 @@
 
     <!-- Feed Selector -->
     <div class="mt-4 flex items-center space-x-2">
-      <label for="feed-select" class="text-sm font-medium text-espresso-700">
+      <label for="feed-select" class="text-sm font-medium" style="color: {theme.textColor}; opacity: 0.8;">
         Browse articles from:
       </label>
       <select
         id="feed-select"
         bind:value={current}
         onchange={restart}
-        class="px-3 py-2 border border-espresso-300 rounded-md shadow-sm bg-brown-50 text-espresso-900 focus:outline-none focus:ring-burgundy-500 focus:border-burgundy-500 hover:bg-brown-100 transition-colors sm:text-sm w-48"
+        class="px-3 py-2 border rounded-lg shadow-sm focus:outline-none transition-colors sm:text-sm w-48 {theme.styling.inputStyle}"
+        style="font-family: {theme.typography.fontFamily}; font-size: {theme.typography.fontSize.sm};"
       >
         {#each FEED_CONFIGS as feed, index}
           <option value={index}>{feed.label}</option>
@@ -372,7 +377,7 @@
 
 <!-- Articles Section -->
 <section>
-  <h2 class="mb-2 font-bold text-2xl text-espresso-900">
+  <h2 class="mb-2 font-bold text-2xl" style="color: {theme.textColor};">
     {currentFeed.title}
   </h2>
   

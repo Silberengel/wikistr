@@ -7,6 +7,9 @@ declare global {
     // interface PageData {}
     // interface Platform {}
   }
+  
+  // Theme variable injected at build time
+  const __THEME__: string;
 }
 
 export {};
