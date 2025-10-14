@@ -722,10 +722,10 @@
 
   /* Nostr link styling */
   :global(.nostr-user-link) {
-    @apply text-green-600 hover:text-green-800 cursor-pointer underline;
+    @apply text-burgundy-700 hover:text-burgundy-800 cursor-pointer underline;
   }
   
   :global(.nostr-event-link) {
-    @apply text-green-600 hover:text-green-800 cursor-pointer underline;
+    @apply text-burgundy-700 hover:text-burgundy-800 cursor-pointer underline;
   }
 </style>

@@ -295,9 +295,21 @@
   }
 </script>
 
+<!-- Biblestr Header -->
+<section class="mb-8 text-center">
+  <h1 class="font-serif text-6xl font-bold text-espresso-900 mb-2">Biblestr</h1>
+  <p class="text-lg text-espresso-700 italic font-serif">READ THE ORIGINAL. MAKE CONNECTIONS. CULTIVATE KNOWLEDGE.</p>
+  <div class="mt-4 text-sm text-espresso-600">
+    A decentralized Bible study and wiki system built on Nostr
+  </div>
+  <div class="mt-3 text-xs text-espresso-500 border-t border-espresso-200 pt-3">
+    A <a href="https://jumble.imwald.eu/users/npub1s3ht77dq4zqnya8vjun5jp3p44pr794ru36d0ltxu65chljw8xjqd975wz" class="text-burgundy-700 hover:text-burgundy-800 underline">GitCitadel</a> fork of <a href="https://github.com/fiatjaf/wikistr" class="text-burgundy-700 hover:text-burgundy-800 underline">WikiStr</a>
+  </div>
+</section>
+
 <!-- Account Section -->
 <section class="mb-4">
-  <h1 class="font-bold text-4xl">Account</h1>
+  <h2 class="font-bold text-2xl text-espresso-900">Account</h2>
   
   {#if $account}
     <!-- User Profile -->
@@ -357,7 +369,7 @@
 
 <!-- Articles Section -->
 <section>
-  <h2 class="mb-2 font-bold text-4xl">
+  <h2 class="mb-2 font-bold text-2xl text-espresso-900">
     {currentFeed.title}
   </h2>
   

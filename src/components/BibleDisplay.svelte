@@ -56,13 +56,13 @@
       <div class="flex items-center space-x-4 text-sm">
         <button
           onclick={shareCopy}
-          class="text-blue-600 hover:text-blue-800 underline cursor-pointer"
+          class="text-burgundy-700 hover:text-burgundy-800 underline cursor-pointer"
         >
           Share
         </button>
         <button
           onclick={copyNevent}
-          class="text-blue-600 hover:text-blue-800 underline cursor-pointer"
+          class="text-burgundy-700 hover:text-burgundy-800 underline cursor-pointer"
         >
           Copy nevent
         </button>
@@ -70,8 +70,8 @@
     </div>
     
     <!-- Bible reference info -->
-    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
-      <div class="flex items-center space-x-2 text-blue-800">
+    <div class="bg-brown-100 border border-brown-300 rounded-lg p-4">
+      <div class="flex items-center space-x-2 text-espresso-800">
         <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
           <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
         </svg>

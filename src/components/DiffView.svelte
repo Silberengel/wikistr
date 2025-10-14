@@ -36,8 +36,8 @@
 
     <!-- Right Side -->
     <div>
-      <div class="bg-green-50 px-4 py-2 border-b border-gray-200">
-        <h4 class="font-medium text-green-900">Right: {diffResult.right.title}</h4>
+      <div class="bg-brown-100 px-4 py-2 border-b border-gray-200">
+        <h4 class="font-medium text-espresso-900">Right: {diffResult.right.title}</h4>
       </div>
       <div class="p-4">
         <pre class="text-sm text-gray-800 whitespace-pre-wrap font-mono leading-relaxed">{diffResult.right.content}</pre>
@@ -53,7 +53,7 @@
         <div class="space-y-1 max-h-40 overflow-y-auto">
           {#each diffResult.changes as change}
             <div class="text-xs font-mono px-2 py-1 rounded
-              {change.type === 'added' ? 'bg-green-100 text-green-800' : ''}
+              {change.type === 'added' ? 'bg-brown-100 text-brown-800' : ''}
               {change.type === 'removed' ? 'bg-red-100 text-red-800' : ''}
               {change.type === 'modified' ? 'bg-yellow-100 text-yellow-800' : ''}
             ">

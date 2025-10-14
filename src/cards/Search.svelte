@@ -33,11 +33,11 @@
 
   // close handlers
   let uwrcancel: () => void;
-  let search: SubCloser;
+  let search: SubCloser = { close: () => {} };
   let subs: SubCloser[] = [];
 
   onMount(() => {
-    query = searchCard.data;
+    query = searchCard.data || '';
     
     // Check if this is a diff query and route accordingly
     if (isDiffQuery(query)) {
@@ -53,7 +53,7 @@
 
   onMount(() => {
     // we won't do any searches if we already have the results
-    if (searchCard.results) {
+    if (searchCard.results && searchCard.results.length > 0) {
       seenCache = searchCard.seenCache || {};
       results = searchCard.results || [];
 
@@ -61,7 +61,10 @@
       return;
     }
 
-    performSearch();
+    // Only perform search if we have a meaningful query
+    if (query && query.trim() && query.length > 2) {
+      performSearch();
+    }
   });
 
   onDestroy(destroy);
@@ -79,9 +82,12 @@
     eosed = 0;
     results = [];
 
-    setTimeout(() => {
-      tried = true;
-    }, 1500);
+    // Only set tried to true if we have a meaningful query to search for
+    if (query && query.trim() && query.length > 2) {
+      setTimeout(() => {
+        tried = true;
+      }, 1500);
+    }
 
     const update = debounce(() => {
       // Multi-tier sorting: WOT authors > search tier > wotness
@@ -299,27 +305,27 @@
 <div class="mt-2 font-bold text-4xl">
   <!-- svelte-ignore a11y-no-static-element-interactions -->
   "<span
-    on:dblclick={startEditing}
-    on:blur={finishedEditing}
-    on:keydown={preventKeys}
+    ondblclick={startEditing}
+    onblur={finishedEditing}
+    onkeydown={preventKeys}
     contenteditable="plaintext-only"
     bind:textContent={query}
   ></span>"
 </div>
 {#if !tried && results.length === 0}
   <!-- Bible Search Instructions -->
-  <div class="px-4 py-6 bg-blue-50 border border-blue-200 rounded-lg mt-4">
-    <h3 class="text-lg font-semibold text-blue-900 mb-3">🔍 Search Instructions</h3>
-    <div class="text-sm text-blue-800 space-y-2">
+  <div class="px-4 py-6 bg-brown-200 border border-brown-300 rounded-lg mt-4">
+    <h3 class="text-lg font-semibold text-espresso-900 mb-3">🔍 Search Instructions</h3>
+    <div class="text-sm text-espresso-800 space-y-2">
       <p><strong>This search finds wiki articles using multi-tier search:</strong></p>
-      <ul class="text-xs text-blue-700 ml-4 space-y-1">
+      <ul class="text-xs text-espresso-700 ml-4 space-y-1">
         <li>• <strong>d-tag</strong> (exact identifier match)</li>
         <li>• <strong>title</strong> (title tag matches)</li>
         <li>• <strong>summary</strong> (summary tag matches)</li>
         <li>• <strong>full-text</strong> (content search)</li>
       </ul>
       <p><strong>To search for Bible passages, use:</strong></p>
-      <div class="bg-white p-3 rounded border border-blue-200 font-mono text-xs">
+      <div class="bg-brown-100 p-3 rounded border border-brown-300 font-mono text-xs">
         <div>/bible:John 3:16</div>
         <div>/bible:John 3:16 | KJV</div>
         <div>/bible:Psalm 23:1</div>
@@ -328,26 +334,26 @@
         <div>/bible:Romans 1:16-25 | KJV DRB</div>
       </div>
       <p><strong>In wiki articles, use Bible wikilinks:</strong></p>
-      <div class="bg-white p-3 rounded border border-blue-200 font-mono text-xs">
+      <div class="bg-brown-100 p-3 rounded border border-brown-300 font-mono text-xs">
         <div>[[bible:John 3:16 | KJV]]</div>
         <div>[[bible:Psalm 23:1]]</div>
         <div>[[bible:Genesis 1:1 | KJV]]</div>
         <div>[[bible:Romans 1:16-25; Psalm 19:2-3]]</div>
         <div>[[bible:Romans 1:16-25 | KJV DRB]]</div>
       </div>
-      <p class="text-xs text-blue-600 mt-2">
+      <p class="text-xs text-espresso-600 mt-2">
         💡 Use <code>bible:</code> prefix to avoid false positives with names like "John Smith". Case and whitespace are flexible: <code>john3:16</code> works the same as <code>John 3:16</code>
       </p>
-      <p class="text-xs text-blue-600 mt-2">
+      <p class="text-xs text-espresso-600 mt-2">
         🔍 <strong>Compare content with diff:</strong>
       </p>
-      <div class="bg-white p-3 rounded border border-blue-200 font-mono text-xs mt-1">
+      <div class="bg-white p-3 rounded border border-brown-300 font-mono text-xs mt-1">
         <div>diff::article1 | article2</div>
         <div>diff::bible:John 3:16 KJV | NIV</div>
         <div>diff::article1; article2; article3</div>
         <div>diff::John 3:16 KJV | ESV</div>
       </div>
-      <p class="text-xs text-blue-600 mt-1">
+      <p class="text-xs text-espresso-600 mt-1">
         💡 Use <code>diff::</code> prefix to compare wiki articles, Bible versions, or any content. Supports pipe <code>|</code> and semicolon <code>;</code> separation.
       </p>
     </div>
@@ -363,16 +369,16 @@
       {results.length < 1 ? "Can't find this article." : "Didn't find what you were looking for?"}
     </p>
     <button
-      on:click={() => {
+      onclick={() => {
         replaceSelf({ id: next(), type: 'editor', data: { title: query, previous: card } } as any);
       }}
-      class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+      class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-espresso-700 hover:bg-espresso-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-espresso-500"
     >
       Create this article!
     </button>
     <button
-      on:click={() => createChild({ id: next(), type: 'settings' })}
-      class="ml-1 inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+      onclick={() => createChild({ id: next(), type: 'settings' })}
+      class="ml-1 inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-espresso-700 bg-brown-100 hover:bg-brown-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-espresso-500"
     >
       Add more relays
     </button>

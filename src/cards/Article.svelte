@@ -69,19 +69,40 @@
     }, 2500);
   }
 
-  function copyNevent() {
+  async function copyNevent() {
     if (event) {
-      const nevent = naddrEncode({
-        kind: wikiKind,
-        identifier: dTag,
-        pubkey,
-        relays: seenOn
-      });
-      navigator.clipboard.writeText(nevent);
-      neventCopied = true;
-      setTimeout(() => {
-        neventCopied = false;
-      }, 2500);
+      try {
+        const nevent = naddrEncode({
+          kind: wikiKind,
+          identifier: dTag,
+          pubkey,
+          relays: seenOn
+        });
+        
+        // Try modern clipboard API first
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(nevent);
+        } else {
+          // Fallback for older browsers or non-HTTPS
+          const textArea = document.createElement('textarea');
+          textArea.value = nevent;
+          textArea.style.position = 'fixed';
+          textArea.style.left = '-999999px';
+          textArea.style.top = '-999999px';
+          document.body.appendChild(textArea);
+          textArea.focus();
+          textArea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textArea);
+        }
+        
+        neventCopied = true;
+        setTimeout(() => {
+          neventCopied = false;
+        }, 2500);
+      } catch (error) {
+        console.error('Failed to copy nevent:', error);
+      }
     }
   }
 
@@ -319,7 +340,7 @@
           {/if}
         </div>
         <div>
-          <a class="cursor-pointer underline" onclick={edit}>
+          <a class="cursor-pointer underline text-burgundy-700 hover:text-burgundy-800" onclick={edit}>
             {#if event?.pubkey === $account?.pubkey}
               Edit
             {:else}
@@ -327,30 +348,31 @@
             {/if}
           </a>
           &nbsp;• &nbsp;
-          <a class="cursor-pointer underline" onclick={shareCopy}>
+          <a class="cursor-pointer underline text-burgundy-700 hover:text-burgundy-800" onclick={shareCopy}>
             {#if copied}Copied!{:else}Share{/if}
           </a>
           &nbsp;• &nbsp;
-          <a class="cursor-pointer underline" onmouseup={seeOthers}>{nOthers || ''} Versions</a>
+          <a class="cursor-pointer underline text-burgundy-700 hover:text-burgundy-800" onmouseup={seeOthers}>{nOthers || ''} Versions</a>
           &nbsp;• &nbsp;
           {#if event}
             <button
               onclick={copyNevent}
-              class="cursor-pointer underline inline-flex items-center text-gray-600 hover:text-gray-800 transition-colors"
+              class="p-2 text-burgundy-700 hover:text-burgundy-800 hover:bg-brown-200 rounded-lg transition-all duration-200"
               title="Copy nevent"
             >
               {#if neventCopied}
-                <svg class="w-4 h-4 mr-1 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="w-4 h-4 text-burgundy-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                 </svg>
-                Copied!
               {:else}
-                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
                 </svg>
-                Copy nevent
               {/if}
             </button>
+            {#if neventCopied}
+              <span class="text-xs text-burgundy-700 font-medium ml-2 animate-fade-in">Nevent copied!</span>
+            {/if}
           {/if}
         </div>
       </div>
@@ -376,7 +398,7 @@
           onclick={() => {
             view = view === 'formatted' ? 'asciidoc' : view === 'asciidoc' ? 'raw' : 'formatted';
           }}
-          class="font-normal text-xs px-1 py-0.5 mr-1 my-0.5 rounded cursor-pointer transition-colors bg-purple-300 hover:bg-purple-400 focus:outline-none"
+          class="font-normal text-xs px-1 py-0.5 mr-1 my-0.5 rounded cursor-pointer transition-colors bg-brown-400 hover:bg-brown-500 text-espresso-900 focus:outline-none"
           >see {#if view === 'formatted'}asciidoc source{:else if view === 'asciidoc'}raw event{:else}formatted{/if}</button
         >
       </div>

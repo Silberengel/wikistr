@@ -16,7 +16,7 @@
 </script>
 
 <button
-  class="font-normal text-xs px-1 py-0.5 mr-1 my-0.5 rounded bg-emerald-200 cursor-pointer hover:bg-emerald-400 transition-colors"
+  class="font-normal text-xs px-1 py-0.5 mr-1 my-0.5 rounded bg-brown-200 cursor-pointer hover:bg-brown-300 transition-colors text-espresso-800"
   onmouseup={openRelay.bind(null, url)}
 >
   {urlWithoutScheme(url)}

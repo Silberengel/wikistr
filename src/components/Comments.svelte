@@ -1,246 +1,43 @@
 <script lang="ts">
-  import type { NostrEvent } from '@nostr/tools/pure';
-  import { onMount } from 'svelte';
-  import { pool } from '@nostr/gadgets/global';
-  import { DEFAULT_WIKI_RELAYS, DEFAULT_METADATA_QUERY_RELAYS, DEFAULT_WRITE_RELAYS, DEFAULT_SOCIAL_RELAYS } from '$lib/defaults';
-  import { loadNostrUser, type NostrUser } from '@nostr/gadgets/metadata';
-  import { formatDate, deduplicateRelays } from '$lib/utils';
   import { nip19 } from '@nostr/tools';
-  import { signer, account } from '$lib/nostr';
-  import { loadRelayList } from '@nostr/gadgets/lists';
+  import { account, signer } from '$lib/nostr';
+  import { pool } from '@nostr/gadgets/global';
   import UserLabel from './UserLabel.svelte';
+  import AsciidocContent from './AsciidocContent.svelte';
+  import { browser } from '$app/environment';
+  import { DEFAULT_SOCIAL_RELAYS } from '$lib/defaults';
+  import { loadRelayList } from '@nostr/gadgets/lists';
+  import { formatDate } from '$lib/utils';
+
+  interface NostrEvent {
+    id: string;
+    pubkey: string;
+    created_at: number;
+    kind: number;
+    tags: string[][];
+    content: string;
+    sig: string;
+  }
 
   interface Props {
     event: NostrEvent;
   }
 
   let { event }: Props = $props();
-
-  let comments = $state<NostrEvent[]>([]);
-  let loading = $state(true);
-  let users = $state<Map<string, NostrUser>>(new Map());
-  let commentText = $state('');
-  let isSubmitting = $state(false);
-  let replyingTo = $state<string | null>(null);
-  let replyText = $state('');
-  let publishStatus = $state<{
-    show: boolean;
-    title: string;
-    attempts: Array<{url: string, status: 'pending' | 'success' | 'failure', message?: string}>;
-  }>({
-    show: false,
-    title: '',
-    attempts: []
-  });
-
+  
   // Generate the coordinate for the wiki article (kind:pubkey:identifier format)
   // This follows NIP-22: kind 1111 comments reference their root using this coordinate
-  const articleCoordinate = `${event.kind}:${event.pubkey}:${event.tags.find(([k]) => k === 'd')?.[1] || ''}`;
+  const articleCoordinate = $derived(`${event.kind}:${event.pubkey}:${event.tags.find(([k]) => k === 'd')?.[1] || ''}`);
 
-  onMount(() => {
-    loadComments();
-  });
+  let comments = $state<NostrEvent[]>([]);
+  let replyingTo = $state<string | null>(null);
+  let replyText = $state('');
+  let commentText = $state('');
+  let isSubmitting = $state(false);
+  let copiedNevent = $state<Set<string>>(new Set());
+  let copiedNeventMessage = $state<Set<string>>(new Set());
+  let publishStatus = $state({ show: false, title: '', attempts: [] as Array<{ status: 'pending' | 'success' | 'failure', message?: string }> });
 
-  // Helper function to get user's inbox relays (for reading)
-  async function getUserInboxRelays(pubkey: string): Promise<string[]> {
-    const relayList = await loadRelayList(pubkey);
-    return relayList.items
-      .filter((ri) => ri.read)
-      .map((ri) => ri.url);
-  }
-
-  // Helper function to get user's outbox relays (for writing)
-  async function getUserOutboxRelays(pubkey: string): Promise<string[]> {
-    const relayList = await loadRelayList(pubkey);
-    return relayList.items
-      .filter((ri) => ri.write)
-      .map((ri) => ri.url);
-  }
-
-  async function loadComments() {
-    loading = true;
-    comments = [];
-
-    try {
-      // Get user's inbox relays for reading comments
-      const userInboxRelays = $account ? await getUserInboxRelays($account.pubkey) : [];
-      const readRelays = [...new Set([...DEFAULT_SOCIAL_RELAYS, ...userInboxRelays])];
-      const normalizedReadRelays = deduplicateRelays(readRelays);
-
-      // Fetch kind 1111 comments that reference this wiki article
-      // Following Jumble's pattern: kind 1111 comments reference kind 30818 wiki articles as root
-      
-      // Use broader filter to avoid relay rejections - do all filtering client-side
-      // This prevents issues with restrictive relays like nostr.sovbit.host
-      const sub = pool.subscribeMany(
-        normalizedReadRelays,
-        [{
-          kinds: [1111], // All kind 1111 comments
-          limit: 200 // Get more comments to filter client-side
-        }],
-        {
-          onevent(commentEvent) {
-            // Client-side filtering for our specific wiki article
-            const aTag = commentEvent.tags.find(([k]) => k === 'A');
-            const KTag = commentEvent.tags.find(([k]) => k === 'K');
-            
-            // Check if this comment references our wiki article
-            if (aTag && aTag[1] === articleCoordinate && 
-                KTag && KTag[1] === event.kind.toString()) {
-              comments.push(commentEvent);
-              loadUserMetadata(commentEvent.pubkey);
-            }
-          },
-          oneose() {
-            sub.close();
-            loading = false;
-          }
-        }
-      );
-
-      // Timeout after 10 seconds
-      setTimeout(() => {
-        if (sub) sub.close();
-        loading = false;
-      }, 10000);
-
-    } catch (e) {
-      console.error('Failed to load comments:', e);
-      loading = false;
-    }
-  }
-
-  async function loadUserMetadata(pubkey: string) {
-    if (users.has(pubkey)) return;
-
-    try {
-      const user = await loadNostrUser(pubkey);
-      users.set(pubkey, user);
-    } catch (e) {
-      console.error('Failed to load user metadata:', e);
-    }
-  }
-
-  async function submitComment() {
-    if (!commentText.trim() || isSubmitting) return;
-    if (!$account) {
-      alert('Please connect your Nostr account to comment.');
-      return;
-    }
-
-    isSubmitting = true;
-
-    try {
-      // Get user's outbox relays for publishing
-      const userOutboxRelays = await getUserOutboxRelays($account.pubkey);
-      const allWriteRelays = [...new Set([...userOutboxRelays, ...DEFAULT_WRITE_RELAYS])];
-      const normalizedRelays = deduplicateRelays(allWriteRelays);
-
-      // Initialize publish status
-      publishStatus = {
-        show: true,
-        title: 'Publishing Comment',
-        attempts: normalizedRelays.map(url => ({ url, status: 'pending' as const }))
-      };
-
-      // Create comment event template following NIP-22
-      // Kind 1111 comments reference kind 30818 wiki articles as root (like Jumble's kind 11/1111 pattern)
-      const eventTemplate = {
-        kind: 1111, // NIP-22 comment
-        content: commentText.trim(),
-        tags: [
-          // Root scope tags (the wiki article)
-          ['A', articleCoordinate], // Root scope - wiki article coordinate
-          ['K', event.kind.toString()], // Root kind (30818 for wiki articles)
-          ['P', event.pubkey], // Root pubkey (wiki article author)
-          
-          // Parent scope tags (same as root for top-level comments)
-          ['a', articleCoordinate], // Parent scope - wiki article coordinate  
-          ['k', event.kind.toString()], // Parent kind (30818 for wiki articles)
-          ['p', event.pubkey], // Parent pubkey (wiki article author)
-        ],
-        created_at: Math.round(Date.now() / 1000)
-      };
-
-      // Sign and publish the comment
-      const signedComment = await signer.signEvent(eventTemplate);
-      
-      // Publish to relays with status tracking
-      const publishPromises = normalizedRelays.map(async (url, index) => {
-        try {
-          const relay = await pool.ensureRelay(url);
-          await relay.publish(signedComment);
-          
-          // Update status to success
-          publishStatus.attempts[index] = { url, status: 'success' };
-          publishStatus = publishStatus; // Trigger reactivity
-        } catch (err) {
-          // Update status to failure with error message
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          publishStatus.attempts[index] = { url, status: 'failure', message: errorMessage };
-          publishStatus = publishStatus; // Trigger reactivity
-        }
-      });
-
-      await Promise.all(publishPromises);
-      
-      // Clear the text and reload comments
-      commentText = '';
-      
-      // Reload comments after a short delay to pick up the new comment
-      // Also add write relays to ensure we fetch from where we just published
-      setTimeout(async () => {
-        const userInboxRelays = $account ? await getUserInboxRelays($account.pubkey) : [];
-        const userOutboxRelays = $account ? await getUserOutboxRelays($account.pubkey) : [];
-        const allReadRelays = [...new Set([...DEFAULT_SOCIAL_RELAYS, ...userInboxRelays, ...userOutboxRelays])];
-        const normalizedAllRelays = deduplicateRelays(allReadRelays);
-        
-        // Quick fetch using broader filter to avoid relay rejections
-        const quickSub = pool.subscribeMany(
-          normalizedAllRelays,
-          [{
-            kinds: [1111],
-            limit: 100
-          }],
-          {
-            onevent(commentEvent) {
-              const aTag = commentEvent.tags.find(([k]) => k === 'A');
-              const KTag = commentEvent.tags.find(([k]) => k === 'K');
-              
-              if (aTag && aTag[1] === articleCoordinate && 
-                  KTag && KTag[1] === event.kind.toString()) {
-                
-                // Add if not already present
-                if (!comments.find(c => c.id === commentEvent.id)) {
-                  comments.push(commentEvent);
-                  loadUserMetadata(commentEvent.pubkey);
-                }
-              }
-            },
-            oneose() {
-              quickSub.close();
-            }
-          }
-        );
-        
-        // Close quick fetch after 3 seconds
-        setTimeout(() => quickSub.close(), 3000);
-      }, 1000);
-
-      // Hide publish status after 3 seconds
-      setTimeout(() => {
-        publishStatus.show = false;
-      }, 3000);
-
-    } catch (e) {
-      publishStatus.show = false;
-      alert('Failed to publish comment. Please try again.');
-    } finally {
-      isSubmitting = false;
-    }
-  }
-
-  // Organize comments into a threaded structure
   interface ThreadedComment {
     comment: NostrEvent;
     replies: ThreadedComment[];
@@ -258,22 +55,45 @@
       });
     });
 
-    // Second pass: organize into hierarchy
+    // Helper function to calculate the depth of a comment
+    function calculateDepth(comment: NostrEvent, visited = new Set<string>()): number {
+      if (visited.has(comment.id)) return 0; // Prevent infinite loops
+      visited.add(comment.id);
+      
+      const parentETag = comment.tags.find(([k]: string[]) => k === 'e');
+      const parentKTag = comment.tags.find(([k]: string[]) => k === 'k');
+      
+      if (parentETag && parentKTag && parentKTag[1] === '1111') {
+        // This is a reply to another comment
+        const parentId = parentETag[1];
+        const parentComment = comments.find(c => c.id === parentId);
+        if (parentComment) {
+          return 1 + calculateDepth(parentComment, visited);
+        }
+      }
+      
+      return 1; // Root level
+    }
+
+    // Second pass: organize into hierarchy with 3-level limit
     comments.forEach(comment => {
       const threadedComment = commentMap.get(comment.id)!;
+      const depth = calculateDepth(comment);
       
       // Check if this is a reply to another comment
-      const parentETag = comment.tags.find(([k]) => k === 'e');
-      const parentKTag = comment.tags.find(([k]) => k === 'k');
+      const parentETag = comment.tags.find(([k]: string[]) => k === 'e');
+      const parentKTag = comment.tags.find(([k]: string[]) => k === 'k');
       
       if (parentETag && parentKTag && parentKTag[1] === '1111') {
         // This is a reply to another comment
         const parentId = parentETag[1];
         const parent = commentMap.get(parentId);
-        if (parent) {
+        
+        if (parent && depth <= 3) {
+          // Normal hierarchy for levels 1-3
           parent.replies.push(threadedComment);
         } else {
-          // Parent not found, treat as top-level
+          // Level 4+ or parent not found, treat as top-level
           topLevelComments.push(threadedComment);
         }
       } else {
@@ -282,7 +102,7 @@
       }
     });
 
-    // Sort top-level comments and their replies by creation time
+    // Sort top-level comments and their replies by creation time (oldest to newest)
     function sortThreadedComments(threaded: ThreadedComment[]): ThreadedComment[] {
       return threaded.sort((a, b) => (a.comment.created_at || 0) - (b.comment.created_at || 0));
     }
@@ -306,329 +126,551 @@
     replyText = '';
   }
 
+  async function submitTopLevelComment(evt: Event) {
+    evt.preventDefault();
+    
+    if (!commentText.trim() || isSubmitting || !$account) return;
+    
+    isSubmitting = true;
+    
+    try {
+      const commentEvent = {
+        kind: 1111,
+        content: commentText.trim(),
+        tags: [
+          ['A', articleCoordinate, 'wss://relay.example.com', 'article'],
+          ['K', event.kind.toString()]
+        ],
+        created_at: Math.floor(Date.now() / 1000),
+        pubkey: $account.pubkey
+      };
+
+      publishStatus.show = true;
+      publishStatus.title = 'Publishing comment...';
+      publishStatus.attempts = [];
+
+      // Get user's actual outbox relays (kind 10002) for publishing comments
+      const socialRelays = DEFAULT_SOCIAL_RELAYS;
+      let userOutboxRelays: string[] = [];
+
+      if ($account) {
+        try {
+          const relayList = await loadRelayList($account.pubkey);
+          userOutboxRelays = relayList.items
+            .filter((ri) => ri.write)
+            .map((ri) => ri.url);
+        } catch (error) {
+          console.error('Error loading user outbox relays:', error);
+        }
+      }
+      
+      const relays = [...new Set([...socialRelays, ...userOutboxRelays])];
+      const attempts = relays.map(relay => ({ status: 'pending' as const }));
+      publishStatus.attempts = attempts;
+
+      // Update the comment event tags with proper NIP-22 format
+      commentEvent.tags = [
+        ['A', articleCoordinate, relays[0], 'article'],
+        ['K', event.kind.toString()]
+      ];
+
+      // Sign the event first
+      const signedEvent = await signer.signEvent(commentEvent);
+      
+      const promises = relays.map(async (relay, index) => {
+        try {
+          await pool.publish([relay], signedEvent);
+          publishStatus.attempts[index] = { status: 'success' };
+        } catch (error) {
+          publishStatus.attempts[index] = { 
+            status: 'failure', 
+            message: error instanceof Error ? error.message : 'Unknown error' 
+          };
+        }
+      });
+
+      await Promise.allSettled(promises);
+      
+      // Clear the form
+      commentText = '';
+      
+      // Refresh comments after a short delay
+      setTimeout(() => {
+        fetchComments();
+      }, 1000);
+      
+    } catch (error) {
+      console.error('Error publishing comment:', error);
+    } finally {
+      isSubmitting = false;
+      publishStatus.show = false;
+    }
+  }
+
   function cancelReply() {
     replyingTo = null;
     replyText = '';
   }
 
+  async function copyCommentNevent(commentId: string) {
+    try {
+      const nevent = nip19.neventEncode({ id: commentId });
+      
+      // Try modern clipboard API first
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(nevent);
+      } else {
+        // Fallback for older browsers or non-HTTPS
+        const textArea = document.createElement('textarea');
+        textArea.value = nevent;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      
+      copiedNevent.add(commentId);
+      copiedNeventMessage.add(commentId);
+      
+      // Hide checkmark after 2.5 seconds
+      setTimeout(() => {
+        copiedNevent.delete(commentId);
+        copiedNevent = copiedNevent; // Trigger reactivity
+      }, 2500);
+      
+      // Hide message after 3 seconds
+      setTimeout(() => {
+        copiedNeventMessage.delete(commentId);
+        copiedNeventMessage = copiedNeventMessage; // Trigger reactivity
+      }, 3000);
+    } catch (error) {
+      console.error('Failed to copy nevent:', error);
+    }
+  }
+
+  function getParentCommentText(comment: NostrEvent): string {
+    const parentETag = comment.tags.find(([k]: string[]) => k === 'e');
+    if (parentETag) {
+      const parentId = parentETag[1];
+      const parentComment = comments.find(c => c.id === parentId);
+      if (parentComment) {
+        // Truncate to first 100 characters and add ellipsis if needed
+        const text = parentComment.content.trim();
+        return text.length > 100 ? text.substring(0, 100) + '...' : text;
+      }
+    }
+    return '';
+  }
+
   async function submitReply(parentComment: NostrEvent) {
     if (!replyText.trim() || isSubmitting) return;
-    if (!$account) {
-      alert('Please connect your Nostr account to reply.');
-      return;
-    }
-
+    
     isSubmitting = true;
-
+    
     try {
-      // Get user's outbox relays for publishing
-      const userOutboxRelays = await getUserOutboxRelays($account.pubkey);
-      const allWriteRelays = [...new Set([...userOutboxRelays, ...DEFAULT_WRITE_RELAYS])];
-      const normalizedRelays = deduplicateRelays(allWriteRelays);
-
-      // Initialize publish status
-      publishStatus = {
-        show: true,
-        title: 'Publishing Reply',
-        attempts: normalizedRelays.map(url => ({ url, status: 'pending' as const }))
-      };
-
-      // Create reply event template following NIP-22
-      // Reply to a comment in the thread (kind 1111 -> kind 1111)
-      const eventTemplate = {
-        kind: 1111, // NIP-22 comment
+      const commentEvent = {
+        kind: 1111,
         content: replyText.trim(),
         tags: [
-          // Root scope tags (the wiki article)
-          ['A', articleCoordinate], // Root scope - wiki article coordinate
-          ['K', event.kind.toString()], // Root kind (30818 for wiki articles)
-          ['P', event.pubkey], // Root pubkey (wiki article author)
-          
-          // Parent scope tags (the comment being replied to)
-          ['e', parentComment.id], // Parent event ID (the comment)
-          ['k', '1111'], // Parent kind (1111 for comment)
-          ['p', parentComment.pubkey], // Parent pubkey (comment author)
+          ['A', articleCoordinate, 'wss://relay.example.com', 'article'],
+          ['e', parentComment.id, 'wss://relay.example.com', 'reply'],
+          ['K', event.kind.toString()],
+          ['p', parentComment.pubkey]
         ],
-        created_at: Math.round(Date.now() / 1000)
+        created_at: Math.floor(Date.now() / 1000),
+        pubkey: $account?.pubkey || ''
       };
 
-      // Sign and publish the reply
-      const signedReply = await signer.signEvent(eventTemplate);
+      publishStatus.show = true;
+      publishStatus.title = 'Publishing comment...';
+      publishStatus.attempts = [];
+
+      // Get user's actual inbox relays (kind 10002) for publishing comments
+      const socialRelays = DEFAULT_SOCIAL_RELAYS;
+      let userInboxRelays: string[] = [];
       
-      // Publish to relays with status tracking
-      const publishPromises = normalizedRelays.map(async (url, index) => {
+      if ($account) {
         try {
-          const relay = await pool.ensureRelay(url);
-          await relay.publish(signedReply);
-          
-          // Update status to success
-          publishStatus.attempts[index] = { url, status: 'success' };
-          publishStatus = publishStatus; // Trigger reactivity
-        } catch (err) {
-          // Update status to failure with error message
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          publishStatus.attempts[index] = { url, status: 'failure', message: errorMessage };
-          publishStatus = publishStatus; // Trigger reactivity
+          const relayList = await loadRelayList($account.pubkey);
+          userInboxRelays = relayList.items
+            .filter((ri) => ri.write)
+            .map((ri) => ri.url);
+        } catch (error) {
+          console.error('Error loading user inbox relays for publishing:', error);
+        }
+      }
+      
+      const relays = [...new Set([...socialRelays, ...userInboxRelays])];
+      const attempts = relays.map(relay => ({ status: 'pending' as const }));
+      publishStatus.attempts = attempts;
+
+      // Update the comment event tags with proper NIP-22 format
+      commentEvent.tags = [
+        ['A', articleCoordinate, relays[0], 'article'],
+        ['e', parentComment.id, relays[0], 'reply'],
+        ['K', event.kind.toString()],
+        ['p', parentComment.pubkey]
+      ];
+
+      // Sign the event first
+      const signedEvent = await signer.signEvent(commentEvent);
+      
+      const promises = relays.map(async (relay, index) => {
+        try {
+          await pool.publish([relay], signedEvent);
+          publishStatus.attempts[index] = { status: 'success' };
+        } catch (error) {
+          publishStatus.attempts[index] = { 
+            status: 'failure', 
+            message: error instanceof Error ? error.message : 'Unknown error' 
+          };
         }
       });
 
-      await Promise.all(publishPromises);
+      await Promise.all(promises);
       
-      // Clear the text and reload comments
-      replyText = '';
+      // Reset form
       replyingTo = null;
+      replyText = '';
       
-      // Reload comments after a short delay to pick up the new reply
-      // Also add write relays to ensure we fetch from where we just published
-      setTimeout(async () => {
-        const userInboxRelays = $account ? await getUserInboxRelays($account.pubkey) : [];
-        const userOutboxRelays = $account ? await getUserOutboxRelays($account.pubkey) : [];
-        const allReadRelays = [...new Set([...DEFAULT_SOCIAL_RELAYS, ...userInboxRelays, ...userOutboxRelays])];
-        const normalizedAllRelays = deduplicateRelays(allReadRelays);
-        
-        // Quick fetch using broader filter to avoid relay rejections
-        const quickSub = pool.subscribeMany(
-          normalizedAllRelays,
-          [{
-            kinds: [1111],
-            limit: 100
-          }],
-          {
-            onevent(commentEvent) {
-              const aTag = commentEvent.tags.find(([k]) => k === 'A');
-              const KTag = commentEvent.tags.find(([k]) => k === 'K');
-              
-              if (aTag && aTag[1] === articleCoordinate && 
-                  KTag && KTag[1] === event.kind.toString()) {
-                
-                // Add if not already present
-                if (!comments.find(c => c.id === commentEvent.id)) {
-                  comments.push(commentEvent);
-                  loadUserMetadata(commentEvent.pubkey);
-                }
-              }
-            },
-            oneose() {
-              quickSub.close();
-            }
-          }
-        );
-        
-        // Close quick fetch after 3 seconds
-        setTimeout(() => quickSub.close(), 3000);
-      }, 1000);
-
-      // Hide publish status after 3 seconds
+      // Refresh comments after a short delay
       setTimeout(() => {
-        publishStatus.show = false;
-      }, 3000);
-
-    } catch (e) {
-      console.error('Failed to submit reply:', e);
-      alert('Failed to publish reply. Please try again.');
+        fetchComments();
+      }, 1000);
+      
+    } catch (error) {
+      console.error('Error submitting reply:', error);
     } finally {
       isSubmitting = false;
     }
   }
+
+
+  async function fetchComments() {
+    if (!browser) return;
+    
+    try {
+      // Use broader filter to avoid relay rejections - do all filtering client-side
+      const filter = {
+        kinds: [1111],
+        limit: 200 // Get more comments to filter client-side
+      };
+
+      // Get user's actual inbox relays (kind 10002) for fetching comments
+      const socialRelays = DEFAULT_SOCIAL_RELAYS;
+      let userInboxRelays: string[] = [];
+      
+      if ($account) {
+        try {
+          const relayList = await loadRelayList($account.pubkey);
+          userInboxRelays = relayList.items
+            .filter((ri) => ri.read)
+            .map((ri) => ri.url);
+        } catch (error) {
+          console.error('Error loading user inbox relays:', error);
+        }
+      }
+      
+      const relays = [...new Set([...socialRelays, ...userInboxRelays])];
+      
+      
+      const events: NostrEvent[] = [];
+      let timeoutId: number;
+      
+      const sub = pool.subscribeMany(
+        relays,
+        [filter],
+        {
+          onevent(commentEvent) {
+            // Client-side filtering for our specific wiki article
+            const aTag = commentEvent.tags.find(([k]) => k === 'A');
+            const kTag = commentEvent.tags.find(([k]) => k === 'K');
+            
+            // Check if this comment references our wiki article
+            if (aTag && aTag[1] === articleCoordinate && 
+                kTag && kTag[1] === event.kind.toString()) {
+              events.push(commentEvent as NostrEvent);
+            }
+          },
+          oneose() {
+            clearTimeout(timeoutId);
+            sub.close();
+            comments = events;
+          }
+        }
+      );
+      
+      // Set a timeout to close the subscription after 10 seconds
+      timeoutId = setTimeout(() => {
+        sub.close();
+        comments = events;
+      }, 10000);
+    } catch (error) {
+      console.error('Error fetching comments:', error);
+    }
+  }
+
+  // Fetch comments when component mounts
+  $effect(() => {
+    if (event) {
+      fetchComments();
+    }
+  });
 </script>
 
-<div class="mt-8 border-t border-gray-200 pt-6">
-  <h3 class="text-lg font-semibold mb-4">Comments</h3>
+<div class="mt-6">
+  <h3 class="text-lg font-semibold text-gray-900 mb-4">Comments</h3>
   
-  <!-- Comment Form -->
+  <!-- Comment Entry Form -->
   {#if $account}
-    <div class="mb-6 py-4">
-      <textarea
-        bind:value={commentText}
-        placeholder="Write a comment..."
-        class="w-full p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base"
-        rows="4"
-        disabled={isSubmitting}
-      ></textarea>
-      <div class="mt-3 flex justify-end">
-        <button
-          onclick={submitComment}
-          disabled={!commentText.trim() || isSubmitting}
-          class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-base transition-colors"
-        >
-          {isSubmitting ? 'Submitting...' : 'Post Comment'}
-        </button>
-      </div>
+    <div class="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+      <form onsubmit={submitTopLevelComment}>
+        <div class="mb-3">
+          <textarea
+            bind:value={commentText}
+            placeholder="Write a comment..."
+            class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-burgundy-500 resize-none"
+            rows="3"
+            disabled={isSubmitting}
+          ></textarea>
+        </div>
+        <div class="flex justify-end">
+          <button
+            type="submit"
+            class="px-4 py-2 bg-burgundy-700 text-white rounded-lg hover:bg-burgundy-800 focus:ring-2 focus:ring-burgundy-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={!commentText.trim() || isSubmitting}
+          >
+            {isSubmitting ? 'Posting...' : 'Post Comment'}
+          </button>
+        </div>
+      </form>
     </div>
   {:else}
-    <div class="mb-6 py-4 text-center text-gray-600">
-      <p class="text-base">Please connect your Nostr account to comment.</p>
+    <div class="mb-6 p-4 bg-gray-100 rounded-lg border border-gray-200 text-center">
+      <p class="text-gray-600">Please sign in to post comments.</p>
     </div>
   {/if}
-
-  <!-- Comments List -->
-  {#if loading}
-    <div class="text-center py-4 text-gray-500">Loading comments...</div>
-  {:else if threadedComments.length === 0}
-    <div class="text-center py-8 text-gray-500">
-      No comments yet. Be the first to comment!
-    </div>
+  
+  {#if comments.length === 0}
+    <p class="text-gray-500 text-center py-8">No comments yet. Be the first to comment!</p>
   {:else}
     <div class="space-y-4">
       {#each threadedComments as threadedComment (threadedComment.comment.id)}
         {@const comment = threadedComment.comment}
-        <div class="border-l-4 border-blue-500 pl-4 py-3">
-          <div class="space-y-3">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center space-x-3">
-                <UserLabel pubkey={comment.pubkey} createChild={() => {}} />
-                <span class="text-gray-500">•</span>
-                <span class="text-base text-gray-700 font-semibold">
-                  {formatDate(comment.created_at)}
-                </span>
-              </div>
-              
+        <!-- Top-level comment -->
+        <div class="py-4 px-4 bg-gray-50 rounded-lg border border-gray-200">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex flex-col">
+              <UserLabel pubkey={comment.pubkey} createChild={() => {}} />
+              <span class="text-xs text-gray-500 mt-1">
+                {formatDate(comment.created_at)}
+              </span>
+            </div>
+            
+            <div class="flex items-center space-x-2">
+              <button
+                onclick={() => copyCommentNevent(comment.id)}
+                class="p-2 text-burgundy-700 hover:text-burgundy-800 hover:bg-brown-200 rounded-lg transition-all duration-200"
+                title="Copy nevent"
+              >
+                {#if copiedNevent.has(comment.id)}
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                {:else}
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                  </svg>
+                {/if}
+              </button>
+              {#if copiedNeventMessage.has(comment.id)}
+                <span class="text-xs text-burgundy-700 font-medium animate-fade-in">Nevent copied!</span>
+              {/if}
               {#if $account}
                 <button
                   onclick={() => startReply(comment.id)}
-                  class="text-base text-blue-600 hover:text-blue-800 font-medium px-3 py-1 rounded-lg hover:bg-blue-50 transition-colors"
+                  class="p-2 text-burgundy-700 hover:text-burgundy-800 hover:bg-brown-200 rounded-lg transition-all duration-200"
                   disabled={isSubmitting}
+                  title="Reply"
                 >
-                  Reply
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
+                  </svg>
                 </button>
               {/if}
             </div>
-            
-            <div class="text-base text-gray-900 leading-relaxed">
-              {comment.content}
-            </div>
+          </div>
+          
+          <div class="text-gray-900 leading-relaxed mb-3">
+            <AsciidocContent event={comment} createChild={() => {}} />
+          </div>
 
-            <!-- Reply Form -->
-            {#if replyingTo === comment.id && $account}
-              <div class="mt-3 border-l-4 border-blue-400 pl-4 py-3">
-                <textarea
-                  bind:value={replyText}
-                  placeholder="Write a reply..."
-                  class="w-full p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base"
-                  rows="3"
+          <!-- Reply Form for top-level comment -->
+          {#if replyingTo === comment.id && $account}
+            <div class="mt-4 border-l-4 border-espresso-400 pl-4 py-3">
+              <textarea
+                bind:value={replyText}
+                placeholder="Write a reply..."
+                class="w-full p-3 border border-brown-300 rounded-lg text-sm resize-none focus:ring-2 focus:ring-espresso-500 focus:border-espresso-500 bg-brown-50 text-espresso-900"
+                rows="3"
+                disabled={isSubmitting}
+              ></textarea>
+              <div class="mt-3 flex justify-end space-x-3">
+                <button
+                  onclick={cancelReply}
+                  class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 font-medium rounded-lg hover:bg-gray-100 transition-colors"
                   disabled={isSubmitting}
-                ></textarea>
-                <div class="mt-3 flex justify-end space-x-3">
-                  <button
-                    onclick={cancelReply}
-                    class="px-4 py-2 text-base text-gray-600 hover:text-gray-800 font-medium rounded-lg hover:bg-gray-100 transition-colors"
-                    disabled={isSubmitting}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onclick={() => submitReply(comment)}
-                    disabled={!replyText.trim() || isSubmitting}
-                    class="px-4 py-2 text-base bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
-                  >
-                    {isSubmitting ? 'Submitting...' : 'Reply'}
-                  </button>
-                </div>
+                >
+                  Cancel
+                </button>
+                <button
+                  onclick={() => submitReply(comment)}
+                  disabled={!replyText.trim() || isSubmitting}
+                  class="px-4 py-2 text-sm bg-espresso-700 text-white rounded-lg hover:bg-espresso-800 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+                >
+                  {isSubmitting ? 'Submitting...' : 'Reply'}
+                </button>
               </div>
-            {/if}
+            </div>
+          {/if}
 
-            <!-- Replies -->
-            {#if threadedComment.replies.length > 0}
-              <div class="mt-4 ml-4 border-l-4 border-purple-400 pl-4 space-y-3">
-                {#each threadedComment.replies as replyThread (replyThread.comment.id)}
-                  {@const reply = replyThread.comment}
-                  <div class="py-2">
-                    <div class="space-y-2">
-                      <div class="flex items-center justify-between">
-                        <div class="flex items-center space-x-3">
-                          <UserLabel pubkey={reply.pubkey} createChild={() => {}} />
-                          <span class="text-gray-500">•</span>
-                          <span class="text-base text-gray-700 font-semibold">
-                            {formatDate(reply.created_at)}
-                          </span>
-                        </div>
-                        
-                        {#if $account}
-                          <button
-                            onclick={() => startReply(reply.id)}
-                            class="text-base text-purple-600 hover:text-purple-800 font-medium px-3 py-1 rounded-lg hover:bg-purple-50 transition-colors"
-                            disabled={isSubmitting}
-                          >
-                            Reply
-                          </button>
+          <!-- Level 2 replies -->
+          {#if threadedComment.replies.length > 0}
+            <div class="mt-4 ml-4 border-l-2 border-espresso-400 pl-4 space-y-3">
+              {#each threadedComment.replies as replyThread (replyThread.comment.id)}
+                {@const reply = replyThread.comment}
+                <div class="py-3 px-3 bg-white rounded-lg border border-gray-100">
+                  <div class="flex items-center justify-between mb-2">
+                    <div class="flex flex-col">
+                      <UserLabel pubkey={reply.pubkey} createChild={() => {}} />
+                      <span class="text-xs text-gray-500 mt-1">
+                        {formatDate(reply.created_at)}
+                      </span>
+                    </div>
+                    
+                    <div class="flex items-center space-x-2">
+                      <button
+                        onclick={() => copyCommentNevent(reply.id)}
+                        class="p-2 text-burgundy-700 hover:text-burgundy-800 hover:bg-brown-200 rounded-lg transition-all duration-200"
+                        title="Copy nevent"
+                      >
+                        {#if copiedNevent.has(reply.id)}
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                          </svg>
+                        {:else}
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                          </svg>
                         {/if}
-                      </div>
-                      
-                      <div class="text-base text-gray-900 leading-relaxed">
-                        {reply.content}
-                      </div>
-
-                      <!-- Nested Reply Form -->
-                      {#if replyingTo === reply.id && $account}
-                        <div class="mt-3 border-l-4 border-purple-400 pl-4 py-3">
-                          <textarea
-                            bind:value={replyText}
-                            placeholder="Write a reply..."
-                            class="w-full p-3 border border-gray-300 rounded-lg text-base resize-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                            rows="3"
-                            disabled={isSubmitting}
-                          ></textarea>
-                          <div class="mt-3 flex justify-end space-x-3">
-                            <button
-                              onclick={cancelReply}
-                              class="px-4 py-2 text-base text-gray-600 hover:text-gray-800 font-medium rounded-lg hover:bg-gray-100 transition-colors"
-                              disabled={isSubmitting}
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              onclick={() => submitReply(reply)}
-                              disabled={!replyText.trim() || isSubmitting}
-                              class="px-4 py-2 text-base bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
-                            >
-                              {isSubmitting ? 'Submitting...' : 'Reply'}
-                            </button>
-                          </div>
-                        </div>
+                      </button>
+                      {#if copiedNeventMessage.has(reply.id)}
+                        <span class="text-xs text-burgundy-700 font-medium animate-fade-in">Nevent copied!</span>
                       {/if}
-
-                      <!-- Nested Replies (replies to replies) -->
-                      {#if replyThread.replies.length > 0}
-                        <div class="mt-3 ml-4 border-l-4 border-green-400 pl-4 space-y-2">
-                          {#each replyThread.replies as nestedReplyThread (nestedReplyThread.comment.id)}
-                            {@const nestedReply = nestedReplyThread.comment}
-                            <div class="py-1">
-                              <div class="space-y-1">
-                                <div class="flex items-center justify-between">
-                                  <div class="flex items-center space-x-3">
-                                    <UserLabel pubkey={nestedReply.pubkey} createChild={() => {}} />
-                                    <span class="text-gray-500">•</span>
-                                    <span class="text-base text-gray-700 font-semibold">
-                                      {formatDate(nestedReply.created_at)}
-                                    </span>
-                                  </div>
-                                  
-                                  {#if $account}
-                                    <button
-                                      onclick={() => startReply(nestedReply.id)}
-                                      class="text-base text-green-600 hover:text-green-800 font-medium px-3 py-1 rounded-lg hover:bg-green-50 transition-colors"
-                                      disabled={isSubmitting}
-                                    >
-                                      Reply
-                                    </button>
-                                  {/if}
-                                </div>
-                                
-                                <div class="text-base text-gray-900 leading-relaxed">
-                                  {nestedReply.content}
-                                </div>
-                              </div>
-                            </div>
-                          {/each}
-                        </div>
+                      {#if $account}
+                        <button
+                          onclick={() => startReply(reply.id)}
+                          class="p-2 text-burgundy-700 hover:text-burgundy-800 hover:bg-brown-200 rounded-lg transition-all duration-200"
+                          disabled={isSubmitting}
+                          title="Reply"
+                        >
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
+                          </svg>
+                        </button>
                       {/if}
                     </div>
                   </div>
-                {/each}
-              </div>
-            {/if}
+                  
+                  
+                  <div class="text-gray-900 leading-relaxed mb-2">
+                    <AsciidocContent event={reply} createChild={() => {}} />
+                  </div>
+
+                  <!-- Reply Form for level 2 -->
+                  {#if replyingTo === reply.id && $account}
+                    <div class="mt-3 border-l-4 border-espresso-400 pl-4 py-3">
+                      <textarea
+                        bind:value={replyText}
+                        placeholder="Write a reply..."
+                        class="w-full p-3 border border-brown-300 rounded-lg text-sm resize-none focus:ring-2 focus:ring-espresso-500 focus:border-espresso-500 bg-brown-50 text-espresso-900"
+                        rows="3"
+                        disabled={isSubmitting}
+                      ></textarea>
+                      <div class="mt-3 flex justify-end space-x-3">
+                        <button
+                          onclick={cancelReply}
+                          class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 font-medium rounded-lg hover:bg-gray-100 transition-colors"
+                          disabled={isSubmitting}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onclick={() => submitReply(reply)}
+                          disabled={!replyText.trim() || isSubmitting}
+                          class="px-4 py-2 text-sm bg-espresso-700 text-white rounded-lg hover:bg-espresso-800 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+                        >
+                          {isSubmitting ? 'Submitting...' : 'Reply'}
+                        </button>
+                      </div>
+                    </div>
+                  {/if}
+
+                  <!-- Level 3 replies -->
+                  {#if replyThread.replies.length > 0}
+                    <div class="mt-3 ml-4 border-l-2 border-brown-400 pl-4 space-y-2">
+                      {#each replyThread.replies as nestedReplyThread (nestedReplyThread.comment.id)}
+                        {@const nestedReply = nestedReplyThread.comment}
+                        <div class="py-2 px-3 bg-gray-50 rounded border border-gray-200">
+                          <div class="flex items-center justify-between mb-2">
+                            <div class="flex flex-col">
+                              <UserLabel pubkey={nestedReply.pubkey} createChild={() => {}} />
+                              <span class="text-xs text-gray-500 mt-1">
+                                {formatDate(nestedReply.created_at)}
+                              </span>
+                            </div>
+                            
+                            <div class="flex items-center space-x-2">
+                              <button
+                                onclick={() => copyCommentNevent(nestedReply.id)}
+                                class="p-2 text-burgundy-700 hover:text-burgundy-800 hover:bg-brown-200 rounded-lg transition-all duration-200"
+                                title="Copy nevent"
+                              >
+                                {#if copiedNevent.has(nestedReply.id)}
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                  </svg>
+                                {:else}
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                  </svg>
+                                {/if}
+                              </button>
+                              {#if copiedNeventMessage.has(nestedReply.id)}
+                                <span class="text-xs text-burgundy-700 font-medium animate-fade-in">Nevent copied!</span>
+                              {/if}
+                            </div>
+                          </div>
+                          
+                          
+                          <div class="text-gray-900 leading-relaxed mb-2">
+                            <AsciidocContent event={nestedReply} createChild={() => {}} />
+                          </div>
+
+
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
+              {/each}
             </div>
-          </div>
+          {/if}
+        </div>
       {/each}
     </div>
   {/if}
@@ -640,23 +682,22 @@
     <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
       <h3 class="text-lg font-semibold mb-4">{publishStatus.title}</h3>
       
-      <div class="space-y-2 mb-4">
-        {#each publishStatus.attempts as attempt (attempt.url)}
-          <div class="flex items-center justify-between p-2 rounded border">
-            <span class="text-sm font-mono truncate flex-1 mr-2">{attempt.url}</span>
-            <div class="flex items-center space-x-2">
+      <div class="space-y-3 mb-6">
+        {#each publishStatus.attempts as attempt, index (index)}
+          <div class="flex items-center space-x-3">
+            <div class="flex-shrink-0">
               {#if attempt.status === 'pending'}
-                <div class="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                <span class="text-xs text-blue-600">Publishing...</span>
+                <div class="w-4 h-4 border-2 border-espresso-500 border-t-transparent rounded-full animate-spin"></div>
+                <span class="text-xs text-espresso-700">Publishing...</span>
               {:else if attempt.status === 'success'}
-                <div class="w-4 h-4 bg-green-500 rounded-full flex items-center justify-center">
+                <div class="w-4 h-4 bg-burgundy-700 rounded-full flex items-center justify-center">
                   <svg class="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
                     <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
                   </svg>
                 </div>
-                <span class="text-xs text-green-600">Success</span>
+                <span class="text-xs text-burgundy-700">Success</span>
               {:else if attempt.status === 'failure'}
-                <div class="w-4 h-4 bg-red-500 rounded-full flex items-center justify-center">
+                <div class="w-4 h-4 bg-burgundy-800 rounded-full flex items-center justify-center">
                   <svg class="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
                     <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
                   </svg>
@@ -667,7 +708,7 @@
           </div>
           
           {#if attempt.status === 'failure' && attempt.message}
-            <div class="ml-4 p-2 bg-red-50 border-l-2 border-red-200 rounded-r">
+            <div class="ml-4 p-2 bg-burgundy-50 border-l-2 border-burgundy-200 rounded-r">
               <p class="text-xs text-red-700">{attempt.message}</p>
             </div>
           {/if}

@@ -121,18 +121,18 @@
   overflow-x-hidden
   mx-2 mt-2
   min-w-[395px] max-w-[395px] lg:min-w-[32rem] lg:max-w-[32rem]
-  rounded-lg border-8 bg-white
+  rounded-lg border-8 bg-brown-100
   h-[calc(100vh_-_32px)]
   p-4
   scrollbar-thin scrollbar-thumb-stone-300 scrollbar-track-stone-100 hover:scrollbar-thumb-stone-400"
   ondblclick={scrollIntoViewIfNecessary}
   style:border-color={card.type === 'article'
-    ? hashbow(card.data[0], 84)
+    ? '#e8ddd1'
     : card.type === 'find'
-      ? hashbow(card.data, 88)
+      ? '#e8ddd1'
       : card.type === 'bible'
-        ? hashbow(card.data, 92)
-        : '#e5e7eb'}
+        ? '#e8ddd1'
+        : '#f2ede6'}
 >
   {#if card.type !== 'welcome' && card.type !== 'new'}
     <div class="flex" class:justify-between={card.back} class:justify-end={!card.back}>

@@ -205,7 +205,7 @@
                   href={userData.website.startsWith('http') ? userData.website : `https://${userData.website}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  class="text-green-600 hover:text-green-700 underline break-all"
+                  class="text-burgundy-700 hover:text-burgundy-800 underline break-all"
                 >
                   {userData.website}
                 </a>
@@ -237,7 +237,7 @@
                     href="https://jumble.imwald.eu/users/{bech32}" 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    class="font-mono break-all text-green-600 hover:text-green-700 underline"
+                    class="font-mono break-all text-burgundy-700 hover:text-burgundy-800 underline"
                   >
                     {bech32}
                   </a>
@@ -249,7 +249,7 @@
                     href="https://jumble.imwald.eu/users/{userData.npub}" 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    class="font-mono break-all text-green-600 hover:text-green-700 underline"
+                    class="font-mono break-all text-burgundy-700 hover:text-burgundy-800 underline"
                   >
                     {userData.npub}
                   </a>

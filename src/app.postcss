@@ -7,11 +7,30 @@
 
 @layer base {
   html {
-    @apply antialiased text-gray-900 bg-green-50;
+    @apply antialiased text-espresso-900 bg-brown-50;
   }
 
   body {
     @apply min-h-screen;
+  }
+
+  /* Alexandria-inspired serif font for headings */
+  .font-serif {
+    font-family: 'Crimson Text', Georgia, 'Times New Roman', serif;
+  }
+
+  /* Override default link colors */
+  a {
+    @apply text-burgundy-700 hover:text-burgundy-800;
+  }
+
+  /* Override default button colors */
+  .btn-primary {
+    @apply bg-espresso-700 hover:bg-espresso-800 text-white;
+  }
+
+  .btn-secondary {
+    @apply bg-brown-100 hover:bg-brown-200 text-espresso-800 border-espresso-300;
   }
 }
 
@@ -26,7 +45,7 @@
 
   /* Inline code styling */
   code {
-    @apply bg-gray-100 text-gray-800 px-1.5 py-0.5 rounded text-sm font-mono;
+    @apply bg-brown-200 text-espresso-800 px-1.5 py-0.5 rounded text-sm font-mono;
   }
 
   /* AsciiDoc monospace styling */
@@ -37,7 +56,7 @@
   .literal-text,
   .asciidoc-literal,
   span[class*="literal"] {
-    @apply bg-gray-100 text-gray-800 px-1.5 py-0.5 rounded text-sm font-mono;
+    @apply bg-brown-200 text-espresso-800 px-1.5 py-0.5 rounded text-sm font-mono;
   }
 
   /* LaTeX styling */
@@ -53,5 +72,21 @@
   /* Code block styling */
   pre {
     @apply overflow-x-auto;
+  }
+
+  /* Fade-in animation for copy feedback */
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-in-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(-2px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 }

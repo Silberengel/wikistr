@@ -1,4 +1,7 @@
 {
+  "name": "biblestr",
+  "version": "1.0.0",
+  "description": "A decentralized Bible study and wiki system built on Nostr",
   "private": true,
   "scripts": {
     "dev": "vite dev",

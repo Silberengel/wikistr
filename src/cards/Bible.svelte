@@ -354,11 +354,11 @@
 
 {#if !tried && results.length === 0}
   <!-- Bible Search Instructions -->
-  <div class="px-4 py-6 bg-green-50 border border-green-200 rounded-lg mt-4">
-    <h3 class="text-lg font-semibold text-green-900 mb-3">📖 Bible Search</h3>
-    <div class="text-sm text-green-800 space-y-2">
+  <div class="px-4 py-6 bg-brown-200 border border-brown-300 rounded-lg mt-4">
+    <h3 class="text-lg font-semibold text-espresso-900 mb-3">📖 Bible Search</h3>
+    <div class="text-sm text-espresso-800 space-y-2">
       <p><strong>Search for Bible passages using standard notation:</strong></p>
-      <div class="bg-white p-3 rounded border border-green-200 font-mono text-xs space-y-1">
+      <div class="bg-white p-3 rounded border border-brown-300 font-mono text-xs space-y-1">
         <div>John 3:16</div>
         <div>John 3:16 | KJV</div>
         <div>Psalm 23:1</div>
@@ -368,7 +368,7 @@
         <div>Romans 1:16-25 | KJV DRB</div>
       </div>
       <p><strong>Supported formats:</strong></p>
-      <ul class="text-xs text-green-700 ml-4 space-y-1">
+      <ul class="text-xs text-espresso-700 ml-4 space-y-1">
         <li>• Single verse: <code>John 3:16</code></li>
         <li>• Chapter: <code>John 3</code></li>
         <li>• Book: <code>John</code></li>
@@ -378,13 +378,13 @@
         <li>• Multiple references: <code>Romans 1:16-25; Psalm 19:2-3</code></li>
         <li>• Multiple versions: <code>Romans 1:16-25 | KJV DRB</code></li>
       </ul>
-      <p class="text-xs text-green-600 mt-2">
+      <p class="text-xs text-espresso-600 mt-2">
         💡 Use abbreviations like Gen, Exod, Ps, Rev, etc. Case and whitespace are flexible: <code>john3:16</code> works the same as <code>John 3:16</code>
       </p>
-      <p class="text-xs text-green-600 mt-2">
+      <p class="text-xs text-espresso-600 mt-2">
         🔍 <strong>Compare Bible versions:</strong> Use <code>diff::</code> prefix in the main search bar:
       </p>
-      <div class="bg-white p-3 rounded border border-green-200 font-mono text-xs mt-1">
+      <div class="bg-white p-3 rounded border border-brown-300 font-mono text-xs mt-1">
         <div>diff::John 3:16 KJV | NIV</div>
         <div>diff::bible:Romans 1:16 KJV | ESV</div>
         <div>diff::Psalm 23:1 KJV | DRB</div>

@@ -1,4 +1,4 @@
-# Bible Functionality Test Summary
+# WikiStr Test Summary
 
 ## Test Files Created
 
@@ -85,6 +85,100 @@ npm test bible.test.ts
 3. Match events to search queries
 4. Display results with proper titles
 5. Handle version fallback gracefully
+
+### Wiki Integration
+- [[wikilink]] format works for Bible references
+- bible: prefix recommended to avoid false positives
+- Proper rendering in Asciidoc content
+- Integration with existing card system
+
+## Diff Functionality Tests
+
+### Unit Tests (`test/diff.test.ts`)
+Comprehensive tests covering diff functionality:
+- **Diff Query Parsing**: Bible, wiki, and mixed content detection
+- **Query Syntax**: Pipe separation, semicolon separation, single items
+- **Edge Cases**: Special characters, whitespace, unicode, long texts
+- **Content Type Detection**: Automatic Bible vs wiki detection
+
+### Integration Tests (`test/diff-integration.test.ts`)
+Tests using mock events and real-world scenarios:
+- **Bible Version Comparisons**: KJV vs NIV, ESV vs DRB
+- **Wiki Article Comparisons**: Article revisions, related content
+- **Mixed Content**: Bible vs wiki comparisons
+- **Real-world Scenarios**: Complex multi-paragraph diffs
+
+### Search Integration Tests (`test/search-diff-integration.test.ts`)
+Tests for diff integration with search system:
+- **Query Detection**: Proper routing of diff vs regular queries
+- **Search Help Integration**: Appropriate help text for different query types
+- **Multi-tier Search**: Diff queries don't interfere with regular search
+- **WOT Priority**: Diff doesn't apply WOT priority (content comparison focus)
+- **Error Handling**: Graceful handling of malformed queries
+
+## Test Coverage Summary
+
+### Total Tests: 129 tests across 7 test files
+- ✅ **Bible Tests**: 24 unit tests + 21 integration tests + 19 multiple references + 18 multi-verse integration = 82 tests
+- ✅ **Diff Tests**: 21 unit tests + 12 integration tests + 14 search integration = 47 tests
+- ✅ **All tests passing** with comprehensive coverage
+
+### Key Test Scenarios Covered
+
+#### Bible Functionality
+- ✅ Event type detection (Kind 30041, Kind 1 with Bible tags)
+- ✅ Version support and fallback mechanisms
+- ✅ Reference types (single verse, chapter, book, ranges)
+- ✅ Abbreviation support (Turabian standard)
+- ✅ Deuterocanonical books (Catholic Bibles)
+- ✅ Flexible case and whitespace handling
+
+#### Diff Functionality
+- ✅ Bible version comparisons (KJV vs NIV, etc.)
+- ✅ Wiki article comparisons (revisions, related content)
+- ✅ Mixed content comparisons (Bible vs wiki)
+- ✅ Multiple item comparisons (3+ items)
+- ✅ Query parsing and content type detection
+- ✅ Search system integration
+
+#### Search System
+- ✅ Multi-tier search (d-tag, title, summary, full-text)
+- ✅ WOT prioritization (trusted authors first)
+- ✅ Diff query routing and detection
+- ✅ Help text integration
+- ✅ Error handling and edge cases
+
+## Running All Tests
+
+```bash
+# Run all tests
+npm test
+
+# Run specific test suites
+npm test bible.test.ts
+npm test diff.test.ts
+npm test diff-integration.test.ts
+npm test search-diff-integration.test.ts
+
+# Run tests with UI
+npm run test:ui
+```
+
+## Expected Behavior
+
+### Bible Search
+1. Parse Bible notation correctly
+2. Detect Bible events by tags (not kind)
+3. Match events to search queries
+4. Display results with proper titles
+5. Handle version fallback gracefully
+
+### Diff Functionality
+1. Parse diff queries correctly
+2. Detect content types automatically
+3. Generate meaningful line-by-line diffs
+4. Display changes with proper highlighting
+5. Integrate seamlessly with search system
 
 ### Wiki Integration
 - [[wikilink]] format works for Bible references
