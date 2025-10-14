@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  wikistr:
+    image: silberengel/wikistr:latest-wikistr
+    container_name: wikistr-dark
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wikistr.rule=Host(`wikistr.yourdomain.com`)"
+      - "traefik.http.routers.wikistr.tls=true"
+      - "traefik.http.routers.wikistr.tls.certresolver=letsencrypt"
+      - "traefik.http.services.wikistr.loadbalancer.server.port=80"
+
+  biblestr:
+    image: silberengel/wikistr:latest-biblestr
+    container_name: wikistr-light
+    ports:
+      - "8081:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.biblestr.rule=Host(`biblestr.yourdomain.com`)"
+      - "traefik.http.routers.biblestr.tls=true"
+      - "traefik.http.routers.biblestr.tls.certresolver=letsencrypt"
+      - "traefik.http.services.biblestr.loadbalancer.server.port=80"

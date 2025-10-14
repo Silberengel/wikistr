@@ -1,0 +1,45 @@
+# Multi-stage build for wikistr (dark theme)
+FROM node:18-alpine AS builder
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production=false
+
+# Copy source code
+COPY . .
+
+# Copy theme-specific app.html
+COPY src/app.wikistr.html src/app.html
+
+# Set theme environment variable for dark theme
+ENV THEME=wikistr
+
+# Build the application
+RUN npm run build
+
+# Production stage
+FROM httpd:alpine AS production
+
+# Install curl for health checks
+RUN apk add --no-cache curl
+
+# Copy built application from builder stage
+COPY --from=builder /app/build /usr/local/apache2/htdocs/
+
+# Copy Apache configuration
+COPY apache.conf /usr/local/apache2/conf/httpd.conf
+
+# Expose port 80
+EXPOSE 80
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost/health || exit 1
+
+# Start Apache
+CMD ["httpd", "-D", "FOREGROUND"]

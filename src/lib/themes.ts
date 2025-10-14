@@ -59,7 +59,7 @@ export const themes: Record<ThemeType, ThemeConfig> = {
       'wss://nostr.land'
     ],
     showBibleLinks: false,
-    searchHelpText: 'Search for articles by title, content, or author. Use "author:pubkey" to find articles by a specific author.',
+    searchHelpText: 'Search for articles by title, content, or author. Use "author:pubkey" to find articles by a specific author. Use "book:" prefix for book searches (e.g., "book:bible:John 3:16").',
     typography: {
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
       fontFamilyHeading: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
@@ -104,7 +104,7 @@ export const themes: Record<ThemeType, ThemeConfig> = {
       'wss://nostr.land'
     ],
     showBibleLinks: true,
-    searchHelpText: 'Search for articles by title, content, or author. Use "author:pubkey" to find articles by a specific author. Use "bible:" prefix for Bible-related searches.',
+    searchHelpText: 'Search for articles by title, content, or author. Use "author:pubkey" to find articles by a specific author. Use "book:" prefix for book searches (e.g., "book:bible:John 3:16", "book:quran:Al-Fatiha 1-7").',
     typography: {
       fontFamily: '"Crimson Text", "Times New Roman", "Times", "Georgia", serif',
       fontFamilyHeading: '"Crimson Text", "Times New Roman", "Times", "Georgia", serif',

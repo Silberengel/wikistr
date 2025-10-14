@@ -1,7 +1,8 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
+import type { UserConfig } from 'vite';
 
-export default defineConfig({
+const config: UserConfig = {
   plugins: [sveltekit()],
   server: {
     watch: {
@@ -11,6 +12,8 @@ export default defineConfig({
     }
   },
   define: {
-    __THEME__: JSON.stringify(process.env.THEME || 'wikistr')
+    __THEME__: JSON.stringify((process as any).env.THEME || 'wikistr')
   }
-});
+};
+
+export default defineConfig(config);
