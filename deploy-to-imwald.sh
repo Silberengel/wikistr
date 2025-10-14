@@ -32,11 +32,11 @@ docker pull silberengel/wikistr:latest-biblestr
 
 # Stop existing containers if they exist
 echo -e "${BLUE}🛑 Stopping existing containers...${NC}"
-docker-compose -f docker-compose.production.yml down 2>/dev/null || true
+docker compose -f docker-compose.production.yml down 2>/dev/null || true
 
 # Start new containers
 echo -e "${BLUE}🚀 Starting new containers...${NC}"
-docker-compose -f docker-compose.production.yml up -d
+docker compose -f docker-compose.production.yml up -d
 
 # Wait for containers to be healthy
 echo -e "${BLUE}⏳ Waiting for containers to be healthy...${NC}"
@@ -82,10 +82,10 @@ echo -e "  - Biblestr: $(curl -s -o /dev/null -w "%{http_code}" https://biblestr
 
 echo
 echo -e "${BLUE}📝 Useful Commands:${NC}"
-echo -e "  - View logs: docker-compose -f docker-compose.production.yml logs -f"
-echo -e "  - Stop services: docker-compose -f docker-compose.production.yml down"
-echo -e "  - Restart services: docker-compose -f docker-compose.production.yml restart"
-echo -e "  - Update images: docker-compose -f docker-compose.production.yml pull && docker-compose -f docker-compose.production.yml up -d"
+echo -e "  - View logs: docker compose -f docker-compose.production.yml logs -f"
+echo -e "  - Stop services: docker compose -f docker-compose.production.yml down"
+echo -e "  - Restart services: docker compose -f docker-compose.production.yml restart"
+echo -e "  - Update images: docker compose -f docker-compose.production.yml pull && docker compose -f docker-compose.production.yml up -d"
 
 echo
 echo -e "${GREEN}✨ Done! Your Wikistr instances are now running on both domains.${NC}"

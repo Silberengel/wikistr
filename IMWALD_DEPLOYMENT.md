@@ -51,12 +51,12 @@ This guide covers deploying Wikistr to your imwald.eu domains with both themes.
 
 3. **Stop existing containers** (if any):
    ```bash
-   docker-compose -f docker-compose.production.yml down
+   docker compose -f docker-compose.production.yml down
    ```
 
 4. **Start the services**:
    ```bash
-   docker-compose -f docker-compose.production.yml up -d
+   docker compose -f docker-compose.production.yml up -d
    ```
 
 5. **Verify deployment**:
@@ -94,30 +94,30 @@ Both containers include health checks that verify:
 ### View Logs
 ```bash
 # All services
-docker-compose -f docker-compose.production.yml logs -f
+docker compose -f docker-compose.production.yml logs -f
 
 # Specific service
-docker-compose -f docker-compose.production.yml logs -f wikistr
-docker-compose -f docker-compose.production.yml logs -f biblestr
+docker compose -f docker-compose.production.yml logs -f wikistr
+docker compose -f docker-compose.production.yml logs -f biblestr
 ```
 
 ### Update Images
 ```bash
 # Pull latest images
-docker-compose -f docker-compose.production.yml pull
+docker compose -f docker-compose.production.yml pull
 
 # Restart with new images
-docker-compose -f docker-compose.production.yml up -d
+docker compose -f docker-compose.production.yml up -d
 ```
 
 ### Stop Services
 ```bash
-docker-compose -f docker-compose.production.yml down
+docker compose -f docker-compose.production.yml down
 ```
 
 ### Restart Services
 ```bash
-docker-compose -f docker-compose.production.yml restart
+docker compose -f docker-compose.production.yml restart
 ```
 
 ## Troubleshooting
@@ -164,7 +164,7 @@ biblestr.imwald.eu A  YOUR_SERVER_IP
 ### Creating a Backup
 ```bash
 # Export current configuration
-docker-compose -f docker-compose.production.yml config > backup-config.yml
+docker compose -f docker-compose.production.yml config > backup-config.yml
 ```
 
 ### Updating to New Versions
@@ -175,10 +175,10 @@ docker-compose -f docker-compose.production.yml config > backup-config.yml
 ### Rolling Back
 ```bash
 # Stop current containers
-docker-compose -f docker-compose.production.yml down
+docker compose -f docker-compose.production.yml down
 
 # Start with previous version (update image tags first)
-docker-compose -f docker-compose.production.yml up -d
+docker compose -f docker-compose.production.yml up -d
 ```
 
 ## Monitoring
@@ -207,7 +207,7 @@ docker inspect --format='{{.State.Health.Status}}' wikistr-light
 
 If you encounter issues:
 
-1. Check the logs: `docker-compose -f docker-compose.production.yml logs`
+1. Check the logs: `docker compose -f docker-compose.production.yml logs`
 2. Verify Traefik configuration
 3. Check DNS resolution
 4. Ensure firewall allows traffic on ports 80 and 443
