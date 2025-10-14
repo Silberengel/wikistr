@@ -131,15 +131,13 @@
 
   // Helper Functions
   async function getUserInboxRelays(pubkey: string): Promise<string[]> {
-    const relayList = await loadRelayList(pubkey);
-    return relayList.items
-      .filter((ri) => ri.read)
-      .map((ri) => ri.url);
+    // Only use DEFAULT_WIKI_RELAYS to avoid querying user's relay lists
+    return DEFAULT_WIKI_RELAYS;
   }
 
   async function getCombinedRelays(pubkey: string): Promise<string[]> {
-    const inboxRelays = await getUserInboxRelays(pubkey);
-    return [...new Set([...inboxRelays, ...DEFAULT_WIKI_RELAYS])];
+    // Only use DEFAULT_WIKI_RELAYS to avoid querying user's relay lists
+    return [...new Set([...DEFAULT_WIKI_RELAYS])];
   }
 
   function createSubscription(

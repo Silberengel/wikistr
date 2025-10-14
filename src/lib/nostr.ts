@@ -127,20 +127,13 @@ export async function loadBlockedRelays(pubkey: string): Promise<string[]> {
 }
 
 export async function getBasicUserWikiRelays(pubkey: string): Promise<string[]> {
-  const [rl1, rl2, blockedRelays] = await Promise.all([
+  const [rl1, blockedRelays] = await Promise.all([
     loadWikiRelays(pubkey).then((rl) => rl.items),
-    Promise.all((await loadWikiAuthors(pubkey)).items.map((pk) => loadRelayList(pk))).then((rll) =>
-      rll
-        .map((rl) => rl.items)
-        .flat()
-        .filter((ri) => ri.write)
-        .map((ri) => ri.url)
-    ),
     loadBlockedRelays(pubkey)
   ]);
 
   const normalizedBlocked = new Set(deduplicateRelays(blockedRelays));
-  let list = unique(rl1, rl2);
+  let list = rl1;
   
   // Normalize all relay URLs first
   list = deduplicateRelays(list);

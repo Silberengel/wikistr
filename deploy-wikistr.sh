@@ -53,7 +53,7 @@ echo -e "${BLUE}Step 2: Configure Apache virtual host${NC}"
 # Create Apache configuration file
 echo -e "${YELLOW}Creating Apache virtual host configuration...${NC}"
 sudo tee /etc/apache2/conf-available/wikistr-override.conf << 'EOF'
-<VirtualHost *:443>
+<VirtualHost wikistr.imwald.eu:443>
     ServerName wikistr.imwald.eu
     ServerAlias www.wikistr.imwald.eu
 
