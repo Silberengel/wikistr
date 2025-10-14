@@ -1,6 +1,6 @@
-# Diff Guide for WikiStr
+# Diff Guide for Wikistr - Biblestr Edition
 
-WikiStr includes powerful diff functionality that allows you to compare Bible versions, wiki articles, and other content side-by-side with highlighted differences.
+Wikistr - Biblestr Edition includes powerful diff functionality that allows you to compare book versions, wiki articles, and other content side-by-side with highlighted differences.
 
 ## Overview
 
@@ -18,14 +18,28 @@ diff::content1 | content2
 
 ### Query Types
 
-#### 1. Bible Version Comparisons
-Compare different Bible versions of the same passage:
+#### 1. Book Version Comparisons
+Compare different versions of the same book passage:
 
+**Bible:**
 ```
 diff::John 3:16 KJV | NIV
 diff::bible:Romans 1:16 KJV | ESV
 diff::Psalm 23:1 KJV | DRB
 diff::Genesis 1:1 KJV | NIV
+```
+
+**Quran:**
+```
+diff::Al-Fatiha 1:1-7 SAHIH | PICKTHAL
+diff::quran:Al-Baqarah 2:255 SAHIH | YUSUFALI
+diff::Al-Mulk 67:1-5 SAHIH | SHAKIR
+```
+
+**Catechism:**
+```
+diff::Article 1:1 CCC | CCC-EN
+diff::catechism:Article 2558 CCC | CCC-EN
 ```
 
 #### 2. Wiki Article Comparisons
@@ -54,6 +68,8 @@ diff::left-content | right-content
 
 **Examples:**
 - `diff::John 3:16 KJV | NIV`
+- `diff::Al-Fatiha 1:1-7 SAHIH | PICKTHAL`
+- `diff::Article 1:1 CCC | CCC-EN`
 - `diff::article1 | article2`
 - `diff::bible:Romans 1:16 KJV | ESV`
 

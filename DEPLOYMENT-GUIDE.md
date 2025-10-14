@@ -1,6 +1,6 @@
-# wikistr.imwald.eu Deployment Guide
+# Wikistr - Biblestr Edition Deployment Guide
 
-Complete deployment guide for setting up wikistr on a Plesk server with SSL certificates.
+Complete deployment guide for setting up Wikistr - Biblestr Edition with theme customization on a Plesk server with SSL certificates.
 
 ## 🎯 Prerequisites
 
@@ -223,6 +223,70 @@ chmod +x /home/admin/health-check.sh
 # Add to crontab for regular monitoring
 echo "*/5 * * * * /home/admin/health-check.sh" | crontab -
 ```
+
+## 🎨 Theme Configuration
+
+### Default Themes
+
+**Light Theme (Biblestr):**
+```bash
+# Set environment variable for light theme
+echo "VITE_THEME=biblestr" >> /home/admin/wikistr/.env
+docker restart wikistr-app
+```
+
+**Dark Theme (Wikistr):**
+```bash
+# Set environment variable for dark theme
+echo "VITE_THEME=wikistr" >> /home/admin/wikistr/.env
+docker restart wikistr-app
+```
+
+### Custom Theme Development
+
+1. **Clone the repository:**
+```bash
+git clone https://github.com/your-org/wikistr.git
+cd wikistr
+```
+
+2. **Modify theme configuration:**
+Edit `src/lib/themes.ts` to add your custom theme:
+```typescript
+export const yourTheme = {
+  name: 'Your Theme',
+  colors: {
+    primary: '#your-primary-color',
+    secondary: '#your-secondary-color',
+    background: '#your-background-color',
+    text: '#your-text-color',
+  },
+  fonts: {
+    heading: 'Your Heading Font',
+    body: 'Your Body Font',
+  }
+};
+```
+
+3. **Build with custom theme:**
+```bash
+# Set your theme
+export VITE_THEME=yourTheme
+
+# Build the application
+npm run build
+
+# Deploy the built files
+```
+
+### Theme Environment Variables
+
+| Variable | Description | Options |
+|----------|-------------|---------|
+| `VITE_THEME` | Theme selection | `biblestr`, `wikistr`, or custom theme name |
+| `VITE_PRIMARY_COLOR` | Override primary color | Hex color code |
+| `VITE_SECONDARY_COLOR` | Override secondary color | Hex color code |
+| `VITE_FONT_FAMILY` | Override font family | CSS font family |
 
 ## 🔄 Updates
 

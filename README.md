@@ -1,106 +1,170 @@
-# Wikistr -- Biblestr Edition
+# Wikistr - Biblestr Edition
 
-This is a decentralized book study and wiki system built on Nostr that supports both traditional wiki articles and comprehensive book study functionality with powerful diff capabilities.
+A decentralized wiki and book study system built on Nostr. Supports traditional wiki articles and comprehensive book study functionality with powerful diff capabilities for ANY structured text - religious texts, academic works, legal documents, literature, and more.
 
 ## Features
 
-### 🔍 **Multi-Tier Search System**
+### Multi-Tier Search System
 - **d-tag search** (exact identifier match)
 - **title search** (title tag matches)
 - **summary search** (summary tag matches)
 - **full-text search** (content search)
 - **WOT prioritization** (results from trusted authors appear first)
 
-### 📖 **Bible Functionality**
-- **Bible event support** (Kind 30041 and Kind 1 with Bible tags)
-- **Multiple Bible versions** (KJV, NIV, ESV, DRB, etc.)
+### Generic Book System
+- **Universal support** for ANY structured text (Bible, Quran, Catechism, Torah, academic textbooks, legal codes, literature, etc.)
 - **Flexible notation** (case-insensitive, whitespace-tolerant)
-- **Bible wikilinks** in wiki articles
-- **Version fallback** (shows all versions if requested version not found)
+- **Version support** with fallback mechanisms
+- **Book wikilinks** in wiki articles
+- **Cross-reference search** capabilities
+- **Easy customization** - add your own book types with custom notation and versions
 
-### 🔄 **Diff Functionality**
-- **Bible version comparison** (KJV vs NIV, etc.)
-- **Wiki article comparison** (article revisions, related content)
-- **Mixed content comparison** (Bible vs wiki articles)
+### Diff Functionality
+- **Version comparison** (different translations/versions)
+- **Wiki article comparison** (revisions, related content)
+- **Mixed content comparison** (books vs wiki articles)
 - **Line-by-line diff display** with highlighted changes
 - **Multiple item comparison** support
 
-### 📝 **Wiki System**
+### Wiki System
 - **Nostr-based** decentralized wiki
 - **Asciidoc support** for rich formatting
-- **Wikilink system** with Bible integration
+- **Wikilink system** with book integration
 - **User-friendly editing** interface
 
 ## Quick Start
 
 ### Search
 - **Wiki articles**: Use the main search bar
-- **Bible passages**: Use `/bible:John 3:16` or Bible wikilinks
+- **Book passages**: Use `book:type:reference` or book wikilinks
 - **Diff comparison**: Use `diff::content1 | content2` in main search
 
-### Bible Search Examples
+### Book Search Examples
+
+**Bible:**
 ```
-/bible:John 3:16
-/bible:John 3:16 | KJV
-/bible:Psalm 23:1
-/bible:Romans 1:16-25 | KJV DRB
+book:bible:John 3:16
+book:bible:John 3:16 | KJV
+book:bible:Psalm 23:1
+book:bible:Romans 1:16-25 | KJV DRB
 ```
 
-### Bible Wikilinks in Articles
+**Quran:**
+```
+book:quran:Al-Fatiha 1-7
+book:quran:Al-Baqarah 2:255 | SAHIH
+book:quran:Al-Mulk 67:1-5
+```
+
+**Catechism:**
+```
+book:catechism:Article 1:1
+book:catechism:Article 2558 | CCC
+book:catechism:Part 1, Section 2, Chapter 3
+```
+
+### Book Wikilinks in Articles
+
+**Bible:**
 ```asciidoc
-The most famous verse is [[bible:John 3:16 | KJV]].
+The most famous verse is [[book:bible:John 3:16 | KJV]].
 
-For the full chapter, see [[bible:John 3 | KJV]].
+For the full chapter, see [[book:bible:John 3 | KJV]].
 
-Multiple verses: [[bible:John 3:16,18 | KJV]]
+Multiple verses: [[book:bible:John 3:16,18 | KJV]]
+```
+
+**Quran:**
+```asciidoc
+The opening chapter is [[book:quran:Al-Fatiha 1-7 | SAHIH]].
+
+For the throne verse, see [[book:quran:Al-Baqarah 2:255 | SAHIH]].
+```
+
+**Catechism:**
+```asciidoc
+The first article states [[book:catechism:Article 1:1 | CCC]].
+
+For the creed, see [[book:catechism:Article 185-197 | CCC]].
 ```
 
 ### Diff Examples
 ```
 diff::John 3:16 KJV | NIV
+diff::Al-Fatiha SAHIH | PICKTHAL
+diff::Article 1:1 CCC | CCC-EN
 diff::article1 | article2
-diff::bible:Romans 1:16 KJV | ESV
 diff::article1; article2; article3
 ```
 
-## Documentation
+## Supported Book Types
 
-- **[Bible Search Guide](BIBLE_SEARCH_GUIDE.md)** - Complete guide to Bible functionality
-- **[Diff Guide](DIFF_GUIDE.md)** - Comprehensive diff functionality documentation
-- **[Bible Functionality](BIBLE_FUNCTIONALITY.md)** - Technical details about Bible implementation
-- **[Deployment Guide](DEPLOYMENT-GUIDE.md)** - How to deploy WikiStr
-- **[Troubleshooting](TROUBLESHOOTING.md)** - Common issues and solutions
+The system is completely generic and can support ANY structured text. Here are the pre-configured examples:
 
-## Supported Bible Versions
+### Bible
+- **Versions**: KJV, NKJV, NIV, ESV, NASB, NLT, MSG, CEV, NRSV, RSV, ASV, YLT, WEB, GNV, DRB
+- **Books**: All 66 canonical books plus Deuterocanonical books
+- **Notation**: `Book Chapter:Verse` (e.g., `John 3:16`, `Romans 1:16-25`)
 
-| Abbreviation | Full Name |
-|-------------|-----------|
-| KJV | King James Version |
-| NKJV | New King James Version |
-| NIV | New International Version |
-| ESV | English Standard Version |
-| NASB | New American Standard Bible |
-| NLT | New Living Translation |
-| MSG | The Message |
-| CEV | Contemporary English Version |
-| NRSV | New Revised Standard Version |
-| RSV | Revised Standard Version |
-| ASV | American Standard Version |
-| YLT | Young's Literal Translation |
-| WEB | World English Bible |
-| GNV | 1599 Geneva Bible |
-| DRB | Douay-Rheims Bible (includes Deuterocanonical books) |
+### Quran
+- **Versions**: SAHIH, PICKTHAL, YUSUFALI, SHAKIR, MUHD, HILALI
+- **Surahs**: All 114 surahs
+- **Notation**: `SurahName Chapter:Verses` (e.g., `Al-Fatiha 1-7`, `Al-Baqarah 2:255`)
 
-## Bible Book Abbreviations
+### Catechism
+- **Versions**: CCC (Catechism of the Catholic Church), CCC-EN
+- **Structure**: Parts, Sections, Chapters, Articles
+- **Notation**: `Article Number:Section` (e.g., `Article 1:1`, `Article 2558`)
 
-### Old Testament
-Genesis (Gen), Exodus (Exod), Leviticus (Lev), Numbers (Num), Deuteronomy (Deut), Joshua (Josh), Judges (Judg), Ruth (Ruth), 1 Samuel (1 Sam), 2 Samuel (2 Sam), 1 Kings (1 Kgs), 2 Kings (2 Kgs), 1 Chronicles (1 Chr), 2 Chronicles (2 Chr), Ezra (Ezra), Nehemiah (Neh), Esther (Esth), Job (Job), Psalms (Ps), Proverbs (Prov), Ecclesiastes (Eccl), Song of Solomon (Song), Isaiah (Isa), Jeremiah (Jer), Lamentations (Lam), Ezekiel (Ezek), Daniel (Dan), Hosea (Hos), Joel (Joel), Amos (Amos), Obadiah (Obad), Jonah (Jonah), Micah (Mic), Nahum (Nah), Habakkuk (Hab), Zephaniah (Zeph), Haggai (Hag), Zechariah (Zech), Malachi (Mal)
+### Adding Your Own Book Types
 
-### New Testament
-Matthew (Matt), Mark (Mk), Luke (Lk), John (Jn), Acts (Acts), Romans (Rom), 1 Corinthians (1 Cor), 2 Corinthians (2 Cor), Galatians (Gal), Ephesians (Eph), Philippians (Phil), Colossians (Col), 1 Thessalonians (1 Thess), 2 Thessalonians (2 Thess), 1 Timothy (1 Tim), 2 Timothy (2 Tim), Titus (Titus), Philemon (Phlm), Hebrews (Heb), James (Jas), 1 Peter (1 Pet), 2 Peter (2 Pet), 1 John (1 John), 2 John (2 John), 3 John (3 John), Jude (Jude), Revelation (Rev)
+You can easily add support for any structured text by configuring it in the system:
 
-### Deuterocanonical Books (Catholic Bibles)
-Tobit (Tob), Judith (Jdt), Wisdom (Wis), Sirach (Sir), Baruch (Bar), 1 Maccabees (1 Macc), 2 Maccabees (2 Macc), 1 Esdras (1 Esd), 2 Esdras (2 Esd), Prayer of Manasseh (Pr Man), 3 Maccabees (3 Macc), 4 Maccabees (4 Macc), Psalm 151 (Ps 151), Additions to Esther (Add Esth), Additions to Daniel (Add Dan), Bel and the Dragon (Bel), Susanna (Sus), Prayer of Azariah (Pr Azar), Song of the Three Young Men (Song Three)
+- **Religious texts**: Torah, Bhagavad Gita, Tao Te Ching, etc.
+- **Academic works**: Textbooks, research papers, study guides
+- **Legal documents**: Law codes, regulations, case studies
+- **Literature**: Poetry collections, anthologies, series
+- **Reference works**: Encyclopedias, dictionaries, manuals
+
+See the [Book Search Guide](BOOK_SEARCH_GUIDE.md) for detailed instructions on adding custom book types.
+
+## Themes and Customization
+
+### Light Theme (Biblestr)
+```bash
+npm run dev -- --theme=biblestr
+```
+- Clean, academic design
+- Optimized for Bible study
+- High contrast for readability
+- Traditional typography
+
+### Dark Theme (Wikistr)
+```bash
+npm run dev -- --theme=wikistr
+```
+- Modern, minimalist design
+- Optimized for general wiki use
+- Dark mode for reduced eye strain
+- Contemporary interface
+
+### Custom Themes
+Create your own theme by modifying `src/lib/themes.ts`:
+
+```typescript
+export const customTheme = {
+  name: 'Custom Theme',
+  colors: {
+    primary: '#your-color',
+    secondary: '#your-color',
+    // ... other theme properties
+  },
+  fonts: {
+    heading: 'Your Font',
+    body: 'Your Font',
+  }
+};
+```
 
 ## Development
 
@@ -110,13 +174,20 @@ Tobit (Tob), Judith (Jdt), Wisdom (Wis), Sirach (Sir), Baruch (Bar), 1 Maccabees
 
 ### Installation
 ```bash
-git clone <repository-url>
+git clone git@github.com:Silberengel/wikistr.git
 cd wikistr
 npm install
 ```
 
 ### Development Server
 ```bash
+# Light theme (Biblestr)
+npm run dev -- --theme=biblestr
+
+# Dark theme (Wikistr)
+npm run dev -- --theme=wikistr
+
+# Default theme
 npm run dev
 ```
 
@@ -141,22 +212,22 @@ npm run build
 ## Architecture
 
 ### Search System
-- **Multi-tier search** with prioritized results
-- **WOT integration** for trusted content prioritization
-- **Diff routing** for content comparison
-- **Bible search** integration
+- Multi-tier search with prioritized results
+- WOT integration for trusted content prioritization
+- Diff routing for content comparison
+- Generic book search integration
 
-### Bible System
-- **Event detection** (Kind 30041, Kind 1 with Bible tags)
-- **Metadata extraction** (book, chapter, verse, version)
-- **Notation parsing** (flexible case and whitespace)
-- **Version handling** with fallback mechanisms
+### Book System
+- Event detection (Kind 30041, Kind 1 with book tags)
+- Metadata extraction (book, chapter, verse, version)
+- Notation parsing (flexible case and whitespace)
+- Version handling with fallback mechanisms
 
 ### Diff System
-- **Query parsing** (pipe and semicolon separation)
-- **Content type detection** (Bible vs wiki)
-- **Line-by-line comparison** algorithm
-- **Visual diff display** with highlighting
+- Query parsing (pipe and semicolon separation)
+- Content type detection (books vs wiki)
+- Line-by-line comparison algorithm
+- Visual diff display with highlighting
 
 ## Contributing
 
@@ -181,7 +252,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 For questions and support:
 - Check the [Troubleshooting Guide](TROUBLESHOOTING.md)
-- Review the [Bible Search Guide](BIBLE_SEARCH_GUIDE.md)
+- Review the [Book Search Guide](BOOK_SEARCH_GUIDE.md)
 - Consult the [Diff Guide](DIFF_GUIDE.md)
 - Contact the author via GitHub or Nostr
 
@@ -189,8 +260,8 @@ For questions and support:
 
 ## Acknowledgments
 
-**Biblestr** is a [Gitcitadel](https://jumble.imwald.eu/users/npub1s3ht77dq4zqnya8vjun5jp3p44pr794ru36d0ltxu65chljw8xjqd975wz) fork of [WikiStr](https://github.com/fiatjaf/wikistr) by [fiatjaf](https://jumble.imwald.eu/users/npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6), enhanced with specialized Bible functionality and Alexandria-inspired design. We thank Fiatjaf for inspiring this application, providing assistance in understanding Nostr wikis, and explaining how best to use markup for advanced documentation.
+**Wikistr - Biblestr Edition** is a [Gitcitadel](https://jumble.imwald.eu/users/npub1s3ht77dq4zqnya8vjun5jp3p44pr794ru36d0ltxu65chljw8xjqd975wz) fork of [WikiStr](https://github.com/fiatjaf/wikistr) by [fiatjaf](https://jumble.imwald.eu/users/npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6), enhanced with specialized book study functionality and Alexandria-inspired design. We thank Fiatjaf for inspiring this application, providing assistance in understanding Nostr wikis, and explaining how best to use markup for advanced documentation.
 
-We thank [mleku](https://jumble.imwald.eu/users/npub1fjqqy4a93z5zsjwsfxqhc2764kvykfdyttvldkkkdera8dr78vhsmmleku) for providing the biblestr domain, encouraging our efforst, and helping us develop an appropriate relay for storing and serving-up the Bibles.
+We thank [mleku](https://jumble.imwald.eu/users/npub1fjqqy4a93z5zsjwsfxqhc2764kvykfdyttvldkkkdera8dr78vhsmmleku) for providing the biblestr domain, encouraging our efforts, and helping us develop an appropriate relay for storing and serving the books.
 
-We would also like to thank the many Christian Nostriches, who have been very patient, generous, and supportive, awaiting the creation of this project. ✝
+We would also like to thank the many Christian and Muslim Nostriches, who have been very patient, generous, and supportive, awaiting the creation of this project.

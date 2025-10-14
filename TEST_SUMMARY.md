@@ -1,187 +1,203 @@
-# WikiStr Test Summary
+# Wikistr - Biblestr Edition Test Summary
 
-## Test Files Created
+## Test Coverage Overview
+
+The test suite covers all core functionality with **129 tests** across **7 test files**, achieving **100% test success rate**.
+
+## Test Files
 
 ### Unit Tests (`test/bible.test.ts`)
-Comprehensive tests covering all Bible functionality:
-- **Bible Notation Parsing**: Single verses, chapters, books, ranges
-- **Wikilink Parsing**: With/without versions, explicit bible: prefix
-- **Event Detection**: Kind 30041, Kind 1 with Bible tags, exclusions
-- **Metadata Extraction**: All Bible tag fields
+Comprehensive tests covering all book functionality:
+- **Book Notation Parsing**: Single verses, chapters, books, ranges
+- **Wikilink Parsing**: With/without versions, explicit book: prefix
+- **Event Detection**: Kind 30041, Kind 1 with book tags, exclusions
+- **Metadata Extraction**: All book tag fields
 - **Title Generation**: Verses, chapters, books with versions
 - **Search Queries**: Proper query generation for all reference types
-- **Abbreviations**: Turabian standard support
-- **Deuterocanonical Books**: Catholic Bible book support
+- **Abbreviations**: Standard abbreviation support
+- **Multi-format Support**: Bible, Quran, Catechism
 
-### Test Events
+### Integration Tests (`test/bible-integration.test.ts`)
+Real-world integration testing with actual event data:
+- **Kind 30041 Events**: Bible verse events with proper tags
+- **Kind 1 Events**: Bible note events with book tags
+- **Event Detection**: Proper identification of book events
+- **Metadata Extraction**: Real event data processing
+- **Version Fallback**: Multiple version handling
+- **Deuterocanonical Books**: Catholic Bible support
+- **Wikilink Integration**: Article-to-book linking
 
-#### Kind 30041 (Bible Verses - Replaceable)
+### Multiple References Tests (`test/multiple-references.test.ts`)
+Complex reference parsing and handling:
+- **Semicolon Separation**: Multiple references in one query
+- **Version Handling**: Individual and global version specification
+- **Pipe Separation**: Version comparison syntax
+- **Mixed Formats**: Various notation styles
+- **Real-world Scenarios**: Daily readings, version comparisons
+
+### Multi-Verse Integration Tests (`test/multi-verse-integration.test.ts`)
+Advanced multi-reference functionality:
+- **Cross-book References**: Different books in one query
+- **Version Comparison**: Multiple versions across references
+- **Event Matching**: Complex query matching
+- **Metadata Processing**: Bulk metadata extraction
+- **Search Query Generation**: Multi-reference query creation
+
+### Diff Tests (`test/diff.test.ts`)
+Content comparison functionality:
+- **Query Parsing**: Pipe and semicolon separation
+- **Content Type Detection**: Book vs wiki content
+- **Version Comparison**: Side-by-side version display
+- **Multiple Item Comparison**: Three or more items
+- **Mixed Content**: Books and articles together
+
+### Diff Integration Tests (`test/diff-integration.test.ts`)
+Real-world diff scenarios:
+- **Book Version Diffs**: Bible version comparisons
+- **Wiki Article Diffs**: Article revision comparisons
+- **Mixed Content Diffs**: Books vs articles
+- **Complex Scenarios**: Multi-paragraph comparisons
+
+### Search-Diff Integration Tests (`test/search-diff-integration.test.ts`)
+Search and diff system integration:
+- **Search Routing**: Proper routing to diff functionality
+- **Query Processing**: Search-to-diff query conversion
+- **Result Display**: Integrated search and diff results
+
+## Test Data
+
+### Book Events (Kind 30041)
 - `exodus_3_16_30041.json` - Exodus 3:16 (KJV)
 - `john_3_16_30041.json` - John 3:16 (KJV)
 - `john_3_16_niv_30041.json` - John 3:16 (NIV)
-- `version_fallback_test_30041.json` - John 3:16 (ESV)
-- `revelation_11_15_30041.json` - Revelation 11:15 (DRB)
 - `psalm_23_1_30041.json` - Psalm 23:1 (KJV)
+- `psalm_19_2_30041.json` - Psalm 19:2 (KJV)
+- `romans_1_16_30041.json` - Romans 1:16 (KJV)
+- `revelation_11_15_30041.json` - Revelation 11:15 (DRB)
+- `genesis_1_1_30041.json` - Genesis 1:1 (KJV)
+- `luke_11_37_30041.json` - Luke 11:37 (KJV)
+- `version_fallback_test_30041.json` - Version fallback test
 
-#### Kind 1 (Bible Verses - Regular Notes)
-- `john_3_16_kind1.json` - John 3:16 (KJV)
-- `john_3_16_niv_kind1.json` - John 3:16 (NIV)
-- `exodus_3_16_kind1.json` - Exodus 3:16 (KJV)
-- `psalm_23_1_kind1.json` - Psalm 23:1 (KJV)
-- `revelation_11_15_kind1.json` - Revelation 11:15 (DRB)
+### Book Notes (Kind 1)
+- `john_3_16_kind1.json` - John 3:16 note (KJV)
+- `john_3_16_niv_kind1.json` - John 3:16 note (NIV)
+- `exodus_3_16_kind1.json` - Exodus 3:16 note (KJV)
+- `psalm_23_1_kind1.json` - Psalm 23:1 note (KJV)
+- `psalm_19_2_kind1.json` - Psalm 19:2 note (KJV)
+- `romans_1_16_kind1.json` - Romans 1:16 note (KJV)
+- `revelation_11_15_kind1.json` - Revelation 11:15 note (DRB)
 
-#### Kind 1 (Reference Notes)
-- `bible_verse_note_kind1.json` - References John 3:16 with "e" tag
-- `exodus_verse_note_kind1.json` - References Exodus 3:16 with "e" tag
+### Non-Book Events (Control Data)
+- `bible_verse_note_kind1.json` - Bible reference note (not a book event)
+- `exodus_verse_note_kind1.json` - Exodus reference note (not a book event)
+- `bible_study_wiki_30818.json` - Bible study wiki article
+- `bible_versions_wiki_30818.json` - Bible versions wiki article
+- `bible_study_guide_30818.json` - Bible study guide wiki
+- `bible_article_30023.json` - Bible article (Kind 30023)
 
-#### Kind 30023 (Long-form Articles)
-- `bible_article_30023.json` - Article with "a" tag Bible reference
+### Chapter Events
+- `exodus_chapter.json` - Exodus chapter (Kind 30041)
+- `john._chapter.json` - John chapter (Kind 30041)
 
-#### Kind 30818 (Wiki Pages)
-- `bible_study_wiki_30818.json` - Wiki about Bible study
-- `bible_versions_wiki_30818.json` - Wiki comparing versions
-- `bible_study_guide_30818.json` - Wiki with [[wikilink]] references
+## Test Results
 
-#### Chapter Events
-- `exodus_chapter.json` - Full Exodus Chapter 3
-- `john._chapter.json` - Full Revelation Chapter 11
+### Current Status
+- **Total Tests**: 129
+- **Passing**: 129 (100%)
+- **Failing**: 0 (0%)
+- **Test Files**: 7
+- **Coverage**: All core functionality
+
+### Test Categories
+1. **Unit Tests**: 24 tests - Core function testing
+2. **Integration Tests**: 21 tests - Real data integration
+3. **Multiple References**: 19 tests - Complex parsing
+4. **Multi-Verse Integration**: 18 tests - Advanced functionality
+5. **Diff Tests**: 21 tests - Comparison functionality
+6. **Diff Integration**: 12 tests - Real-world diff scenarios
+7. **Search-Diff Integration**: 14 tests - System integration
 
 ## Key Test Scenarios
 
-### 1. Event Type Detection
-- ✅ Kind 30041 with Bible tags → Bible page
-- ✅ Kind 1 with Bible tags → Bible page
-- ✅ Kind 1 with "e" tags only → Regular note
-- ✅ Kind 30818 → Wiki page (not Bible page)
+### Book Notation Parsing
+- Single verses: `John 3:16`
+- Chapters: `John 3`
+- Books: `John`
+- Ranges: `Romans 1:16-25`
+- Multiple verses: `John 3:16,18`
+- Multiple references: `John 3:16; Romans 1:16; Psalm 23:1`
 
-### 2. Version Support
-- ✅ Multiple versions of John 3:16 (KJV, NIV, ESV)
-- ✅ Version-specific search: `[[John 3:16 | KJV]]`
-- ✅ All versions search: `[[John 3:16]]`
-- ✅ Version fallback when not found
+### Version Handling
+- Single versions: `John 3:16 | KJV`
+- Multiple versions: `John 3:16 | KJV NIV`
+- Version fallback: Automatic fallback when requested version not found
+- Version comparison: Side-by-side version display
 
-### 3. Reference Types
-- ✅ Single verse: `[[John 3:16]]`
-- ✅ Chapter: `[[John 3]]`
-- ✅ Book: `[[John]]`
-- ✅ Verse range: `[[John 3:16-18]]`
-- ✅ Multiple verses: `[[John 3:16,18]]`
+### Event Detection
+- Kind 30041 events with proper book tags
+- Kind 1 events with book tags
+- Exclusion of non-book events
+- Proper metadata extraction
 
-### 4. Abbreviations
-- ✅ Turabian standard (Gen, Exod, Ps, Rev, etc.)
-- ✅ Deuterocanonical books (Tob, Sir, Macc, etc.)
+### Search Query Generation
+- Proper query format: `type:bible book:john chapter:3 verse:16 version:kjv`
+- Version handling in queries
+- Multiple reference queries
+- Fallback query generation
 
-## Running Tests
+### Wikilink Integration
+- Basic wikilinks: `[[book:bible:John 3:16]]`
+- Version specification: `[[book:bible:John 3:16 | KJV]]`
+- Display text: `[[book:bible:John 3:16 | The Famous Verse | KJV]]`
+- Multiple formats: Bible, Quran, Catechism
 
-```bash
-npm test bible.test.ts
-```
+### Diff Functionality
+- Version comparisons: `diff::John 3:16 KJV | NIV`
+- Article comparisons: `diff::article1 | article2`
+- Multiple item comparisons: `diff::item1; item2; item3`
+- Mixed content comparisons: Books vs articles
 
-## Expected Behavior
+## Test Maintenance
 
-### Bible Search
-1. Parse Bible notation correctly
-2. Detect Bible events by tags (not kind)
-3. Match events to search queries
-4. Display results with proper titles
-5. Handle version fallback gracefully
-
-### Wiki Integration
-- [[wikilink]] format works for Bible references
-- bible: prefix recommended to avoid false positives
-- Proper rendering in Asciidoc content
-- Integration with existing card system
-
-## Diff Functionality Tests
-
-### Unit Tests (`test/diff.test.ts`)
-Comprehensive tests covering diff functionality:
-- **Diff Query Parsing**: Bible, wiki, and mixed content detection
-- **Query Syntax**: Pipe separation, semicolon separation, single items
-- **Edge Cases**: Special characters, whitespace, unicode, long texts
-- **Content Type Detection**: Automatic Bible vs wiki detection
-
-### Integration Tests (`test/diff-integration.test.ts`)
-Tests using mock events and real-world scenarios:
-- **Bible Version Comparisons**: KJV vs NIV, ESV vs DRB
-- **Wiki Article Comparisons**: Article revisions, related content
-- **Mixed Content**: Bible vs wiki comparisons
-- **Real-world Scenarios**: Complex multi-paragraph diffs
-
-### Search Integration Tests (`test/search-diff-integration.test.ts`)
-Tests for diff integration with search system:
-- **Query Detection**: Proper routing of diff vs regular queries
-- **Search Help Integration**: Appropriate help text for different query types
-- **Multi-tier Search**: Diff queries don't interfere with regular search
-- **WOT Priority**: Diff doesn't apply WOT priority (content comparison focus)
-- **Error Handling**: Graceful handling of malformed queries
-
-## Test Coverage Summary
-
-### Total Tests: 129 tests across 7 test files
-- ✅ **Bible Tests**: 24 unit tests + 21 integration tests + 19 multiple references + 18 multi-verse integration = 82 tests
-- ✅ **Diff Tests**: 21 unit tests + 12 integration tests + 14 search integration = 47 tests
-- ✅ **All tests passing** with comprehensive coverage
-
-### Key Test Scenarios Covered
-
-#### Bible Functionality
-- ✅ Event type detection (Kind 30041, Kind 1 with Bible tags)
-- ✅ Version support and fallback mechanisms
-- ✅ Reference types (single verse, chapter, book, ranges)
-- ✅ Abbreviation support (Turabian standard)
-- ✅ Deuterocanonical books (Catholic Bibles)
-- ✅ Flexible case and whitespace handling
-
-#### Diff Functionality
-- ✅ Bible version comparisons (KJV vs NIV, etc.)
-- ✅ Wiki article comparisons (revisions, related content)
-- ✅ Mixed content comparisons (Bible vs wiki)
-- ✅ Multiple item comparisons (3+ items)
-- ✅ Query parsing and content type detection
-- ✅ Search system integration
-
-#### Search System
-- ✅ Multi-tier search (d-tag, title, summary, full-text)
-- ✅ WOT prioritization (trusted authors first)
-- ✅ Diff query routing and detection
-- ✅ Help text integration
-- ✅ Error handling and edge cases
-
-## Running All Tests
-
+### Running Tests
 ```bash
 # Run all tests
 npm test
 
-# Run specific test suites
+# Run specific test file
 npm test bible.test.ts
-npm test diff.test.ts
-npm test diff-integration.test.ts
-npm test search-diff-integration.test.ts
 
 # Run tests with UI
 npm run test:ui
+
+# Run tests in watch mode
+npm test -- --watch
 ```
 
-## Expected Behavior
+### Test Data Updates
+When adding new book types or features:
+1. Update test data files with new tag formats
+2. Add new test cases for new functionality
+3. Update test expectations for changed behavior
+4. Ensure backward compatibility tests pass
 
-### Bible Search
-1. Parse Bible notation correctly
-2. Detect Bible events by tags (not kind)
-3. Match events to search queries
-4. Display results with proper titles
-5. Handle version fallback gracefully
+### Test Coverage
+The test suite covers:
+- All public API functions
+- All supported book types
+- All notation formats
+- All version handling scenarios
+- All diff functionality
+- All integration points
+- Error handling and edge cases
 
-### Diff Functionality
-1. Parse diff queries correctly
-2. Detect content types automatically
-3. Generate meaningful line-by-line diffs
-4. Display changes with proper highlighting
-5. Integrate seamlessly with search system
+## Continuous Integration
 
-### Wiki Integration
-- [[wikilink]] format works for Bible references
-- bible: prefix recommended to avoid false positives
-- Proper rendering in Asciidoc content
-- Integration with existing card system
+Tests are designed to run in CI/CD environments:
+- No external dependencies
+- Deterministic results
+- Fast execution
+- Clear error reporting
+- Comprehensive coverage
+
+The test suite ensures that all core functionality works correctly and that changes don't break existing features.
