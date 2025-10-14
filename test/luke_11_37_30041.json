@@ -6,10 +6,10 @@
   "tags": [
     ["d", "luke-11-37-kjv"],
     ["type", "bible"],
-    ["bible-book", "luke"],
-    ["bible-chapter", "11"],
-    ["bible-verses", "37"],
-    ["bible-version", "kjv"],
+    ["book", "luke"],
+    ["chapter", "11"],
+    ["verse", "37"],
+    ["version", "kjv"],
     ["title", "Luke 11:37 (KJV)"]
   ],
   "content": "And as he spake, a certain Pharisee besought him to dine with him: and he went in, and sat down to meat.",

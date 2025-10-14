@@ -19,19 +19,19 @@
       "bible"
     ],
     [
-      "bible-book",
+      "book",
       "Revelation"
     ],
     [
-      "bible-chapter",
+      "chapter",
       "11"
     ],
     [
-      "bible-verses",
+      "verse",
       "15"
     ],
     [
-      "bible-version",
+      "version",
       "Douay-Rheims Bible"
     ]
 

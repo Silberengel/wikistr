@@ -13,7 +13,8 @@
   import Relay from '$cards/Relay.svelte';
   import New from '$cards/New.svelte';
   import User from '$cards/User.svelte';
-  import Bible from '$cards/Bible.svelte';
+  import Book from '$cards/Book.svelte';
+  import Diff from '$cards/Diff.svelte';
 
   interface Props {
     card: Card;
@@ -106,8 +107,15 @@
         return npubEncode(card.data);
       case 'editor':
         return 'edit:' + (card as EditorCard).data.title;
-      case 'bible':
-        return 'bible:' + encodeURIComponent(card.data);
+      case 'book':
+        const bookCard = card as any;
+        if (bookCard.bookType) {
+          return 'book:' + bookCard.bookType + ':' + encodeURIComponent(card.data);
+        } else {
+          return 'book:' + encodeURIComponent(card.data);
+        }
+      case 'diff':
+        return 'diff:' + encodeURIComponent(card.data);
     }
     return null;
   }
@@ -130,7 +138,7 @@
     ? '#e8ddd1'
     : card.type === 'find'
       ? '#e8ddd1'
-      : card.type === 'bible'
+      : card.type === 'book'
         ? '#e8ddd1'
         : '#f2ede6'}
 >
@@ -178,8 +186,10 @@
       <Settings />
     {:else if card.type === 'editor'}
       <Editor {replaceSelf} {card} />
-    {:else if card.type === 'bible'}
-      <Bible {createChild} {replaceSelf} {card} />
+    {:else if card.type === 'book'}
+      <Book {createChild} {replaceSelf} {card} />
+    {:else if card.type === 'diff'}
+      <Diff {card} />
     {/if}
   </article>
 </div>

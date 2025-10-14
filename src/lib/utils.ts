@@ -173,15 +173,16 @@ export function turnWikilinksIntoAsciidocLinks(content: string): string {
     let [target, display] = content.split('|');
     display = display || target;
     
-    // Check if this is explicitly marked as a Bible wikilink with "bible:" prefix
-    if (target.startsWith('bible:')) {
-      const bibleTarget = target.substring(6); // Remove "bible:" prefix
-      return `link:bible:${bibleTarget}[${display}]`;
+    // Check if this is explicitly marked as a book wikilink with "book:" prefix
+    if (target.startsWith('book:')) {
+      const bookTarget = target.substring(5); // Remove "book:" prefix
+      return `link:book:${bookTarget}[${display}]`;
     }
     
-    // Check if this is a Bible wikilink (contains Bible notation)
-    if (isBibleWikilink(target)) {
-      return `link:bible:${target}[${display}]`;
+    
+    // Check if this is a book wikilink (contains book notation)
+    if (isBookWikilink(target)) {
+      return `link:book:${target}[${display}]`;
     }
     
     target = normalizeIdentifier(target);
@@ -189,21 +190,29 @@ export function turnWikilinksIntoAsciidocLinks(content: string): string {
   });
 }
 
-export function isBibleWikilink(target: string): boolean {
-  // Check if the target contains Bible notation patterns
+export function isBookWikilink(target: string): boolean {
+  // Check if the target contains book notation patterns
   // Look for patterns like "John 3:16", "Genesis 1", "Matthew 5-7", etc.
   // Be more specific to avoid false positives
   
-  const biblePatterns = [
+  const bookPatterns = [
+    // Bible patterns
     // Pattern for numbered books: "1 Samuel 1", "2 Corinthians 3:16", "1 Maccabees 1"
     /^\d*\s*(?:Samuel|Kings|Chronicles|Corinthians|Thessalonians|Timothy|Peter|John|Maccabees|Esdras)\s+\d+(?::\d+)?(?:\s*[-,]\s*\d+)*$/i,
     
-    // Pattern for regular books: "Genesis 1", "John 3:16", "Matthew 5-7", "Tobit 1", "Wisdom 1"
-    /^(?:Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|Esther|Job|Psalms|Proverbs|Ecclesiastes|Song|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|Galatians|Ephesians|Philippians|Colossians|Titus|Philemon|Hebrews|James|Jude|Revelation|Tobit|Judith|Wisdom|Sirach|Baruch|Prayer of Manasseh|Psalm 151|Additions to Esther|Additions to Daniel|Bel and the Dragon|Susanna|Prayer of Azariah|Song of the Three Young Men)\s+\d+(?::\d+)?(?:\s*[-,]\s*\d+)*$/i
+    // Pattern for regular Bible books: "Genesis 1", "John 3:16", "Matthew 5-7", "Tobit 1", "Wisdom 1"
+    /^(?:Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|Esther|Job|Psalms|Proverbs|Ecclesiastes|Song|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|Galatians|Ephesians|Philippians|Colossians|Titus|Philemon|Hebrews|James|Jude|Revelation|Tobit|Judith|Wisdom|Sirach|Baruch|Prayer of Manasseh|Psalm 151|Additions to Esther|Additions to Daniel|Bel and the Dragon|Susanna|Prayer of Azariah|Song of the Three Young Men)\s+\d+(?::\d+)?(?:\s*[-,]\s*\d+)*$/i,
+    
+    // Quran patterns: "Al-Fatiha 1", "Surah Al-Baqarah 2:255"
+    /^(?:Al-|Ash-|Az-|At-|Ad-)?[A-Za-z][A-Za-z-]+(?:\s+[A-Za-z-]+)*(?:\s+\d+(?::\d+)?(?:\s*[-,]\s*\d+)*)?$/i,
+    
+    // Catechism patterns: "Article 1:1", "Part I:1"
+    /^(?:Article|Art|Part)\s+\d+(?:\s+[A-Za-z-]+)*\s*\d+(?:[-,\s]\d+)*$/i
   ];
   
-  return biblePatterns.some(pattern => pattern.test(target.trim()));
+  return bookPatterns.some(pattern => pattern.test(target.trim()));
 }
+
 
 export function preprocessMarkdownToAsciidoc(content: string): string {
   let processed = content;

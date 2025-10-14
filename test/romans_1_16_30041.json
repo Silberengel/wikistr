@@ -6,10 +6,10 @@
   "tags": [
     ["d", "romans-1-16-kjv"],
     ["type", "bible"],
-    ["bible-book", "romans"],
-    ["bible-chapter", "1"],
-    ["bible-verses", "16"],
-    ["bible-version", "kjv"],
+    ["book", "romans"],
+    ["chapter", "1"],
+    ["verse", "16"],
+    ["version", "kjv"],
     ["title", "Romans 1:16 (KJV)"]
   ],
   "content": "For I am not ashamed of the gospel of Christ: for it is the power of God unto salvation to every one that believeth; to the Jew first, and also to the Greek.",

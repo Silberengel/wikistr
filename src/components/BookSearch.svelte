@@ -13,34 +13,33 @@
   import { addUniqueTaggedReplaceable, getTagOr, next, unique } from '$lib/utils';
   import { DEFAULT_SEARCH_RELAYS } from '$lib/defaults';
   import { 
-    parseBibleWikilink, 
-    generateBibleSearchQuery, 
-    isBibleEvent, 
-    extractBibleMetadata, 
-    generateBibleTitle,
-    formatBibleReference,
-    type BibleReference,
-    type BibleEvent
-  } from '$lib/bible';
-  import { replaceState } from '$app/navigation';
-  import { page } from '$app/state';
-  import { cards } from '$lib/state';
+    parseBookWikilink, 
+    generateBookSearchQuery, 
+    isBookEvent, 
+    extractBookMetadata, 
+    generateBookTitle,
+    formatBookReference,
+    type BookReference,
+    type BookEvent,
+    BOOK_TYPES
+  } from '$lib/books';
 
   interface Props {
     query: string;
+    bookType?: string;
     createChild: (card: Card) => void;
-    onResults?: (results: BibleEvent[]) => void;
+    onResults?: (results: BookEvent[]) => void;
   }
 
-  let { query, createChild, onResults }: Props = $props();
+  let { query, bookType = 'bible', createChild, onResults }: Props = $props();
 
   let tried = $state(false);
   let eosed = 0;
   let seenCache: { [id: string]: string[] } = {};
-  let results = $state<BibleEvent[]>([]);
-  let parsedQuery = $state<{ references: BibleReference[], version?: string, versions?: string[] } | null>(null);
+  let results = $state<BookEvent[]>([]);
+  let parsedQuery = $state<{ references: BookReference[], version?: string, versions?: string[] } | null>(null);
   let versionNotFound = $state(false);
-  let fallbackResults = $state<BibleEvent[]>([]);
+  let fallbackResults = $state<BookEvent[]>([]);
 
   // close handlers
   let uwrcancel: () => void;
@@ -48,10 +47,10 @@
   let subs: SubCloser[] = [];
 
   onMount(() => {
-    // Parse the Bible query
-    parsedQuery = parseBibleWikilink(query);
+    // Parse the book query
+    parsedQuery = parseBookWikilink(query, bookType);
     if (parsedQuery) {
-      performBibleSearch();
+      performBookSearch();
     }
   });
 
@@ -63,7 +62,7 @@
     if (search) search.close();
   }
 
-  async function performBibleSearch() {
+  async function performBookSearch() {
     if (!parsedQuery) return;
 
     // cancel existing subscriptions and zero variables
@@ -118,20 +117,20 @@
 
       if (relaysToUseNow.length === 0) return;
 
-      // Search for Bible events (kind 30041) with Bible tags
-      const searchQueries = generateBibleSearchQuery(parsedQuery!.references, parsedQuery!.version, parsedQuery!.versions);
+      // Search for book events (kind 30041) with book tags
+      const searchQueries = generateBookSearchQuery(parsedQuery!.references, bookType, parsedQuery!.version, parsedQuery!.versions);
       
       for (const searchQuery of searchQueries) {
         let subc = pool.subscribeMany(
           relaysToUseNow,
-          [{ kinds: [30041], '#type': ['bible'], limit: 25 }],
+          [{ kinds: [30041], '#type': [bookType], limit: 25 }],
           {
-            id: 'find-bible-exact',
+            id: 'find-book-exact',
             onevent(evt) {
               tried = true;
 
-              // Check if this event matches our Bible criteria
-              if (isBibleEvent(evt as BibleEvent) && matchesBibleQuery(evt as BibleEvent, parsedQuery!)) {
+              // Check if this event matches our book criteria
+              if (isBookEvent(evt as BookEvent, bookType) && matchesBookQuery(evt as BookEvent, parsedQuery!, bookType)) {
                 if (addUniqueTaggedReplaceable(results, evt)) update();
               }
             },
@@ -147,14 +146,14 @@
       }
     });
 
-    // Also search using general search for Bible-related content
+    // Also search using general search for book-related content
     search = pool.subscribeMany(
       DEFAULT_SEARCH_RELAYS,
       [{ kinds: [30041], search: query, limit: 10 }],
       {
-        id: 'find-bible-search',
+        id: 'find-book-search',
         onevent(evt) {
-          if (isBibleEvent(evt as BibleEvent) && matchesBibleQuery(evt as BibleEvent, parsedQuery!)) {
+          if (isBookEvent(evt as BookEvent, bookType) && matchesBookQuery(evt as BookEvent, parsedQuery!, bookType)) {
             if (addUniqueTaggedReplaceable(results, evt)) update();
           }
         },
@@ -195,8 +194,8 @@
     // Create a new query without the version specification
     const fallbackQuery = { references: parsedQuery.references, version: undefined, versions: undefined };
     
-    // Search for all versions of the same Bible reference
-    const searchQueries = generateBibleSearchQuery(fallbackQuery.references, fallbackQuery.version, fallbackQuery.versions);
+    // Search for all versions of the same book reference
+    const searchQueries = generateBookSearchQuery(fallbackQuery.references, bookType, fallbackQuery.version, fallbackQuery.versions);
     
     let fallbackEosed = 0;
     const fallbackSubs: SubCloser[] = [];
@@ -210,12 +209,12 @@
     for (const searchQuery of searchQueries) {
       let subc = pool.subscribeMany(
         DEFAULT_SEARCH_RELAYS,
-        [{ kinds: [30041], '#type': ['bible'], limit: 25 }],
+        [{ kinds: [30041], '#type': [bookType], limit: 25 }],
         {
-          id: 'find-bible-fallback',
+          id: 'find-book-fallback',
           onevent(evt) {
-            // Check if this event matches our Bible criteria (without version restriction)
-            if (isBibleEvent(evt as BibleEvent) && matchesBibleQuery(evt as BibleEvent, fallbackQuery)) {
+            // Check if this event matches our book criteria (without version restriction)
+            if (isBookEvent(evt as BookEvent, bookType) && matchesBookQuery(evt as BookEvent, fallbackQuery, bookType)) {
               if (addUniqueTaggedReplaceable(fallbackResults, evt)) fallbackUpdate();
             }
           },
@@ -240,8 +239,8 @@
     }
   }
 
-  function matchesBibleQuery(event: BibleEvent, query: { references: BibleReference[], version?: string }): boolean {
-    const metadata = extractBibleMetadata(event);
+  function matchesBookQuery(event: BookEvent, query: { references: BookReference[], version?: string }, bookType: string): boolean {
+    const metadata = extractBookMetadata(event);
     
     // If a specific version is requested, check if this event matches that version
     if (query.version && metadata.version) {
@@ -254,9 +253,9 @@
     for (const ref of query.references) {
       if (metadata.book && ref.book.toLowerCase() === metadata.book.toLowerCase()) {
         if (ref.chapter && metadata.chapter && ref.chapter.toString() === metadata.chapter) {
-          if (ref.verses && metadata.verses) {
+          if (ref.verse && metadata.verse) {
             // Check if verses match (this is a simplified check)
-            return metadata.verses.includes(ref.verses) || ref.verses.includes(metadata.verses);
+            return metadata.verse.includes(ref.verse) || ref.verse.includes(metadata.verse);
           }
           return true; // Chapter matches
         }
@@ -269,11 +268,11 @@
     return false;
   }
 
-  function openBibleEvent(result: BibleEvent, ev?: MouseEvent) {
-    const metadata = extractBibleMetadata(result);
-    const title = generateBibleTitle(metadata);
+  function openBookEvent(result: BookEvent, ev?: MouseEvent) {
+    const metadata = extractBookMetadata(result);
+    const title = generateBookTitle(metadata);
     
-    // Create a search card for the Bible event
+    // Create a search card for the book event
     const searchCard = {
       id: next(),
       type: 'find' as const,
@@ -284,12 +283,15 @@
     if (ev?.button === 1) createChild(searchCard);
     else createChild(searchCard);
   }
+
+  // Get the display name for the book type
+  const bookTypeDisplayName = BOOK_TYPES[bookType]?.displayName || bookType.charAt(0).toUpperCase() + bookType.slice(1);
 </script>
 
-<div class="bible-search-results">
+<div class="book-search-results">
   {#if tried && results.length === 0 && !versionNotFound}
     <div class="text-gray-500 italic">
-      No Bible passages found for "{query}"
+      No {bookTypeDisplayName.toLowerCase()} passages found for "{query}"
     </div>
   {:else if versionNotFound && results.length === 0}
     <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
@@ -319,14 +321,14 @@
     {/if}
     <div class="space-y-4">
       {#each results as result (result.id)}
-        {@const metadata = extractBibleMetadata(result)}
-        {@const title = generateBibleTitle(metadata)}
+        {@const metadata = extractBookMetadata(result)}
+        {@const title = generateBookTitle(metadata)}
         <div 
           class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
           role="button"
           tabindex="0"
-          onclick={(e) => openBibleEvent(result, e)}
-          onkeydown={(e) => e.key === 'Enter' && openBibleEvent(result, undefined)}
+          onclick={(e) => openBookEvent(result, e)}
+          onkeydown={(e) => e.key === 'Enter' && openBookEvent(result, undefined)}
         >
           <div class="flex justify-between items-start">
             <div class="flex-1">
@@ -354,7 +356,7 @@
     </div>
   {:else if !tried}
     <div class="text-gray-500 italic">
-      Searching for Bible passages...
+      Searching for {bookTypeDisplayName.toLowerCase()} passages...
     </div>
   {/if}
 </div>

@@ -6,7 +6,7 @@
   import { page } from '$app/state';
   import { cards } from '$lib/state';
   import { next, scrollCardIntoView } from '$lib/utils';
-  import type { ArticleCard, Card, EditorCard, RelayCard, SearchCard, UserCard, BibleCard } from '$lib/types';
+  import type { ArticleCard, Card, EditorCard, RelayCard, SearchCard, UserCard, BookCard, DiffCard } from '$lib/types';
 
   onMount(() => {
     if ($cards.length !== 0) return;
@@ -72,8 +72,21 @@
         type: 'editor',
         data: { title: ditem.substring(5), summary: '', content: '' }
       } as EditorCard;
-    } else if (ditem.startsWith('bible:')) {
-      return { id: next(), type: 'bible', data: ditem.substring(6) } as BibleCard;
+    } else if (ditem.startsWith('book:')) {
+      const bookQuery = ditem.substring(5);
+      const parts = bookQuery.split(':');
+      if (parts.length >= 2) {
+        return { 
+          id: next(), 
+          type: 'book', 
+          data: parts.slice(1).join(':'),
+          bookType: parts[0]
+        } as BookCard;
+      } else {
+        return { id: next(), type: 'book', data: bookQuery } as BookCard;
+      }
+    } else if (ditem.startsWith('diff:')) {
+      return { id: next(), type: 'diff', data: ditem.substring(5) } as DiffCard;
     } else if (ditem.startsWith('npub1')) {
       return { id: next(), type: 'user', data: decode(ditem).data as string } as UserCard;
     } else if (

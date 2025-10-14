@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { Card } from '$lib/state';
+  import type { Card } from '$lib/types';
   import { parseDiffQuery, isDiffQuery, diffText, generateDiffTitle } from '$lib/diff';
-  import { parseBibleWikilink, generateBibleSearchQuery } from '$lib/bible';
+  import { parseBookWikilink, generateBookSearchQuery } from '$lib/books';
   import DiffView from '$components/DiffView.svelte';
   import type { DiffResult } from '$lib/diff';
 
@@ -13,7 +13,7 @@
   let { card }: Props = $props();
   const diffCard = card as any; // We'll create a proper DiffCard type later
 
-  let query: string;
+  let query = $state<string>('');
   let diffResult = $state<DiffResult | null>(null);
   let loading = $state(false);
   let error = $state<string | null>(null);

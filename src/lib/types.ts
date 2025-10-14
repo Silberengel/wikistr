@@ -16,7 +16,7 @@ export type Card =
   | SettingsCard
   | UserCard
   | EditorCard
-  | BibleCard
+  | BookCard
   | DiffCard;
 
 export function serializeCardForRouter(card: Card) {
@@ -102,11 +102,22 @@ export type EditorCard = {
   data: EditorData;
 };
 
-export type BibleCard = {
+export type BookCard = {
   id: number;
-  type: 'bible';
+  type: 'book';
   back?: Card;
-  data: string; // Bible query like "John 3:16" or "[[John 1–3; 3:16; 6:14, 44 | KJV]]"
+  data: string; // Book query like "John 3:16" or "[[John 1–3; 3:16; 6:14, 44 | KJV]]" or "[[Al-Fatiha 1-7 | SAHIH]]"
+  bookType?: string; // Optional book type (bible, quran, catechism, etc.)
+  results?: NostrEvent[];
+  seenCache?: { [id: string]: string[] };
+};
+
+
+export type DiffCard = {
+  id: number;
+  type: 'diff';
+  back?: Card;
+  data: string; // diff query like "diff::John 3:16 KJV | NIV"
   results?: NostrEvent[];
   seenCache?: { [id: string]: string[] };
 };

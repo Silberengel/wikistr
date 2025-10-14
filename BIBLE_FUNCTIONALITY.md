@@ -29,10 +29,10 @@ Bible events use any kind number with these tags:
   "content": "For God so loved the world...",
   "tags": [
     ["type", "bible"],
-    ["bible-book", "John"],
-    ["bible-chapter", "3"],
-    ["bible-verses", "16"],
-    ["bible-version", "KJV"],
+    ["book", "John"],
+    ["chapter", "3"],
+    ["verses", "16"],
+    ["version", "KJV"],
     ["d", "john-3-16-kjv"]
   ]
 }

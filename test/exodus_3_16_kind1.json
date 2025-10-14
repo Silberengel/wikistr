@@ -7,19 +7,19 @@
       "bible"
     ],
     [
-      "bible-book",
+      "book",
       "Exodus"
     ],
     [
-      "bible-chapter",
+      "chapter",
       "3"
     ],
     [
-      "bible-verses",
+      "verse",
       "16"
     ],
     [
-      "bible-version",
+      "version",
       "King James Version"
     ],
     [

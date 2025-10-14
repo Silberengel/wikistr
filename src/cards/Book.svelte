@@ -9,23 +9,23 @@
   import { normalizeIdentifier } from '@nostr/tools/nip54';
 
   import { wot, userWikiRelays } from '$lib/nostr';
-  import type { Card, BibleCard } from '$lib/types';
+  import type { Card, BookCard } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next, unique } from '$lib/utils';
   import { DEFAULT_SEARCH_RELAYS } from '$lib/defaults';
   import { 
-    parseBibleWikilink, 
-    generateBibleSearchQuery, 
-    isBibleEvent, 
-    extractBibleMetadata, 
-    generateBibleTitle,
-    formatBibleReference,
-    type BibleReference,
-    type BibleEvent
-  } from '$lib/bible';
+    parseBookWikilink, 
+    generateBookSearchQuery, 
+    isBookEvent, 
+    extractBookMetadata, 
+    generateBookTitle,
+    formatBookReference,
+    type BookReference,
+    type BookEvent,
+    BOOK_TYPES
+  } from '$lib/books';
   import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import { cards } from '$lib/state';
-  import BibleDisplay from '$components/BibleDisplay.svelte';
 
   export let card: Card;
   export let replaceSelf: (card: Card) => void;
@@ -35,14 +35,14 @@
   let eosed = 0;
   let editable = false;
   let versionNotFound = false;
-  let fallbackResults: BibleEvent[] = [];
+  let fallbackResults: BookEvent[] = [];
 
-  const bibleCard = card as BibleCard;
+  const bookCard = card as BookCard;
 
   let query: string;
   let seenCache: { [id: string]: string[] } = {};
-  let results: BibleEvent[] = [];
-  let parsedQuery: { references: BibleReference[], version?: string, versions?: string[] } | null = null;
+  let results: BookEvent[] = [];
+  let parsedQuery: { references: BookReference[], version?: string, versions?: string[] } | null = null;
 
   // close handlers
   let uwrcancel: () => void;
@@ -50,21 +50,21 @@
   let subs: SubCloser[] = [];
 
   onMount(() => {
-    query = bibleCard.data;
-    parsedQuery = parseBibleWikilink(query);
+    query = bookCard.data;
+    parsedQuery = parseBookWikilink(query, bookCard.bookType);
   });
 
   onMount(() => {
     // we won't do any searches if we already have the results
-    if (bibleCard.results) {
-      seenCache = bibleCard.seenCache || {};
-      results = bibleCard.results || [];
+    if (bookCard.results) {
+      seenCache = bookCard.seenCache || {};
+      results = bookCard.results || [];
 
       tried = true;
       return;
     }
 
-    performBibleSearch();
+    performBookSearch();
   });
 
   onDestroy(destroy);
@@ -75,7 +75,7 @@
     if (search) search.close();
   }
 
-  async function performBibleSearch() {
+  async function performBookSearch() {
     if (!parsedQuery) return;
 
     // cancel existing subscriptions and zero variables
@@ -126,20 +126,20 @@
 
       if (relaysToUseNow.length === 0) return;
 
-      // Search for Bible events (kind 30041) with Bible tags
-      const searchQueries = generateBibleSearchQuery(parsedQuery!.references, parsedQuery!.version, parsedQuery!.versions);
+      // Search for book events (kind 30041) with book tags
+      const searchQueries = generateBookSearchQuery(parsedQuery!.references, bookCard.bookType || 'bible', parsedQuery!.version, parsedQuery!.versions);
       
       for (const searchQuery of searchQueries) {
         let subc = pool.subscribeMany(
           relaysToUseNow,
-          [{ kinds: [30041], '#type': ['bible'], limit: 25 }],
+          [{ kinds: [30041], '#type': [bookCard.bookType || 'bible'], limit: 25 }],
           {
-            id: 'find-bible-exact',
+            id: 'find-book-exact',
             onevent(evt) {
               tried = true;
 
-              // Check if this event matches our Bible criteria
-              if (isBibleEvent(evt as BibleEvent) && matchesBibleQuery(evt as BibleEvent, parsedQuery!)) {
+              // Check if this event matches our book criteria
+              if (isBookEvent(evt as BookEvent, bookCard.bookType) && matchesBookQuery(evt as BookEvent, parsedQuery!)) {
                 if (addUniqueTaggedReplaceable(results, evt)) update();
               }
             },
@@ -155,14 +155,14 @@
       }
     });
 
-    // Also search using general search for Bible-related content
+    // Also search using general search for book-related content
     search = pool.subscribeMany(
       DEFAULT_SEARCH_RELAYS,
       [{ kinds: [30041], search: query, limit: 10 }],
       {
-        id: 'find-bible-search',
+        id: 'find-book-search',
         onevent(evt) {
-          if (isBibleEvent(evt as BibleEvent) && matchesBibleQuery(evt as BibleEvent, parsedQuery!)) {
+          if (isBookEvent(evt as BookEvent, bookCard.bookType) && matchesBookQuery(evt as BookEvent, parsedQuery!)) {
             if (addUniqueTaggedReplaceable(results, evt)) update();
           }
         },
@@ -184,8 +184,8 @@
           versionNotFound = true;
           performFallbackSearch();
         } else {
-          bibleCard.results = results;
-          bibleCard.seenCache = seenCache;
+          bookCard.results = results;
+          bookCard.seenCache = seenCache;
         }
       }
     }
@@ -202,8 +202,8 @@
     // Create a new query without the version specification
     const fallbackQuery = { references: parsedQuery.references, version: undefined, versions: undefined };
     
-    // Search for all versions of the same Bible reference
-    const searchQueries = generateBibleSearchQuery(fallbackQuery.references, fallbackQuery.version, fallbackQuery.versions);
+    // Search for all versions of the same book reference
+    const searchQueries = generateBookSearchQuery(fallbackQuery.references, bookCard.bookType || 'bible', fallbackQuery.version, fallbackQuery.versions);
     
     let fallbackEosed = 0;
     const fallbackSubs: SubCloser[] = [];
@@ -217,12 +217,12 @@
     for (const searchQuery of searchQueries) {
       let subc = pool.subscribeMany(
         DEFAULT_SEARCH_RELAYS,
-        [{ kinds: [30041], '#type': ['bible'], limit: 25 }],
+        [{ kinds: [30041], '#type': [bookCard.bookType || 'bible'], limit: 25 }],
         {
-          id: 'find-bible-fallback',
+          id: 'find-book-fallback',
           onevent(evt) {
-            // Check if this event matches our Bible criteria (without version restriction)
-            if (isBibleEvent(evt as BibleEvent) && matchesBibleQuery(evt as BibleEvent, fallbackQuery)) {
+            // Check if this event matches our book criteria (without version restriction)
+            if (isBookEvent(evt as BookEvent, bookCard.bookType) && matchesBookQuery(evt as BookEvent, fallbackQuery)) {
               if (addUniqueTaggedReplaceable(fallbackResults, evt)) fallbackUpdate();
             }
           },
@@ -231,8 +231,8 @@
             if (fallbackEosed >= 1) {
               // Update the main results with fallback results
               results = fallbackResults;
-              bibleCard.results = results;
-              bibleCard.seenCache = seenCache;
+              bookCard.results = results;
+              bookCard.seenCache = seenCache;
             }
           },
           receivedEvent: (relay: any, id: string) => {
@@ -246,8 +246,8 @@
     }
   }
 
-  function matchesBibleQuery(event: BibleEvent, query: { references: BibleReference[], version?: string }): boolean {
-    const metadata = extractBibleMetadata(event);
+  function matchesBookQuery(event: BookEvent, query: { references: BookReference[], version?: string }): boolean {
+    const metadata = extractBookMetadata(event);
     
     // If a specific version is requested, check if this event matches that version
     if (query.version && metadata.version) {
@@ -260,9 +260,9 @@
     for (const ref of query.references) {
       if (metadata.book && ref.book.toLowerCase() === metadata.book.toLowerCase()) {
         if (ref.chapter && metadata.chapter && ref.chapter.toString() === metadata.chapter) {
-          if (ref.verses && metadata.verses) {
+          if (ref.verse && metadata.verse) {
             // Check if verses match (this is a simplified check)
-            return metadata.verses.includes(ref.verses) || ref.verses.includes(metadata.verses);
+            return metadata.verse.includes(ref.verse) || ref.verse.includes(metadata.verse);
           }
           return true; // Chapter matches
         }
@@ -275,24 +275,25 @@
     return false;
   }
 
-  function openBibleEvent(result: BibleEvent, ev?: MouseEvent) {
-    const metadata = extractBibleMetadata(result);
-    const title = generateBibleTitle(metadata);
+  function openBookEvent(result: BookEvent, ev?: MouseEvent) {
+    const metadata = extractBookMetadata(result);
+    const title = generateBookTitle(metadata);
     
-    // Create a Bible card for the Bible event
-    const bibleEventCard = {
+    // Create a book card for the book event
+    const bookEventCard = {
       id: next(),
-      type: 'bible' as const,
+      type: 'book' as const,
       data: getTagOr(result, 'd') || result.id,
+      bookType: bookCard.bookType,
       preferredAuthors: [result.pubkey]
     };
     
-    if (ev?.button === 1) createChild(bibleEventCard);
-    else replaceSelf({ ...bibleEventCard, back: card });
+    if (ev?.button === 1) createChild(bookEventCard);
+    else replaceSelf({ ...bookEventCard, back: card });
   }
 
   function startEditing() {
-    debouncedPerformBibleSearch.clear();
+    debouncedPerformBookSearch.clear();
     editable = true;
   }
 
@@ -309,7 +310,7 @@
 
     editable = false;
     query = query.replace(/[\r\n]/g, '').replace(/[^\w .:-]/g, '-');
-    if (query !== bibleCard.data) {
+    if (query !== bookCard.data) {
       // replace browser url and history
       let index = $cards.findIndex((t) => t.id === card.id);
       let replacementURL = page.url.pathname.split('/').slice(1);
@@ -319,15 +320,48 @@
       replaceState('/' + replacementURL.join('/'), currentState[0] === index ? [] : currentState);
 
       // update stored card state
-      bibleCard.data = query;
-      bibleCard.results = undefined;
+      bookCard.data = query;
+      bookCard.results = undefined;
 
       // redo the query
-      debouncedPerformBibleSearch();
+      debouncedPerformBookSearch();
     }
   }
 
-  const debouncedPerformBibleSearch = debounce(performBibleSearch, 400);
+  const debouncedPerformBookSearch = debounce(performBookSearch, 400);
+
+  // Get the display name for the book type
+  const bookTypeDisplayName = BOOK_TYPES[bookCard.bookType || 'bible']?.displayName || (bookCard.bookType || 'bible').charAt(0).toUpperCase() + (bookCard.bookType || 'bible').slice(1);
+
+  // Get examples for the book type
+  const getExamples = () => {
+    switch (bookCard.bookType) {
+      case 'quran':
+        return [
+          'Al-Fatiha 1-7',
+          'Al-Baqarah 2:255 | SAHIH',
+          'Surah Al-Ikhlas',
+          'Al-Fatiha 1-7 | SAHIH PICKTHALL'
+        ];
+      case 'catechism':
+        return [
+          'Article 1:1',
+          'Part I:1',
+          'Article 2:1-5 | CCC',
+          'Part II:1 | YOUCAT'
+        ];
+      default: // bible
+        return [
+          'John 3:16',
+          'John 3:16 | KJV',
+          'Psalm 23:1',
+          'Genesis 1:1 | KJV',
+          'Revelation 11:15 | DRB',
+          'Romans 1:16-25; Psalm 19:2-3',
+          'Romans 1:16-25 | KJV DRB'
+        ];
+    }
+  };
 </script>
 
 <div class="mt-2 font-bold text-4xl">
@@ -353,47 +387,60 @@
 </div>
 
 {#if !tried && results.length === 0}
-  <!-- Bible Search Instructions -->
+  <!-- Book Search Instructions -->
   <div class="px-4 py-6 bg-brown-200 border border-brown-300 rounded-lg mt-4">
-    <h3 class="text-lg font-semibold text-espresso-900 mb-3">📖 Bible Search</h3>
+    <h3 class="text-lg font-semibold text-espresso-900 mb-3">📖 {bookTypeDisplayName} Search</h3>
     <div class="text-sm text-espresso-800 space-y-2">
-      <p><strong>Search for Bible passages using standard notation:</strong></p>
+      <p><strong>Search for {bookTypeDisplayName.toLowerCase()} passages using standard notation:</strong></p>
       <div class="p-3 rounded border border-brown-300 font-mono text-xs space-y-1" style="background-color: var(--theme-bg);">
-        <div>John 3:16</div>
-        <div>John 3:16 | KJV</div>
-        <div>Psalm 23:1</div>
-        <div>Genesis 1:1 | KJV</div>
-        <div>Revelation 11:15 | DRB</div>
-        <div>Romans 1:16-25; Psalm 19:2-3</div>
-        <div>Romans 1:16-25 | KJV DRB</div>
+        {#each getExamples() as example}
+          <div>{example}</div>
+        {/each}
       </div>
       <p><strong>Supported formats:</strong></p>
       <ul class="text-xs text-espresso-700 ml-4 space-y-1">
-        <li>• Single verse: <code>John 3:16</code></li>
-        <li>• Chapter: <code>John 3</code></li>
-        <li>• Book: <code>John</code></li>
-        <li>• Verse range: <code>John 3:16-18</code></li>
-        <li>• Multiple verses: <code>John 3:16,18</code></li>
-        <li>• With version: <code>John 3:16 | KJV</code></li>
-        <li>• Multiple references: <code>Romans 1:16-25; Psalm 19:2-3</code></li>
-        <li>• Multiple versions: <code>Romans 1:16-25 | KJV DRB</code></li>
+        {#if bookCard.bookType === 'quran'}
+          <li>• Single verse: <code>Al-Fatiha 1</code></li>
+          <li>• Surah: <code>Al-Fatiha</code></li>
+          <li>• Verse range: <code>Al-Fatiha 1-7</code></li>
+          <li>• Multiple verses: <code>Al-Fatiha 1,3,5</code></li>
+          <li>• With version: <code>Al-Fatiha 1-7 | SAHIH</code></li>
+          <li>• Multiple versions: <code>Al-Fatiha 1-7 | SAHIH PICKTHALL</code></li>
+        {:else if bookCard.bookType === 'catechism'}
+          <li>• Single article: <code>Article 1:1</code></li>
+          <li>• Part: <code>Part I</code></li>
+          <li>• Article range: <code>Article 1:1-5</code></li>
+          <li>• With version: <code>Article 1:1 | CCC</code></li>
+          <li>• Multiple versions: <code>Article 1:1 | CCC YOUCAT</code></li>
+        {:else}
+          <li>• Single verse: <code>John 3:16</code></li>
+          <li>• Chapter: <code>John 3</code></li>
+          <li>• Book: <code>John</code></li>
+          <li>• Verse range: <code>John 3:16-18</code></li>
+          <li>• Multiple verses: <code>John 3:16,18</code></li>
+          <li>• With version: <code>John 3:16 | KJV</code></li>
+          <li>• Multiple references: <code>Romans 1:16-25; Psalm 19:2-3</code></li>
+          <li>• Multiple versions: <code>Romans 1:16-25 | KJV DRB</code></li>
+        {/if}
       </ul>
       <p class="text-xs text-espresso-600 mt-2">
-        Use abbreviations like Gen, Exod, Ps, Rev, etc. Case and whitespace are flexible: <code>john3:16</code> works the same as <code>John 3:16</code>
+        Use abbreviations where available. Case and whitespace are flexible: <code>john3:16</code> works the same as <code>John 3:16</code>
       </p>
-      <p class="text-xs text-espresso-600 mt-2">
-        <strong>Compare Bible versions:</strong> Use <code>diff::</code> prefix in the main search bar:
-      </p>
-      <div class="p-3 rounded border border-brown-300 font-mono text-xs mt-1" style="background-color: var(--theme-bg);">
-        <div>diff::John 3:16 KJV | NIV</div>
-        <div>diff::bible:Romans 1:16 KJV | ESV</div>
-        <div>diff::Psalm 23:1 KJV | DRB</div>
-      </div>
+      {#if bookCard.bookType === 'bible'}
+        <p class="text-xs text-espresso-600 mt-2">
+          <strong>Compare Bible versions:</strong> Use <code>diff::</code> prefix in the main search bar:
+        </p>
+        <div class="p-3 rounded border border-brown-300 font-mono text-xs mt-1" style="background-color: var(--theme-bg);">
+          <div>diff::John 3:16 KJV | NIV</div>
+          <div>diff::bible:Romans 1:16 KJV | ESV</div>
+          <div>diff::Psalm 23:1 KJV | DRB</div>
+        </div>
+      {/if}
     </div>
   </div>
 {:else if tried && results.length === 0 && !versionNotFound}
   <div class="mt-4 text-gray-500 italic">
-    No Bible passages found for "{query}"
+    No {bookTypeDisplayName.toLowerCase()} passages found for "{query}"
   </div>
 {:else if versionNotFound && results.length === 0}
   <div class="mt-4">
@@ -430,14 +477,14 @@
   {/if}
   <div class="mt-4 space-y-4">
     {#each results as result (result.id)}
-      {@const metadata = extractBibleMetadata(result)}
-      {@const title = generateBibleTitle(metadata)}
+      {@const metadata = extractBookMetadata(result)}
+      {@const title = generateBookTitle(metadata)}
       <div 
         class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
         role="button"
         tabindex="0"
-        onclick={(e) => openBibleEvent(result, e)}
-        onkeydown={(e) => e.key === 'Enter' && openBibleEvent(result, undefined)}
+        onclick={(e) => openBookEvent(result, e)}
+        onkeydown={(e) => e.key === 'Enter' && openBookEvent(result, undefined)}
       >
         <div class="flex justify-between items-start">
           <div class="flex-1">
@@ -465,7 +512,7 @@
   </div>
 {:else if !tried}
   <div class="mt-4 text-gray-500 italic">
-    Searching for Bible passages...
+    Searching for {bookTypeDisplayName.toLowerCase()} passages...
   </div>
 {/if}
 

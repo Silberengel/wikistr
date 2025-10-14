@@ -15,8 +15,8 @@
   import ProfilePopup from './ProfilePopup.svelte';
   import UserBadge from './UserBadge.svelte';
   import EmbeddedEvent from './EmbeddedEvent.svelte';
-  import BibleSearch from './BibleSearch.svelte';
-  import { parseBibleWikilink } from '$lib/bible';
+  import BookSearch from './BookSearch.svelte';
+  import { parseBookWikilink } from '$lib/books';
 
   interface Props {
     event: NostrEvent;
@@ -36,7 +36,7 @@
   let selectedUserPubkey = $state('');
   let selectedUserBech32 = $state('');
   let embeddedEvents = $state<Array<{id: string, bech32: string, type: 'nevent' | 'note' | 'naddr'}>>([]);
-  let bibleSearchResults = $state<Array<{id: string, query: string, results: any[]}>>([]);
+  let bookSearchResults = $state<Array<{id: string, query: string, results: any[], bookType?: string}>>([]);
   let readInsteadData = $state<Array<{id: string, naddr: string, pubkey: string, identifier: string, displayName: string}>>([]);
 
   // Global functions for dynamically generated HTML
@@ -103,24 +103,24 @@
     embeddedEvents = embeddedEvents.filter(event => event.id !== eventId);
   }
 
-  // Function to add Bible search (prevents duplicates)
-  function addBibleSearch(query: string) {
+  // Function to add book search (prevents duplicates)
+  function addBookSearch(query: string, bookType: string = 'bible') {
     // Check if this query is already being searched
-    const exists = bibleSearchResults.some(search => search.query === query);
+    const exists = bookSearchResults.some(search => search.query === query && search.bookType === bookType);
     if (!exists) {
-      const searchId = `bible-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      bibleSearchResults = [...bibleSearchResults, { id: searchId, query, results: [] }];
+      const searchId = `book-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      bookSearchResults = [...bookSearchResults, { id: searchId, query, results: [], bookType }];
     }
   }
 
-  // Function to remove Bible search
-  function removeBibleSearch(searchId: string) {
-    bibleSearchResults = bibleSearchResults.filter(search => search.id !== searchId);
+  // Function to remove book search
+  function removeBookSearch(searchId: string) {
+    bookSearchResults = bookSearchResults.filter(search => search.id !== searchId);
   }
 
-  // Function to update Bible search results
-  function updateBibleSearchResults(searchId: string, results: any[]) {
-    bibleSearchResults = bibleSearchResults.map(search => 
+  // Function to update book search results
+  function updateBookSearchResults(searchId: string, results: any[]) {
+    bookSearchResults = bookSearchResults.map(search => 
       search.id === searchId ? { ...search, results } : search
     );
   }
@@ -560,10 +560,17 @@
           data: identifier,
           preferredAuthors: [event.pubkey, ...authorPreferredWikiAuthors]
         } as any);
-      } else if (href?.startsWith('bible:')) {
+      } else if (href?.startsWith('book:')) {
         clickEvent.preventDefault();
-        const bibleQuery = href.replace('bible:', '');
-        addBibleSearch(bibleQuery);
+        const bookQuery = href.replace('book:', '');
+        const parts = bookQuery.split(':');
+        if (parts.length >= 2) {
+          const bookType = parts[0];
+          const query = parts.slice(1).join(':');
+          addBookSearch(query, bookType);
+        } else {
+          addBookSearch(bookQuery);
+        }
       } else if (href?.startsWith('#nostr-')) {
         // Handle our special nostr anchor links
         clickEvent.preventDefault();
@@ -800,24 +807,25 @@
   onClose={() => profilePopupOpen = false}
 />
 
-<!-- Bible Search Results -->
-{#each bibleSearchResults as bibleSearch (bibleSearch.id)}
+<!-- Book Search Results -->
+{#each bookSearchResults as bookSearch (bookSearch.id)}
   <div class="mt-6 p-4 border border-blue-200 rounded-lg bg-blue-50">
     <div class="flex justify-between items-center mb-3">
       <h3 class="text-lg font-semibold text-blue-800">
-        Bible Search: {bibleSearch.query}
+        {bookSearch.bookType === 'quran' ? 'Quran' : bookSearch.bookType === 'catechism' ? 'Catechism' : 'Bible'} Search: {bookSearch.query}
       </h3>
       <button
-        onclick={() => removeBibleSearch(bibleSearch.id)}
+        onclick={() => removeBookSearch(bookSearch.id)}
         class="text-blue-600 hover:text-blue-800 text-sm underline"
       >
         Close
       </button>
     </div>
-    <BibleSearch 
-      query={bibleSearch.query}
+    <BookSearch 
+      query={bookSearch.query}
+      bookType={bookSearch.bookType || 'bible'}
       {createChild}
-      onResults={(results) => updateBibleSearchResults(bibleSearch.id, results)}
+      onResults={(results) => updateBookSearchResults(bookSearch.id, results)}
     />
   </div>
 {/each}

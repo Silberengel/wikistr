@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseDiffQuery, diffText } from '../src/lib/diff';
-import { extractBibleMetadata, isBibleEvent } from '../src/lib/bible';
+import { extractBookMetadata, isBookEvent } from "../src/lib/books";
 
 // Mock Bible events for testing
 const kjvJohn316 = {
@@ -9,10 +9,10 @@ const kjvJohn316 = {
   content: 'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.',
   tags: [
     ['type', 'bible'],
-    ['bible-book', 'John'],
-    ['bible-chapter', '3'],
-    ['bible-verses', '16'],
-    ['bible-version', 'KJV'],
+    ['book', 'John'],
+    ['chapter', '3'],
+    ['verse', '16'],
+    ['version', 'KJV'],
     ['d', 'john-3-16-kjv']
   ],
   created_at: 1234567890,
@@ -26,10 +26,10 @@ const nivJohn316 = {
   content: 'For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life.',
   tags: [
     ['type', 'bible'],
-    ['bible-book', 'John'],
-    ['bible-chapter', '3'],
-    ['bible-verses', '16'],
-    ['bible-version', 'NIV'],
+    ['book', 'John'],
+    ['chapter', '3'],
+    ['verse', '16'],
+    ['version', 'NIV'],
     ['d', 'john-3-16-niv']
   ],
   created_at: 1234567890,
@@ -97,26 +97,26 @@ describe('Diff Integration Tests', () => {
     });
 
     it('should identify Bible events correctly for diff', () => {
-      expect(isBibleEvent(kjvJohn316)).toBe(true);
-      expect(isBibleEvent(nivJohn316)).toBe(true);
-      expect(isBibleEvent(wikiArticle1)).toBe(false);
+      expect(isBookEvent(kjvJohn316, 'bible')).toBe(true);
+      expect(isBookEvent(nivJohn316, 'bible')).toBe(true);
+      expect(isBookEvent(wikiArticle1, 'bible')).toBe(false);
     });
 
     it('should extract Bible metadata for diff comparison', () => {
-      const kjvMetadata = extractBibleMetadata(kjvJohn316);
-      const nivMetadata = extractBibleMetadata(nivJohn316);
+      const kjvMetadata = extractBookMetadata(kjvJohn316);
+      const nivMetadata = extractBookMetadata(nivJohn316);
       
       expect(kjvMetadata).not.toBeNull();
       expect(nivMetadata).not.toBeNull();
       
       expect(kjvMetadata!.book).toBe('John');
       expect(kjvMetadata!.chapter).toBe('3');
-      expect(kjvMetadata!.verses).toBe('16');
+      expect(kjvMetadata!.verse).toBe('16');
       expect(kjvMetadata!.version).toBe('KJV');
       
       expect(nivMetadata!.book).toBe('John');
       expect(nivMetadata!.chapter).toBe('3');
-      expect(nivMetadata!.verses).toBe('16');
+      expect(nivMetadata!.verse).toBe('16');
       expect(nivMetadata!.version).toBe('NIV');
     });
   });
