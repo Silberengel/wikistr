@@ -10,9 +10,10 @@
   interface Props {
     event: NostrEvent;
     createChild: (card: Card) => void;
+    replaceSelf: (card: Card) => void;
   }
 
-  let { event, createChild }: Props = $props();
+  let { event, createChild, replaceSelf }: Props = $props();
 
   let authorPreferredWikiAuthors = $state<string[]>([]);
 
@@ -23,7 +24,7 @@
   });
 </script>
 
-<AsciidocContent {event} {createChild} />
+<AsciidocContent {event} {createChild} {replaceSelf} />
 
 <!-- Comments Section -->
-<Comments {event} />
+<Comments {event} {createChild} />

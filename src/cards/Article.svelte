@@ -10,9 +10,11 @@
   import { account, reactionKind, wikiKind, signer } from '$lib/nostr';
   import { formatDate, getA, getTagOr, next } from '$lib/utils';
   import type { ArticleCard, SearchCard, Card } from '$lib/types';
-  import UserLabel from '$components/UserLabel.svelte';
+  import UserBadge from '$components/UserBadge.svelte';
   import ArticleContent from '$components/ArticleContent.svelte';
   import RelayItem from '$components/RelayItem.svelte';
+  import ProfilePopup from '$components/ProfilePopup.svelte';
+  import { nip19 } from '@nostr/tools';
 
   interface Props {
     card: Card;
@@ -37,9 +39,20 @@
 
   let author = $state<NostrUser>(bareNostrUser(pubkey));
 
+  // Profile popup state
+  let profilePopupOpen = $state(false);
+  let selectedUserPubkey = $state('');
+  let selectedUserBech32 = $state('');
+
   let title = $derived(event?.tags?.find?.(([k]) => k === 'title')?.[1] || dTag);
   let summary = $derived(event?.tags?.find(([k]) => k === 'summary')?.[1]);
   let rawEvent = $derived(event ? JSON.stringify(event, null, 2) : '{...}');
+
+  function handleProfileClick(pubkey: string) {
+    selectedUserPubkey = pubkey;
+    selectedUserBech32 = nip19.npubEncode(pubkey);
+    profilePopupOpen = true;
+  }
 
   function edit() {
     replaceSelf({
@@ -332,11 +345,13 @@
         </div>
       {/if}
       <div class="ml-2 mb-4">
-        <div class="mt-2 font-bold text-4xl">{title || dTag}</div>
-        <div>
-          by <UserLabel pubkey={event.pubkey} {createChild} />
+        <div class="mt-2 font-bold text-4xl mb-4">{title || dTag}</div>
+        <div class="flex items-center space-x-3 mb-4">
+          <UserBadge pubkey={event.pubkey} {createChild} onProfileClick={handleProfileClick} size="small" />
           {#if event.created_at}
-            {formatDate(event.created_at)}
+            <span class="text-xs text-gray-500 whitespace-nowrap">
+              {formatDate(event.created_at)}
+            </span>
           {/if}
         </div>
         <div>
@@ -385,23 +400,39 @@
       <div class="prose whitespace-pre-wrap">{event.content}</div>
     {:else if view === 'formatted'}
       <div class="prose prose-p:my-0 prose-li:my-0">
-        <ArticleContent {event} {createChild} />
+        <ArticleContent {event} {createChild} {replaceSelf} />
       </div>
     {/if}
 
-    {#if seenOn.length}
-      <div class="mt-4 flex flex-wrap items-center">
-        {#each seenOn as r (r)}
-          <RelayItem url={r} {createChild} />
-        {/each}
+    <!-- Article Metadata Section (always visible) -->
+    <div class="mt-8 pt-4 border-t border-gray-300">
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- Source Button (first position) -->
         <button
           onclick={() => {
             view = view === 'formatted' ? 'asciidoc' : view === 'asciidoc' ? 'raw' : 'formatted';
           }}
-          class="font-normal text-xs px-1 py-0.5 mr-1 my-0.5 rounded cursor-pointer transition-colors bg-brown-400 hover:bg-brown-500 text-espresso-900 focus:outline-none"
+          class="font-normal text-xs px-2 py-1 rounded cursor-pointer transition-colors bg-brown-400 hover:bg-brown-500 text-espresso-900 focus:outline-none"
           >see {#if view === 'formatted'}asciidoc source{:else if view === 'asciidoc'}raw event{:else}formatted{/if}</button
         >
+        
+        <!-- Relays (after source button) -->
+        {#if seenOn.length}
+          {#each seenOn as r (r)}
+            <RelayItem url={r} {createChild} />
+          {/each}
+        {/if}
       </div>
-    {/if}
+    </div>
+
   {/if}
 </div>
+
+<!-- Profile Popup -->
+<ProfilePopup 
+  pubkey={selectedUserPubkey}
+  bech32={selectedUserBech32}
+  isOpen={profilePopupOpen}
+  onClose={() => profilePopupOpen = false}
+  {createChild}
+/>

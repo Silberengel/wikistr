@@ -9,9 +9,10 @@
   import { nip19 } from '@nostr/tools';
   import { pool } from '@nostr/gadgets/global';
   import { DEFAULT_METADATA_QUERY_RELAYS, DEFAULT_WIKI_RELAYS } from '$lib/defaults';
-  import ProfilePopup from './ProfilePopup.svelte';
   import { next } from '$lib/utils';
   import type { ArticleCard } from '$lib/types';
+  import ProfilePopup from './ProfilePopup.svelte';
+  import UserBadge from './UserBadge.svelte';
   import EmbeddedEvent from './EmbeddedEvent.svelte';
   import BibleSearch from './BibleSearch.svelte';
   import { parseBibleWikilink } from '$lib/bible';
@@ -19,9 +20,10 @@
   interface Props {
     event: NostrEvent;
     createChild: (card: Card) => void;
+    replaceSelf?: (card: Card) => void;
   }
 
-  let { event, createChild }: Props = $props();
+  let { event, createChild, replaceSelf }: Props = $props();
 
   let authorPreferredWikiAuthors = $state<string[]>([]);
   let htmlContent = $state<string>('');
@@ -34,6 +36,56 @@
   let selectedUserBech32 = $state('');
   let embeddedEvents = $state<Array<{id: string, bech32: string, type: 'nevent' | 'note' | 'naddr'}>>([]);
   let bibleSearchResults = $state<Array<{id: string, query: string, results: any[]}>>([]);
+  let readInsteadData = $state<Array<{id: string, naddr: string, pubkey: string, identifier: string, displayName: string}>>([]);
+
+  // Global functions for dynamically generated HTML
+  function handleProfileAvatarClick(pubkey: string) {
+    selectedUserPubkey = pubkey;
+    selectedUserBech32 = nip19.npubEncode(pubkey);
+    profilePopupOpen = true;
+  }
+
+  function handleProfileUsernameClick(pubkey: string) {
+    // Create a search card for this user
+    const searchCard: Card = {
+      id: next(),
+      type: 'search',
+      data: [`author:${pubkey}`],
+      relayHints: []
+    };
+    createChild(searchCard);
+  }
+
+  function handleReadInsteadClick(naddr: string) {
+    try {
+      const decoded = decodeNostrLink(naddr);
+      if (decoded && decoded.type === 'naddr') {
+        const { data } = decoded;
+        const wikilinkCard = {
+          id: next(),
+          type: 'article' as const,
+          data: [data.identifier, data.pubkey] as [string, string],
+          relayHints: []
+        };
+
+        if (replaceSelf) {
+          replaceSelf(wikilinkCard);
+        } else {
+          createChild(wikilinkCard);
+        }
+      } else {
+        console.error('Failed to decode naddr or invalid type:', naddr);
+      }
+    } catch (error) {
+      console.error('Error processing read instead link:', error);
+    }
+  }
+
+  // Make functions globally available for inline HTML
+  if (typeof window !== 'undefined') {
+    (window as any).handleProfileAvatarClick = handleProfileAvatarClick;
+    (window as any).handleProfileUsernameClick = handleProfileUsernameClick;
+  }
 
   // Function to add embedded event (prevents duplicates)
   function addEmbeddedEvent(bech32: string, type: 'nevent' | 'note' | 'naddr') {
@@ -88,6 +140,7 @@
       return null;
     }
   }
+
 
   // Get display name for a pubkey with fallbacks
   async function getDisplayName(pubkey: string): Promise<string> {
@@ -236,6 +289,38 @@
   async function processNostrLinks(html: string): Promise<string> {
     let processed = html;
     
+    // Process "Read naddr... instead." pattern
+    const readInsteadMatches = processed.match(/Read (naddr[a-zA-Z0-9]+) instead\./g);
+    if (readInsteadMatches) {
+      for (const match of readInsteadMatches) {
+        const naddrMatch = match.match(/Read (naddr[a-zA-Z0-9]+) instead\./);
+        if (!naddrMatch) continue;
+        
+        const naddr = naddrMatch[1];
+        const decoded = decodeNostrLink(naddr);
+        if (!decoded || decoded.type !== 'naddr') continue;
+        
+        const { data } = decoded;
+        const pubkey = data.pubkey;
+        const identifier = data.identifier || 'wiki article';
+        const displayName = await getDisplayName(pubkey);
+        
+        // Store the read instead data for rendering as a component
+        const readInsteadId = `read-instead-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        readInsteadData.push({
+          id: readInsteadId,
+          naddr,
+          pubkey,
+          identifier,
+          displayName
+        });
+        
+        // Replace with a placeholder that will be rendered as a component
+        const replacement = `<div class="read-instead-placeholder" data-id="${readInsteadId}"></div>`;
+        processed = processed.replace(match, replacement);
+      }
+    }
+    
     // Process anchor links with nostr: data (our new format)
     const anchorMatches = processed.match(/<a[^>]*href="#nostr-([^"]+)"[^>]*>([^<]*)<\/a>/g);
     
@@ -253,17 +338,17 @@
         if (type === 'npub' || type === 'nprofile') {
           const pubkey = type === 'npub' ? data : data.pubkey;
           const displayName = await getDisplayName(pubkey);
-          const replacement = `<span class="nostr-user-link" data-pubkey="${pubkey}" data-bech32="${bech32}" style="color: #059669; cursor: pointer; text-decoration: underline;">@${displayName}</span>`;
+          const replacement = `<span class="nostr-user-link" data-pubkey="${pubkey}" data-bech32="${bech32}" >@${displayName}</span>`;
           processed = processed.replace(match, replacement);
         } else if (type === 'nevent' || type === 'note') {
           // For nevent and note, show the full bech32 format
           const displayText = bech32.slice(0, 20) + '...';
-          const replacement = `<span class="nostr-event-link" data-bech32="${bech32}" data-type="${type}" style="color: #059669; cursor: pointer; text-decoration: underline;">${displayText}</span>`;
+          const replacement = `<span class="nostr-event-link" data-bech32="${bech32}" data-type="${type}" >${displayText}</span>`;
           processed = processed.replace(match, replacement);
         } else if (type === 'naddr') {
           // For naddr, show the identifier or shortened bech32
           const identifier = data.identifier || bech32.slice(0, 20) + '...';
-          const replacement = `<span class="nostr-event-link" data-bech32="${bech32}" data-type="${type}" style="color: #059669; cursor: pointer; text-decoration: underline;">${identifier}</span>`;
+          const replacement = `<span class="nostr-event-link" data-bech32="${bech32}" data-type="${type}" >${identifier}</span>`;
           processed = processed.replace(match, replacement);
         }
       }
@@ -286,17 +371,17 @@
         if (type === 'npub' || type === 'nprofile') {
           const pubkey = type === 'npub' ? data : data.pubkey;
           const displayName = await getDisplayName(pubkey);
-          const replacement = `<span class="nostr-user-link" data-pubkey="${pubkey}" data-bech32="${bech32}" style="color: #059669; cursor: pointer; text-decoration: underline;">@${displayName}</span>`;
+          const replacement = `<span class="nostr-user-link" data-pubkey="${pubkey}" data-bech32="${bech32}" >@${displayName}</span>`;
           processed = processed.replace(match, replacement);
         } else if (type === 'nevent' || type === 'note') {
           // For nevent and note, show the full bech32 format
           const displayText = bech32.slice(0, 20) + '...';
-          const replacement = `<span class="nostr-event-link" data-bech32="${bech32}" data-type="${type}" style="color: #059669; cursor: pointer; text-decoration: underline;">${displayText}</span>`;
+          const replacement = `<span class="nostr-event-link" data-bech32="${bech32}" data-type="${type}" >${displayText}</span>`;
           processed = processed.replace(match, replacement);
         } else if (type === 'naddr') {
           // For naddr, show the identifier or shortened bech32
           const identifier = data.identifier || bech32.slice(0, 20) + '...';
-          const replacement = `<span class="nostr-event-link" data-bech32="${bech32}" data-type="${type}" style="color: #059669; cursor: pointer; text-decoration: underline;">${identifier}</span>`;
+          const replacement = `<span class="nostr-event-link" data-bech32="${bech32}" data-type="${type}" >${identifier}</span>`;
           processed = processed.replace(match, replacement);
         }
       }
@@ -375,18 +460,20 @@
       // Highlight all code blocks
       contentDiv.querySelectorAll('pre code').forEach((block) => {
         const element = block as HTMLElement;
-        // Only highlight if it has a language class
-        if (element.className.includes('language-') && !element.className.includes('language-undefined')) {
+        // Only highlight if it has a language class and hasn't been highlighted yet
+        if (element.className.includes('language-') && !element.className.includes('language-undefined') && !element.dataset.highlighted) {
           hljs.highlightElement(element);
+          element.dataset.highlighted = 'yes';
         }
       });
       
       // Highlight inline code that might have been missed
       contentDiv.querySelectorAll('code:not(pre code)').forEach((block) => {
         const element = block as HTMLElement;
-        // Only highlight if it has a language class and it's not undefined
-        if (element.className.includes('language-') && !element.className.includes('language-undefined')) {
+        // Only highlight if it has a language class and it's not undefined and hasn't been highlighted yet
+        if (element.className.includes('language-') && !element.className.includes('language-undefined') && !element.dataset.highlighted) {
           hljs.highlightElement(element);
+          element.dataset.highlighted = 'yes';
         }
       });
     }
@@ -397,6 +484,9 @@
     loadWikiAuthors(event.pubkey).then((ps) => {
       authorPreferredWikiAuthors = ps.items;
     });
+
+    // Clear previous read instead data
+    readInsteadData = [];
 
     // Process the content with AsciiDoc
     const content = preprocessContentForAsciidoc(event.content);
@@ -623,6 +713,7 @@
         }
       }
     }
+    
   }
 
 </script>
@@ -643,7 +734,32 @@
     bech32={embeddedEvent.bech32} 
     type={embeddedEvent.type}
     onClose={() => removeEmbeddedEvent(embeddedEvent.id)}
+    {createChild}
   />
+{/each}
+
+<!-- Read Instead Components -->
+{#each readInsteadData as readInstead (readInstead.id)}
+  <div class="read-instead-container">
+    <div class="read-instead-text">
+      <span class="text-espresso-700">Read the {readInstead.identifier} article from </span>
+      <UserBadge 
+        pubkey={readInstead.pubkey} 
+        {createChild} 
+        onProfileClick={handleProfileAvatarClick} 
+        size="small" 
+      />
+      <span class="text-espresso-700"> instead.</span>
+    </div>
+    <div class="read-instead-action">
+      <button 
+        class="read-instead-button" 
+        onclick={() => handleReadInsteadClick(readInstead.naddr)}
+      >
+        Read
+      </button>
+    </div>
+  </div>
 {/each}
 
 <!-- Profile Popup -->
@@ -726,6 +842,26 @@
   }
   
   :global(.nostr-event-link) {
+    @apply text-burgundy-700 hover:text-burgundy-800 cursor-pointer underline;
+  }
+  
+  :global(.read-instead-container) {
+    @apply flex flex-col my-4 px-4 py-3 bg-brown-50 border border-espresso-300 rounded-lg;
+  }
+  
+  :global(.read-instead-text) {
+    @apply flex flex-wrap items-center gap-1;
+  }
+  
+  :global(.read-instead-action) {
+    @apply flex justify-end;
+  }
+  
+  :global(.read-instead-button) {
+    @apply bg-burgundy-700 text-white border-none px-3 py-2 rounded text-sm cursor-pointer transition-colors hover:bg-burgundy-800;
+  }
+  
+  :global(.read-instead-link) {
     @apply text-burgundy-700 hover:text-burgundy-800 cursor-pointer underline;
   }
 </style>

@@ -31,7 +31,7 @@
   <div class="relative flex items-stretch flex-grow focus-within:z-10">
     <input
       bind:value={query}
-      class="focus:ring-indigo-500 focus:border-indigo-500 block w-full rounded-none rounded-l-md sm:text-sm border-gray-300"
+      class="focus:ring-burgundy-500 focus:border-burgundy-500 block w-full rounded-none rounded-l-md sm:text-sm border-espresso-300 bg-brown-50 text-espresso-900 placeholder-espresso-500"
       placeholder="article name or search term"
     />
   </div>

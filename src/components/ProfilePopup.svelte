@@ -3,19 +3,22 @@
   import { pool } from '@nostr/gadgets/global';
   import { DEFAULT_METADATA_QUERY_RELAYS } from '$lib/defaults';
   import { nip19 } from '@nostr/tools';
+  import UserBadge from './UserBadge.svelte';
 
   interface Props {
     pubkey: string;
     bech32: string;
     isOpen: boolean;
     onClose: () => void;
+    createChild?: ((card: any) => void) | undefined;
   }
 
-  let { pubkey, bech32, isOpen, onClose }: Props = $props();
+  let { pubkey, bech32, isOpen, onClose, createChild }: Props = $props();
   
   let userData = $state<any>(null);
   let loading = $state(true);
   let isMobile = $state(false);
+
 
   // Detect if we're on mobile
   onMount(() => {
@@ -113,6 +116,7 @@
       onClose();
     }
   }
+
 </script>
 
 {#if isOpen}
@@ -164,28 +168,10 @@
         {:else if userData}
           <!-- Profile Picture and Basic Info -->
           <div class="flex flex-col items-center text-center mb-6">
-            {#if userData.picture && !userData.picture.includes('void.cat')}
-              <img 
-                src={userData.picture} 
-                alt=""
-                class="w-24 h-24 rounded-full mb-4 object-cover"
-                onerror={(e) => (e.target as HTMLImageElement).style.display = 'none'}
-              />
-            {:else}
-              <div class="w-24 h-24 rounded-full bg-gray-200 mb-4 flex items-center justify-center">
-                <svg class="w-12 h-12 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-                </svg>
-              </div>
-            {/if}
+            <div class="mb-4">
+              <UserBadge pubkey={pubkey} {createChild} size="large" />
+            </div>
             
-            <h3 class="text-xl font-bold text-gray-900 mb-1">
-              {userData.display_name || userData.name || 'Anonymous'}
-            </h3>
-            
-            {#if userData.name && userData.name !== userData.display_name}
-              <p class="text-gray-600">@{userData.name}</p>
-            {/if}
           </div>
 
           <!-- About Section -->
@@ -289,3 +275,4 @@
     background: #a8a8a8;
   }
 </style>
+

@@ -7,20 +7,28 @@
   import AsciidocContent from './AsciidocContent.svelte';
   import { nip19 } from '@nostr/tools';
   import { loadNostrUser, type NostrUser } from '@nostr/gadgets/metadata';
+  import UserBadge from './UserBadge.svelte';
+  import ProfilePopup from './ProfilePopup.svelte';
 
   interface Props {
     bech32: string;
     type: 'nevent' | 'note' | 'naddr';
     onClose?: () => void;
+    createChild?: ((card: any) => void) | undefined;
   }
 
-  let { bech32, type, onClose }: Props = $props();
+  let { bech32, type, onClose, createChild }: Props = $props();
   
   let event = $state<NostrEvent | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let user = $state<NostrUser | null>(null);
   let pubkey = $state<string>('');
+
+  // Profile popup state
+  let profilePopupOpen = $state(false);
+  let selectedUserPubkey = $state('');
+  let selectedUserBech32 = $state('');
 
   // Helper function to get display name for tags
   function getTagValue(event: NostrEvent, tagName: string): string | null {
@@ -33,6 +41,12 @@
     return event.tags
       .filter(([name]) => name === tagName)
       .map(([, value]) => value);
+  }
+
+  function handleProfileClick(pubkey: string) {
+    selectedUserPubkey = pubkey;
+    selectedUserBech32 = nip19.npubEncode(pubkey);
+    profilePopupOpen = true;
   }
 
   onMount(async () => {
@@ -167,40 +181,17 @@
   {:else if event}
     <!-- Rendered View -->
       <div class="space-y-4">
-        <!-- Header with small round profile pic and title -->
-        <div class="flex items-center justify-between">
+        <!-- Header with profile pic and date -->
+        <div class="flex items-center justify-between mb-4">
           <div class="flex items-center space-x-3">
             <!-- Small round profile picture using Tailwind avatar -->
             <div class="flex-shrink-0">
-            {#if user?.image}
-              <img 
-                src={user.image} 
-                class="w-8 h-8 rounded-full object-cover border border-gray-300"
-                style="aspect-ratio: 1/1;" 
-                alt="Profile"
-                onerror={(e) => (e.target as HTMLImageElement).style.display = 'none'}
-              />
-            {:else}
-              <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-sm border border-gray-300" style="aspect-ratio: 1/1;">
-                {user?.shortName?.charAt(0)?.toUpperCase() || pubkey.slice(0, 2).toUpperCase()}
-              </div>
-            {/if}
+            <UserBadge pubkey={pubkey} {createChild} onProfileClick={handleProfileClick} size="small" />
           </div>
           
-          <!-- Title and metadata -->
-          <div class="flex-1 min-w-0">
-            {#if getTagValue(event, 'title')}
-              <h3 class="text-2xl font-bold text-gray-900 leading-tight mb-3">
-                {getTagValue(event, 'title')}
-              </h3>
-            {/if}
-            
-            <!-- Author and Date -->
-            <div class="flex items-center space-x-4 text-base text-gray-800">
-              <span class="text-gray-800 font-semibold">{user?.shortName || pubkey.slice(0, 8)}</span>
-              <span class="text-gray-500">•</span>
-              <span class="text-gray-700 font-semibold">{formatDate(event.created_at)}</span>
-            </div>
+          <!-- Date -->
+          <div class="flex items-center space-x-4 text-base text-gray-800">
+            <span class="text-gray-700 font-semibold">{formatDate(event.created_at)}</span>
           </div>
           </div>
           
@@ -217,6 +208,15 @@
             </button>
           {/if}
         </div>
+
+        <!-- Title on its own row -->
+        {#if getTagValue(event, 'title')}
+          <div class="mb-4">
+            <h3 class="text-2xl font-bold text-gray-900 leading-tight">
+              {getTagValue(event, 'title')}
+            </h3>
+          </div>
+        {/if}
 
         <!-- Summary -->
         {#if getTagValue(event, 'summary')}
@@ -276,6 +276,15 @@
       </div>
   {/if}
 </div>
+
+<!-- Profile Popup -->
+<ProfilePopup 
+  pubkey={selectedUserPubkey}
+  bech32={selectedUserBech32}
+  isOpen={profilePopupOpen}
+  onClose={() => profilePopupOpen = false}
+  {createChild}
+/>
 
 <style>
   .embedded-event {

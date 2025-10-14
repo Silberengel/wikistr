@@ -2,8 +2,9 @@
   import { nip19 } from '@nostr/tools';
   import { account, signer } from '$lib/nostr';
   import { pool } from '@nostr/gadgets/global';
-  import UserLabel from './UserLabel.svelte';
+  import UserBadge from './UserBadge.svelte';
   import AsciidocContent from './AsciidocContent.svelte';
+  import ProfilePopup from './ProfilePopup.svelte';
   import { browser } from '$app/environment';
   import { DEFAULT_SOCIAL_RELAYS } from '$lib/defaults';
   import { loadRelayList } from '@nostr/gadgets/lists';
@@ -21,9 +22,10 @@
 
   interface Props {
     event: NostrEvent;
+    createChild?: ((card: any) => void) | undefined;
   }
 
-  let { event }: Props = $props();
+  let { event, createChild }: Props = $props();
   
   // Generate the coordinate for the wiki article (kind:pubkey:identifier format)
   // This follows NIP-22: kind 1111 comments reference their root using this coordinate
@@ -37,6 +39,11 @@
   let copiedNevent = $state<Set<string>>(new Set());
   let copiedNeventMessage = $state<Set<string>>(new Set());
   let publishStatus = $state({ show: false, title: '', attempts: [] as Array<{ status: 'pending' | 'success' | 'failure', message?: string }> });
+
+  // Profile popup state
+  let profilePopupOpen = $state(false);
+  let selectedUserPubkey = $state('');
+  let selectedUserBech32 = $state('');
 
   interface ThreadedComment {
     comment: NostrEvent;
@@ -210,6 +217,12 @@
   function cancelReply() {
     replyingTo = null;
     replyText = '';
+  }
+
+  function handleProfileClick(pubkey: string) {
+    selectedUserPubkey = pubkey;
+    selectedUserBech32 = nip19.npubEncode(pubkey);
+    profilePopupOpen = true;
   }
 
   async function copyCommentNevent(commentId: string) {
@@ -433,7 +446,7 @@
           <textarea
             bind:value={commentText}
             placeholder="Write a comment..."
-            class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-burgundy-500 focus:border-burgundy-500 resize-none"
+            class="w-full p-3 border border-espresso-300 rounded-lg bg-brown-50 text-espresso-900 placeholder-espresso-500 focus:ring-2 focus:ring-burgundy-500 focus:border-burgundy-500 hover:bg-brown-100 transition-colors resize-none"
             rows="3"
             disabled={isSubmitting}
           ></textarea>
@@ -463,15 +476,15 @@
         {@const comment = threadedComment.comment}
         <!-- Top-level comment -->
         <div class="py-4 px-4 bg-gray-50 rounded-lg border border-gray-200">
-          <div class="flex items-center justify-between mb-3">
-            <div class="flex flex-col">
-              <UserLabel pubkey={comment.pubkey} createChild={() => {}} />
-              <span class="text-xs text-gray-500 mt-1">
+          <div class="flex items-center mb-2">
+            <div class="flex items-center space-x-3 flex-1 min-w-0">
+              <UserBadge pubkey={comment.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" />
+              <span class="text-xs text-gray-500 whitespace-nowrap">
                 {formatDate(comment.created_at)}
               </span>
             </div>
             
-            <div class="flex items-center space-x-2">
+            <div class="flex items-center space-x-2 flex-shrink-0 ml-2">
               <button
                 onclick={() => copyCommentNevent(comment.id)}
                 class="p-2 text-burgundy-700 hover:text-burgundy-800 hover:bg-brown-200 rounded-lg transition-all duration-200"
@@ -505,7 +518,7 @@
             </div>
           </div>
           
-          <div class="text-gray-900 leading-relaxed mb-3">
+          <div class="text-gray-900 leading-relaxed mb-4">
             <AsciidocContent event={comment} createChild={() => {}} />
           </div>
 
@@ -540,19 +553,19 @@
 
           <!-- Level 2 replies -->
           {#if threadedComment.replies.length > 0}
-            <div class="mt-4 ml-4 border-l-2 border-espresso-400 pl-4 space-y-3">
+            <div class="mt-6 ml-4 border-l-2 border-espresso-400 pl-4 space-y-3">
               {#each threadedComment.replies as replyThread (replyThread.comment.id)}
                 {@const reply = replyThread.comment}
                 <div class="py-3 px-3 bg-white rounded-lg border border-gray-100">
-                  <div class="flex items-center justify-between mb-2">
-                    <div class="flex flex-col">
-                      <UserLabel pubkey={reply.pubkey} createChild={() => {}} />
-                      <span class="text-xs text-gray-500 mt-1">
+                  <div class="flex items-center mb-1">
+                    <div class="flex items-center space-x-3 flex-1 min-w-0">
+                      <UserBadge pubkey={reply.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" />
+                      <span class="text-xs text-gray-500 whitespace-nowrap">
                         {formatDate(reply.created_at)}
                       </span>
                     </div>
                     
-                    <div class="flex items-center space-x-2">
+                    <div class="flex items-center space-x-2 flex-shrink-0 ml-2">
                       <button
                         onclick={() => copyCommentNevent(reply.id)}
                         class="p-2 text-burgundy-700 hover:text-burgundy-800 hover:bg-brown-200 rounded-lg transition-all duration-200"
@@ -587,7 +600,7 @@
                   </div>
                   
                   
-                  <div class="text-gray-900 leading-relaxed mb-2">
+                  <div class="text-gray-900 leading-relaxed mb-3">
                     <AsciidocContent event={reply} createChild={() => {}} />
                   </div>
 
@@ -622,19 +635,19 @@
 
                   <!-- Level 3 replies -->
                   {#if replyThread.replies.length > 0}
-                    <div class="mt-3 ml-4 border-l-2 border-brown-400 pl-4 space-y-2">
+                    <div class="mt-5 ml-4 border-l-2 border-brown-400 pl-4 space-y-2">
                       {#each replyThread.replies as nestedReplyThread (nestedReplyThread.comment.id)}
                         {@const nestedReply = nestedReplyThread.comment}
                         <div class="py-2 px-3 bg-gray-50 rounded border border-gray-200">
-                          <div class="flex items-center justify-between mb-2">
-                            <div class="flex flex-col">
-                              <UserLabel pubkey={nestedReply.pubkey} createChild={() => {}} />
-                              <span class="text-xs text-gray-500 mt-1">
+                          <div class="flex items-center mb-1">
+                            <div class="flex items-center space-x-3 flex-1 min-w-0">
+                              <UserBadge pubkey={nestedReply.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" />
+                              <span class="text-xs text-gray-500 whitespace-nowrap">
                                 {formatDate(nestedReply.created_at)}
                               </span>
                             </div>
                             
-                            <div class="flex items-center space-x-2">
+                            <div class="flex items-center space-x-2 flex-shrink-0 ml-2">
                               <button
                                 onclick={() => copyCommentNevent(nestedReply.id)}
                                 class="p-2 text-burgundy-700 hover:text-burgundy-800 hover:bg-brown-200 rounded-lg transition-all duration-200"
@@ -726,3 +739,12 @@
     </div>
   </div>
 {/if}
+
+<!-- Profile Popup -->
+<ProfilePopup 
+  pubkey={selectedUserPubkey}
+  bech32={selectedUserBech32}
+  isOpen={profilePopupOpen}
+  onClose={() => profilePopupOpen = false}
+  createChild={() => {}}
+/>

@@ -11,6 +11,9 @@
   import { loadRelayList } from '@nostr/gadgets/lists';
 
   // Local Imports
+  import UserBadge from '$components/UserBadge.svelte';
+  import ProfilePopup from '$components/ProfilePopup.svelte';
+  import { nip19 } from '@nostr/tools';
   import {
     signer,
     wikiKind,
@@ -56,6 +59,11 @@
   let results = $state<Event[]>([]);
   let current = $state(2); // Default to "all relays"
   let currentRelays = $state<string[]>([]);
+
+  // Profile popup state
+  let profilePopupOpen = $state(false);
+  let selectedUserPubkey = $state('');
+  let selectedUserBech32 = $state('');
 
   // Feed Configuration
   const FEED_CONFIGS: FeedConfig[] = [
@@ -117,6 +125,12 @@
     });
     // Reset the account store
     setAccount(null);
+  }
+
+  function handleProfileClick(pubkey: string) {
+    selectedUserPubkey = pubkey;
+    selectedUserBech32 = nip19.npubEncode(pubkey);
+    profilePopupOpen = true;
   }
 
   function openArticle(result: Event) {
@@ -314,19 +328,8 @@
   {#if $account}
     <!-- User Profile -->
     <div class="mt-2 flex items-center justify-between">
-      <div class="flex items-center space-x-4">
-        {#if $account.image && !$account.image.includes('void.cat')}
-          <img 
-            class="h-12 w-12 rounded-full" 
-            src={$account.image} 
-            alt="user avatar"
-            onerror={(e) => (e.target as HTMLImageElement).style.display = 'none'}
-          />
-        {/if}
-        <div>
-          <p class="text-sm font-medium text-gray-900">{$account.shortName}</p>
-          <p class="text-xs text-gray-500 truncate w-48">{$account.npub}</p>
-        </div>
+      <div class="flex items-center">
+        <UserBadge pubkey={$account.pubkey} {createChild} onProfileClick={handleProfileClick} size="medium" />
       </div>
       <button
         onclick={doLogout}
@@ -339,14 +342,14 @@
 
     <!-- Feed Selector -->
     <div class="mt-4 flex items-center space-x-2">
-      <label for="feed-select" class="text-sm font-medium text-gray-700">
+      <label for="feed-select" class="text-sm font-medium text-espresso-700">
         Browse articles from:
       </label>
       <select
         id="feed-select"
         bind:value={current}
         onchange={restart}
-        class="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+        class="px-3 py-2 border border-espresso-300 rounded-md shadow-sm bg-brown-50 text-espresso-900 focus:outline-none focus:ring-burgundy-500 focus:border-burgundy-500 hover:bg-brown-100 transition-colors sm:text-sm w-48"
       >
         {#each FEED_CONFIGS as feed, index}
           <option value={index}>{feed.label}</option>
@@ -388,3 +391,43 @@
     {/each}
   </div>
 </section>
+
+<!-- Profile Popup -->
+<ProfilePopup 
+  pubkey={selectedUserPubkey}
+  bech32={selectedUserBech32}
+  isOpen={profilePopupOpen}
+  onClose={() => profilePopupOpen = false}
+  {createChild}
+/>
+
+<style>
+  /* Custom dropdown styling to match theme */
+  #feed-select {
+    background-color: rgb(253, 252, 251); /* brown-50 */
+    color: rgb(87, 83, 78); /* espresso-700 */
+    border-color: rgb(214, 211, 209); /* espresso-300 */
+  }
+  
+  #feed-select:focus {
+    border-color: rgb(147, 51, 234); /* burgundy-500 */
+    box-shadow: 0 0 0 3px rgba(147, 51, 234, 0.1); /* burgundy-500 with opacity */
+  }
+  
+  #feed-select:hover {
+    background-color: rgb(249, 247, 244); /* brown-100 */
+  }
+  
+  #feed-select option {
+    background-color: rgb(253, 252, 251); /* brown-50 */
+    color: rgb(87, 83, 78); /* espresso-700 */
+    padding: 8px 12px;
+  }
+  
+  #feed-select option:hover,
+  #feed-select option:focus,
+  #feed-select option:checked {
+    background-color: rgb(147, 51, 234); /* burgundy-500 */
+    color: white;
+  }
+</style>

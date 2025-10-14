@@ -12,6 +12,7 @@ services:
       - "127.0.0.1:3000:80"  # Bind to localhost only, Apache will proxy
     environment:
       - NODE_ENV=production
+      - THEME=biblestr
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/health"]
       interval: 30s
