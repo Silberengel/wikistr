@@ -270,4 +270,85 @@ Case and spacing are flexible:
 /bible:Revelation 11:15 | DRB
 ```
 
-This system allows you to seamlessly integrate Bible references into your wiki content while maintaining clear separation between wiki articles and Bible events.
+## Comparing Bible Versions with Diff
+
+WikiStr includes powerful diff functionality to compare different Bible versions, wiki articles, and other content.
+
+### How to Use Diff
+
+Use the `diff::` prefix in the main search bar to compare content:
+
+#### Bible Version Comparisons
+```
+diff::John 3:16 KJV | NIV
+diff::bible:Romans 1:16 KJV | ESV
+diff::Psalm 23:1 KJV | DRB
+diff::Genesis 1:1 KJV | NIV
+```
+
+#### Wiki Article Comparisons
+```
+diff::article1 | article2
+diff::wiki-page | another-page
+diff::article1; article2; article3
+```
+
+#### Mixed Content Comparisons
+```
+diff::bible:John 3:16 KJV | wiki-article
+diff::article1 | John 3:16 NIV
+```
+
+### Diff Query Syntax
+
+#### Pipe Separation (Most Common)
+```
+diff::left-content | right-content
+```
+
+#### Semicolon Separation (Multiple Items)
+```
+diff::item1; item2; item3
+```
+
+#### Bible-Specific Detection
+The system automatically detects Bible content when:
+- Query starts with `bible:`
+- Query contains Bible version abbreviations (KJV, NIV, ESV, etc.)
+
+### Diff Display Features
+
+- **Line-by-line comparison** with highlighted differences
+- **Change types**: Added, removed, modified content
+- **Line numbers** for easy reference
+- **Side-by-side view** for easy comparison
+- **Color coding**: Green for additions, red for deletions
+
+### Examples
+
+#### Comparing Bible Versions
+```
+diff::John 3:16 KJV | NIV
+```
+Shows the differences between King James and New International versions of John 3:16.
+
+#### Comparing Multiple Articles
+```
+diff::article1; article2; article3
+```
+Compares three different articles, showing changes between each.
+
+#### Comparing Bible and Wiki Content
+```
+diff::bible:John 3:16 KJV | gospel-explanation
+```
+Compares a Bible verse with a wiki article explaining the gospel.
+
+### Best Practices for Diff
+
+1. **Use specific versions** for Bible comparisons
+2. **Use clear identifiers** for wiki articles
+3. **Compare similar content types** for meaningful results
+4. **Use the main search bar** (not Bible search) for diff queries
+
+This system allows you to seamlessly integrate Bible references into your wiki content while maintaining clear separation between wiki articles and Bible events, and provides powerful comparison tools for studying differences between versions and articles.

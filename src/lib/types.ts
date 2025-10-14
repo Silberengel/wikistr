@@ -16,7 +16,8 @@ export type Card =
   | SettingsCard
   | UserCard
   | EditorCard
-  | BibleCard;
+  | BibleCard
+  | DiffCard;
 
 export function serializeCardForRouter(card: Card) {
   const serialized = { ...card };

@@ -381,6 +381,14 @@
       <p class="text-xs text-green-600 mt-2">
         💡 Use abbreviations like Gen, Exod, Ps, Rev, etc. Case and whitespace are flexible: <code>john3:16</code> works the same as <code>John 3:16</code>
       </p>
+      <p class="text-xs text-green-600 mt-2">
+        🔍 <strong>Compare Bible versions:</strong> Use <code>diff::</code> prefix in the main search bar:
+      </p>
+      <div class="bg-white p-3 rounded border border-green-200 font-mono text-xs mt-1">
+        <div>diff::John 3:16 KJV | NIV</div>
+        <div>diff::bible:Romans 1:16 KJV | ESV</div>
+        <div>diff::Psalm 23:1 KJV | DRB</div>
+      </div>
     </div>
   </div>
 {:else if tried && results.length === 0 && !versionNotFound}
