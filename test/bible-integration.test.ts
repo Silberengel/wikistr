@@ -174,7 +174,7 @@ describe('Bible Integration Tests with Real Test Files', () => {
       expect(result.references[0].book).toBe('John');
       expect(result.references[0].chapter).toBe(3);
       expect(result.references[0].verses).toBe('16');
-      expect(result.version).toBe('KJV');
+      expect(result.versions).toEqual(['KJV']);
     });
 
     it('should parse chapter-only wikilink', () => {
@@ -182,13 +182,13 @@ describe('Bible Integration Tests with Real Test Files', () => {
       expect(result.references[0].book).toBe('John');
       expect(result.references[0].chapter).toBe(3);
       expect(result.references[0].verses).toBeUndefined();
-      expect(result.version).toBe('KJV');
+      expect(result.versions).toEqual(['KJV']);
     });
 
     it('should parse explicit bible prefix', () => {
       const result = parseBibleWikilink('[[bible:John 3:16 | KJV]]');
       expect(result.references[0].book).toBe('John');
-      expect(result.version).toBe('KJV');
+      expect(result.versions).toEqual(['KJV']);
     });
   });
 });

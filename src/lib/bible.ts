@@ -44,7 +44,7 @@ export const BIBLE_BOOKS = {
   'Nehemiah': ['Neh', 'Ne'],
   'Esther': ['Esth', 'Es'],
   'Job': ['Job', 'Jb'],
-  'Psalms': ['Ps', 'Psalm', 'Psa', 'Psm', 'Pss'],
+  'Psalms': ['Ps', 'Psalm', 'Psa', 'Psm', 'Pss', 'Psal'],
   'Proverbs': ['Prov', 'Pr', 'Prv'],
   'Ecclesiastes': ['Eccl', 'Ec', 'Ecc'],
   'Song of Solomon': ['Song', 'So', 'SOS', 'Song of Songs', 'Canticles', 'Cant'],
@@ -278,8 +278,14 @@ export function parseBibleWikilink(wikilink: string): { references: BibleReferen
   // Remove the [[ and ]] brackets
   const content = wikilink.replace(/^\[\[|\]\]$/g, '');
   
+  // Handle bible: prefix
+  let referenceContent = content;
+  if (content.startsWith('bible:')) {
+    referenceContent = content.substring(6).trim();
+  }
+  
   // Split by | to separate references from versions
-  const parts = content.split('|').map(p => p.trim());
+  const parts = referenceContent.split('|').map(p => p.trim());
   
   if (parts.length === 0) return null;
   
@@ -287,7 +293,7 @@ export function parseBibleWikilink(wikilink: string): { references: BibleReferen
   const normalizedReference = normalizeBibleReferenceWhitespace(parts[0]);
   const references = parseBibleNotation(normalizedReference);
   
-  // Parse multiple versions if provided 
+  // Parse multiple versions if provided
   let versions: string[] | undefined;
   if (parts[1]) {
     versions = parts[1].split(/\s+/).map(v => v.trim().toUpperCase()).filter(v => v.length > 0);
@@ -451,3 +457,46 @@ export function generateBibleTitle(metadata: { book?: string; chapter?: string; 
   
   return title;
 }
+
+/**
+ * Check if a Bible event matches a search query
+ */
+export function matchesBibleQuery(event: BibleEvent, query: string): boolean {
+  if (!isBibleEvent(event)) {
+    return false;
+  }
+  
+  const metadata = extractBibleMetadata(event);
+  if (!metadata) {
+    return false;
+  }
+  
+  // Parse the query to extract search terms
+  const queryParts = query.toLowerCase().split(' ');
+  const searchTerms = queryParts.filter(part => part.includes(':'));
+  
+  for (const term of searchTerms) {
+    const [key, value] = term.split(':');
+    
+    switch (key) {
+      case 'type':
+        if (value !== 'bible') return false;
+        break;
+      case 'bible-book':
+        if (metadata.book?.toLowerCase() !== value) return false;
+        break;
+      case 'bible-chapter':
+        if (metadata.chapter !== value) return false;
+        break;
+      case 'bible-verses':
+        if (metadata.verses !== value) return false;
+        break;
+      case 'bible-version':
+        if (metadata.version?.toLowerCase() !== value) return false;
+        break;
+    }
+  }
+  
+  return true;
+}
+

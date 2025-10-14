@@ -36,12 +36,14 @@ describe('Multiple Bible References', () => {
       expect(result[0]).toEqual({
         book: 'Romans',
         chapter: 1,
-        verses: '16-25'
+        verses: '16-25',
+        version: 'KJV'
       });
       expect(result[1]).toEqual({
         book: 'Romans',
         chapter: 1,
-        verses: '16-25'
+        verses: '16-25',
+        version: 'DRB'
       });
     });
 
@@ -59,7 +61,7 @@ describe('Multiple Bible References', () => {
       const result = parseBibleWikilink('[[Romans 1:16-25; Psalm 19:2-3 | KJV]]');
       expect(result).not.toBeNull();
       expect(result!.references).toHaveLength(2);
-      expect(result!.version).toBe('KJV');
+      expect(result!.versions).toEqual(['KJV']);
       expect(result!.references[0].book).toBe('Romans');
       expect(result!.references[1].book).toBe('Psalms');
     });
@@ -68,7 +70,7 @@ describe('Multiple Bible References', () => {
       const result = parseBibleWikilink('[[Romans 1:16-25 KJV; Romans 1:16-25 DRB]]');
       expect(result).not.toBeNull();
       expect(result!.references).toHaveLength(2);
-      expect(result!.version).toBeUndefined();
+      expect(result!.versions).toBeUndefined();
       expect(result!.references[0].book).toBe('Romans');
       expect(result!.references[1].book).toBe('Romans');
     });
@@ -77,7 +79,7 @@ describe('Multiple Bible References', () => {
       const result = parseBibleWikilink('[[Romans 1:16-25; Psalm 19:2-3; Luke 11:37-41]]');
       expect(result).not.toBeNull();
       expect(result!.references).toHaveLength(3);
-      expect(result!.version).toBeUndefined();
+      expect(result!.versions).toBeUndefined();
     });
   });
 

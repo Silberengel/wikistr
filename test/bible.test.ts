@@ -65,21 +65,24 @@ describe('Bible Notation Parsing', () => {
 describe('Bible Wikilink Parsing', () => {
   it('should parse wikilink with version', () => {
     const result = parseBibleWikilink('[[John 3:16 | KJV]]');
-    expect(result.references).toHaveLength(1);
-    expect(result.references[0].book).toBe('John');
-    expect(result.version).toBe('KJV');
+    expect(result).not.toBeNull();
+    expect(result!.references).toHaveLength(1);
+    expect(result!.references[0].book).toBe('John');
+    expect(result!.versions).toEqual(['KJV']);
   });
 
   it('should parse wikilink without version', () => {
     const result = parseBibleWikilink('[[John 3:16]]');
-    expect(result.references).toHaveLength(1);
-    expect(result.version).toBeUndefined();
+    expect(result).not.toBeNull();
+    expect(result!.references).toHaveLength(1);
+    expect(result!.versions).toBeUndefined();
   });
 
   it('should parse explicit bible prefix', () => {
     const result = parseBibleWikilink('[[bible:John 3:16 | KJV]]');
-    expect(result.references[0].book).toBe('John');
-    expect(result.version).toBe('KJV');
+    expect(result).not.toBeNull();
+    expect(result!.references[0].book).toBe('John');
+    expect(result!.versions).toEqual(['KJV']);
   });
 });
 

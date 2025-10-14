@@ -1,0 +1,17 @@
+{
+  "id": "genesis_1_1_30041_test",
+  "pubkey": "test_pubkey_genesis",
+  "created_at": 1700000003,
+  "kind": 30041,
+  "tags": [
+    ["d", "genesis-1-1-kjv"],
+    ["type", "bible"],
+    ["bible-book", "genesis"],
+    ["bible-chapter", "1"],
+    ["bible-verses", "1"],
+    ["bible-version", "kjv"],
+    ["title", "Genesis 1:1 (KJV)"]
+  ],
+  "content": "In the beginning God created the heaven and the earth.",
+  "sig": "test_sig_genesis_1_1"
+}

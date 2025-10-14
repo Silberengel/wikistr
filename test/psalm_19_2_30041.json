@@ -1,0 +1,17 @@
+{
+  "id": "psalm_19_2_30041_test",
+  "pubkey": "test_pubkey_psalm",
+  "created_at": 1700000001,
+  "kind": 30041,
+  "tags": [
+    ["d", "psalm-19-2-kjv"],
+    ["type", "bible"],
+    ["bible-book", "psalms"],
+    ["bible-chapter", "19"],
+    ["bible-verses", "2"],
+    ["bible-version", "kjv"],
+    ["title", "Psalm 19:2 (KJV)"]
+  ],
+  "content": "Day unto day uttereth speech, and night unto night sheweth knowledge.",
+  "sig": "test_sig_psalm_19_2"
+}
