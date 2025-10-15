@@ -8,6 +8,7 @@
   import { getThemeConfig } from '$lib/themes';
   import { initializeBookConfigurations } from '$lib/bookConfig';
   import { initializeFiltering } from '$lib/filtering';
+  import Toast from '$components/Toast.svelte';
 
   // Theme configuration
   const theme = getThemeConfig();
@@ -1046,3 +1047,6 @@
 
   <CardElement card={{ type: 'new', id: -1, back: undefined }} />
 </div>
+
+<!-- Toast Notifications -->
+<Toast />

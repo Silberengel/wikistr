@@ -21,6 +21,7 @@
   import { createFilteredSubscription } from '$lib/filtering';
   import { account } from '$lib/nostr';
   import { refreshBookConfigurations } from '$lib/bookConfig';
+  import { relayService } from '$lib/relayService';
 
   // Theme configuration
   const theme = getThemeConfig();
@@ -154,12 +155,18 @@
 
       if (relaysToUseNow.length === 0) return;
 
-      let subc = createFilteredSubscription(
-        relaysToUseNow,
-        [{ kinds: [wikiKind], '#d': [normalizeIdentifier(query)], limit: 25 }],
-        {
-          id: 'find-exactmatch',
-          onevent(evt) {
+      // Use relay service for exact match search
+      if ($account) {
+        relayService.queryEvents(
+          $account.pubkey,
+          'wiki-read',
+          [{ kinds: [wikiKind], '#d': [normalizeIdentifier(query)], limit: 25 }],
+          {
+            excludeUserContent: true,
+            currentUserPubkey: $account.pubkey
+          }
+        ).then(result => {
+          result.events.forEach(evt => {
             tried = true;
 
             if (searchCard.preferredAuthors.includes(evt.pubkey)) {
@@ -169,66 +176,49 @@
             }
 
             if (addUniqueTaggedReplaceable(results, evt)) update();
-          },
-          oneose,
-          receivedEvent: (relay: any, id: string) => {
-            if (!(id in seenCache)) seenCache[id] = [];
-            if (seenCache[id].indexOf(relay.url) === -1) seenCache[id].push(relay.url);
-          }
-        },
-        {
-          excludeUserContent: true,
-          currentUserPubkey: $account?.pubkey
-        }
-      );
-
-      subs.push(subc);
-    });
-
-    // Multi-tier search: d-tag, title, summary, then full-text
-    const searchQueries = [
-      // 1. d-tag search (already done above with exact match)
-      // 2. title search
-      { kinds: [wikiKind], '#title': [query], limit: 10 },
-      // 3. summary search  
-      { kinds: [wikiKind], '#summary': [query], limit: 10 },
-      // 4. full-text search
-      { kinds: [wikiKind], search: query, limit: 10 }
-    ];
-
-    // Search all queries using the same relay sets, but prioritize by author WOT score
-    searchQueries.forEach((searchQuery, index) => {
-      const sub = createFilteredSubscription(
-        DEFAULT_SEARCH_RELAYS,
-        [searchQuery],
-        {
-          id: `find-search-${index}`,
-          onevent(evt) {
-            if (addUniqueTaggedReplaceable(results, evt)) update();
-          },
-          oneose,
-          receivedEvent: (relay: any, id: string) => {
-            if (!(id in seenCache)) seenCache[id] = [];
-            if (seenCache[id].indexOf(relay.url) === -1) seenCache[id].push(relay.url);
-          }
-        },
-        {
-          excludeUserContent: true,
-          currentUserPubkey: $account?.pubkey
-        }
-      );
-      subs.push(sub);
-    });
-
-    function oneose() {
-      eosed++;
-      // We now have: exact match (1) + title search (1) + summary search (1) + full-text search (1) = 4 total
-      if (eosed === 4) {
-        tried = true;
-        searchCard.results = results;
-        searchCard.seenCache = seenCache;
+          });
+        });
       }
+
+    });
+
+    // Multi-tier search: title, summary, then full-text
+    if ($account) {
+      const searchQueries = [
+        // 1. title search
+        { kinds: [wikiKind], '#title': [query], limit: 10 },
+        // 2. summary search  
+        { kinds: [wikiKind], '#summary': [query], limit: 10 },
+        // 3. full-text search
+        { kinds: [wikiKind], search: query, limit: 10 }
+      ];
+
+      // Search all queries using relay service
+      searchQueries.forEach((searchQuery) => {
+        relayService.queryEvents(
+          $account.pubkey,
+          'wiki-read',
+          [searchQuery],
+          {
+            excludeUserContent: true,
+            currentUserPubkey: $account.pubkey
+          }
+        ).then(result => {
+          result.events.forEach(evt => {
+            if (addUniqueTaggedReplaceable(results, evt)) update();
+          });
+        });
+      });
     }
+
+    // Note: oneose is no longer needed since we're using async queries
+    // The relay service handles completion internally
+    // We'll set tried = true after a reasonable timeout
+    setTimeout(() => {
+      tried = true;
+      searchCard.results = results;
+      searchCard.seenCache = seenCache;
+    }, 3000);
 
     function receivedEvent(relay: AbstractRelay, id: string) {
       if (!(id in seenCache)) seenCache[id] = [];

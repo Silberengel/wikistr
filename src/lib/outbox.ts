@@ -4,6 +4,7 @@ import { pool } from '@nostr/gadgets/global';
 import { loadRelayList } from '@nostr/gadgets/lists';
 import { outboxFilterRelayBatch } from '@nostr/gadgets/outbox';
 import { createFilteredSubscription } from './filtering';
+import { relayService } from './relayService';
 
 export function subscribeAllOutbox(
   pubkeys: string[],
@@ -41,29 +42,32 @@ export function subscribeOutbox(
   const filter = baseFilter as Filter;
   filter.authors = [pubkey];
 
-  loadRelayList(pubkey).then((relayItems) => {
-    if (closed) return;
-
-    const relays = relayItems.items
-      .filter((ri) => ri.write && ri.url)
-      .map((ri) => ri.url)
-      .filter(url => url && url.startsWith('wss://'));
-    const actualRelays = relays.slice(0, Math.min(relays.length, 4));
-
-    subc = createFilteredSubscription(actualRelays, [filter], { id: 'singleoutbox', ...params } as any, {
+  // Use relay service for outbox queries
+  relayService.queryEvents(
+    pubkey,
+    'wiki-read', // Use wiki-read for outbox queries
+    [filter],
+    {
       excludeUserContent: false,
       currentUserPubkey: pubkey
+    }
+  ).then(result => {
+    if (closed) return;
+    
+    // Process events and call the original handlers
+    result.events.forEach(event => {
+      if (params.onevent) {
+        params.onevent(event);
+      }
     });
-    if (closed) {
-      subc.close();
+    
+    if (params.oneose) {
+      params.oneose();
     }
   });
 
   return {
     close() {
-      if (subc) {
-        subc.close();
-      }
       closed = true;
     }
   };

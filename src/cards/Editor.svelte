@@ -16,6 +16,7 @@
   import { loadRelayList } from '@nostr/gadgets/lists';
   import { normalizeIdentifier } from '@nostr/tools/nip54';
   import { getThemeConfig } from '$lib/themes';
+  import { relayService } from '$lib/relayService';
 
   // Theme configuration
   const theme = getThemeConfig();
@@ -37,22 +38,9 @@
 
 
   async function publish() {
-    const [relayListItems, blockedRelays] = await Promise.all([
-      loadRelayList($account!.pubkey),
-      loadBlockedRelays($account!.pubkey)
-    ]);
+    if (!$account) return;
     
-    const writeRelays = relayListItems.items.filter((ri) => ri.write).map((ri) => ri.url);
-    const normalizedBlocked = new Set(deduplicateRelays(blockedRelays));
-    
-    // Combine write relays with defaults, normalize and deduplicate
-    const allRelays = unique(writeRelays, DEFAULT_WIKI_RELAYS);
-    const normalizedRelays = deduplicateRelays(allRelays);
-    
-    // Filter out blocked relays
-    const finalRelays = normalizedRelays.filter(url => !normalizedBlocked.has(url));
-    
-    targets = finalRelays.map((url) => ({ url, status: 'pending' }));
+    targets = [];
     error = undefined;
 
     data.title = data.title.trim();
@@ -68,32 +56,30 @@
 
     try {
       let event = await signer.signEvent(eventTemplate);
-      let successes: string[] = [];
-
-      await Promise.all(
-        targets.map(async (target, i) => {
-          try {
-            const r = await pool.ensureRelay(target.url);
-            await r.publish(event);
-            target.status = 'success';
-            successes.push(target.url);
-          } catch (err) {
-            target.status = 'failure';
-            target.message = String(err);
-          }
-          targets[i] = target;
-          targets = targets;
-        })
+      
+      // Use relay service for publishing
+      const result = await relayService.publishEvent(
+        $account.pubkey,
+        'wiki-write',
+        event,
+        false // Don't show toast for articles
       );
+      
+      // Update targets with results
+      targets = result.publishedTo.concat(result.failedRelays).map(url => ({
+        url,
+        status: result.publishedTo.includes(url) ? 'success' as const : 'failure' as const,
+        message: result.publishedTo.includes(url) ? 'Published' : 'Failed'
+      }));
 
-      if (successes.length) {
+      if (result.success) {
         setTimeout(() => {
           replaceSelf({
             id: next(),
             type: 'article',
             data: [getTagOr(event, 'd'), event.pubkey],
             actualEvent: event,
-            relayHints: successes
+            relayHints: result.publishedTo
           } as ArticleCard);
         }, 1400);
       }

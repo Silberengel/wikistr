@@ -10,6 +10,7 @@
   import ArticleListItem from '$components/ArticleListItem.svelte';
   import { createFilteredSubscription } from '$lib/filtering';
   import { account } from '$lib/nostr';
+  import { relayService } from '$lib/relayService';
 
   interface Props {
     card: Card;
@@ -28,7 +29,7 @@
   
   const relayCard = card as { type: 'relay'; data: string };
 
-  onMount(() => {
+  onMount(async () => {
     const update = debounce(() => {
       results = results;
     }, 500);
@@ -37,30 +38,28 @@
       tried = true;
     }, 1500);
 
-    let sub = createFilteredSubscription(
-      [relayCard.data],
-      [
-        {
-          kinds: [wikiKind],
-          limit: 25
-        }
-      ],
-      {
-        oneose() {
-          tried = true;
-        },
-        onevent(evt) {
-          tried = true;
+    // Use relay service for relay-specific queries
+    if ($account) {
+      try {
+        const result = await relayService.queryEvents(
+          $account.pubkey,
+          'wiki-read',
+          [{ kinds: [wikiKind], limit: 25 }],
+          {
+            excludeUserContent: true,
+            currentUserPubkey: $account.pubkey
+          }
+        );
+        
+        result.events.forEach(evt => {
           if (addUniqueTaggedReplaceable(results, evt)) update();
-        }
-      },
-      {
-        excludeUserContent: true,
-        currentUserPubkey: $account?.pubkey
+        });
+        tried = true;
+      } catch (err) {
+        console.warn('Failed to load relay articles:', err);
+        tried = true;
       }
-    );
-
-    return sub.close;
+    }
   });
 
   function openArticle(result: NostrEvent, ev: MouseEvent) {

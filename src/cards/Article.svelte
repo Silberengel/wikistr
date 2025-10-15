@@ -3,6 +3,7 @@
   import type { EventTemplate, NostrEvent } from '@nostr/tools/pure';
   import { pool } from '@nostr/gadgets/global';
   import { loadRelayList } from '@nostr/gadgets/lists';
+  import { relayService } from '$lib/relayService';
   import { bareNostrUser, loadNostrUser, type NostrUser } from '@nostr/gadgets/metadata';
   import { naddrEncode } from '@nostr/tools/nip19';
   import { normalizeIdentifier } from '@nostr/tools/nip54';
@@ -271,12 +272,14 @@
     //);
   }
 
-  function loadReactions() {
+  async function loadReactions() {
     if (!event) return;
+    if (!$account) return;
 
-    // Load all reactions to this article
-    createFilteredSubscription(
-      seenOn.length > 0 ? seenOn : ['wss://relay.damus.io', 'wss://nos.lol'],
+    // Use relay service to query reactions
+    const result = await relayService.queryEvents(
+      $account.pubkey,
+      'social-read',
       [
         {
           '#e': [event.id],
@@ -285,30 +288,35 @@
         }
       ],
       {
-        onevent(reaction) {
-          // Count votes
-          if (reaction.content === '+' || reaction.content === '') {
-            voteCounts.likes++;
-          } else if (reaction.content === '-') {
-            voteCounts.dislikes++;
-          }
-
-          // Check if this is the current user's reaction
-          if ($account && reaction.pubkey === $account.pubkey) {
-            userReaction = reaction;
-            if (reaction.content === '+' || reaction.content === '') {
-              likeStatus = 'liked';
-            } else if (reaction.content === '-') {
-              likeStatus = 'disliked';
-            }
-          }
-        }
+        excludeUserContent: false,
+        currentUserPubkey: $account.pubkey
       }
     );
 
+    // Process reactions
+    for (const reaction of result.events) {
+      // Count votes
+      if (reaction.content === '+' || reaction.content === '') {
+        voteCounts.likes++;
+      } else if (reaction.content === '-') {
+        voteCounts.dislikes++;
+      }
+
+      // Check if this is the current user's reaction
+      if (reaction.pubkey === $account.pubkey) {
+        userReaction = reaction;
+        if (reaction.content === '+' || reaction.content === '') {
+          likeStatus = 'liked';
+        } else if (reaction.content === '-') {
+          likeStatus = 'disliked';
+        }
+      }
+    }
+
     // Also load deletion events to handle deleted reactions
-    createFilteredSubscription(
-      seenOn.length > 0 ? seenOn : ['wss://relay.damus.io', 'wss://nos.lol'],
+    const deletionResult = await relayService.queryEvents(
+      $account.pubkey,
+      'social-read',
       [
         {
           kinds: [5], // deletion events
@@ -316,28 +324,32 @@
         }
       ],
       {
-        onevent(deletion) {
-          // Check if this deletion is for a reaction to our article
-          const deletedEventId = deletion.tags.find(([tag]: [string, string]) => tag === 'e')?.[1];
-          if (deletedEventId && userReaction && userReaction.id === deletedEventId) {
-            // Store the content before clearing userReaction
-            const deletedContent = userReaction.content;
-            
-            // User's reaction was deleted
-            userReaction = null;
-            likeStatus = 'none';
-            
-            // Update vote counts
-            if (deletedContent === '+' || deletedContent === '') {
-              voteCounts.likes = Math.max(0, voteCounts.likes - 1);
-            } else if (deletedContent === '-') {
-              voteCounts.dislikes = Math.max(0, voteCounts.dislikes - 1);
-            }
-          }
-        }
+        excludeUserContent: false,
+        currentUserPubkey: $account.pubkey
       }
     );
+
+    for (const deletion of deletionResult.events) {
+      // Check if this deletion is for a reaction to our article
+      const deletedEventId = deletion.tags.find((tag: string[]) => tag[0] === 'e')?.[1];
+      if (deletedEventId && userReaction && userReaction.id === deletedEventId) {
+        // Store the content before clearing userReaction
+        const deletedContent = userReaction.content;
+        
+        // User's reaction was deleted
+        userReaction = null;
+        likeStatus = 'none';
+        
+        // Update vote counts
+        if (deletedContent === '+' || deletedContent === '') {
+          voteCounts.likes = Math.max(0, voteCounts.likes - 1);
+        } else if (deletedContent === '-') {
+          voteCounts.dislikes = Math.max(0, voteCounts.dislikes - 1);
+        }
+      }
+    }
   }
+
 
   async function deleteReaction(reaction: NostrEvent) {
     if (!event) return;
@@ -353,12 +365,6 @@
       created_at: Math.round(Date.now() / 1000)
     };
 
-    let inboxRelays = (await loadRelayList(pubkey)).items
-      .filter((ri) => ri.read && ri.url)
-      .map((ri) => ri.url)
-      .filter(url => url && url.startsWith('wss://'));
-    let relays = [...(card as ArticleCard).relayHints, ...inboxRelays, ...seenOn];
-
     let deletion: NostrEvent;
     try {
       deletion = await signer.signEvent(deletionTemplate);
@@ -367,26 +373,21 @@
       return;
     }
 
-    // Update local state immediately
-    userReaction = null;
-    likeStatus = 'none';
+    // Use relay service for social event publishing
+    const result = await relayService.publishEvent(pubkey, 'social-write', deletion);
     
-    // Update vote counts
-    if (reaction.content === '+' || reaction.content === '') {
-      voteCounts.likes = Math.max(0, voteCounts.likes - 1);
-    } else if (reaction.content === '-') {
-      voteCounts.dislikes = Math.max(0, voteCounts.dislikes - 1);
-    }
-
-    // Publish deletion event
-    relays.forEach(async (url) => {
-      try {
-        const r = await pool.ensureRelay(url);
-        await r.publish(deletion);
-      } catch (err) {
-        console.warn('failed to publish deletion', event, 'to', url, err);
+    if (result.success) {
+      // Update local state only if publish succeeded
+      userReaction = null;
+      likeStatus = 'none';
+      
+      // Update vote counts
+      if (reaction.content === '+' || reaction.content === '') {
+        voteCounts.likes = Math.max(0, voteCounts.likes - 1);
+      } else if (reaction.content === '-') {
+        voteCounts.dislikes = Math.max(0, voteCounts.dislikes - 1);
       }
-    });
+    }
   }
 
   async function vote(v: '+' | '-') {
@@ -414,37 +415,27 @@
       created_at: Math.round(Date.now() / 1000)
     };
 
-    let inboxRelays = (await loadRelayList(pubkey)).items
-      .filter((ri) => ri.read && ri.url)
-      .map((ri) => ri.url)
-      .filter(url => url && url.startsWith('wss://'));
-    let relays = [...(card as ArticleCard).relayHints, ...inboxRelays, ...seenOn];
-
     let reaction: NostrEvent;
     try {
       reaction = await signer.signEvent(eventTemplate);
     } catch (err) {
-      console.warn('failed to publish reaction', err);
+      console.warn('failed to sign reaction', err);
       return;
     }
 
-    // Update local state immediately
-    userReaction = reaction;
-    likeStatus = v === '+' ? 'liked' : 'disliked';
-    if (v === '+') {
-      voteCounts.likes++;
-    } else {
-      voteCounts.dislikes++;
-    }
-
-    relays.forEach(async (url) => {
-      try {
-        const r = await pool.ensureRelay(url);
-        await r.publish(reaction);
-      } catch (err) {
-        console.warn('failed to publish reaction', event, 'to', url, err);
+    // Use relay service for social event publishing
+    const result = await relayService.publishEvent(pubkey, 'social-write', reaction);
+    
+    if (result.success) {
+      // Update local state only if publish succeeded
+      userReaction = reaction;
+      likeStatus = v === '+' ? 'liked' : 'disliked';
+      if (v === '+') {
+        voteCounts.likes++;
+      } else {
+        voteCounts.dislikes++;
       }
-    });
+    }
   }
 </script>
 

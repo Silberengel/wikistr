@@ -27,6 +27,7 @@
   import { DEFAULT_WIKI_RELAYS } from '$lib/defaults';
   import { getThemeConfig, getCurrentTheme } from '$lib/themes';
   import { createFilteredSubscription } from '$lib/filtering';
+  import { relayService } from '$lib/relayService';
   
   // Components
   import ArticleListItem from '$components/ArticleListItem.svelte';
@@ -184,19 +185,23 @@
       if (sub) sub.close();
       if (!account) return;
 
-      const inboxRelays = await getUserInboxRelays(account.pubkey);
-      const relays = inboxRelays.length > 0 ? inboxRelays : await getBasicUserWikiRelays(account.pubkey);
-      currentRelays = relays;
-
-      console.log('Inbox feed - relays:', relays);
-
-      sub = createSubscription(
-        relays,
-        { kinds: [wikiKind], limit: 15 },
-        'inbox',
-        undefined,
-        false // Don't exclude user content for the "inbox" feed
-      );
+      // Use relay service for inbox feed
+      relayService.queryEvents(
+        account.pubkey,
+        'wiki-read',
+        [{ kinds: [wikiKind], limit: 15 }],
+        {
+          excludeUserContent: true,
+          currentUserPubkey: account.pubkey
+        }
+      ).then(result => {
+        currentRelays = result.relays;
+        console.log('Inbox feed - relays:', result.relays);
+        
+        result.events.forEach(evt => {
+          if (addUniqueTaggedReplaceable(results, evt)) update();
+        });
+      });
     });
 
     return {
@@ -228,13 +233,21 @@
         console.log('Web of Trust feed - Eligible authors:', eligibleKeys.length, eligibleKeys);
         
         if (eligibleKeys.length > 0) {
-          sub = createSubscription(
-            allRelays,
-            { kinds: [wikiKind], authors: eligibleKeys, limit: 20 },
-            'follows',
-            () => console.log('Web of Trust feed completed'),
-            false // Don't exclude user content for the "web of trust" feed
-          );
+          // Use relay service for web of trust feed
+          relayService.queryEvents(
+            account.pubkey,
+            'wiki-read',
+            [{ kinds: [wikiKind], authors: eligibleKeys, limit: 20 }],
+            {
+              excludeUserContent: true,
+              currentUserPubkey: account.pubkey
+            }
+          ).then(result => {
+            console.log('Web of Trust feed completed');
+            result.events.forEach(evt => {
+              if (addUniqueTaggedReplaceable(results, evt)) update();
+            });
+          });
         } else {
           console.log('No eligible authors found in Web of Trust');
         }
@@ -256,15 +269,23 @@
       if (sub) sub.close();
       if (!account) return;
 
-      const allRelays = await getCombinedRelays(account.pubkey);
-      currentRelays = allRelays;
-      console.log('All relays feed - relays:', allRelays);
-
-      sub = createSubscription(
-        allRelays,
-        { kinds: [wikiKind], limit: 15 },
-        'allrelays'
-      );
+      // Use relay service for all relays feed
+      relayService.queryEvents(
+        account.pubkey,
+        'wiki-read',
+        [{ kinds: [wikiKind], limit: 15 }],
+        {
+          excludeUserContent: true,
+          currentUserPubkey: account.pubkey
+        }
+      ).then(result => {
+        currentRelays = result.relays;
+        console.log('All relays feed - relays:', result.relays);
+        
+        result.events.forEach(evt => {
+          if (addUniqueTaggedReplaceable(results, evt)) update();
+        });
+      });
     });
 
     return {
@@ -281,17 +302,23 @@
       if (sub) sub.close();
       if (!account) return;
 
-      const allRelays = await getCombinedRelays(account.pubkey);
-      currentRelays = allRelays;
-      console.log('Self feed - relays:', allRelays);
-
-      sub = createSubscription(
-        allRelays,
-        { kinds: [wikiKind], authors: [account.pubkey], limit: 15 },
-        'self',
-        undefined,
-        false // Don't exclude user content for the "yourself" feed
-      );
+      // Use relay service for self feed
+      relayService.queryEvents(
+        account.pubkey,
+        'wiki-read',
+        [{ kinds: [wikiKind], authors: [account.pubkey], limit: 15 }],
+        {
+          excludeUserContent: false,
+          currentUserPubkey: account.pubkey
+        }
+      ).then(result => {
+        currentRelays = result.relays;
+        console.log('Self feed - relays:', result.relays);
+        
+        result.events.forEach(evt => {
+          if (addUniqueTaggedReplaceable(results, evt)) update();
+        });
+      });
     });
 
     return {

@@ -10,6 +10,7 @@
   import { loadRelayList } from '@nostr/gadgets/lists';
   import { formatDate } from '$lib/utils';
   import { getThemeConfig } from '$lib/themes';
+  import { relayService } from '$lib/relayService';
 
   // Theme configuration
   const theme = getThemeConfig();
@@ -160,47 +161,31 @@
       publishStatus.title = 'Publishing comment...';
       publishStatus.attempts = [];
 
-      // Get user's actual outbox relays (kind 10002) for publishing comments
-      const socialRelays = DEFAULT_SOCIAL_RELAYS;
-      let userOutboxRelays: string[] = [];
-
-      if ($account) {
-        try {
-          const relayList = await loadRelayList($account.pubkey);
-          userOutboxRelays = relayList.items
-            .filter((ri) => ri.write)
-            .map((ri) => ri.url);
-        } catch (error) {
-          console.error('Error loading user outbox relays:', error);
-        }
-      }
+      // Use relay service for comment publishing
+      if (!$account) return;
       
-      const relays = [...new Set([...socialRelays, ...userOutboxRelays])];
-      const attempts = relays.map(relay => ({ status: 'pending' as const }));
+      const result = await relayService.publishEvent(
+        $account.pubkey,
+        'social-write',
+        commentEvent as any, // Cast to proper NostrEvent type
+        false // Don't show toast for comments
+      );
+      
+      const attempts = result.publishedTo.concat(result.failedRelays).map(relay => ({
+        status: result.publishedTo.includes(relay) ? 'success' as const : 'failure' as const,
+        url: relay,
+        message: result.publishedTo.includes(relay) ? 'Published' : 'Failed'
+      }));
       publishStatus.attempts = attempts;
 
       // Update the comment event tags with proper NIP-22 format
       commentEvent.tags = [
-        ['A', articleCoordinate, relays[0], 'article'],
+        ['A', articleCoordinate, 'article'],
         ['K', event.kind.toString()]
       ];
 
       // Sign the event first
       const signedEvent = await signer.signEvent(commentEvent);
-      
-      const promises = relays.map(async (relay, index) => {
-        try {
-          await pool.publish([relay], signedEvent);
-          publishStatus.attempts[index] = { status: 'success' };
-        } catch (error) {
-          publishStatus.attempts[index] = { 
-            status: 'failure', 
-            message: error instanceof Error ? error.message : 'Unknown error' 
-          };
-        }
-      });
-
-      await Promise.allSettled(promises);
       
       // Clear the form
       commentText = '';
@@ -396,7 +381,7 @@
       
       
       const events: NostrEvent[] = [];
-      let timeoutId: number;
+      let timeoutId: ReturnType<typeof setTimeout>;
       
       const sub = pool.subscribeMany(
         relays,
