@@ -6,6 +6,7 @@
   import { isElementInViewport, getParentCard } from '$lib/utils';
   import CardElement from '$components/CardElement.svelte';
   import { getThemeConfig } from '$lib/themes';
+  import { initializeBookConfigurations } from '$lib/bookConfig';
 
   // Theme configuration
   const theme = getThemeConfig();
@@ -21,6 +22,9 @@
   let slider: HTMLElement;
 
   onMount(() => {
+    // Initialize book configurations on startup
+    initializeBookConfigurations();
+    
     document.addEventListener('mousedown', onMouseDown);
     document.addEventListener('mouseup', onMouseUp);
     document.addEventListener('mousemove', onMouseMove);

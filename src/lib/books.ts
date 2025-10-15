@@ -370,6 +370,44 @@ export const BOOK_TYPES: { [type: string]: BookType } = {
         return version ? `${ref} (${version})` : ref;
       }
     }
+  },
+  torah: {
+    name: 'torah',
+    displayName: 'Torah',
+    books: {
+      'Genesis': ['Gen', 'Ge', 'Gn', 'Bereshit'],
+      'Exodus': ['Exod', 'Ex', 'Exo', 'Shemot'],
+      'Leviticus': ['Lev', 'Le', 'Lv', 'Vayikra'],
+      'Numbers': ['Num', 'Nu', 'Nm', 'Nb', 'Bamidbar'],
+      'Deuteronomy': ['Deut', 'De', 'Dt', 'Devarim']
+    },
+    versions: {
+      'JPS': 'Jewish Publication Society',
+      'NJPS': 'New Jewish Publication Society',
+      'TANAKH': 'Tanakh',
+      'HEBREW': 'Hebrew',
+      'ENGLISH': 'English'
+    },
+    parsingRules: {
+      bookPattern: /.*/,
+      chapterPattern: /^\d+$/,
+      versePattern: /^\d+(?:[-,\s]\d+)*$/,
+      versionPattern: /.*/
+    },
+    displayFormat: {
+      bookChapterVerse: (book: string, chapter?: number, verse?: string) => {
+        if (chapter && verse) {
+          return `${book} ${chapter}:${verse}`;
+        } else if (chapter) {
+          return `${book} ${chapter}`;
+        } else {
+          return book;
+        }
+      },
+      withVersion: (ref: string, version?: string) => {
+        return version ? `${ref} (${version})` : ref;
+      }
+    }
   }
 };
 
@@ -377,18 +415,24 @@ export const BOOK_TYPES: { [type: string]: BookType } = {
 // UTILITY FUNCTIONS
 // ============================================================================
 
-// Create reverse mapping from abbreviations to full names for each book type
-export const BOOK_ABBREVIATIONS: { [type: string]: { [key: string]: string } } = {};
-Object.entries(BOOK_TYPES).forEach(([typeName, bookType]) => {
-  BOOK_ABBREVIATIONS[typeName] = {};
-  Object.entries(bookType.books).forEach(([fullName, abbreviations]) => {
-    abbreviations.forEach(abbr => {
-      BOOK_ABBREVIATIONS[typeName][abbr.toLowerCase()] = fullName;
-    });
-    // Also add the full name itself
-    BOOK_ABBREVIATIONS[typeName][fullName.toLowerCase()] = fullName;
-  });
-});
+// Legacy support - these functions are now handled by the centralized bookConfig system
+// Keeping for backward compatibility
+
+/**
+ * @deprecated Use bookConfig.getBookType() instead
+ */
+export function getBookType(name: string) {
+  console.warn('getBookType is deprecated, use bookConfig.getBookType() instead');
+  return BOOK_TYPES[name];
+}
+
+/**
+ * @deprecated Use bookConfig.getAllBookTypesArray() instead
+ */
+export function getAllBookTypes(customBookTypes: { [name: string]: BookType } = {}): { [name: string]: BookType } {
+  console.warn('getAllBookTypes is deprecated, use bookConfig.getAllBookTypesArray() instead');
+  return { ...BOOK_TYPES, ...customBookTypes };
+}
 
 // ============================================================================
 // PARSING FUNCTIONS
@@ -442,6 +486,7 @@ export function parseBookNotation(notation: string, bookType: string): BookRefer
  * Parse a single book reference like "John 3:16" or "John 1-3" or "John 3:16 KJV"
  */
 function parseSingleBookReference(ref: string, bookType: string): BookReference | null {
+  // For now, use built-in book types. In the future, this should use the centralized system
   const typeConfig = BOOK_TYPES[bookType];
   if (!typeConfig) return null;
   
@@ -476,7 +521,12 @@ function parseSingleBookReference(ref: string, bookType: string): BookReference 
     const match = refWithoutVersion.match(pattern);
     if (match) {
       const bookName = match[1].trim();
-      const fullBookName = BOOK_ABBREVIATIONS[bookType]?.[bookName.toLowerCase()];
+      // For now, use built-in abbreviations. In the future, this should use the centralized system
+      const fullBookName = BOOK_TYPES[bookType]?.books && 
+        Object.entries(BOOK_TYPES[bookType].books).find(([fullName, abbreviations]) => 
+          abbreviations.some(abbr => abbr.toLowerCase() === bookName.toLowerCase()) || 
+          fullName.toLowerCase() === bookName.toLowerCase()
+        )?.[0];
       
       if (!fullBookName) {
         continue; // Try next pattern

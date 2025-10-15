@@ -18,6 +18,7 @@
   import { page } from '$app/state';
   import { cards } from '$lib/state';
   import { isDiffQuery } from '$lib/diff';
+  import { refreshBookConfigurations } from '$lib/bookConfig';
 
   // Theme configuration
   const theme = getThemeConfig();
@@ -304,9 +305,18 @@
       debouncedPerformSearch();
     }
   }
+
+  async function refreshBookConfigs() {
+    try {
+      await refreshBookConfigurations();
+      console.log('Book configurations refreshed successfully');
+    } catch (error) {
+      console.error('Failed to refresh book configurations:', error);
+    }
+  }
 </script>
 
-<div class="mt-2 font-bold text-4xl">
+<div class="mt-2 font-bold text-4xl flex items-center gap-4">
   <!-- svelte-ignore a11y-no-static-element-interactions -->
   "<span
     ondblclick={startEditing}
@@ -315,64 +325,22 @@
     contenteditable="plaintext-only"
     bind:textContent={query}
   ></span>"
+  
+  <!-- Refresh Book Configurations Button -->
+  <button
+    onclick={refreshBookConfigs}
+    class="text-sm px-3 py-1 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded text-gray-700 hover:text-gray-900 transition-colors"
+    title="Refresh book configurations from Nostr events"
+  >
+    🔄 Refresh Books
+  </button>
 </div>
-{#if !tried && results.length === 0}
-  <!-- Search Instructions -->
-  <div class="px-4 py-6 bg-brown-200 border border-brown-300 rounded-lg mt-4">
-    <h3 class="text-lg font-semibold text-espresso-900 mb-3">Search Instructions</h3>
-    <div class="text-sm text-espresso-800 space-y-2">
-      <p><strong>This search finds wiki articles using multi-tier search:</strong></p>
-      <ul class="text-xs text-espresso-700 ml-4 space-y-1">
-        <li>• <strong>d-tag</strong> (exact identifier match)</li>
-        <li>• <strong>title</strong> (title tag matches)</li>
-        <li>• <strong>summary</strong> (summary tag matches)</li>
-        <li>• <strong>full-text</strong> (content search)</li>
-      </ul>
-      {#if theme.showBibleLinks}
-        <p><strong>To search for Bible passages, use:</strong></p>
-        <div class="bg-brown-100 p-3 rounded border border-brown-300 font-mono text-xs">
-          <div>/bible:John 3:16</div>
-          <div>/bible:John 3:16 | KJV</div>
-          <div>/bible:Psalm 23:1</div>
-          <div>/bible:Genesis 1:1 | KJV</div>
-          <div>/bible:Romans 1:16-25; Psalm 19:2-3</div>
-          <div>/bible:Romans 1:16-25 | KJV DRB</div>
-        </div>
-      {/if}
-      {#if theme.showBibleLinks}
-        <p><strong>In wiki articles, use Bible wikilinks:</strong></p>
-        <div class="bg-brown-100 p-3 rounded border border-brown-300 font-mono text-xs">
-          <div>[[bible:John 3:16 | KJV]]</div>
-          <div>[[bible:Psalm 23:1]]</div>
-          <div>[[bible:Genesis 1:1 | KJV]]</div>
-          <div>[[bible:Romans 1:16-25; Psalm 19:2-3]]</div>
-          <div>[[bible:Romans 1:16-25 | KJV DRB]]</div>
-        </div>
-      {/if}
-      {#if theme.showBibleLinks}
-        <p class="text-xs text-espresso-600 mt-2">
-          Use <code>bible:</code> prefix to avoid false positives with names like "John Smith". Case and whitespace are flexible: <code>john3:16</code> works the same as <code>John 3:16</code>
-        </p>
-      {/if}
-      <p class="text-xs text-espresso-600 mt-2">
-        <strong>Compare content with diff:</strong>
-      </p>
-      <div class="p-3 rounded border border-brown-300 font-mono text-xs mt-1" style="background-color: var(--theme-bg);">
-        <div>diff::article1 | article2</div>
-        <div>diff::bible:John 3:16 KJV | NIV</div>
-        <div>diff::article1; article2; article3</div>
-        <div>diff::John 3:16 KJV | ESV</div>
-      </div>
-      <p class="text-xs text-espresso-600 mt-1">
-        Use <code>diff::</code> prefix to compare wiki articles, Bible versions, or any content. Supports pipe <code>|</code> and semicolon <code>;</code> separation.
-      </p>
-    </div>
-  </div>
-{/if}
+
 
 {#each results as result (result.id)}
   <ArticleListItem event={result} {openArticle} />
 {/each}
+
 {#if tried}
   <div class="px-4 py-4 border-2 border-stone rounded-lg mt-4" style="background-color: var(--theme-bg);">
     <p class="mb-2 mt-0">

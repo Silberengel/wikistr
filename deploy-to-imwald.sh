@@ -77,8 +77,8 @@ echo -e "  - ${GREEN}Biblestr (light theme):${NC} https://biblestr.imwald.eu"
 
 echo
 echo -e "${BLUE}🔍 Quick Health Check:${NC}"
-echo -e "  - Wikistr: $(curl -s -o /dev/null -w "%{http_code}" https://wikistr.imwald.eu || echo "Failed")"
-echo -e "  - Biblestr: $(curl -s -o /dev/null -w "%{http_code}" https://biblestr.imwald.eu || echo "Failed")"
+echo -e "  - Wikistr: $(curl -s -o /dev/null -w "%{http_code}" https://wikistr.imwald.eu:443 || echo "Failed")"
+echo -e "  - Biblestr: $(curl -s -o /dev/null -w "%{http_code}" https://biblestr.imwald.eu:443 || echo "Failed")"
 
 echo
 echo -e "${BLUE}📝 Useful Commands:${NC}"

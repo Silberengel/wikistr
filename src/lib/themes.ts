@@ -59,7 +59,24 @@ export const themes: Record<ThemeType, ThemeConfig> = {
       'wss://nostr.land'
     ],
     showBibleLinks: false,
-    searchHelpText: 'Search for articles by title, content, or author. Use "author:pubkey" to find articles by a specific author. Use "book:" prefix for book searches (e.g., "book:bible:John 3:16").',
+    searchHelpText: `Search for articles by title, content, or author. Use "author:pubkey" to find articles by a specific author.
+
+**Book Search Examples:**
+• book:bible:John 3:16
+• book:quran:Al-Fatiha:1-7  
+• book:catechism:CCC 1
+• book:torah:Genesis 1:1
+
+**Adding New Book Types:**
+Publish a NIP-78 event with app="Wikistr" and type="book-config" to add new book types. The system will automatically load and make them available for searching.
+
+**Compare content with diff:**
+• diff::article1 | article2
+• diff::book:bible:John 3:16 KJV | NIV
+• diff::article1; article2; article3
+• diff::book:bible:John 3:16 KJV | ESV
+
+Use <code>diff::</code> prefix to compare wiki articles, book versions, or any content. Supports pipe <code>|</code> and semicolon <code>;</code> separation.`,
     typography: {
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
       fontFamilyHeading: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
@@ -104,7 +121,38 @@ export const themes: Record<ThemeType, ThemeConfig> = {
       'wss://nostr.land'
     ],
     showBibleLinks: true,
-    searchHelpText: 'Search for articles by title, content, or author. Use "author:pubkey" to find articles by a specific author. Use "book:" prefix for book searches (e.g., "book:bible:John 3:16", "book:quran:Al-Fatiha 1-7").',
+    searchHelpText: `Search for articles by title, content, or author. Use "author:pubkey" to find articles by a specific author.
+
+**Bible Search Examples:**
+• John 3:16 (full book name)
+• Jn 3:16 (abbreviated)
+• john3:16 (no spaces, case insensitive)
+• Romans 1:16-25 (verse ranges)
+• Psalm 23:1, 3-5 (multiple verses)
+• John 3:16 KJV (with version)
+• Romans 1:16-25; Psalm 19:2-3 (multiple references)
+
+**Common Bible Abbreviations:**
+• Gen, Exod, Lev, Num, Deut (Pentateuch)
+• Josh, Judg, Ruth, 1 Sam, 2 Sam, 1 Kgs, 2 Kgs (Historical)
+• 1 Chr, 2 Chr, Ezra, Neh, Esth (Chronicles)
+• Job, Ps, Prov, Eccl, Song (Wisdom/Poetry)
+• Isa, Jer, Lam, Ezek, Dan (Major Prophets)
+• Hos, Joel, Amos, Obad, Jonah, Mic, Nah, Hab, Zeph, Hag, Zech, Mal (Minor Prophets)
+• Matt, Mk, Lk, Jn (Gospels)
+• Acts, Rom, 1 Cor, 2 Cor, Gal, Eph, Phil, Col, 1 Thess, 2 Thess, 1 Tim, 2 Tim, Tit, Phlm (Pauline)
+• Heb, Jas, 1 Pet, 2 Pet, 1 Jn, 2 Jn, 3 Jn, Jude, Rev (General/Catholic)
+
+**Bible Versions:**
+KJV, NIV, ESV, NASB, NRSV, DRB, RSV, NLT, MSG, AMP, TLB, NKJV, ASV, YLT, WEB, NET, CSB, NAB, NJB, CEV, GNT, NIRV, BSB, LSB, MEV, NLV, TPT, AMPC, CJB, DARBY, ERV, EXB, GNV, GW, ICB, ISV, JUB, KJV21, LEB, MOUNCE, NABRE, NCV, NIRV, NLV, NRSV, OJB, RGT, TLV, TPT, VOICE, WYC, YLT98
+
+**Compare content with diff:**
+• diff::article1 | article2
+• diff::book:bible:John 3:16 KJV | NIV
+• diff::article1; article2; article3
+• diff::book:bible:John 3:16 KJV | ESV
+
+Use <code>diff::</code> prefix to compare wiki articles, Bible versions, or any content. Supports pipe <code>|</code> and semicolon <code>;</code> separation.`,
     typography: {
       fontFamily: '"Crimson Text", "Times New Roman", "Times", "Georgia", serif',
       fontFamilyHeading: '"Crimson Text", "Times New Roman", "Times", "Georgia", serif',
