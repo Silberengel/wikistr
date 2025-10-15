@@ -155,10 +155,13 @@
       let relays = await loadRelayList(pubkey);
 
       pool.subscribeMany(
-        relays.items
-          .filter((ri) => ri.write)
-          .map((ri) => ri.url)
-          .concat((card as ArticleCard).relayHints || []),
+        [
+          ...relays.items
+            .filter((ri) => ri.write && ri.url)
+            .map((ri) => ri.url)
+            .filter(url => url && url.startsWith('wss://')),
+          ...((card as ArticleCard).relayHints || [])
+        ],
         [
           {
             authors: [pubkey],
@@ -199,12 +202,17 @@
     let to = setTimeout(async () => {
       if (event) {
         (await loadRelayList(event.pubkey)).items
-          .filter((ri) => ri.write)
+          .filter((ri) => ri.write && ri.url)
           .map((ri) => ri.url)
+          .filter(url => url && url.startsWith('wss://'))
           .slice(0, 3)
           .forEach(async (url) => {
-            let relay = await pool.ensureRelay(url);
-            relay.publish(event!);
+            try {
+              let relay = await pool.ensureRelay(url);
+              relay.publish(event!);
+            } catch (err) {
+              console.warn('Failed to publish to relay', url, err);
+            }
           });
       }
     }, 5000);
@@ -346,8 +354,9 @@
     };
 
     let inboxRelays = (await loadRelayList(pubkey)).items
-      .filter((ri) => ri.read)
-      .map((ri) => ri.url);
+      .filter((ri) => ri.read && ri.url)
+      .map((ri) => ri.url)
+      .filter(url => url && url.startsWith('wss://'));
     let relays = [...(card as ArticleCard).relayHints, ...inboxRelays, ...seenOn];
 
     let deletion: NostrEvent;
@@ -406,8 +415,9 @@
     };
 
     let inboxRelays = (await loadRelayList(pubkey)).items
-      .filter((ri) => ri.read)
-      .map((ri) => ri.url);
+      .filter((ri) => ri.read && ri.url)
+      .map((ri) => ri.url)
+      .filter(url => url && url.startsWith('wss://'));
     let relays = [...(card as ArticleCard).relayHints, ...inboxRelays, ...seenOn];
 
     let reaction: NostrEvent;

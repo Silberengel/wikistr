@@ -14,7 +14,7 @@ export function subscribeAllOutbox(
   let subc: SubCloser;
 
   outboxFilterRelayBatch(pubkeys, baseFilter).then((requests) => {
-    subc = pool.subscribeMap(requests, { id: 'alloutbox', ...params });
+    subc = pool.subscribeMap(requests, { id: 'alloutbox', ...params } as any);
     if (closed) {
       subc.close();
     }
@@ -44,10 +44,13 @@ export function subscribeOutbox(
   loadRelayList(pubkey).then((relayItems) => {
     if (closed) return;
 
-    const relays = relayItems.items.filter((ri) => ri.write).map((ri) => ri.url);
+    const relays = relayItems.items
+      .filter((ri) => ri.write && ri.url)
+      .map((ri) => ri.url)
+      .filter(url => url && url.startsWith('wss://'));
     const actualRelays = relays.slice(0, Math.min(relays.length, 4));
 
-    subc = createFilteredSubscription(actualRelays, [filter], { id: 'singleoutbox', ...params });
+    subc = createFilteredSubscription(actualRelays, [filter], { id: 'singleoutbox', ...params } as any);
     if (closed) {
       subc.close();
     }

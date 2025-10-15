@@ -44,6 +44,7 @@
     "@asciidoctor/reveal.js": "^5.2.0",
     "@nostr/gadgets": "npm:@jsr/nostr__gadgets@^0.0.21",
     "@nostr/tools": "npm:@jsr/nostr__tools@^2.12.0",
+    "@sveltejs/adapter-auto": "^6.1.1",
     "@tailwindcss/forms": "^0.5.6",
     "@tailwindcss/typography": "^0.5.9",
     "debounce": "^2.2.0",
