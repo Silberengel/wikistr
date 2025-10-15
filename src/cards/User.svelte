@@ -9,6 +9,7 @@
   import ArticleListItem from '$components/ArticleListItem.svelte';
   import UserLabel from '$components/UserLabel.svelte';
   import { subscribeOutbox } from '$lib/outbox';
+  import { createFilteredSubscription } from '$lib/filtering';
 
   interface Props {
     card: Card;

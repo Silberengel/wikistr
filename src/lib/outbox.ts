@@ -3,6 +3,7 @@ import type { SubCloser, SubscribeManyParams } from '@nostr/tools/pool';
 import { pool } from '@nostr/gadgets/global';
 import { loadRelayList } from '@nostr/gadgets/lists';
 import { outboxFilterRelayBatch } from '@nostr/gadgets/outbox';
+import { createFilteredSubscription } from './filtering';
 
 export function subscribeAllOutbox(
   pubkeys: string[],
@@ -46,7 +47,7 @@ export function subscribeOutbox(
     const relays = relayItems.items.filter((ri) => ri.write).map((ri) => ri.url);
     const actualRelays = relays.slice(0, Math.min(relays.length, 4));
 
-    subc = pool.subscribeMany(actualRelays, [filter], { id: 'singleoutbox', ...params });
+    subc = createFilteredSubscription(actualRelays, [filter], { id: 'singleoutbox', ...params });
     if (closed) {
       subc.close();
     }

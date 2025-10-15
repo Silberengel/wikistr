@@ -18,6 +18,7 @@
   import { page } from '$app/state';
   import { cards } from '$lib/state';
   import { isDiffQuery } from '$lib/diff';
+  import { createFilteredSubscription } from '$lib/filtering';
   import { refreshBookConfigurations } from '$lib/bookConfig';
 
   // Theme configuration
@@ -152,7 +153,7 @@
 
       if (relaysToUseNow.length === 0) return;
 
-      let subc = pool.subscribeMany(
+      let subc = createFilteredSubscription(
         relaysToUseNow,
         [{ kinds: [wikiKind], '#d': [normalizeIdentifier(query)], limit: 25 }],
         {
@@ -192,7 +193,7 @@
 
     // Search all queries using the same relay sets, but prioritize by author WOT score
     searchQueries.forEach((searchQuery, index) => {
-      const sub = pool.subscribeMany(
+      const sub = createFilteredSubscription(
         DEFAULT_SEARCH_RELAYS,
         [searchQuery],
         {

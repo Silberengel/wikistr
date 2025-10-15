@@ -26,6 +26,7 @@
   import { addUniqueTaggedReplaceable, getTagOr, next } from '$lib/utils';
   import { DEFAULT_WIKI_RELAYS } from '$lib/defaults';
   import { getThemeConfig, getCurrentTheme } from '$lib/themes';
+  import { createFilteredSubscription } from '$lib/filtering';
   
   // Components
   import ArticleListItem from '$components/ArticleListItem.svelte';
@@ -164,7 +165,7 @@
     id: string,
     onComplete?: () => void
   ): SubCloser {
-    return pool.subscribeMany(relays, [filter as any], {
+    return createFilteredSubscription(relays, [filter as any], {
       id,
       onevent,
       receivedEvent: receivedEvent as any,

@@ -15,6 +15,7 @@
   import RelayItem from '$components/RelayItem.svelte';
   import ProfilePopup from '$components/ProfilePopup.svelte';
   import { nip19 } from '@nostr/tools';
+  import { createFilteredSubscription } from '$lib/filtering';
 
   interface Props {
     card: Card;
@@ -266,7 +267,7 @@
     if (!event) return;
 
     // Load all reactions to this article
-    pool.subscribeMany(
+    createFilteredSubscription(
       seenOn.length > 0 ? seenOn : ['wss://relay.damus.io', 'wss://nos.lol'],
       [
         {
@@ -298,7 +299,7 @@
     );
 
     // Also load deletion events to handle deleted reactions
-    pool.subscribeMany(
+    createFilteredSubscription(
       seenOn.length > 0 ? seenOn : ['wss://relay.damus.io', 'wss://nos.lol'],
       [
         {
@@ -309,7 +310,7 @@
       {
         onevent(deletion) {
           // Check if this deletion is for a reaction to our article
-          const deletedEventId = deletion.tags.find(([tag]) => tag === 'e')?.[1];
+          const deletedEventId = deletion.tags.find(([tag]: [string, string]) => tag === 'e')?.[1];
           if (deletedEventId && userReaction && userReaction.id === deletedEventId) {
             // Store the content before clearing userReaction
             const deletedContent = userReaction.content;

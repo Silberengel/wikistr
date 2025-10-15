@@ -7,6 +7,7 @@
   import CardElement from '$components/CardElement.svelte';
   import { getThemeConfig } from '$lib/themes';
   import { initializeBookConfigurations } from '$lib/bookConfig';
+  import { initializeFiltering } from '$lib/filtering';
 
   // Theme configuration
   const theme = getThemeConfig();
@@ -24,6 +25,9 @@
   onMount(() => {
     // Initialize book configurations on startup
     initializeBookConfigurations();
+    
+    // Initialize filtering system for deleted events and muted users
+    initializeFiltering();
     
     document.addEventListener('mousedown', onMouseDown);
     document.addEventListener('mouseup', onMouseUp);

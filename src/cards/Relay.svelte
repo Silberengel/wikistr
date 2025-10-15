@@ -8,6 +8,7 @@
   import { addUniqueTaggedReplaceable, getTagOr, next, urlWithoutScheme } from '$lib/utils';
   import { wikiKind } from '$lib/nostr';
   import ArticleListItem from '$components/ArticleListItem.svelte';
+  import { createFilteredSubscription } from '$lib/filtering';
 
   interface Props {
     card: Card;
@@ -28,7 +29,7 @@
       tried = true;
     }, 1500);
 
-    let sub = pool.subscribeMany(
+    let sub = createFilteredSubscription(
       [card.data],
       [
         {
