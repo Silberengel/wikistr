@@ -28,10 +28,12 @@
   let nOthers = $state<number | undefined>(undefined);
   let copied = $state(false);
   let neventCopied = $state(false);
-  let likeStatus: 'liked' | 'disliked' | unknown;
+  let likeStatus = $state<'liked' | 'disliked' | 'none'>('none');
   let canLike = $state<boolean | undefined>();
   let seenOn = $state<string[]>([]);
   let view = $state<'formatted' | 'asciidoc' | 'raw'>('formatted');
+  let voteCounts = $state<{ likes: number; dislikes: number }>({ likes: 0, dislikes: 0 });
+  let userReaction = $state<NostrEvent | null>(null);
 
   const articleCard = card as ArticleCard;
   const dTag = articleCard.data[0];
@@ -236,6 +238,9 @@
       }
     }, 2500);
 
+    // Load reactions for this article
+    loadReactions();
+
     //cancelers.push(
     //  cachingSub(
     //    `reaction-${eventId.slice(-8)}`,
@@ -257,15 +262,143 @@
     //);
   }
 
+  function loadReactions() {
+    if (!event) return;
+
+    // Load all reactions to this article
+    pool.subscribeMany(
+      seenOn.length > 0 ? seenOn : ['wss://relay.damus.io', 'wss://nos.lol'],
+      [
+        {
+          '#e': [event.id],
+          kinds: [reactionKind],
+          limit: 100
+        }
+      ],
+      {
+        onevent(reaction) {
+          // Count votes
+          if (reaction.content === '+' || reaction.content === '') {
+            voteCounts.likes++;
+          } else if (reaction.content === '-') {
+            voteCounts.dislikes++;
+          }
+
+          // Check if this is the current user's reaction
+          if ($account && reaction.pubkey === $account.pubkey) {
+            userReaction = reaction;
+            if (reaction.content === '+' || reaction.content === '') {
+              likeStatus = 'liked';
+            } else if (reaction.content === '-') {
+              likeStatus = 'disliked';
+            }
+          }
+        }
+      }
+    );
+
+    // Also load deletion events to handle deleted reactions
+    pool.subscribeMany(
+      seenOn.length > 0 ? seenOn : ['wss://relay.damus.io', 'wss://nos.lol'],
+      [
+        {
+          kinds: [5], // deletion events
+          limit: 100
+        }
+      ],
+      {
+        onevent(deletion) {
+          // Check if this deletion is for a reaction to our article
+          const deletedEventId = deletion.tags.find(([tag]) => tag === 'e')?.[1];
+          if (deletedEventId && userReaction && userReaction.id === deletedEventId) {
+            // Store the content before clearing userReaction
+            const deletedContent = userReaction.content;
+            
+            // User's reaction was deleted
+            userReaction = null;
+            likeStatus = 'none';
+            
+            // Update vote counts
+            if (deletedContent === '+' || deletedContent === '') {
+              voteCounts.likes = Math.max(0, voteCounts.likes - 1);
+            } else if (deletedContent === '-') {
+              voteCounts.dislikes = Math.max(0, voteCounts.dislikes - 1);
+            }
+          }
+        }
+      }
+    );
+  }
+
+  async function deleteReaction(reaction: NostrEvent) {
+    if (!event) return;
+
+    // Create deletion event (kind 5) for the reaction
+    let deletionTemplate: EventTemplate = {
+      kind: 5,
+      tags: [
+        ['e', reaction.id],
+        ['k', reactionKind.toString()]
+      ],
+      content: 'Vote removed',
+      created_at: Math.round(Date.now() / 1000)
+    };
+
+    let inboxRelays = (await loadRelayList(pubkey)).items
+      .filter((ri) => ri.read)
+      .map((ri) => ri.url);
+    let relays = [...(card as ArticleCard).relayHints, ...inboxRelays, ...seenOn];
+
+    let deletion: NostrEvent;
+    try {
+      deletion = await signer.signEvent(deletionTemplate);
+    } catch (err) {
+      console.warn('failed to create deletion event', err);
+      return;
+    }
+
+    // Update local state immediately
+    userReaction = null;
+    likeStatus = 'none';
+    
+    // Update vote counts
+    if (reaction.content === '+' || reaction.content === '') {
+      voteCounts.likes = Math.max(0, voteCounts.likes - 1);
+    } else if (reaction.content === '-') {
+      voteCounts.dislikes = Math.max(0, voteCounts.dislikes - 1);
+    }
+
+    // Publish deletion event
+    relays.forEach(async (url) => {
+      try {
+        const r = await pool.ensureRelay(url);
+        await r.publish(deletion);
+      } catch (err) {
+        console.warn('failed to publish deletion', event, 'to', url, err);
+      }
+    });
+  }
+
   async function vote(v: '+' | '-') {
     if (!event) return;
     if (!canLike) return;
 
+    // Check if user already voted the same way - toggle off by deleting the reaction
+    if (userReaction && userReaction.content === v) {
+      await deleteReaction(userReaction);
+      return;
+    }
+
+    // Check if user already voted differently - delete old reaction first
+    if (userReaction && userReaction.content !== v) {
+      await deleteReaction(userReaction);
+    }
+
     let eventTemplate: EventTemplate = {
       kind: reactionKind,
       tags: [
-        ['a', getA(event), seenOn[0] || ''],
-        ['e', event.id, seenOn[1] || seenOn[0] || '']
+        ['e', event.id, seenOn[0] || ''],
+        ['p', event.pubkey, seenOn[0] || '']
       ],
       content: v,
       created_at: Math.round(Date.now() / 1000)
@@ -276,20 +409,29 @@
       .map((ri) => ri.url);
     let relays = [...(card as ArticleCard).relayHints, ...inboxRelays, ...seenOn];
 
-    let like: NostrEvent;
+    let reaction: NostrEvent;
     try {
-      like = await signer.signEvent(eventTemplate);
+      reaction = await signer.signEvent(eventTemplate);
     } catch (err) {
-      console.warn('failed to publish like', err);
+      console.warn('failed to publish reaction', err);
       return;
+    }
+
+    // Update local state immediately
+    userReaction = reaction;
+    likeStatus = v === '+' ? 'liked' : 'disliked';
+    if (v === '+') {
+      voteCounts.likes++;
+    } else {
+      voteCounts.dislikes++;
     }
 
     relays.forEach(async (url) => {
       try {
         const r = await pool.ensureRelay(url);
-        await r.publish(like);
+        await r.publish(reaction);
       } catch (err) {
-        console.warn('failed to publish like', event, 'to', url, err);
+        console.warn('failed to publish reaction', event, 'to', url, err);
       }
     });
   }
@@ -308,40 +450,40 @@
           class="flex flex-col items-center space-y-2 mr-3"
           class:hidden={$account?.pubkey === event.pubkey}
         >
-          <a
-            aria-label="like"
-            title={canLike ? '' : likeStatus === 'like' ? 'you considered this a good article' : ''}
-            class:cursor-pointer={canLike}
-            onclick={() => vote('+')}
-          >
-            <svg
-              class:fill-stone-600={canLike}
-              class:fill-cyan-500={likeStatus === 'like'}
-              class:hidden={likeStatus === 'disliked'}
-              width="18"
-              height="18"
-              viewBox="0 0 18 18"><path d="M1 12h16L9 4l-8 8Z"></path></svg
+          <div class="flex flex-col items-center">
+            <a
+              aria-label="like"
+              title={canLike ? 'Vote up' : likeStatus === 'liked' ? 'You liked this article' : ''}
+              class:cursor-pointer={canLike}
+              onclick={() => vote('+')}
             >
-          </a>
-          <a
-            aria-label="dislike"
-            title={canLike
-              ? 'this is a bad article'
-              : likeStatus === 'disliked'
-                ? 'you considered this a bad article'
-                : ''}
-            class:cursor-pointer={canLike}
-            onclick={() => vote('-')}
-          >
-            <svg
-              class:fill-stone-600={canLike}
-              class:fill-rose-400={likeStatus === 'disliked'}
-              class:hidden={likeStatus === 'liked'}
-              width="18"
-              height="18"
-              viewBox="0 0 18 18"><path d="M1 6h16l-8 8-8-8Z"></path></svg
+              <svg
+                class:fill-stone-600={likeStatus !== 'liked'}
+                class:fill-cyan-500={likeStatus === 'liked'}
+                width="18"
+                height="18"
+                viewBox="0 0 18 18"><path d="M1 12h16L9 4l-8 8Z"></path></svg
+              >
+            </a>
+            <span class="text-xs text-gray-500 mt-1">{voteCounts.likes}</span>
+          </div>
+          <div class="flex flex-col items-center">
+            <a
+              aria-label="dislike"
+              title={canLike ? 'Vote down' : likeStatus === 'disliked' ? 'You disliked this article' : ''}
+              class:cursor-pointer={canLike}
+              onclick={() => vote('-')}
             >
-          </a>
+              <svg
+                class:fill-stone-600={likeStatus !== 'disliked'}
+                class:fill-rose-400={likeStatus === 'disliked'}
+                width="18"
+                height="18"
+                viewBox="0 0 18 18"><path d="M1 6h16l-8 8-8-8Z"></path></svg
+              >
+            </a>
+            <span class="text-xs text-gray-500 mt-1">{voteCounts.dislikes}</span>
+          </div>
         </div>
       {/if}
       <div class="ml-2 mb-4">
