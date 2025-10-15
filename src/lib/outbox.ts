@@ -50,7 +50,10 @@ export function subscribeOutbox(
       .filter(url => url && url.startsWith('wss://'));
     const actualRelays = relays.slice(0, Math.min(relays.length, 4));
 
-    subc = createFilteredSubscription(actualRelays, [filter], { id: 'singleoutbox', ...params } as any);
+    subc = createFilteredSubscription(actualRelays, [filter], { id: 'singleoutbox', ...params } as any, {
+      excludeUserContent: false,
+      currentUserPubkey: pubkey
+    });
     if (closed) {
       subc.close();
     }

@@ -19,6 +19,7 @@
   import { cards } from '$lib/state';
   import { isDiffQuery } from '$lib/diff';
   import { createFilteredSubscription } from '$lib/filtering';
+  import { account } from '$lib/nostr';
   import { refreshBookConfigurations } from '$lib/bookConfig';
 
   // Theme configuration
@@ -174,6 +175,10 @@
             if (!(id in seenCache)) seenCache[id] = [];
             if (seenCache[id].indexOf(relay.url) === -1) seenCache[id].push(relay.url);
           }
+        },
+        {
+          excludeUserContent: true,
+          currentUserPubkey: $account?.pubkey
         }
       );
 
@@ -206,6 +211,10 @@
             if (!(id in seenCache)) seenCache[id] = [];
             if (seenCache[id].indexOf(relay.url) === -1) seenCache[id].push(relay.url);
           }
+        },
+        {
+          excludeUserContent: true,
+          currentUserPubkey: $account?.pubkey
         }
       );
       subs.push(sub);

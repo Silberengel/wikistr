@@ -163,13 +163,17 @@
     relays: string[],
     filter: SubscriptionFilter,
     id: string,
-    onComplete?: () => void
+    onComplete?: () => void,
+    excludeUserContent = true
   ): SubCloser {
     return createFilteredSubscription(relays, [filter as any], {
       id,
       onevent,
       receivedEvent: receivedEvent as any,
       ...(onComplete && { oneose: onComplete })
+    }, {
+      excludeUserContent,
+      currentUserPubkey: $account?.pubkey
     });
   }
 
@@ -189,7 +193,9 @@
       sub = createSubscription(
         relays,
         { kinds: [wikiKind], limit: 15 },
-        'inbox'
+        'inbox',
+        undefined,
+        false // Don't exclude user content for the "inbox" feed
       );
     });
 
@@ -226,7 +232,8 @@
             allRelays,
             { kinds: [wikiKind], authors: eligibleKeys, limit: 20 },
             'follows',
-            () => console.log('Web of Trust feed completed')
+            () => console.log('Web of Trust feed completed'),
+            false // Don't exclude user content for the "web of trust" feed
           );
         } else {
           console.log('No eligible authors found in Web of Trust');
@@ -281,7 +288,9 @@
       sub = createSubscription(
         allRelays,
         { kinds: [wikiKind], authors: [account.pubkey], limit: 15 },
-        'self'
+        'self',
+        undefined,
+        false // Don't exclude user content for the "yourself" feed
       );
     });
 

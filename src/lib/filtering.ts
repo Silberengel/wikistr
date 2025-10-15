@@ -111,6 +111,17 @@ export function filterEvents<T extends { id: string; pubkey: string }>(events: T
 }
 
 /**
+ * Filter out events from the current user (except when viewing own content)
+ */
+export function filterUserEvents<T extends { id: string; pubkey: string }>(events: T[], currentUserPubkey?: string, showUserContent = false): T[] {
+  if (!currentUserPubkey || showUserContent) {
+    return events;
+  }
+  
+  return events.filter(event => event.pubkey !== currentUserPubkey);
+}
+
+/**
  * Enhanced relay subscription that automatically filters deleted events and muted users
  */
 export function createFilteredSubscription(
@@ -121,7 +132,11 @@ export function createFilteredSubscription(
     oneose?: () => void;
     receivedEvent?: (relay: any, id: string) => void;
     [key: string]: any;
-  }
+  },
+  options: {
+    excludeUserContent?: boolean;
+    currentUserPubkey?: string;
+  } = {}
 ): { close: () => void } {
   // Load deletion events and mute lists for these relays
   const unsubscribeDeletions = loadDeletionEvents(relays);
@@ -133,6 +148,11 @@ export function createFilteredSubscription(
     onevent: (event) => {
       // Filter out deleted events and muted users
       if (isEventDeleted(event.id) || isUserMuted(event.pubkey)) {
+        return;
+      }
+      
+      // Filter out user's own content if requested
+      if (options.excludeUserContent && options.currentUserPubkey && event.pubkey === options.currentUserPubkey) {
         return;
       }
       

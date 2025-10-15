@@ -9,6 +9,7 @@
   import { wikiKind } from '$lib/nostr';
   import ArticleListItem from '$components/ArticleListItem.svelte';
   import { createFilteredSubscription } from '$lib/filtering';
+  import { account } from '$lib/nostr';
 
   interface Props {
     card: Card;
@@ -20,6 +21,13 @@
   let results = $state<NostrEvent[]>([]);
   let tried = $state(false);
 
+  // Type guard to ensure we have a relay card
+  if (card.type !== 'relay') {
+    throw new Error('Relay component requires a relay card');
+  }
+  
+  const relayCard = card as { type: 'relay'; data: string };
+
   onMount(() => {
     const update = debounce(() => {
       results = results;
@@ -30,7 +38,7 @@
     }, 1500);
 
     let sub = createFilteredSubscription(
-      [card.data],
+      [relayCard.data],
       [
         {
           kinds: [wikiKind],
@@ -45,6 +53,10 @@
           tried = true;
           if (addUniqueTaggedReplaceable(results, evt)) update();
         }
+      },
+      {
+        excludeUserContent: true,
+        currentUserPubkey: $account?.pubkey
       }
     );
 
@@ -56,7 +68,7 @@
       id: next(),
       type: 'article',
       data: [getTagOr(result, 'd'), result.pubkey],
-      relayHints: [card.data],
+      relayHints: [relayCard.data],
       actualEvent: result
     };
     if (ev.button === 1) createChild(articleCard);
@@ -64,7 +76,7 @@
   }
 </script>
 
-<div class="mb-0 text-2xl break-all">{urlWithoutScheme(card.data)}</div>
+<div class="mb-0 text-2xl break-all">{urlWithoutScheme(relayCard.data)}</div>
 {#each results as result (result.id)}
   <ArticleListItem event={result} {openArticle} />
 {/each}
