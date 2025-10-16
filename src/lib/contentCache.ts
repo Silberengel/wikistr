@@ -148,6 +148,7 @@ class ContentCacheManager {
    */
   isCacheFresh(contentType: keyof ContentCache): boolean {
     const cachedEvents = this.getEvents(contentType);
+    // Cache is fresh if it has non-expired events
     return cachedEvents.length > 0;
   }
 

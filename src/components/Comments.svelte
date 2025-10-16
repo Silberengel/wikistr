@@ -34,7 +34,10 @@
   
   // Generate the coordinate for the wiki article (kind:pubkey:identifier format)
   // This follows NIP-22: kind 1111 comments reference their root using this coordinate
-  const articleCoordinate = $derived(`${event.kind}:${event.pubkey}:${event.tags.find(([k]) => k === 'd')?.[1] || ''}`);
+  const articleCoordinate = $derived.by(() => {
+    const identifier = event.tags.find(([k]) => k === 'd')?.[1] || event.id;
+    return `${event.kind}:${event.pubkey}:${identifier}`;
+  });
 
   let comments = $state<NostrEvent[]>([]);
   let replyingTo = $state<string | null>(null);

@@ -125,7 +125,7 @@
     <!-- Popup/Drawer Content -->
     <div 
       class="rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-hidden"
-      style="background-color: var(--theme-bg);"
+      style="background-color: white !important;"
       class:rounded-t-lg={isMobile}
       class:rounded-b-none={isMobile}
       class:max-w-md={!isMobile}

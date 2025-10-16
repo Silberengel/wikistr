@@ -32,7 +32,7 @@
   // Props and State
   let { createChild }: Props = $props();
   let results = $state<Event[]>([]);
-  let current = $state(2); // Default to "all relays"
+  let current = $state(1); // Default to "all relays"
   let currentRelays = $state<string[]>([]);
   let isLoading = $state(false);
   let lastLoadTime = $state(0);
@@ -465,6 +465,7 @@
     const userPubkey = $account?.pubkey;
     
     console.log(`🏗️ Building ${currentFeedType} feed from IndexedDB cache`);
+    console.log(`🏗️ User pubkey: ${userPubkey ? 'logged in' : 'anonymous'}`);
     
     let filteredEvents: Event[] = [];
     
@@ -472,19 +473,26 @@
       case 'inboxes':
         // Inbox feed uses its own loading function, not cache
         console.log('⚠️ Inbox feed should use loadInboxWikiArticles, not cache');
+        loadInboxWikiArticles();
         return;
         
       case 'all-relays':
         // Show all articles from all relays
-        filteredEvents = contentCache.getEvents('wiki')
+        const cachedWikiEvents = contentCache.getEvents('wiki');
+        console.log(`📦 Retrieved ${cachedWikiEvents.length} cached wiki events from cache`);
+        
+        filteredEvents = cachedWikiEvents
           .map(cached => cached.event)
           .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
           .slice(0, 15);
+        
+        console.log(`📰 Processed ${filteredEvents.length} events for all-relays feed`);
         break;
         
       case 'wot':
         // WOT feed uses its own loading function, not cache
         console.log('⚠️ WOT feed should use loadWOTWikiArticles, not cache');
+        loadWOTWikiArticles();
         return;
         
       case 'yourself':
@@ -503,19 +511,26 @@
     currentRelays = contentCache.getAllRelays();
     
     console.log(`✅ ${currentFeedType} feed built: ${results.length} articles from ${currentRelays.length} relays`);
+    console.log(`📊 Results array:`, results);
+    console.log(`📊 Current relays:`, currentRelays);
   }
 
 
   /**
    * Switch to a different feed
    */
-  function switchFeed(newIndex: number) {
-    if (newIndex === current) return;
+  function switchFeed(newIndex: number, forceLoad = false) {
+    console.log(`🔄 switchFeed called with index: ${newIndex}, current: ${current}, forceLoad: ${forceLoad}`);
+    if (newIndex === current && !forceLoad) {
+      console.log('⏭️ Same index, skipping switch');
+      return;
+    }
     
     current = newIndex;
     
     // Call the appropriate loading function for each feed type
     const currentFeedType = currentFeed.id;
+    console.log(`🎯 Switching to feed type: ${currentFeedType}`);
     
     switch (currentFeedType) {
       case 'inboxes':
@@ -523,10 +538,14 @@
         break;
       case 'all-relays':
       case 'yourself':
-        // Use cache if available, otherwise load data
-        if (contentCache.isCacheFresh('wiki')) {
+        // Always try to build from cache first, then load fresh data if needed
+        const cachedEvents = contentCache.getEvents('wiki');
+        console.log(`🔍 Checking cache for ${currentFeedType}: found ${cachedEvents.length} events`);
+        if (cachedEvents.length > 0) {
+          console.log(`📦 Found ${cachedEvents.length} cached wiki events, building feed from cache`);
           buildFeedFromCache();
         } else {
+          console.log('📦 No cached wiki events found, loading fresh data from relays');
           loadAllWikiArticles();
         }
         break;
@@ -638,10 +657,20 @@
   $effect(() => {
     if (!initialized) {
       initialized = true;
-      // Initial load after a delay - load the default feed
-      setTimeout(() => {
-        switchFeed(current);
-      }, 1000);
+      // Initial load after ensuring cache is ready
+      setTimeout(async () => {
+        console.log('🚀 Initializing feed with current index:', current);
+        
+        // Ensure cache is loaded before switching feeds
+        try {
+          await contentCache.initialize();
+          console.log('✅ Cache initialized, switching to feed');
+        } catch (error) {
+          console.error('❌ Cache initialization failed:', error);
+        }
+        
+        switchFeed(current, true); // Force initial load
+      }, 1500); // Increased delay to ensure cache is loaded
       
       // Start background cache updates every 2 minutes
       backgroundUpdateInterval = setInterval(() => {

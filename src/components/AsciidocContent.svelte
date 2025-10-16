@@ -10,6 +10,7 @@
   import katex from 'katex';
   import { pool } from '@nostr/gadgets/global';
   import { relayService } from '$lib/relayService';
+  import { loadNostrUser, type NostrUser } from '@nostr/gadgets/metadata';
   import { next } from '$lib/utils';
   import type { ArticleCard } from '$lib/types';
   import ProfilePopup from './ProfilePopup.svelte';
@@ -368,62 +369,204 @@
     return processed;
   }
 
-  // Postprocessor to handle leftover markdown tags that AsciiDoc might miss
-  async function postprocessHtml(html: string): Promise<string> {
-    // Handle any leftover markdown tags that AsciiDoc didn't process
-    let processed = html;
-    
-    // Process Nostr links first (async)
-    processed = await processNostrLinks(processed);
-    
-    // Convert leftover markdown images: ![alt](url "title") -> <img alt="alt" src="url" title="title">
-    processed = processed.replace(/!\[([^\]]*)\]\(([^)]+)(?:\s+"([^"]*)")?\)/g, (match, alt, url, title) => {
-      const titleAttr = title ? ` title="${title}"` : '';
-      return `<img alt="${alt}" src="${url}"${titleAttr}>`;
-    });
-    
-    // Convert leftover markdown links: [text](url "title") -> <a href="url" title="title">text</a>
-    processed = processed.replace(/\[([^\]]+)\]\(([^)]+)(?:\s+"([^"]*)")?\)/g, (match, text, url, title) => {
-      // Skip if it's already a wikilink (handled separately)
-      if (url.startsWith('wikilink:')) {
-        return match;
+  // Process LaTeX expressions in raw text
+  function processLatexExpressions(text: string): string {
+    // Handle inline LaTeX: $expression$ -> rendered math
+    return text.replace(/\$([^$]+)\$/g, (match, expression) => {
+      try {
+        const rendered = katex.renderToString(expression, {
+          throwOnError: false,
+          displayMode: false,
+          output: 'html'
+        });
+        return rendered;
+      } catch (error) {
+        console.warn('LaTeX rendering error:', error);
+        return match; // Keep original if rendering fails
       }
-      const titleAttr = title ? ` title="${title}"` : '';
-      return `<a href="${url}"${titleAttr}>${text}</a>`;
+    });
+  }
+
+
+  // Enhanced Nostr link processing
+  async function processNostrLinksEnhanced(text: string): Promise<string> {
+    let processed = text;
+    
+    // Process standalone nostr: links (not already in HTML)
+    const nostrMatches = processed.match(/nostr:([a-zA-Z0-9]+)/g);
+    if (nostrMatches) {
+      for (const match of nostrMatches) {
+        const bech32 = match.replace('nostr:', '');
+        const decoded = decodeNostrLink(bech32);
+        if (decoded) {
+          const { type, data } = decoded;
+          
+          if (type === 'npub' || type === 'nprofile') {
+            const pubkey = type === 'npub' ? data : data.pubkey;
+            const displayName = await getDisplayName(pubkey);
+            const replacement = `<span class="nostr-user-link" data-pubkey="${pubkey}" data-bech32="${bech32}" style="color: #3b82f6; cursor: pointer;">@${displayName}</span>`;
+            processed = processed.replace(match, replacement);
+          } else if (type === 'nevent' || type === 'note') {
+            const displayText = bech32.slice(0, 20) + '...';
+            const replacement = `<span class="nostr-event-link" data-bech32="${bech32}" data-type="${type}" style="color: #3b82f6; cursor: pointer;">${displayText}</span>`;
+            processed = processed.replace(match, replacement);
+          } else if (type === 'naddr') {
+            const identifier = data.identifier || bech32.slice(0, 20) + '...';
+            const replacement = `<span class="nostr-event-link" data-bech32="${bech32}" data-type="${type}" style="color: #3b82f6; cursor: pointer;">${identifier}</span>`;
+            processed = processed.replace(match, replacement);
+          }
+        }
+      }
+    }
+    
+    return processed;
+  }
+
+  // Convert Markdown syntax to AsciiDoc syntax
+  function convertMarkdownToAsciiDoc(markdown: string): string {
+    let asciidoc = markdown;
+    
+    // Convert headers: # Header -> = Header, ## Header -> == Header, etc.
+    asciidoc = asciidoc.replace(/^(#{1,6})\s+(.+)$/gm, (match, hashes, text) => {
+      const level = hashes.length;
+      return '='.repeat(level) + ' ' + text;
     });
     
-    // Convert leftover markdown tables: | col1 | col2 | -> proper HTML table
-    processed = processed.replace(/^(\|[^|\n]*(?:\|[^|\n]*)*\|)\s*$/gm, (match) => {
+    // Convert horizontal rules: --- -> '''
+    asciidoc = asciidoc.replace(/^---\s*$/gm, "'''");
+    asciidoc = asciidoc.replace(/^\*\*\*\s*$/gm, "'''");
+    asciidoc = asciidoc.replace(/^___\s*$/gm, "'''");
+    
+    // Convert bold: **text** -> *text*
+    asciidoc = asciidoc.replace(/(\*\*|__)([^*_]+)\1/g, '*$2*');
+    
+    // Convert italic: *text* -> _text_ (but avoid conflicts with bold)
+    asciidoc = asciidoc.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '_$1_');
+    asciidoc = asciidoc.replace(/(?<!_)_([^_]+)_(?!_)/g, '_$1_');
+    
+    // Convert strikethrough: ~~text~~ -> [line-through]#text#
+    asciidoc = asciidoc.replace(/~~([^~]+)~~/g, '[line-through]#$1#');
+    
+    // Convert blockquotes: > text -> [quote]
+    asciidoc = asciidoc.replace(/^>\s*(.+)$/gm, '[quote]\n____\n$1\n____');
+    
+    // Convert code blocks: ```lang ... ``` -> [source,lang]
+    asciidoc = asciidoc.replace(/```(\w+)?\n?([\s\S]*?)```/g, (match, lang, code) => {
+      const langAttr = lang ? `,${lang}` : '';
+      return `[source${langAttr}]\n----\n${code.trim()}\n----`;
+    });
+    
+    // Convert inline code: `code` -> `code` (AsciiDoc uses same syntax)
+    // This is already correct for AsciiDoc
+    
+    // Convert unordered lists: * item -> * item (AsciiDoc uses same syntax)
+    // This is already correct for AsciiDoc
+    
+    // Convert ordered lists: 1. item -> . item
+    asciidoc = asciidoc.replace(/^\d+\.\s+(.+)$/gm, '. $1');
+    
+    // Convert images: ![alt](url) -> image:url[alt]
+    asciidoc = asciidoc.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, 'image:$2[$1]');
+    
+    // Convert links: [text](url) -> text:url[]
+    asciidoc = asciidoc.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1:$2[]');
+    
+    // Convert tables: | col1 | col2 | -> [cols="1,1"]
+    asciidoc = asciidoc.replace(/^(\|[^|\n]*(?:\|[^|\n]*)*\|)\s*$/gm, (match) => {
       const rows = match.trim().split('\n').filter(row => row.trim());
       if (rows.length === 0) return match;
       
       const firstRow = rows[0];
-      const colCount = (firstRow.match(/\|/g) || []).length - 1; // Count pipes, subtract 1 for start
+      const colCount = (firstRow.match(/\|/g) || []).length - 1;
       
-      let tableHtml = '<table class="table-auto border-collapse border border-gray-300">';
+      let asciidocTable = `[cols="${'1,'.repeat(colCount).slice(0, -1)}"]\n|===\n`;
       
-      rows.forEach((row, index) => {
+      rows.forEach((row) => {
         const cells = row.trim().split('|').filter(cell => cell.trim());
-        if (index === 0) {
-          // Header row
-          tableHtml += '<thead><tr>';
-          cells.forEach(cell => {
-            tableHtml += `<th class="border border-gray-300 px-4 py-2 bg-gray-100">${cell.trim()}</th>`;
-          });
-          tableHtml += '</tr></thead>';
-        } else {
-          // Data row
-          if (index === 1) tableHtml += '<tbody>';
-          tableHtml += '<tr>';
-          cells.forEach(cell => {
-            tableHtml += `<td class="border border-gray-300 px-4 py-2">${cell.trim()}</td>`;
-          });
-          tableHtml += '</tr>';
-        }
+        cells.forEach(cell => {
+          asciidocTable += `|${cell.trim()}\n`;
+        });
       });
       
-      tableHtml += '</tbody></table>';
-      return tableHtml;
+      asciidocTable += '|===';
+      return asciidocTable;
+    });
+    
+    return asciidoc;
+  }
+
+  // Detect if content is primarily Markdown vs AsciiDoc
+  function detectMarkdownContent(content: string): boolean {
+    // Count Markdown indicators
+    const markdownIndicators = [
+      /^#{1,6}\s+/gm,           // Headers
+      /\*\*[^*]+\*\*/,          // Bold
+      /__[^_]+__/,              // Bold
+      /\*[^*]+\*/,              // Italic
+      /_[^_]+_/,                // Italic
+      /```[\s\S]*?```/,         // Code blocks
+      /^\|.*\|$/gm,             // Tables
+      /!\[.*?\]\(.*?\)/,        // Images
+      /\[.*?\]\(.*?\)/,         // Links
+      /^>\s+/gm,                // Blockquotes
+      /^\d+\.\s+/gm,            // Ordered lists
+      /^[\*\-\+]\s+/gm,         // Unordered lists
+    ];
+    
+    // Count AsciiDoc indicators
+    const asciidocIndicators = [
+      /^=+\s+/gm,               // AsciiDoc headers
+      /\[\[.*?\]\]/,            // AsciiDoc links
+      /^\.{3,}$/gm,             // Horizontal rules
+      /^\[source,/gm,           // Source blocks
+      /^\[NOTE\]/gm,            // Admonitions
+    ];
+    
+    let markdownScore = 0;
+    let asciidocScore = 0;
+    
+    markdownIndicators.forEach(regex => {
+      const matches = content.match(regex);
+      if (matches) markdownScore += matches.length;
+    });
+    
+    asciidocIndicators.forEach(regex => {
+      const matches = content.match(regex);
+      if (matches) asciidocScore += matches.length;
+    });
+    
+    // If we have significantly more Markdown indicators, treat as Markdown
+    return markdownScore > asciidocScore && markdownScore > 0;
+  }
+
+  // Postprocessor to handle Nostr-specific features after AsciiDoc processing
+  async function postprocessHtml(html: string): Promise<string> {
+    let processed = html;
+    
+    // Process Nostr links in the HTML output
+    processed = await processNostrLinks(processed);
+    
+    // Process standalone nostr: links that might not be in HTML yet
+    processed = await processNostrLinksEnhanced(processed);
+    
+    // Process LaTeX expressions in inline code elements
+    processed = processed.replace(/<code>([^<]+)<\/code>/g, (match, codeContent) => {
+      // Check if this is a LaTeX expression
+      const latexMatch = codeContent.match(/^\$([^$]+)\$$/);
+      if (latexMatch) {
+        try {
+          const rendered = katex.renderToString(latexMatch[1], {
+            throwOnError: false,
+            displayMode: false,
+            output: 'html'
+          });
+          return rendered;
+        } catch (error) {
+          console.warn('LaTeX rendering error:', error);
+          return match; // Keep original if rendering fails
+        }
+      }
+      return match; // Not LaTeX, keep as-is
     });
     
     return processed;
@@ -435,9 +578,17 @@
       // Highlight all code blocks
       contentDiv.querySelectorAll('pre code').forEach((block) => {
         const element = block as HTMLElement;
-        // Only highlight if it has a language class and hasn't been highlighted yet
-        if (element.className.includes('language-') && !element.className.includes('language-undefined') && !element.dataset.highlighted) {
-          hljs.highlightElement(element);
+        // Highlight if it has a language class or if it's plain code
+        if (!element.dataset.highlighted) {
+          if (element.className.includes('language-')) {
+            // Has language class
+            if (!element.className.includes('language-undefined')) {
+              hljs.highlightElement(element);
+            }
+          } else {
+            // No language class, try to auto-detect
+            hljs.highlightElement(element);
+          }
           element.dataset.highlighted = 'yes';
         }
       });
@@ -446,7 +597,7 @@
       contentDiv.querySelectorAll('code:not(pre code)').forEach((block) => {
         const element = block as HTMLElement;
         // Only highlight if it has a language class and it's not undefined and hasn't been highlighted yet
-        if (element.className.includes('language-') && !element.className.includes('language-undefined') && !element.dataset.highlighted) {
+        if (!element.dataset.highlighted && element.className.includes('language-') && !element.className.includes('language-undefined')) {
           hljs.highlightElement(element);
           element.dataset.highlighted = 'yes';
         }
@@ -494,12 +645,21 @@
     // Process the content with AsciiDoc
     const content = preprocessContentForAsciidoc(event.content);
     
+    // Detect if content is primarily Markdown vs AsciiDoc
+    const isMarkdown = detectMarkdownContent(content);
+    
+    let processedContent = content;
+    if (isMarkdown) {
+      // Convert Markdown syntax to AsciiDoc syntax
+      processedContent = convertMarkdownToAsciiDoc(content);
+    }
+    
     // Configure AsciiDoc processor
     const asciiDoc = asciidoctor();
-    const doc = asciiDoc.load(content, {
+    const doc = asciiDoc.load(processedContent, {
       safe: 'safe',
       backend: 'html5',
-      doctype: 'article',
+      doctype: 'book',
       attributes: {
         'source-highlighter': 'highlightjs',
         'highlightjs-theme': 'github'
@@ -816,6 +976,67 @@
   /* Table styling for postprocessed markdown tables */
   :global(.prose table) {
     @apply w-full border-collapse border border-gray-300;
+  }
+  
+  /* Enhanced markdown element styling */
+  :global(.prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6) {
+    @apply font-bold text-gray-900;
+  }
+  
+  :global(.prose h1) {
+    @apply text-3xl mt-8 mb-4;
+  }
+  
+  :global(.prose h2) {
+    @apply text-2xl mt-6 mb-3;
+  }
+  
+  :global(.prose h3) {
+    @apply text-xl mt-4 mb-2;
+  }
+  
+  :global(.prose strong) {
+    @apply font-bold text-gray-900;
+  }
+  
+  :global(.prose em) {
+    @apply italic;
+  }
+  
+  :global(.prose del) {
+    @apply line-through text-gray-500;
+  }
+  
+  :global(.prose blockquote) {
+    @apply border-l-4 border-gray-300 pl-4 py-2 my-4 bg-gray-50 italic;
+  }
+  
+  :global(.prose pre) {
+    @apply bg-gray-100 p-4 rounded-md overflow-x-auto my-4;
+  }
+  
+  :global(.prose code:not(pre code)) {
+    @apply bg-gray-100 px-1 py-0.5 rounded text-sm font-mono;
+  }
+  
+  :global(.prose ul, .prose ol) {
+    @apply my-4 pl-6;
+  }
+  
+  :global(.prose ul) {
+    @apply list-disc;
+  }
+  
+  :global(.prose ol) {
+    @apply list-decimal;
+  }
+  
+  :global(.prose li) {
+    @apply my-1;
+  }
+  
+  :global(.prose img) {
+    @apply max-w-full h-auto rounded-md shadow-sm my-4;
   }
   
   :global(.prose th) {
