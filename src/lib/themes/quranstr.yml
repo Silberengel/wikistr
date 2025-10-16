@@ -1,64 +1,55 @@
-# YAML Theme Configuration for Biblestr
-name: biblestr
-title: Biblestr
-tagline: READ THE ORIGINAL. MAKE CONNECTIONS. CULTIVATE KNOWLEDGE.
-description: A decentralized Bible study and wiki system built on Nostr
-brandColor: "#059669"
-backgroundColor: "#fefefe"
-textColor: "#1a1a1a"
-accentColor: "#d97706"
-highlightColor: "#b91c1c"
+# YAML Theme Configuration for Quranstr
+name: quranstr
+title: Quranstr
+tagline: "ٱقْرَأْ بِٱسْمِ رَبِّكَ ٱلَّذِى خَلَقَ ١ خَلَقَ ٱلْإِنسَـٰنَ مِنْ عَلَقٍ ٢ ٱقْرَأْ وَرَبُّكَ ٱلْأَكْرَمُ ٣ ٱلَّذِى عَلَّمَ بِٱلْقَلَمِ ٤ عَلَّمَ ٱلْإِنسَـٰنَ مَا لَمْ يَعْلَمْ ٥"
+description: A decentralized Quran study and wiki system built on Nostr
+brandColor: "#d4af37"
+backgroundColor: "#f8f6f0"
+textColor: "#2c2c2c"
+accentColor: "#b8860b"
+highlightColor: "#8b4513"
 relays:
   wiki:
-    - wss://nostr.wine
-    - wss://nostr21.com
-    - wss://thecitadel.nostr1.com
     - wss://relay.wikifreedia.xyz
-    - wss://orly-relay.imwald.eu
-    - wss://christpill.nostr1.com
-    - wss://nostr.land
-    - wss://nostr.sovbit.host
+    - wss://thecitadel.nostr1.com
+    - wss://relay.nostrabia.com
   social:
-    - wss://nostr.wine
-    - wss://nostr21.com
-    - wss://orly-relay.imwald.eu
-    - wss://christpill.nostr1.com
-    - wss://nostr.land
-    - wss://nostr.sovbit.host
-showBibleLinks: true
+    - wss://theforest.nostr1.com
+    - wss://relay.nostrabia.com
+showBibleLinks: false
 searchHelpText: |
   Search for articles by title, content, or author. Use "author:pubkey" to find articles by a specific author.
 
-  **Bible Search Examples:**
-  • John 3:16 (full book name)
-  • Jn 3:16 (abbreviated)
-  • john3:16 (no spaces, case insensitive)
-  • Romans 1:16-25 (verse ranges)
-  • Psalm 23:1, 3-5 (multiple verses)
-  • John 3:16 KJV (with version)
-  • Romans 1:16-25; Psalm 19:2-3 (multiple references)
+  **Quran Search Examples:**
+  • Al-Fatiha 1 (Surah and verse)
+  • Al-Fatiha (entire Surah)
+  • Al-Fatiha 1-7 (verse range)
+  • Al-Fatiha 1,3,5 (multiple verses)
+  • Al-Fatiha 1-7 | SAHIH (with translation)
+  • Al-Fatiha 1-7 | SAHIH PICKTHALL (multiple translations)
 
-  **Common Bible Abbreviations:**
-  • Gen, Exod, Lev, Num, Deut (Pentateuch)
-  • Josh, Judg, Ruth, 1 Sam, 2 Sam, 1 Kgs, 2 Kgs (Historical)
-  • 1 Chr, 2 Chr, Ezra, Neh, Esth (Chronicles)
-  • Job, Ps, Prov, Eccl, Song (Wisdom/Poetry)
-  • Isa, Jer, Lam, Ezek, Dan (Major Prophets)
-  • Hos, Joel, Amos, Obad, Jonah, Mic, Nah, Hab, Zeph, Hag, Zech, Mal (Minor Prophets)
-  • Matt, Mk, Lk, Jn (Gospels)
-  • Acts, Rom, 1 Cor, 2 Cor, Gal, Eph, Phil, Col, 1 Thess, 2 Thess, 1 Tim, 2 Tim, Tit, Phlm (Pauline)
-  • Heb, Jas, 1 Pet, 2 Pet, 1 Jn, 2 Jn, 3 Jn, Jude, Rev (General/Catholic)
+  **Common Surah Names:**
+  • Al-Fatiha, Al-Baqarah, Aal-e-Imran, An-Nisa, Al-Maidah (First 5)
+  • Al-Anam, Al-Araf, Al-Anfal, At-Tawbah, Yunus (6-10)
+  • Hud, Yusuf, Ar-Rad, Ibrahim, Al-Hijr (11-15)
+  • An-Nahl, Al-Isra, Al-Kahf, Maryam, Ta-Ha (16-20)
+  • Al-Anbiya, Al-Hajj, Al-Muminun, An-Nur, Al-Furqan (21-25)
+  • Ash-Shuara, An-Naml, Al-Qasas, Al-Ankabut, Ar-Rum (26-30)
+  • Luqman, As-Sajda, Al-Ahzab, Saba, Fatir (31-35)
+  • Ya-Sin, As-Saffat, Sad, Az-Zumar, Ghafir (36-40)
+  • Fussilat, Ash-Shura, Az-Zukhruf, Ad-Dukhan, Al-Jathiyah (41-45)
+  • Al-Ahqaf, Muhammad, Al-Fath, Al-Hujurat, Qaf (46-50)
 
-  **Bible Versions:**
-  KJV, NIV, ESV, NASB, NRSV, DRB, RSV, NLT, MSG, AMP, TLB, NKJV, ASV, YLT, WEB, NET, CSB, NAB, NJB, CEV, GNT, NIRV, BSB, LSB, MEV, NLV, TPT, AMPC, CJB, DARBY, ERV, EXB, GNV, GW, ICB, ISV, JUB, KJV21, LEB, MOUNCE, NABRE, NCV, NIRV, NLV, NRSV, OJB, RGT, TLV, TPT, VOICE, WYC, YLT98
+  **Popular Quran Translations:**
+  SAHIH, PICKTHALL, SHAKIR, YUSUFALI, MOHAMMED, CLEAR, KORAN, ABDELHALEEM, AHMEDALI, BEWLEY, FAROOQ, KHAN, MAUDUDI, QARAI, SARWAR, WAHIDUDDIN
 
   **Compare content with diff:**
   • diff::article1 | article2
-  • diff::book:bible:John 3:16 KJV | NIV
+  • diff::book:quran:Al-Fatiha 1-7 | SAHIH PICKTHALL
   • diff::article1; article2; article3
-  • diff::book:bible:John 3:16 KJV | ESV
+  • diff::book:quran:Al-Fatiha 1-7 | SAHIH SHAKIR
 
-  Use <code>diff::</code> prefix to compare wiki articles, Bible versions, or any content. Supports pipe <code>|</code> and semicolon <code>;</code> separation.
+  Use <code>diff::</code> prefix to compare wiki articles, Quran translations, or any content. Supports pipe <code>|</code> and semicolon <code>;</code> separation.
 typography:
   fontFamily: '"Crimson Text", "Times New Roman", "Times", "Georgia", serif'
   fontFamilyHeading: '"Crimson Text", "Times New Roman", "Times", "Georgia", serif'
@@ -77,5 +68,5 @@ typography:
 styling:
   headerStyle: "font-serif font-normal tracking-wide"
   buttonStyle: "font-serif transition-all duration-300 hover:shadow-lg"
-  cardStyle: "border border-amber-200 bg-amber-50 rounded-none shadow-md"
-  inputStyle: "border border-amber-300 rounded-none focus:ring-2 focus:ring-green-600 focus:border-transparent bg-amber-50"
+  cardStyle: "border border-amber-200 bg-amber-50 rounded-lg shadow-lg"
+  inputStyle: "border border-amber-300 rounded-md focus:ring-2 focus:ring-amber-500 focus:border-transparent bg-amber-50 text-amber-900"

@@ -10,21 +10,13 @@ accentColor: "#d97706"
 highlightColor: "#b91c1c"
 relays:
   wiki:
-    - wss://nostr.wine
-    - wss://nostr21.com
     - wss://thecitadel.nostr1.com
     - wss://relay.wikifreedia.xyz
     - wss://orly-relay.imwald.eu
-    - wss://christpill.nostr1.com
-    - wss://nostr.land
-    - wss://nostr.sovbit.host
   social:
-    - wss://nostr.wine
-    - wss://nostr21.com
+    - wss://theforest.nostr1.com
     - wss://orly-relay.imwald.eu
     - wss://christpill.nostr1.com
-    - wss://nostr.land
-    - wss://nostr.sovbit.host
 showBibleLinks: true
 searchHelpText: |
   Search for articles by title, content, or author. Use "author:pubkey" to find articles by a specific author.

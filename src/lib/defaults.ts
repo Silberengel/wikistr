@@ -4,13 +4,7 @@
 
 export const DEFAULT_METADATA_RELAYS = [
   'wss://purplepag.es',
-  'wss://relay.nos.social',
-  'wss://user.kindpag.es',
   'wss://profiles.nostr1.com',
-  'wss://relay.damus.io',
-  'wss://relay.nostr.band',
-  'wss://thecitadel.nostr1.com',
-  'wss://aggr.nostr.land'
 ];
 
 export const DEFAULT_WRITE_RELAYS = [

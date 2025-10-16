@@ -79,6 +79,107 @@
     if (search) search.close();
   }
 
+  async function performSearchWithAllRelays() {
+    // Cancel existing subscriptions and zero variables
+    destroy();
+    tried = false;
+    eosed = 0;
+    results = [];
+
+    // Only search if we have a meaningful query
+    if (!query || !query.trim() || query.length <= 2) return;
+
+    setTimeout(() => {
+      tried = true;
+    }, 1500);
+
+    const update = debounce(() => {
+      // Multi-tier sorting: WOT authors > search tier > wotness
+      let normalizedIdentifier = normalizeIdentifier(query);
+      results = results.sort((a, b) => {
+        const aWotScore = $wot[a.pubkey] || 0;
+        const bWotScore = $wot[b.pubkey] || 0;
+        
+        // First priority: Authors in WOT (have WOT score > 0)
+        const aInWot = aWotScore > 0;
+        const bInWot = bWotScore > 0;
+        
+        if (aInWot && !bInWot) return -1; // a is in WOT, b is not
+        if (!aInWot && bInWot) return 1;  // b is in WOT, a is not
+        
+        // If both or neither are in WOT, sort by search tier
+        const aSearchScore = getSearchScore(a, normalizedIdentifier, query);
+        const bSearchScore = getSearchScore(b, normalizedIdentifier, query);
+        
+        if (aSearchScore !== bSearchScore) {
+          return bSearchScore - aSearchScore; // Higher score first
+        }
+        
+        // Finally, sort by WOT score
+        return bWotScore - aWotScore;
+      });
+      
+      results = results;
+    }, 500);
+
+    try {
+      // Get all available relays from relayService
+      const userPubkey = $account?.pubkey || 'anonymous';
+      const allWikiRelays = await relayService.getRelaysForOperation(userPubkey, 'wiki-read');
+      const allSocialRelays = await relayService.getRelaysForOperation(userPubkey, 'social-read');
+      // Note: metadata relays are universal, not theme-specific
+      const allMetadataRelays = await relayService.getRelaysForOperation(userPubkey, 'metadata-read');
+      
+      // Combine all relays (metadata relays are already universal via relayService)
+      const allRelays = [...new Set([...allWikiRelays, ...allSocialRelays, ...allMetadataRelays])];
+      
+      console.log(`🔍 Searching all ${allRelays.length} available relays for: "${query}"`);
+
+      // Multi-tier search: exact match, title, summary, then full-text
+      const searchQueries = [
+        // 1. Exact match
+        { kinds: [wikiKind], '#d': [normalizeIdentifier(query)], limit: 25 },
+        // 2. Title search
+        { kinds: [wikiKind], '#title': [query], limit: 15 },
+        // 3. Summary search  
+        { kinds: [wikiKind], '#summary': [query], limit: 15 },
+        // 4. Full-text search
+        { kinds: [wikiKind], search: query, limit: 20 }
+      ];
+
+      // Search all queries using relay service with all relays
+      searchQueries.forEach((searchQuery) => {
+        relayService.queryEvents(
+          userPubkey,
+          'wiki-read',
+          [searchQuery],
+          {
+            excludeUserContent: true,
+            currentUserPubkey: $account?.pubkey
+          }
+        ).then(result => {
+          result.events.forEach(evt => {
+            tried = true;
+
+            // Check if this is an exact match from preferred authors
+            if (searchCard.preferredAuthors.includes(evt.pubkey)) {
+              // we found an exact match that fits the list of preferred authors
+              // jump straight into it
+              openArticle(evt, undefined, true);
+            }
+
+            if (addUniqueTaggedReplaceable(results, evt)) update();
+          });
+        }).catch(error => {
+          console.error('Search error:', error);
+        });
+      });
+
+    } catch (error) {
+      console.error('Failed to perform search with all relays:', error);
+    }
+  }
+
   async function performSearch() {
     // cancel existing subscriptions and zero variables
     destroy();
@@ -336,7 +437,10 @@
       Create this article!
     </button>
     <button
-      onclick={() => createChild({ id: next(), type: 'settings' })}
+      onclick={async () => {
+        // Expand search to all available relays and relaunch
+        await performSearchWithAllRelays();
+      }}
       class="ml-1 inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-espresso-700 bg-brown-100 hover:bg-brown-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-espresso-500"
     >
       Add more relays

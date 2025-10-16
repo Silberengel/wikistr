@@ -10,20 +10,15 @@ accentColor: "#d97706"
 highlightColor: "#b91c1c"
 relays:
   wiki:
-    - wss://nostr.wine
-    - wss://nostr21.com
     - wss://thecitadel.nostr1.com
     - wss://relay.wikifreedia.xyz
-    - wss://orly-relay.imwald.eu
-    - wss://christpill.nostr1.com
-    - wss://nostr.land
-    - wss://nostr.sovbit.host
   social:
+    - wss://theforest.nostr1.com
     - wss://nostr.wine
     - wss://nostr21.com
-    - wss://orly-relay.imwald.eu
-    - wss://christpill.nostr1.com
     - wss://nostr.land
+    - wss://aggr.nostr.land
+    - wss://bevo.nostr1.com
     - wss://nostr.sovbit.host
 showBibleLinks: true
 searchHelpText: |
