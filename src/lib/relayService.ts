@@ -6,7 +6,7 @@ import {
   DEFAULT_SEARCH_RELAYS
 } from '$lib/defaults';
 import { getThemeConfig } from '$lib/themes';
-import { createFilteredSubscription, isEventDeleted, isUserMuted } from '$lib/filtering';
+import { isEventDeleted, isUserMuted, loadDeletionEvents, loadMuteLists } from '$lib/filtering';
 import { showToast } from '$lib/toast';
 import { loadBlockedRelays } from '$lib/nostr';
 import type { NostrEvent } from '@nostr/tools/pure';
@@ -271,14 +271,47 @@ class RelayService {
     const events: T[] = [];
     let subscriptionClosed = false;
     
-    return new Promise((resolve) => {
-      const subscription = createFilteredSubscription(relays, filters, {
-        onevent: (event: T) => {
-          // Additional filtering is handled by createFilteredSubscription
-          events.push(event);
-        },
-        oneose: () => {
-          // Subscription completed
+    return new Promise(async (resolve) => {
+      try {
+        // Load deletion events and mute lists for filtering
+        await Promise.all([
+          loadDeletionEvents(relays),
+          loadMuteLists(relays)
+        ]);
+
+        // Use pool.subscribeMany directly to avoid circular dependency
+        const subscription = pool.subscribeMany(relays, filters, {
+          onevent: (event: any) => {
+            // Cast to our generic type
+            const typedEvent = event as T;
+            
+            // Filter out deleted events and muted users
+            if (isEventDeleted(typedEvent.id) || isUserMuted(typedEvent.pubkey)) {
+              return;
+            }
+            
+            // Filter out user's own content if requested
+            if (options.excludeUserContent && options.currentUserPubkey && typedEvent.pubkey === options.currentUserPubkey) {
+              return;
+            }
+            
+            events.push(typedEvent);
+          },
+          oneose: () => {
+            // Subscription completed
+            if (!subscriptionClosed) {
+              subscriptionClosed = true;
+              subscription.close();
+              resolve({
+                events,
+                relays
+              });
+            }
+          }
+        });
+        
+        // Timeout fallback to prevent hanging
+        setTimeout(() => {
           if (!subscriptionClosed) {
             subscriptionClosed = true;
             subscription.close();
@@ -287,20 +320,14 @@ class RelayService {
               relays
             });
           }
-        }
-      }, options);
-      
-      // Timeout fallback to prevent hanging
-      setTimeout(() => {
-        if (!subscriptionClosed) {
-          subscriptionClosed = true;
-          subscription.close();
-          resolve({
-            events,
-            relays
-          });
-        }
-      }, 5000); // 5 second timeout
+        }, 5000); // 5 second timeout
+      } catch (error) {
+        console.error('Failed to query events:', error);
+        resolve({
+          events: [],
+          relays
+        });
+      }
     });
   }
 

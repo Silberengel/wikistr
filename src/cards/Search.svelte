@@ -18,7 +18,6 @@
   import { page } from '$app/state';
   import { cards } from '$lib/state';
   import { isDiffQuery } from '$lib/diff';
-  import { createFilteredSubscription } from '$lib/filtering';
   import { account } from '$lib/nostr';
   import { refreshBookConfigurations } from '$lib/bookConfig';
   import { relayService } from '$lib/relayService';

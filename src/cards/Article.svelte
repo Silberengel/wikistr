@@ -16,7 +16,6 @@
   import RelayItem from '$components/RelayItem.svelte';
   import ProfilePopup from '$components/ProfilePopup.svelte';
   import { nip19 } from '@nostr/tools';
-  import { createFilteredSubscription } from '$lib/filtering';
 
   interface Props {
     card: Card;

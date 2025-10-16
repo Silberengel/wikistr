@@ -8,7 +8,6 @@
   import { addUniqueTaggedReplaceable, getTagOr, next, urlWithoutScheme } from '$lib/utils';
   import { wikiKind } from '$lib/nostr';
   import ArticleListItem from '$components/ArticleListItem.svelte';
-  import { createFilteredSubscription } from '$lib/filtering';
   import { account } from '$lib/nostr';
   import { relayService } from '$lib/relayService';
 

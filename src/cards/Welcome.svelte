@@ -25,7 +25,6 @@
   import type { ArticleCard, Card } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next } from '$lib/utils';
   import { getThemeConfig, getCurrentTheme } from '$lib/themes';
-  import { createFilteredSubscription } from '$lib/filtering';
   import { relayService } from '$lib/relayService';
   
   // Components
@@ -160,23 +159,6 @@
     return [...new Set([...relays])];
   }
 
-  function createSubscription(
-    relays: string[],
-    filter: SubscriptionFilter,
-    id: string,
-    onComplete?: () => void,
-    excludeUserContent = true
-  ): SubCloser {
-    return createFilteredSubscription(relays, [filter as any], {
-      id,
-      onevent,
-      receivedEvent: receivedEvent as any,
-      ...(onComplete && { oneose: onComplete })
-    }, {
-      excludeUserContent,
-      currentUserPubkey: $account?.pubkey
-    });
-  }
 
   // Feed Functions
   function createInboxFeed(): SubCloser {
