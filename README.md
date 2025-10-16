@@ -2,6 +2,14 @@
 
 A decentralized wiki and book study system built on Nostr. Supports traditional wiki articles and comprehensive book study functionality with powerful diff capabilities for ANY structured text - religious texts, academic works, legal documents, literature, and more.
 
+## Project Structure
+
+- `src/` - Source code (Svelte components, libraries, themes)
+- `deployment/` - Deployment files (Docker Compose, SSL setup)
+- `docs/` - Documentation and guides
+- `test/` - Test files and test data
+- `static/` - Static assets (favicons, etc.)
+
 ## Features
 
 ### Multi-Tier Search System

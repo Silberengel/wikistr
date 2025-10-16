@@ -113,25 +113,6 @@ export function isUserMuted(pubkey: string): boolean {
   return mutedUsers.has(pubkey);
 }
 
-/**
- * Filter out deleted events and events from muted users
- */
-export function filterEvents<T extends { id: string; pubkey: string }>(events: T[]): T[] {
-  return events.filter(event => 
-    !isEventDeleted(event.id) && !isUserMuted(event.pubkey)
-  );
-}
-
-/**
- * Filter out events from the current user (except when viewing own content)
- */
-export function filterUserEvents<T extends { id: string; pubkey: string }>(events: T[], currentUserPubkey?: string, showUserContent = false): T[] {
-  if (!currentUserPubkey || showUserContent) {
-    return events;
-  }
-  
-  return events.filter(event => event.pubkey !== currentUserPubkey);
-}
 
 /**
  * Clear all cached deletion and mute data

@@ -4,14 +4,12 @@
   import type { NostrEvent, Event } from '@nostr/tools/pure';
   import type { AbstractRelay } from '@nostr/tools/abstract-relay';
   import type { SubCloser } from '@nostr/tools/abstract-pool';
-  import { pool } from '@nostr/gadgets/global';
   import { loadRelayList } from '@nostr/gadgets/lists';
   import { normalizeIdentifier } from '@nostr/tools/nip54';
 
   import { wot, wikiKind, userWikiRelays } from '$lib/nostr';
   import type { ArticleCard, SearchCard, Card } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next, unique } from '$lib/utils';
-  import { DEFAULT_SEARCH_RELAYS } from '$lib/defaults';
   import { getThemeConfig } from '$lib/themes';
   import ArticleListItem from '$components/ArticleListItem.svelte';
   import { replaceState } from '$app/navigation';

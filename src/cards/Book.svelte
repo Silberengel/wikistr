@@ -10,7 +10,7 @@
 
   import { wot, userWikiRelays } from '$lib/nostr';
   import type { Card, BookCard } from '$lib/types';
-  import { addUniqueTaggedReplaceable, getTagOr, next, unique } from '$lib/utils';
+  import { addUniqueTaggedReplaceable, getTagOr, next, unique, formatDate } from '$lib/utils';
   import { relayService } from '$lib/relayService';
   import { 
     parseBookWikilink, 
@@ -489,7 +489,7 @@
             <div class="text-sm text-gray-600 mt-1">
               by <span class="font-mono text-xs">{result.pubkey.slice(0, 8)}...</span>
               {#if result.created_at}
-                • {new Date(result.created_at * 1000).toLocaleDateString()}
+                • {formatDate(result.created_at)}
               {/if}
             </div>
             <div class="mt-2 text-sm text-gray-700 line-clamp-3">
