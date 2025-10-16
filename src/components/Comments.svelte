@@ -10,6 +10,7 @@
   import { formatRelativeTime } from '$lib/utils';
   import { getThemeConfig } from '$lib/themes';
   import { relayService } from '$lib/relayService';
+  import { contentCache } from '$lib/contentCache';
 
   // Theme configuration
   const theme = getThemeConfig();
@@ -351,12 +352,44 @@
   }
 
 
+  function processComments(commentEvents: NostrEvent[]) {
+    // Client-side filtering for our specific wiki article
+    const filteredComments = commentEvents.filter(commentEvent => {
+      const aTag = commentEvent.tags.find(([k]) => k === 'A');
+      const kTag = commentEvent.tags.find(([k]) => k === 'K');
+      
+      // Check if this comment references our wiki article
+      return aTag && aTag[1] === articleCoordinate && 
+             kTag && kTag[1] === event.kind.toString();
+    });
+
+    comments = filteredComments;
+    console.log('Processed comments:', filteredComments.length);
+  }
+
   async function fetchComments() {
     if (!browser) return;
     
     try {
-      // Use relayService for consistent relay handling
-      const result = await relayService.queryEvents(
+      let result;
+      
+      // First, try to get comments from cache and display them immediately
+      const cachedComments = await contentCache.getEvents('kind1111');
+      
+      if (cachedComments.length > 0) {
+        console.log(`📦 Using ${cachedComments.length} cached comments`);
+        result = {
+          events: cachedComments.map(cached => cached.event),
+          relays: [...new Set(cachedComments.flatMap(cached => cached.relays))]
+        };
+        
+        // Display cached results immediately
+        processComments(result.events);
+      }
+      
+      // Second pass: Always query relays for fresh data and update cache
+      console.log('🔄 Querying relays for fresh comments...');
+      const freshResult = await relayService.queryEvents(
         $account?.pubkey || 'anonymous',
         'social-read',
         [
@@ -370,19 +403,20 @@
           currentUserPubkey: $account?.pubkey
         }
       );
-
-      // Client-side filtering for our specific wiki article
-      const filteredComments = result.events.filter(commentEvent => {
-        const aTag = commentEvent.tags.find(([k]) => k === 'A');
-        const kTag = commentEvent.tags.find(([k]) => k === 'K');
-        
-        // Check if this comment references our wiki article
-        return aTag && aTag[1] === articleCoordinate && 
-               kTag && kTag[1] === event.kind.toString();
-      });
-
-      comments = filteredComments;
-      console.log('Loaded comments:', filteredComments.length, 'from relays:', result.relays);
+      
+      // Update cache with fresh results
+      if (freshResult.events.length > 0) {
+        await contentCache.storeEvents('kind1111', 
+          freshResult.events.map(event => ({ event, relays: freshResult.relays }))
+        );
+      }
+      
+      // Update display with fresh results
+      result = freshResult;
+      console.log('Loaded fresh comments from relays:', result.events.length);
+      
+      // Process fresh comments
+      processComments(result.events);
     } catch (error) {
       console.error('Error fetching comments:', error);
     }

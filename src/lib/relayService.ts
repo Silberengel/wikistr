@@ -168,6 +168,7 @@ class RelayService {
     
     const relays = await this.getRelaysForOperation(userPubkey, type);
     
+    
     if (relays.length === 0) {
       console.warn('No relays available for query');
       return { events: [], relays: [] };

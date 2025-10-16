@@ -12,6 +12,7 @@
   import type { Card } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next, unique, formatRelativeTime } from '$lib/utils';
   import { relayService } from '$lib/relayService';
+  import { contentCache } from '$lib/contentCache';
   import { 
     parseBookWikilink, 
     generateBookSearchQuery, 
@@ -119,17 +120,34 @@
       // Search for book events (kind 30041) with book tags
       const searchQueries = generateBookSearchQuery(parsedQuery!.references, bookType, parsedQuery!.version, parsedQuery!.versions);
       
-      // Use relayService for book search
+      // Check cache first, then use relayService for book search
       try {
-        const result = await relayService.queryEvents(
-          'anonymous',
-          'social-read',
-          [{ kinds: [30041], '#type': [bookType], limit: 25 }],
-          {
-            excludeUserContent: false,
-            currentUserPubkey: undefined
-          }
+        let result;
+        
+        // First, try to get book events from cache
+        const cachedBooks = await contentCache.getEvents('kind30041');
+        const filteredBooks = cachedBooks.filter(cached => 
+          cached.event.tags.some(tag => tag[0] === 'type' && tag[1] === bookType)
         );
+        
+        if (filteredBooks.length > 0) {
+          console.log(`📦 Using ${filteredBooks.length} cached book events for ${bookType}`);
+          result = {
+            events: filteredBooks.map(cached => cached.event),
+            relays: [...new Set(filteredBooks.flatMap(cached => cached.relays))]
+          };
+        } else {
+          console.log('🔄 No cached book events found, querying relays...');
+          result = await relayService.queryEvents(
+            'anonymous',
+            'social-read',
+            [{ kinds: [30041], '#type': [bookType], limit: 25 }],
+            {
+              excludeUserContent: false,
+              currentUserPubkey: undefined
+            }
+          );
+        }
 
         tried = true;
         for (const evt of result.events) {
@@ -145,15 +163,33 @@
 
     // Also search using general search for book-related content
     try {
-      const searchResult = await relayService.queryEvents(
-        'anonymous',
-        'social-read',
-        [{ kinds: [30041], search: query, limit: 10 }],
-        {
-          excludeUserContent: false,
-          currentUserPubkey: undefined
-        }
+      let searchResult;
+      
+      // First, try to get book events from cache using search
+      const cachedBooks = await contentCache.getEvents('kind30041');
+      const searchFilteredBooks = cachedBooks.filter(cached => 
+        cached.event.content.toLowerCase().includes(query.toLowerCase()) ||
+        cached.event.tags.some(tag => tag[1]?.toLowerCase().includes(query.toLowerCase()))
       );
+      
+      if (searchFilteredBooks.length > 0) {
+        console.log(`📦 Using ${searchFilteredBooks.length} cached book events for search: ${query}`);
+        searchResult = {
+          events: searchFilteredBooks.map(cached => cached.event),
+          relays: [...new Set(searchFilteredBooks.flatMap(cached => cached.relays))]
+        };
+      } else {
+        console.log('🔄 No cached search results found, querying relays...');
+        searchResult = await relayService.queryEvents(
+          'anonymous',
+          'social-read',
+          [{ kinds: [30041], search: query, limit: 10 }],
+          {
+            excludeUserContent: false,
+            currentUserPubkey: undefined
+          }
+        );
+      }
 
       for (const evt of searchResult.events) {
         if (isBookEvent(evt as BookEvent, bookType) && matchesBookQuery(evt as BookEvent, parsedQuery!, bookType)) {

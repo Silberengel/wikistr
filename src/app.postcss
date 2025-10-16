@@ -43,12 +43,23 @@
     @apply hover:bg-gray-50 text-gray-700 font-medium py-2 px-4 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
   }
 
-  /* Inline code styling */
+  /* Inline code styling - theme-aware */
   code {
-    @apply bg-brown-200 text-espresso-800 px-1.5 py-0.5 rounded text-sm font-mono;
+    @apply px-1.5 py-0.5 rounded text-sm font-mono;
+    /* Default light theme colors */
+    background-color: #fbbf24; /* amber-300 */
+    color: #1f2937; /* gray-800 */
+  }
+  
+  /* Dark theme code styling */
+  .dark code,
+  [data-theme="dark"] code,
+  body[style*="background-color: #0f172a"] code {
+    background-color: #374151; /* gray-700 */
+    color: #f9fafb; /* gray-50 */
   }
 
-  /* AsciiDoc monospace styling */
+  /* AsciiDoc monospace styling - theme-aware */
   .monospaced,
   .asciidoc-monospace,
   span[class*="monospace"],
@@ -56,7 +67,36 @@
   .literal-text,
   .asciidoc-literal,
   span[class*="literal"] {
-    @apply bg-brown-200 text-espresso-800 px-1.5 py-0.5 rounded text-sm font-mono;
+    @apply px-1.5 py-0.5 rounded text-sm font-mono;
+    /* Default light theme colors */
+    background-color: #fbbf24; /* amber-300 */
+    color: #1f2937; /* gray-800 */
+  }
+  
+  /* Dark theme AsciiDoc monospace styling */
+  .dark .monospaced,
+  .dark .asciidoc-monospace,
+  .dark span[class*="monospace"],
+  .dark .literal,
+  .dark .literal-text,
+  .dark .asciidoc-literal,
+  .dark span[class*="literal"],
+  [data-theme="dark"] .monospaced,
+  [data-theme="dark"] .asciidoc-monospace,
+  [data-theme="dark"] span[class*="monospace"],
+  [data-theme="dark"] .literal,
+  [data-theme="dark"] .literal-text,
+  [data-theme="dark"] .asciidoc-literal,
+  [data-theme="dark"] span[class*="literal"],
+  body[style*="background-color: #0f172a"] .monospaced,
+  body[style*="background-color: #0f172a"] .asciidoc-monospace,
+  body[style*="background-color: #0f172a"] span[class*="monospace"],
+  body[style*="background-color: #0f172a"] .literal,
+  body[style*="background-color: #0f172a"] .literal-text,
+  body[style*="background-color: #0f172a"] .asciidoc-literal,
+  body[style*="background-color: #0f172a"] span[class*="literal"] {
+    background-color: #374151; /* gray-700 */
+    color: #f9fafb; /* gray-50 */
   }
 
   /* LaTeX styling */

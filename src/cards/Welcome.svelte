@@ -4,9 +4,10 @@
   import type { Event, NostrEvent } from '@nostr/tools/pure';
   import type { ArticleCard, Card } from '$lib/types';
   import { relayService } from '$lib/relayService';
-  import { wikiKind, account, setAccount } from '$lib/nostr';
+  import { wikiKind, reactionKind, account, setAccount, wot } from '$lib/nostr';
   import { getThemeConfig } from '$lib/themes';
   import { next } from '$lib/utils';
+  import { contentCache } from '$lib/contentCache';
   
   // Components
   import UserBadge from '$components/UserBadge.svelte';
@@ -35,6 +36,11 @@
   let currentRelays = $state<string[]>([]);
   let isLoading = $state(false);
   let lastLoadTime = $state(0);
+  
+  // Cache state
+  let allRelaysUsed = $state<string[]>([]);
+  let cacheTimestamp = $state(0);
+  let backgroundUpdateInterval: ReturnType<typeof setInterval> | null = null;
 
   // Profile popup state
   let profilePopupOpen = $state(false);
@@ -47,19 +53,25 @@
       id: 'inboxes',
       label: 'your inboxes',
       title: 'Recent Articles',
-      function: loadInboxFeed
+      function: loadInboxWikiArticles
     },
     {
       id: 'all-relays',
       label: 'all relays',
       title: 'Articles from all relays',
-      function: loadAllRelaysFeed
+      function: loadAllWikiArticles
+    },
+    {
+      id: 'wot',
+      label: 'web of trust',
+      title: 'Articles from trusted users',
+      function: loadWOTWikiArticles
     },
     {
       id: 'yourself',
       label: 'yourself',
       title: 'Your articles',
-      function: loadSelfFeed
+      function: loadAllWikiArticles
     }
   ];
 
@@ -69,124 +81,430 @@
   const MIN_LOAD_INTERVAL = 5000; // 5 seconds minimum between loads
   
   /**
-   * Rate-limited feed loading to prevent doom loops
+   * Load wiki articles from inbox relays only (for inbox feed)
    */
-  async function loadFeed() {
-    const now = Date.now();
-    
-    // Prevent rapid successive loads
-    if (now - lastLoadTime < MIN_LOAD_INTERVAL) {
-      console.log('⏳ Feed load rate limited, skipping...');
+  async function loadInboxWikiArticles(): Promise<void> {
+    const userAccount = $account;
+    if (!userAccount) {
+      console.log('No account for inbox feed');
+      results = [];
+      currentRelays = [];
       return;
     }
-    
+
     if (isLoading) {
-      console.log('⏳ Feed already loading, skipping...');
+      console.log('⏳ Inbox query already in progress, skipping...');
       return;
     }
-    
+
     isLoading = true;
-    lastLoadTime = now;
-    
+
     try {
-      console.log('🔄 Loading feed:', currentFeed.label);
-      await currentFeed.function();
-      console.log('✅ Feed loaded successfully');
+      console.log('🔄 Loading inbox wiki articles...');
+      
+      // Query wiki articles from inbox/social relays only
+      const result = await relayService.queryEvents(
+        userAccount.pubkey,
+        'social-read', // Use social relays for inbox
+        [{ kinds: [wikiKind], limit: 100 }],
+        {
+          excludeUserContent: true, // Exclude user's own content for inbox
+          currentUserPubkey: userAccount.pubkey
+        }
+      );
+      
+      results = result.events.sort((a, b) => (b.created_at || 0) - (a.created_at || 0)).slice(0, 15);
+      currentRelays = result.relays;
+      
+      console.log(`📰 Inbox feed: ${results.length} articles from ${currentRelays.length} relays`);
+      
     } catch (error) {
-      console.error('❌ Failed to load feed:', error);
+      console.error('❌ Failed to load inbox wiki articles:', error);
+      results = [];
+      currentRelays = [];
     } finally {
       isLoading = false;
     }
   }
 
   /**
-   * Load inbox feed for logged-in users
+   * Background cache update - runs periodically to keep cache fresh
    */
-  async function loadInboxFeed(): Promise<void> {
-    const userAccount = $account;
-    if (!userAccount) {
-      console.log('No account for inbox feed');
-      return;
-    }
-
+  async function backgroundCacheUpdate(): Promise<void> {
     try {
-      const result = await relayService.queryEvents(
-        userAccount.pubkey,
-        'wiki-read',
-        [{ kinds: [wikiKind], limit: 15 }],
-        {
-          excludeUserContent: true,
-          currentUserPubkey: userAccount.pubkey
-        }
-      );
+      console.log('🔄 Background cache update started...');
       
-      currentRelays = result.relays;
-      results = result.events;
-      console.log(`📰 Inbox feed: ${result.events.length} events from ${result.relays.length} relays`);
+      const userPubkey = $account?.pubkey || 'anonymous';
+      const relaySet = new Set<string>();
+      
+      // Only update content types that are stale
+      const cacheChecks = await Promise.all([
+        contentCache.isCacheFresh('wiki'),
+        contentCache.isCacheFresh('reactions'),
+        contentCache.isCacheFresh('deletes'),
+        contentCache.isCacheFresh('kind1'),
+        contentCache.isCacheFresh('kind1111'),
+        contentCache.isCacheFresh('kind30041'),
+        contentCache.isCacheFresh('metadata'),
+        contentCache.isCacheFresh('bookConfigs')
+      ]);
+      
+      const [wikiFresh, reactionsFresh, deletesFresh, kind1Fresh, kind1111Fresh, kind30041Fresh, metadataFresh, bookConfigsFresh] = cacheChecks;
+      
+      // Build queries for stale content types
+      const queries = [];
+      
+      if (!wikiFresh) {
+        queries.push(relayService.queryEvents(userPubkey, 'wiki-read', [{ kinds: [wikiKind], limit: 100 }], { excludeUserContent: false, currentUserPubkey: $account?.pubkey }));
+      }
+      if (!reactionsFresh) {
+        // Get wiki article IDs for targeted reaction queries
+        const wikiEvents = await contentCache.getEvents('wiki');
+        const wikiArticleIds = wikiEvents.map(cached => cached.event.id);
+        
+        if (wikiArticleIds.length > 0) {
+          queries.push(relayService.queryEvents(userPubkey, 'social-read', [{ kinds: [reactionKind], '#e': wikiArticleIds, limit: 200 }], { excludeUserContent: false, currentUserPubkey: $account?.pubkey }));
+        }
+      }
+      if (!deletesFresh) {
+        queries.push(relayService.queryEvents(userPubkey, 'social-read', [{ kinds: [5], limit: 100 }], { excludeUserContent: false, currentUserPubkey: $account?.pubkey }));
+      }
+      if (!kind1Fresh) {
+        queries.push(relayService.queryEvents(userPubkey, 'social-read', [{ kinds: [1], limit: 100 }], { excludeUserContent: false, currentUserPubkey: $account?.pubkey }));
+      }
+      if (!kind1111Fresh) {
+        queries.push(relayService.queryEvents(userPubkey, 'social-read', [{ kinds: [1111], limit: 100 }], { excludeUserContent: false, currentUserPubkey: $account?.pubkey }));
+      }
+      if (!kind30041Fresh) {
+        queries.push(relayService.queryEvents(userPubkey, 'wiki-read', [{ kinds: [30041], limit: 100 }], { excludeUserContent: false, currentUserPubkey: $account?.pubkey }));
+      }
+      if (!metadataFresh) {
+        queries.push(relayService.queryEvents(userPubkey, 'metadata-read', [{ kinds: [0], limit: 100 }], { excludeUserContent: false, currentUserPubkey: $account?.pubkey }));
+      }
+      if (!bookConfigsFresh) {
+        queries.push(relayService.queryEvents(userPubkey, 'wiki-read', [{ kinds: [30078], limit: 50 }], { excludeUserContent: false, currentUserPubkey: $account?.pubkey }));
+      }
+      
+      if (queries.length === 0) {
+        console.log('📦 All caches are fresh, skipping background update');
+        return;
+      }
+      
+      console.log(`🔄 Updating ${queries.length} stale cache types in background...`);
+      
+      const results = await Promise.all(queries);
+      
+      // Store updated content in cache
+      const storePromises = [];
+      let resultIndex = 0;
+      
+      if (!wikiFresh) {
+        storePromises.push(contentCache.storeEvents('wiki', results[resultIndex].events.map(event => ({ event, relays: results[resultIndex].relays }))));
+        resultIndex++;
+      }
+      if (!reactionsFresh) {
+        storePromises.push(contentCache.storeEvents('reactions', results[resultIndex].events.map(event => ({ event, relays: results[resultIndex].relays }))));
+        resultIndex++;
+      }
+      if (!deletesFresh) {
+        storePromises.push(contentCache.storeEvents('deletes', results[resultIndex].events.map(event => ({ event, relays: results[resultIndex].relays }))));
+        resultIndex++;
+      }
+      if (!kind1Fresh) {
+        storePromises.push(contentCache.storeEvents('kind1', results[resultIndex].events.map(event => ({ event, relays: results[resultIndex].relays }))));
+        resultIndex++;
+      }
+      if (!kind1111Fresh) {
+        storePromises.push(contentCache.storeEvents('kind1111', results[resultIndex].events.map(event => ({ event, relays: results[resultIndex].relays }))));
+        resultIndex++;
+      }
+      if (!kind30041Fresh) {
+        storePromises.push(contentCache.storeEvents('kind30041', results[resultIndex].events.map(event => ({ event, relays: results[resultIndex].relays }))));
+        resultIndex++;
+      }
+      if (!metadataFresh) {
+        storePromises.push(contentCache.storeEvents('metadata', results[resultIndex].events.map(event => ({ event, relays: results[resultIndex].relays }))));
+        resultIndex++;
+      }
+      if (!bookConfigsFresh) {
+        storePromises.push(contentCache.storeEvents('bookConfigs', results[resultIndex].events.map(event => ({ event, relays: results[resultIndex].relays }))));
+        resultIndex++;
+      }
+      
+      await Promise.all(storePromises);
+      
+      // Collect relays
+      results.forEach(result => result.relays.forEach(relay => relaySet.add(relay)));
+      
+      console.log(`✅ Background cache update completed - updated ${queries.length} content types`);
+      
     } catch (error) {
-      console.error('Failed to load inbox feed:', error);
-      currentRelays = [];
-      results = [];
+      console.error('❌ Background cache update failed:', error);
     }
   }
 
   /**
-   * Load all relays feed (works for anonymous users)
+   * Load all content from all wiki relays and cache them
    */
-  async function loadAllRelaysFeed(): Promise<void> {
-    const userPubkey = $account?.pubkey || 'anonymous';
+  async function loadAllWikiArticles(): Promise<void> {
+    const now = Date.now();
+    
+    // Check if we have fresh cache for all content types
+    const allCacheFresh = await Promise.all([
+      contentCache.isCacheFresh('wiki'),
+      contentCache.isCacheFresh('reactions'),
+      contentCache.isCacheFresh('deletes'),
+      contentCache.isCacheFresh('kind1'),
+      contentCache.isCacheFresh('kind1111'),
+      contentCache.isCacheFresh('kind30041'),
+      contentCache.isCacheFresh('metadata'),
+      contentCache.isCacheFresh('bookConfigs')
+    ]);
+    
+    const allFresh = allCacheFresh.every(fresh => fresh) && now - cacheTimestamp < 30000;
+    
+    if (allFresh) {
+      console.log('📦 Using fresh cached content for all types');
+      buildFeedFromCache();
+      return;
+    }
+    
+    if (isLoading) {
+      console.log('⏳ Content query already in progress, skipping...');
+      return;
+    }
+    
+    isLoading = true;
+    cacheTimestamp = now;
     
     try {
-      const result = await relayService.queryEvents(
+      console.log('🔄 Loading all content from all wiki relays...');
+      
+      const userPubkey = $account?.pubkey || 'anonymous';
+      const relaySet = new Set<string>();
+      
+      // First, get wiki articles to extract their IDs for reaction queries
+      const wikiResult = await relayService.queryEvents(
         userPubkey,
         'wiki-read',
-        [{ kinds: [wikiKind], limit: 15 }],
-        {
-          excludeUserContent: true,
-          currentUserPubkey: $account?.pubkey
-        }
+        [{ kinds: [wikiKind], limit: 100 }],
+        { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
       );
       
-      currentRelays = result.relays;
-      results = result.events;
-      console.log(`🌐 All relays feed: ${result.events.length} events from ${result.relays.length} relays`);
+      // Extract wiki article IDs for targeted reaction queries
+      const wikiArticleIds = wikiResult.events.map(event => event.id);
+      
+      // Parallel queries for remaining content types
+      const queries = [
+        // Reactions (kind 7) - only for wiki articles
+        wikiArticleIds.length > 0 
+          ? relayService.queryEvents(
+              userPubkey,
+              'social-read',
+              [{ kinds: [reactionKind], '#e': wikiArticleIds, limit: 200 }],
+              { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+            )
+          : Promise.resolve({ events: [], relays: [] }),
+        
+        // Deletes (kind 5)
+        relayService.queryEvents(
+          userPubkey,
+          'social-read',
+          [{ kinds: [5], limit: 100 }],
+          { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+        ),
+        
+        // Kind 1 posts
+        relayService.queryEvents(
+          userPubkey,
+          'social-read',
+          [{ kinds: [1], limit: 100 }],
+          { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+        ),
+        
+        // Kind 1111 comments
+        relayService.queryEvents(
+          userPubkey,
+          'social-read',
+          [{ kinds: [1111], limit: 100 }],
+          { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+        ),
+        
+        // Kind 30041 - Asciidoc Notes
+        relayService.queryEvents(
+          userPubkey,
+          'wiki-read',
+          [{ kinds: [30041], limit: 100 }],
+          { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+        ),
+        
+        // Metadata (kind 0) - for user profiles
+        relayService.queryEvents(
+          userPubkey,
+          'metadata-read',
+          [{ kinds: [0], limit: 100 }],
+          { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+        ),
+        
+        // Book configurations (kind 30078)
+        relayService.queryEvents(
+          userPubkey,
+          'wiki-read',
+          [{ kinds: [30078], limit: 50 }],
+          { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+        )
+      ];
+      
+      const results = await Promise.all(queries);
+      const [reactionsResult, deletesResult, kind1Result, kind1111Result, kind30041Result, metadataResult, bookConfigsResult] = results;
+      
+      // Store all results in IndexedDB cache
+      await Promise.all([
+        contentCache.storeEvents('wiki', wikiResult.events.map(event => ({ event, relays: wikiResult.relays }))),
+        contentCache.storeEvents('reactions', reactionsResult.events.map(event => ({ event, relays: reactionsResult.relays }))),
+        contentCache.storeEvents('deletes', deletesResult.events.map(event => ({ event, relays: deletesResult.relays }))),
+        contentCache.storeEvents('kind1', kind1Result.events.map(event => ({ event, relays: kind1Result.relays }))),
+        contentCache.storeEvents('kind1111', kind1111Result.events.map(event => ({ event, relays: kind1111Result.relays }))),
+        contentCache.storeEvents('kind30041', kind30041Result.events.map(event => ({ event, relays: kind30041Result.relays }))),
+        contentCache.storeEvents('metadata', metadataResult.events.map(event => ({ event, relays: metadataResult.relays }))),
+        contentCache.storeEvents('bookConfigs', bookConfigsResult.events.map(event => ({ event, relays: bookConfigsResult.relays })))
+      ]);
+      
+      // Collect all relays
+      [wikiResult, reactionsResult, deletesResult, kind1Result, kind1111Result, kind30041Result, metadataResult, bookConfigsResult]
+        .forEach(result => result.relays.forEach(relay => relaySet.add(relay)));
+      
+      allRelaysUsed = Array.from(relaySet);
+      
+      console.log(`📦 Cached content to IndexedDB:`);
+      console.log(`  📰 Wiki articles: ${wikiResult.events.length}`);
+      console.log(`  ❤️  Reactions: ${reactionsResult.events.length}`);
+      console.log(`  🗑️  Deletes: ${deletesResult.events.length}`);
+      console.log(`  💬 Kind 1 posts: ${kind1Result.events.length}`);
+      console.log(`  💭 Kind 1111 comments: ${kind1111Result.events.length}`);
+      console.log(`  📝 Kind 30041 notes: ${kind30041Result.events.length}`);
+      console.log(`  👤 Metadata: ${metadataResult.events.length}`);
+      console.log(`  📚 Book configs: ${bookConfigsResult.events.length}`);
+      console.log(`  🌐 From ${allRelaysUsed.length} relays`);
+      
+      // Build the current feed from cache
+      buildFeedFromCache();
+      
     } catch (error) {
-      console.error('Failed to load all relays feed:', error);
-      currentRelays = [];
+      console.error('❌ Failed to load content:', error);
+      allRelaysUsed = [];
       results = [];
+      currentRelays = [];
+    } finally {
+      isLoading = false;
     }
   }
 
   /**
-   * Load self feed for logged-in users
+   * Load WOT (Web of Trust) wiki articles
    */
-  async function loadSelfFeed(): Promise<void> {
+  async function loadWOTWikiArticles(): Promise<void> {
     const userAccount = $account;
     if (!userAccount) {
-      console.log('No account for self feed');
+      console.log('No account for WOT feed');
+      results = [];
+      currentRelays = [];
       return;
     }
 
+    if (isLoading) {
+      console.log('⏳ WOT query already in progress, skipping...');
+      return;
+    }
+
+    isLoading = true;
+
     try {
+      console.log('🔄 Loading WOT wiki articles...');
+      
+      // Get trusted users from WOT
+      const trustedUsers = $wot;
+      if (!trustedUsers || trustedUsers.length === 0) {
+        console.log('No trusted users found for WOT feed');
+        results = [];
+        currentRelays = [];
+        return;
+      }
+      
+      // Query wiki articles from trusted users using all wiki relays
       const result = await relayService.queryEvents(
         userAccount.pubkey,
         'wiki-read',
-        [{ kinds: [wikiKind], authors: [userAccount.pubkey], limit: 15 }],
+        [{ kinds: [wikiKind], authors: trustedUsers, limit: 100 }],
         {
-          excludeUserContent: false,
+          excludeUserContent: true, // Exclude user's own content
           currentUserPubkey: userAccount.pubkey
         }
       );
       
+      results = result.events.sort((a, b) => (b.created_at || 0) - (a.created_at || 0)).slice(0, 15);
       currentRelays = result.relays;
-      results = result.events;
-      console.log(`👤 Self feed: ${result.events.length} events from ${result.relays.length} relays`);
+      
+      console.log(`🔗 WOT feed: ${results.length} articles from ${currentRelays.length} relays`);
+      console.log(`🔗 Trusted users: ${trustedUsers.length}`);
+      
     } catch (error) {
-      console.error('Failed to load self feed:', error);
-      currentRelays = [];
+      console.error('❌ Failed to load WOT wiki articles:', error);
       results = [];
+      currentRelays = [];
+    } finally {
+      isLoading = false;
     }
   }
+  
+  /**
+   * Build the current feed from cached data
+   */
+  function buildFeedFromCache(): void {
+    const currentFeedType = currentFeed.id;
+    const userPubkey = $account?.pubkey;
+    
+    console.log(`🏗️ Building ${currentFeedType} feed from IndexedDB cache`);
+    
+    let filteredEvents: Event[] = [];
+    
+    switch (currentFeedType) {
+      case 'inboxes':
+        // Inbox feed uses its own loading function, not cache
+        console.log('⚠️ Inbox feed should use loadInboxWikiArticles, not cache');
+        return;
+        
+      case 'all-relays':
+        // Show all articles from all relays
+        filteredEvents = contentCache.getEvents('wiki')
+          .map(cached => cached.event)
+          .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
+          .slice(0, 15);
+        break;
+        
+      case 'wot':
+        // WOT feed uses its own loading function, not cache
+        console.log('⚠️ WOT feed should use loadWOTWikiArticles, not cache');
+        return;
+        
+      case 'yourself':
+        // Show only user's own articles
+        if (userPubkey) {
+          filteredEvents = contentCache.getEvents('wiki')
+            .filter(cached => cached.event.pubkey === userPubkey)
+            .map(cached => cached.event)
+            .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
+            .slice(0, 15);
+        }
+        break;
+    }
+    
+    results = filteredEvents;
+    currentRelays = contentCache.getAllRelays();
+    
+    console.log(`✅ ${currentFeedType} feed built: ${results.length} articles from ${currentRelays.length} relays`);
+  }
+
 
   /**
    * Switch to a different feed
@@ -195,13 +513,27 @@
     if (newIndex === current) return;
     
     current = newIndex;
-    results = []; // Clear previous results
-    currentRelays = [];
     
-    // Load new feed after a short delay
-    setTimeout(() => {
-      loadFeed();
-    }, 100);
+    // Call the appropriate loading function for each feed type
+    const currentFeedType = currentFeed.id;
+    
+    switch (currentFeedType) {
+      case 'inboxes':
+        loadInboxWikiArticles();
+        break;
+      case 'all-relays':
+      case 'yourself':
+        // Use cache if available, otherwise load data
+        if (contentCache.isCacheFresh('wiki')) {
+          buildFeedFromCache();
+        } else {
+          loadAllWikiArticles();
+        }
+        break;
+      case 'wot':
+        loadWOTWikiArticles();
+        break;
+    }
   }
 
   /**
@@ -269,6 +601,24 @@
   }
 
   /**
+   * Get cached content for other components to use
+   */
+  export function getCachedContent() {
+    return {
+      wiki: contentCache.getEvents('wiki'),
+      reactions: contentCache.getEvents('reactions'),
+      deletes: contentCache.getEvents('deletes'),
+      kind1: contentCache.getEvents('kind1'),
+      kind1111: contentCache.getEvents('kind1111'),
+      kind30041: contentCache.getEvents('kind30041'),
+      metadata: contentCache.getEvents('metadata'),
+      bookConfigs: contentCache.getEvents('bookConfigs'),
+      stats: contentCache.getStats(),
+      allRelays: contentCache.getAllRelays()
+    };
+  }
+
+  /**
    * Open article
    */
   function openArticle(result: Event) {
@@ -281,18 +631,31 @@
     } as ArticleCard);
   }
 
-  // Initialize feed once when component mounts
+  // Initialize wiki data when component mounts
   let initialized = false;
   
-  // Watch for account changes and reload feed appropriately
+  // Watch for account changes and reload wiki data appropriately
   $effect(() => {
     if (!initialized) {
       initialized = true;
-      // Initial load after a delay
+      // Initial load after a delay - load the default feed
       setTimeout(() => {
-        loadFeed();
+        switchFeed(current);
       }, 1000);
+      
+      // Start background cache updates every 2 minutes
+      backgroundUpdateInterval = setInterval(() => {
+        backgroundCacheUpdate().catch(console.error);
+      }, 2 * 60 * 1000); // 2 minutes
     }
+    
+    // Cleanup on unmount
+    return () => {
+      if (backgroundUpdateInterval) {
+        clearInterval(backgroundUpdateInterval);
+        backgroundUpdateInterval = null;
+      }
+    };
   });
 
   // Auto-fallback to anonymous mode if no account after delay
@@ -308,10 +671,10 @@
 <section class="mb-8 text-center" style="font-family: {theme.typography.fontFamilyHeading};">
   <h1 class="text-6xl font-bold mb-2 {theme.styling.headerStyle}" style="font-size: {theme.typography.fontSize['6xl']}; color: {theme.textColor};">{theme.title}</h1>
   <p class="text-lg italic" style="font-size: {theme.typography.fontSize.lg}; color: {theme.textColor}; opacity: 0.8;">{theme.tagline}</p>
-  <div class="mt-4 text-sm" style="font-size: {theme.typography.fontSize.sm}; color: {theme.textColor}; opacity: 0.7;">
+  <div class="mt-4 text-sm" style="font-size: {theme.typography.fontSize.sm}; color: {theme.textColor}; opacity: 0.9;">
     {theme.description}
   </div>
-  <div class="mt-3 text-xs border-t pt-3" style="color: {theme.textColor}; opacity: 0.9; border-color: {theme.textColor}; opacity: 0.3;">
+  <div class="mt-3 text-xs border-t pt-3" style="color: {theme.textColor}; opacity: 0.8; border-color: {theme.textColor}; opacity: 0.5;">
     A <a href="https://jumble.imwald.eu/users/npub1s3ht77dq4zqnya8vjun5jp3p44pr794ru36d0ltxu65chljw8xjqd975wz" class="text-burgundy-700 hover:text-burgundy-800 underline">GitCitadel</a> fork of <a href="https://github.com/silberengel/wikistr" class="text-burgundy-700 hover:text-burgundy-800 underline">WikiStr</a>
   </div>
 </section>
@@ -337,7 +700,7 @@
 
     <!-- Feed Selector -->
     <div class="mt-4 flex items-center space-x-2">
-      <label for="feed-select" class="text-sm font-medium" style="color: {theme.textColor}; opacity: 0.8;">
+      <label for="feed-select" class="text-sm font-medium" style="color: {theme.textColor}; opacity: 0.95;">
         Browse articles from:
       </label>
       <select
@@ -394,9 +757,9 @@
         No articles found. Try switching feeds or check your relay connections.
       </div>
     {:else}
-      {#each results as result (result.id)}
-        <ArticleListItem event={result} {openArticle} />
-      {/each}
+    {#each results as result (result.id)}
+      <ArticleListItem event={result} {openArticle} />
+    {/each}
     {/if}
   </div>
 </section>

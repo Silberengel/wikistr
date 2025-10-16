@@ -10,6 +10,7 @@
 
   import { account, reactionKind, wikiKind, signer } from '$lib/nostr';
   import { formatRelativeTime, getA, getTagOr, next } from '$lib/utils';
+  import { contentCache } from '$lib/contentCache';
   import type { ArticleCard, SearchCard, Card } from '$lib/types';
   import UserBadge from '$components/UserBadge.svelte';
   import ArticleContent from '$components/ArticleContent.svelte';
@@ -266,8 +267,58 @@
     }
   });
 
+  function processReactions(reactions: NostrEvent[]) {
+    // Group reactions by user and get the latest one from each user
+    const userReactions = new Map<string, NostrEvent>();
+    
+    for (const reaction of reactions) {
+      console.log('Processing reaction:', reaction.content, 'from:', reaction.pubkey);
+      
+      const existing = userReactions.get(reaction.pubkey);
+      if (!existing || reaction.created_at > existing.created_at) {
+        userReactions.set(reaction.pubkey, reaction);
+      }
+    }
+    
+    // Count votes from latest reaction per user
+    let likes = 0;
+    let dislikes = 0;
+    
+    for (const reaction of userReactions.values()) {
+      if (reaction.content === '+') {
+        likes++;
+      } else if (reaction.content === '-') {
+        dislikes++;
+      }
+    }
+    
+    // Update vote counts atomically
+    voteCounts = { likes, dislikes };
+    
+    // Find user's current reaction
+    const userPubkey = $account?.pubkey;
+    if (userPubkey) {
+      const userReactionEvent = userReactions.get(userPubkey);
+      if (userReactionEvent) {
+        userReaction = userReactionEvent;
+        likeStatus = userReactionEvent.content === '+' ? 'liked' : 
+                    userReactionEvent.content === '-' ? 'disliked' : 'none';
+      } else {
+        userReaction = null;
+        likeStatus = 'none';
+      }
+    }
+    
+    console.log('[snapshot] Final vote counts:', { likes, dislikes });
+    console.log('Final vote counts:', voteCounts);
+    console.log('User reaction:', userReaction?.id, 'Status:', likeStatus);
+  }
+
   async function loadReactions() {
     if (!event) return;
+
+    // TypeScript assertion that event is not null after the check above
+    const articleEvent = event;
 
     // Reset vote counts
     voteCounts.likes = 0;
@@ -275,17 +326,36 @@
     userReaction = null;
     likeStatus = 'none';
 
-    console.log('Loading reactions for article:', event.id);
+    console.log('Loading reactions for article:', articleEvent.id);
     console.log('Account state in loadReactions:', $account ? 'logged in' : 'anonymous', $account?.pubkey);
 
     try {
-      // Use relayService for consistent relay handling
-      const result = await relayService.queryEvents(
+      // First, try to get reactions from cache and display them immediately
+      const cachedReactions = await contentCache.getEvents('reactions');
+      const articleReactions = cachedReactions.filter(cached => 
+        cached.event.tags.some(tag => tag[0] === 'e' && tag[1] === articleEvent.id)
+      );
+      
+      let result;
+      if (articleReactions.length > 0) {
+        console.log(`📦 Using ${articleReactions.length} cached reactions for article: ${articleEvent.id}`);
+        result = {
+          events: articleReactions.map(cached => cached.event),
+          relays: [...new Set(articleReactions.flatMap(cached => cached.relays))]
+        };
+        
+        // Display cached results immediately
+        processReactions(result.events);
+      }
+      
+      // Second pass: Always query relays for fresh data and update cache
+      console.log('🔄 Querying relays for fresh reactions...');
+      const freshResult = await relayService.queryEvents(
         $account?.pubkey || 'anonymous',
         'social-read',
         [
           {
-            '#e': [event.id],
+            '#e': [articleEvent.id],
             kinds: [reactionKind],
             limit: 100
           }
@@ -296,51 +366,20 @@
         }
       );
 
-      console.log('Loaded reactions from relayService:', result.events.length, 'for article:', event.id);
+      // Update cache with fresh results
+      if (freshResult.events.length > 0) {
+        await contentCache.storeEvents('reactions', 
+          freshResult.events.map(event => ({ event, relays: freshResult.relays }))
+        );
+      }
+      
+      // Update display with fresh results
+      result = freshResult;
+      console.log('Loaded fresh reactions from relays:', result.events.length, 'for article:', articleEvent.id);
       console.log('Using relays:', result.relays);
       
-      // Group reactions by user and get the latest one from each user
-      const userReactions = new Map<string, NostrEvent>();
-      
-      for (const reaction of result.events) {
-        console.log('Processing reaction:', reaction.content, 'from:', reaction.pubkey);
-        
-        const existing = userReactions.get(reaction.pubkey);
-        if (!existing || reaction.created_at > existing.created_at) {
-          userReactions.set(reaction.pubkey, reaction);
-        }
-      }
-      
-      // Count votes from latest reaction per user
-      let likes = 0;
-      let dislikes = 0;
-      
-      for (const reaction of userReactions.values()) {
-        if (reaction.content === '+') {
-          likes++;
-        } else if (reaction.content === '-') {
-          dislikes++;
-        }
-      }
-      
-      // Update vote counts atomically
-      voteCounts = { likes, dislikes };
-
-      // Check if this is the current user's reaction (only for logged-in users)
-      if ($account) {
-        const userLatestReaction = userReactions.get($account.pubkey);
-        if (userLatestReaction) {
-          userReaction = userLatestReaction;
-          if (userLatestReaction.content === '+') {
-            likeStatus = 'liked';
-          } else if (userLatestReaction.content === '-') {
-            likeStatus = 'disliked';
-          }
-        }
-      }
-
-      console.log('Final vote counts:', voteCounts);
-      console.log('User reaction:', userReaction?.id, 'Status:', likeStatus);
+      // Process fresh reactions
+      processReactions(result.events);
     } catch (error) {
       console.error('Failed to load reactions:', error);
     }
@@ -416,8 +455,8 @@
       let eventTemplate: EventTemplate = {
         kind: reactionKind,
         tags: [
-          ['e', event.id, seenOn[0] || ''],
-          ['p', event.pubkey, seenOn[0] || '']
+          ['e', event!.id, seenOn[0] || ''],
+          ['p', event!.pubkey, seenOn[0] || '']
         ],
         content: v,
         created_at: Math.round(Date.now() / 1000)
