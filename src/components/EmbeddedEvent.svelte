@@ -3,7 +3,7 @@
   import type { NostrEvent } from '@nostr/tools/pure';
   import { pool } from '@nostr/gadgets/global';
   import { relayService } from '$lib/relayService';
-  import { formatDate } from '$lib/utils';
+  import { formatRelativeTime } from '$lib/utils';
   import AsciidocContent from './AsciidocContent.svelte';
   import { nip19 } from '@nostr/tools';
   import { loadNostrUser, type NostrUser } from '@nostr/gadgets/metadata';
@@ -198,7 +198,7 @@
           
           <!-- Date -->
           <div class="flex items-center space-x-4 text-base text-gray-800">
-            <span class="text-gray-700 font-semibold">{formatDate(event.created_at)}</span>
+            <span class="text-gray-700 font-semibold">{formatRelativeTime(event.created_at)}</span>
           </div>
           </div>
           

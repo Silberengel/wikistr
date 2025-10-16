@@ -9,7 +9,7 @@
   import { normalizeIdentifier } from '@nostr/tools/nip54';
 
   import { account, reactionKind, wikiKind, signer } from '$lib/nostr';
-  import { formatDate, getA, getTagOr, next } from '$lib/utils';
+  import { formatRelativeTime, getA, getTagOr, next } from '$lib/utils';
   import type { ArticleCard, SearchCard, Card } from '$lib/types';
   import UserBadge from '$components/UserBadge.svelte';
   import ArticleContent from '$components/ArticleContent.svelte';
@@ -34,6 +34,7 @@
   let seenOn = $state<string[]>([]);
   let view = $state<'formatted' | 'asciidoc' | 'raw'>('formatted');
   let voteCounts = $state<{ likes: number; dislikes: number }>({ likes: 0, dislikes: 0 });
+  let lastEventId = $state<string | null>(null);
   let userReaction = $state<NostrEvent | null>(null);
   let isVoting = $state(false); // Prevent multiple votes
 
@@ -252,11 +253,12 @@
   // Effect to reload reactions when event changes
   let lastLoadTime = 0;
   $effect(() => {
-    if (event) {
+    if (event && event.id !== lastEventId) {
       const now = Date.now();
       // Prevent loading too frequently (within 1 second)
       if (now - lastLoadTime > 1000) {
         lastLoadTime = now;
+        lastEventId = event.id;
         console.log('Effect triggered - account state:', $account ? 'logged in' : 'anonymous', $account?.pubkey);
         console.log('Loading reactions for article:', event.id);
         loadReactions();
@@ -297,23 +299,41 @@
       console.log('Loaded reactions from relayService:', result.events.length, 'for article:', event.id);
       console.log('Using relays:', result.relays);
       
-      // Process reactions for everyone
+      // Group reactions by user and get the latest one from each user
+      const userReactions = new Map<string, NostrEvent>();
+      
       for (const reaction of result.events) {
         console.log('Processing reaction:', reaction.content, 'from:', reaction.pubkey);
         
-        // Count votes
-        if (reaction.content === '+') {
-          voteCounts.likes++;
-        } else if (reaction.content === '-') {
-          voteCounts.dislikes++;
+        const existing = userReactions.get(reaction.pubkey);
+        if (!existing || reaction.created_at > existing.created_at) {
+          userReactions.set(reaction.pubkey, reaction);
         }
+      }
+      
+      // Count votes from latest reaction per user
+      let likes = 0;
+      let dislikes = 0;
+      
+      for (const reaction of userReactions.values()) {
+        if (reaction.content === '+') {
+          likes++;
+        } else if (reaction.content === '-') {
+          dislikes++;
+        }
+      }
+      
+      // Update vote counts atomically
+      voteCounts = { likes, dislikes };
 
-        // Check if this is the current user's reaction (only for logged-in users)
-        if ($account && reaction.pubkey === $account.pubkey) {
-          userReaction = reaction;
-          if (reaction.content === '+') {
+      // Check if this is the current user's reaction (only for logged-in users)
+      if ($account) {
+        const userLatestReaction = userReactions.get($account.pubkey);
+        if (userLatestReaction) {
+          userReaction = userLatestReaction;
+          if (userLatestReaction.content === '+') {
             likeStatus = 'liked';
-          } else if (reaction.content === '-') {
+          } else if (userLatestReaction.content === '-') {
             likeStatus = 'disliked';
           }
         }
@@ -362,12 +382,11 @@
         userReaction = null;
         likeStatus = 'none';
         
-        // Update vote counts
-        if (reaction.content === '+' || reaction.content === '') {
-          voteCounts.likes = Math.max(0, voteCounts.likes - 1);
-        } else if (reaction.content === '-') {
-          voteCounts.dislikes = Math.max(0, voteCounts.dislikes - 1);
-        }
+        // Update vote counts atomically
+        voteCounts = {
+          likes: Math.max(0, voteCounts.likes - (reaction.content === '+' || reaction.content === '' ? 1 : 0)),
+          dislikes: Math.max(0, voteCounts.dislikes - (reaction.content === '-' ? 1 : 0))
+        };
       }
     } finally {
       isVoting = false; // Reset voting state
@@ -419,11 +438,12 @@
         // Update local state only if publish succeeded
         userReaction = reaction;
         likeStatus = v === '+' ? 'liked' : 'disliked';
-        if (v === '+') {
-          voteCounts.likes++;
-        } else {
-          voteCounts.dislikes++;
-        }
+        
+        // Update vote counts atomically
+        voteCounts = {
+          likes: voteCounts.likes + (v === '+' ? 1 : 0),
+          dislikes: voteCounts.dislikes + (v === '-' ? 1 : 0)
+        };
       }
     } finally {
       isVoting = false; // Reset voting state
@@ -517,7 +537,7 @@
           <UserBadge pubkey={event.pubkey} {createChild} onProfileClick={handleProfileClick} size="small" />
           {#if event.created_at}
             <span class="text-xs text-gray-500 whitespace-nowrap">
-              {formatDate(event.created_at)}
+              {formatRelativeTime(event.created_at)}
             </span>
           {/if}
         </div>

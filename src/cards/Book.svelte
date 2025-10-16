@@ -10,7 +10,7 @@
 
   import { wot, userWikiRelays } from '$lib/nostr';
   import type { Card, BookCard } from '$lib/types';
-  import { addUniqueTaggedReplaceable, getTagOr, next, unique, formatDate } from '$lib/utils';
+  import { addUniqueTaggedReplaceable, getTagOr, next, unique, formatRelativeTime } from '$lib/utils';
   import { relayService } from '$lib/relayService';
   import { 
     parseBookWikilink, 
@@ -132,7 +132,7 @@
       try {
         const result = await relayService.queryEvents(
           'anonymous',
-          'search-read',
+          'social-read',
           [{ kinds: [30041], '#type': [bookCard.bookType || 'bible'], limit: 25 }],
           {
             excludeUserContent: false,
@@ -156,7 +156,7 @@
     try {
       const searchResult = await relayService.queryEvents(
         'anonymous',
-        'search-read',
+        'social-read',
         [{ kinds: [30041], search: query, limit: 10 }],
         {
           excludeUserContent: false,
@@ -217,7 +217,7 @@
     try {
       const fallbackResult = await relayService.queryEvents(
         'anonymous',
-        'search-read',
+        'social-read',
         [{ kinds: [30041], '#type': [bookCard.bookType || 'bible'], limit: 25 }],
         {
           excludeUserContent: false,
@@ -489,7 +489,7 @@
             <div class="text-sm text-gray-600 mt-1">
               by <span class="font-mono text-xs">{result.pubkey.slice(0, 8)}...</span>
               {#if result.created_at}
-                • {formatDate(result.created_at)}
+                • {formatRelativeTime(result.created_at)}
               {/if}
             </div>
             <div class="mt-2 text-sm text-gray-700 line-clamp-3">

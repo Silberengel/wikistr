@@ -83,7 +83,7 @@ export function subscribeOutbox(
     result.events.forEach(event => {
       // Simulate receivedEvent callback for each relay that returned this event
       if (params.receivedEvent) {
-        result.relays.forEach(relay => {
+        result.relays.filter(relay => relay && relay !== 'undefined').forEach(relay => {
           params.receivedEvent!({ url: relay }, event.id);
         });
       }

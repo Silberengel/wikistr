@@ -102,8 +102,14 @@ if (relaysFile) {
 }
 
 // Validate required fields
-if (!bookConfig.name || !bookConfig.displayName) {
-  console.error('❌ Invalid book configuration: missing required fields (name, displayName)');
+if (!bookConfig.app || !bookConfig.type || !bookConfig.name || !bookConfig.displayName) {
+  console.error('❌ Invalid book configuration: missing required fields (app, type, name, displayName)');
+  console.error('   Required: app="Wikistr", type="book-config", name, displayName');
+  process.exit(1);
+}
+
+if (bookConfig.app !== 'Wikistr' || bookConfig.type !== 'book-config') {
+  console.error('❌ Invalid book configuration: app must be "Wikistr" and type must be "book-config"');
   process.exit(1);
 }
 
@@ -114,12 +120,10 @@ const event = {
   created_at: Math.floor(Date.now() / 1000),
   content: JSON.stringify(bookConfig),
   tags: [
-    ["d", `${bookConfig.name}-book-config`],
-    ["name", `${bookConfig.displayName} Book Configuration`],
-    ["about", bookConfig.description || `Book configuration for ${bookConfig.displayName}`],
-    ["t", "book-config"],
-    ["t", bookConfig.name],
-    ...(bookConfig.tags || []).map(tag => ["t", tag])
+    ["d", "wikistr-book-config"],
+    ["app", "Wikistr"],
+    ["type", "book-config"],
+    ["name", bookConfig.name]
   ]
 };
 

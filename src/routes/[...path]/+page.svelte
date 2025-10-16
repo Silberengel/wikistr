@@ -21,7 +21,13 @@
     cards.set($cards);
 
     if ($cards.length) {
-      scrollCardIntoView($cards[$cards.length - 1].id, true);
+      const lastCard = $cards[$cards.length - 1];
+      if (lastCard && typeof lastCard.id === 'number') {
+        // Add a small delay to ensure the element is rendered
+        setTimeout(() => {
+          scrollCardIntoView(String(lastCard.id), true);
+        }, 100);
+      }
     }
   });
 

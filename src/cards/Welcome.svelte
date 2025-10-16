@@ -1,40 +1,22 @@
 <script lang="ts">
-  // Svelte
   import { onDestroy } from 'svelte';
-  
-  // External Libraries
-  import debounce from 'debounce';
-  import type { SubCloser } from '@nostr/tools/abstract-pool';
-  import type { AbstractRelay } from '@nostr/tools/abstract-relay';
-  import type { Event, NostrEvent } from '@nostr/tools/pure';
-  import { pool } from '@nostr/gadgets/global';
-  import { loadRelayList } from '@nostr/gadgets/lists';
-
-  // Local Imports
-  import UserBadge from '$components/UserBadge.svelte';
-  import ProfilePopup from '$components/ProfilePopup.svelte';
   import { nip19 } from '@nostr/tools';
-  import {
-    signer,
-    wikiKind,
-    account,
-    wot,
-    getBasicUserWikiRelays,
-    setAccount
-  } from '$lib/nostr';
+  import type { Event, NostrEvent } from '@nostr/tools/pure';
   import type { ArticleCard, Card } from '$lib/types';
-  import { addUniqueTaggedReplaceable, getTagOr, next } from '$lib/utils';
-  import { getThemeConfig, getCurrentTheme } from '$lib/themes';
   import { relayService } from '$lib/relayService';
+  import { wikiKind, account, setAccount } from '$lib/nostr';
+  import { getThemeConfig } from '$lib/themes';
+  import { next } from '$lib/utils';
   
   // Components
+  import UserBadge from '$components/UserBadge.svelte';
+  import ProfilePopup from '$components/ProfilePopup.svelte';
   import ArticleListItem from '$components/ArticleListItem.svelte';
   import RelayItem from '$components/RelayItem.svelte';
 
   // Theme configuration
   const theme = getThemeConfig();
 
-  // Types
   interface Props {
     createChild: (card: Card) => void;
   }
@@ -43,26 +25,16 @@
     id: string;
     label: string;
     title: string;
-    function: () => SubCloser;
-  }
-
-  interface SubscriptionFilter {
-    kinds: number[];
-    authors?: string[];
-    limit: number;
-    [key: `#${string}`]: string | string[];
-  }
-
-  interface SeenCache {
-    [eventId: string]: string[];
+    function: () => Promise<void>;
   }
 
   // Props and State
   let { createChild }: Props = $props();
-  let seenCache: SeenCache = {};
   let results = $state<Event[]>([]);
   let current = $state(2); // Default to "all relays"
   let currentRelays = $state<string[]>([]);
+  let isLoading = $state(false);
+  let lastLoadTime = $state(0);
 
   // Profile popup state
   let profilePopupOpen = $state(false);
@@ -72,298 +44,264 @@
   // Feed Configuration
   const FEED_CONFIGS: FeedConfig[] = [
     {
-      id: 'web-of-trust',
-      label: 'your web of trust',
-      title: 'Articles from your web of trust',
-      function: createWebOfTrustFeed
-    },
-    {
       id: 'inboxes',
       label: 'your inboxes',
       title: 'Recent Articles',
-      function: createInboxFeed
+      function: loadInboxFeed
     },
     {
       id: 'all-relays',
       label: 'all relays',
       title: 'Articles from all relays',
-      function: createAllRelaysFeed
+      function: loadAllRelaysFeed
     },
     {
       id: 'yourself',
       label: 'yourself',
       title: 'Your articles',
-      function: createSelfFeed
+      function: loadSelfFeed
     }
   ];
 
   const currentFeed = $derived(FEED_CONFIGS[current]);
 
-  const update = debounce(() => {
-    // sort by an average of newness and wotness
-    results.sort((a, b) => {
-      const wotA = $wot[a.pubkey] || 0;
-      const wotB = $wot[b.pubkey] || 0;
-      let wotAvg = (wotA + wotB) / 2 || 1;
-      let tsAvg = (a.created_at + b.created_at) / 2;
-      return wotB / wotAvg + b.created_at / tsAvg - (wotA / wotAvg + a.created_at / tsAvg);
-    });
-    results = results;
-    seenCache = seenCache;
-  }, 500);
-
-  let close: SubCloser = { close: () => {} };
-
-  onDestroy(() => {
-    close.close();
-  });
-
-  function doLogin() {
-    signer.getPublicKey();
+  // Prevent doom loops with rate limiting
+  const MIN_LOAD_INTERVAL = 5000; // 5 seconds minimum between loads
+  
+  /**
+   * Rate-limited feed loading to prevent doom loops
+   */
+  async function loadFeed() {
+    const now = Date.now();
+    
+    // Prevent rapid successive loads
+    if (now - lastLoadTime < MIN_LOAD_INTERVAL) {
+      console.log('⏳ Feed load rate limited, skipping...');
+      return;
+    }
+    
+    if (isLoading) {
+      console.log('⏳ Feed already loading, skipping...');
+      return;
+    }
+    
+    isLoading = true;
+    lastLoadTime = now;
+    
+    try {
+      console.log('🔄 Loading feed:', currentFeed.label);
+      await currentFeed.function();
+      console.log('✅ Feed loaded successfully');
+    } catch (error) {
+      console.error('❌ Failed to load feed:', error);
+    } finally {
+      isLoading = false;
+    }
   }
 
+  /**
+   * Load inbox feed for logged-in users
+   */
+  async function loadInboxFeed(): Promise<void> {
+    const userAccount = $account;
+    if (!userAccount) {
+      console.log('No account for inbox feed');
+      return;
+    }
+
+    try {
+      const result = await relayService.queryEvents(
+        userAccount.pubkey,
+        'wiki-read',
+        [{ kinds: [wikiKind], limit: 15 }],
+        {
+          excludeUserContent: true,
+          currentUserPubkey: userAccount.pubkey
+        }
+      );
+      
+      currentRelays = result.relays;
+      results = result.events;
+      console.log(`📰 Inbox feed: ${result.events.length} events from ${result.relays.length} relays`);
+    } catch (error) {
+      console.error('Failed to load inbox feed:', error);
+      currentRelays = [];
+      results = [];
+    }
+  }
+
+  /**
+   * Load all relays feed (works for anonymous users)
+   */
+  async function loadAllRelaysFeed(): Promise<void> {
+    const userPubkey = $account?.pubkey || 'anonymous';
+    
+    try {
+      const result = await relayService.queryEvents(
+        userPubkey,
+        'wiki-read',
+        [{ kinds: [wikiKind], limit: 15 }],
+        {
+          excludeUserContent: true,
+          currentUserPubkey: $account?.pubkey
+        }
+      );
+      
+      currentRelays = result.relays;
+      results = result.events;
+      console.log(`🌐 All relays feed: ${result.events.length} events from ${result.relays.length} relays`);
+    } catch (error) {
+      console.error('Failed to load all relays feed:', error);
+      currentRelays = [];
+      results = [];
+    }
+  }
+
+  /**
+   * Load self feed for logged-in users
+   */
+  async function loadSelfFeed(): Promise<void> {
+    const userAccount = $account;
+    if (!userAccount) {
+      console.log('No account for self feed');
+      return;
+    }
+
+    try {
+      const result = await relayService.queryEvents(
+        userAccount.pubkey,
+        'wiki-read',
+        [{ kinds: [wikiKind], authors: [userAccount.pubkey], limit: 15 }],
+        {
+          excludeUserContent: false,
+          currentUserPubkey: userAccount.pubkey
+        }
+      );
+      
+      currentRelays = result.relays;
+      results = result.events;
+      console.log(`👤 Self feed: ${result.events.length} events from ${result.relays.length} relays`);
+    } catch (error) {
+      console.error('Failed to load self feed:', error);
+      currentRelays = [];
+      results = [];
+    }
+  }
+
+  /**
+   * Switch to a different feed
+   */
+  function switchFeed(newIndex: number) {
+    if (newIndex === current) return;
+    
+    current = newIndex;
+    results = []; // Clear previous results
+    currentRelays = [];
+    
+    // Load new feed after a short delay
+    setTimeout(() => {
+      loadFeed();
+    }, 100);
+  }
+
+  /**
+   * Login function
+   */
+  async function doLogin() {
+    try {
+      if (!(window as any).nostr) {
+        console.log('Nostr extension not found, falling back to anonymous mode');
+        fallbackToAnonymous();
+        return;
+      }
+      
+      const pubkey = await (window as any).nostr.getPublicKey();
+      console.log('Login successful:', pubkey);
+      setAccount(pubkey);
+    } catch (error) {
+      console.error('Login failed, falling back to anonymous mode:', error);
+      fallbackToAnonymous();
+    }
+  }
+
+  /**
+   * Fallback to anonymous mode
+   */
+  function fallbackToAnonymous() {
+    // Use a dummy pubkey that won't cause hex encoding errors
+    const anonymousAccount = {
+      pubkey: '0000000000000000000000000000000000000000000000000000000000000000',
+      name: 'Anonymous User',
+      about: 'Using Wikistr in anonymous mode',
+      picture: '',
+      nip05: '',
+      lud16: ''
+    };
+    
+    setAccount(anonymousAccount as any);
+    
+    // Set Wikistr as the default theme
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'wikistr';
+    if (currentTheme !== 'wikistr') {
+      document.documentElement.setAttribute('data-theme', 'wikistr');
+    }
+    
+    console.log('Falling back to anonymous mode with Wikistr theme');
+  }
+
+  /**
+   * Logout function
+   */
   function doLogout() {
-    // Clear the account from local storage
     import('idb-keyval').then(({ del }) => {
       del('wikistr:loggedin');
     });
-    // Reset the account store
     setAccount(null);
   }
 
+  /**
+   * Handle profile click
+   */
   function handleProfileClick(pubkey: string) {
     selectedUserPubkey = pubkey;
     selectedUserBech32 = nip19.npubEncode(pubkey);
     profilePopupOpen = true;
   }
 
+  /**
+   * Open article
+   */
   function openArticle(result: Event) {
     createChild({
       id: next(),
       type: 'article',
-      data: [getTagOr(result, 'd'), result.pubkey],
+      data: [result.tags.find(t => t[0] === 'd')?.[1] || '', result.pubkey],
       actualEvent: result,
-      relayHints: seenCache[result.id] || []
+      relayHints: currentRelays
     } as ArticleCard);
   }
 
-  // Helper Functions
-  async function getUserInboxRelays(pubkey: string): Promise<string[]> {
-    // Use relayService to get default wiki relays
-    return await relayService.getRelaysForOperation('anonymous', 'wiki-read');
-  }
+  // Initialize feed once when component mounts
+  let initialized = false;
+  
+  // Watch for account changes and reload feed appropriately
+  $effect(() => {
+    if (!initialized) {
+      initialized = true;
+      // Initial load after a delay
+      setTimeout(() => {
+        loadFeed();
+      }, 1000);
+    }
+  });
 
-  async function getCombinedRelays(pubkey: string): Promise<string[]> {
-    // Use relayService to get default wiki relays
-    const relays = await relayService.getRelaysForOperation('anonymous', 'wiki-read');
-    return [...new Set([...relays])];
-  }
-
-
-  // Feed Functions
-  function createInboxFeed(): SubCloser {
-    let sub: SubCloser | undefined;
-    let cancel = account.subscribe(async (account) => {
-      if (sub) sub.close();
-      if (!account) return;
-
-      // Use relay service for inbox feed
-      relayService.queryEvents(
-        account.pubkey,
-        'wiki-read',
-        [{ kinds: [wikiKind], limit: 15 }],
-        {
-          excludeUserContent: true,
-          currentUserPubkey: account.pubkey
-        }
-      ).then(result => {
-        currentRelays = result.relays;
-        console.log('Inbox feed - relays:', result.relays);
-        
-        result.events.forEach(evt => {
-          if (addUniqueTaggedReplaceable(results, evt)) update();
-        });
-      });
-    });
-
-    return {
-      close: () => {
-        if (sub) sub.close();
-        cancel();
-      }
-    };
-  }
-
-  function createWebOfTrustFeed(): SubCloser {
-    let sub: SubCloser | undefined;
-    let wotsubclose: () => void;
-    let cancel = account.subscribe(async (account) => {
-      if (sub) sub.close();
-      if (wotsubclose) wotsubclose();
-      if (!account) return;
-
-      const allRelays = await getCombinedRelays(account.pubkey);
-      currentRelays = allRelays;
-
-      wotsubclose = wot.subscribe((wot) => {
-        if (sub) sub.close();
-
-        const eligibleKeys = Object.entries(wot)
-          .filter(([_, v]) => v >= 20)
-          .map(([k]) => k);
-
-        console.log('Web of Trust feed - Eligible authors:', eligibleKeys.length, eligibleKeys);
-        
-        if (eligibleKeys.length > 0) {
-          // Use relay service for web of trust feed
-          relayService.queryEvents(
-            account.pubkey,
-            'wiki-read',
-            [{ kinds: [wikiKind], authors: eligibleKeys, limit: 20 }],
-            {
-              excludeUserContent: true,
-              currentUserPubkey: account.pubkey
-            }
-          ).then(result => {
-            console.log('Web of Trust feed completed');
-            result.events.forEach(evt => {
-              if (addUniqueTaggedReplaceable(results, evt)) update();
-            });
-          });
-        } else {
-          console.log('No eligible authors found in Web of Trust');
-        }
-      });
-    });
-
-    return {
-      close: () => {
-        if (sub) sub.close();
-        if (wotsubclose) wotsubclose();
-        cancel();
-      }
-    };
-  }
-
-  function createAllRelaysFeed(): SubCloser {
-    let sub: SubCloser | undefined;
-    let cancel = account.subscribe(async (account) => {
-      if (sub) sub.close();
-      
-      // For anonymous users, use relayService with anonymous pubkey
-      if (!account) {
-        console.log('Anonymous user - using relayService for wiki content');
-        
-        try {
-          const result = await relayService.queryEvents(
-            'anonymous',
-            'wiki-read',
-            [{ kinds: [wikiKind], limit: 15 }],
-            {
-              excludeUserContent: true,
-              currentUserPubkey: undefined
-            }
-          );
-          
-          currentRelays = result.relays;
-          console.log('Anonymous feed - relays:', result.relays);
-          
-          result.events.forEach(evt => {
-            if (addUniqueTaggedReplaceable(results, evt)) {
-              // Populate seenCache with the relays used
-              seenCache[evt.id] = result.relays;
-              update();
-            }
-          });
-        } catch (error) {
-          console.error('Failed to load anonymous feed:', error);
-        }
-        return;
-      }
-
-      // Use relay service for logged-in users
-      relayService.queryEvents(
-        account.pubkey,
-        'wiki-read',
-        [{ kinds: [wikiKind], limit: 15 }],
-        {
-          excludeUserContent: true,
-          currentUserPubkey: account.pubkey
-        }
-      ).then(result => {
-        currentRelays = result.relays;
-        console.log('All relays feed - relays:', result.relays);
-        
-        result.events.forEach(evt => {
-          if (addUniqueTaggedReplaceable(results, evt)) {
-            // Populate seenCache with the relays used
-            seenCache[evt.id] = result.relays;
-            update();
-          }
-        });
-      });
-    });
-
-    return {
-      close: () => {
-        if (sub) sub.close();
-        cancel();
-      }
-    };
-  }
-
-  function createSelfFeed(): SubCloser {
-    let sub: SubCloser | undefined;
-    let cancel = account.subscribe(async (account) => {
-      if (sub) sub.close();
-      if (!account) return;
-
-      // Use relay service for self feed
-      relayService.queryEvents(
-        account.pubkey,
-        'wiki-read',
-        [{ kinds: [wikiKind], authors: [account.pubkey], limit: 15 }],
-        {
-          excludeUserContent: false,
-          currentUserPubkey: account.pubkey
-        }
-      ).then(result => {
-        currentRelays = result.relays;
-        console.log('Self feed - relays:', result.relays);
-        
-        result.events.forEach(evt => {
-          if (addUniqueTaggedReplaceable(results, evt)) update();
-        });
-      });
-    });
-
-    return {
-      close: () => {
-        if (sub) sub.close();
-        cancel();
-      }
-    };
-  }
-
-  // Feed Management
-  function restart() {
-    close.close();
-    results = [];
-    seenCache = {};
-    console.log('Switching to feed:', currentFeed.label);
-    close = currentFeed.function();
-  }
-
-  setTimeout(restart, 400);
-
-  function onevent(evt: NostrEvent) {
-    if (addUniqueTaggedReplaceable(results, evt)) update();
-  }
-
-  function receivedEvent(relay: AbstractRelay, id: string) {
-    if (!(id in seenCache)) seenCache[id] = [];
-    if (seenCache[id].indexOf(relay.url) === -1) seenCache[id].push(relay.url);
-  }
+  // Auto-fallback to anonymous mode if no account after delay
+  setTimeout(() => {
+    if (!$account) {
+      console.log('No account found, auto-falling back to anonymous mode');
+      fallbackToAnonymous();
+    }
+  }, 2000);
 </script>
 
 <!-- Theme-aware Header -->
@@ -405,7 +343,7 @@
       <select
         id="feed-select"
         bind:value={current}
-        onchange={restart}
+        onchange={() => switchFeed(current)}
         class="px-3 py-2 border rounded-lg shadow-sm focus:outline-none transition-colors sm:text-sm w-48 {theme.styling.inputStyle}"
         style="font-family: {theme.typography.fontFamily}; font-size: {theme.typography.fontSize.sm};"
       >
@@ -434,6 +372,13 @@
     {currentFeed.title}
   </h2>
   
+  <!-- Loading indicator -->
+  {#if isLoading}
+    <div class="text-sm text-gray-500 mb-2">
+      Loading articles...
+    </div>
+  {/if}
+  
   <!-- Relay List -->
   <div class="flex items-center flex-wrap mt-2">
     <div class="mr-1 font-normal text-xs">from</div>
@@ -444,9 +389,15 @@
 
   <!-- Article List -->
   <div class="mt-4">
-    {#each results as result (result.id)}
-      <ArticleListItem event={result} {openArticle} />
-    {/each}
+    {#if results.length === 0 && !isLoading}
+      <div class="text-sm text-gray-500">
+        No articles found. Try switching feeds or check your relay connections.
+      </div>
+    {:else}
+      {#each results as result (result.id)}
+        <ArticleListItem event={result} {openArticle} />
+      {/each}
+    {/if}
   </div>
 </section>
 
@@ -458,34 +409,3 @@
   onClose={() => profilePopupOpen = false}
   {createChild}
 />
-
-<style>
-  /* Custom dropdown styling to match theme */
-  #feed-select {
-    background-color: rgb(253, 252, 251); /* brown-50 */
-    color: rgb(87, 83, 78); /* espresso-700 */
-    border-color: rgb(214, 211, 209); /* espresso-300 */
-  }
-  
-  #feed-select:focus {
-    border-color: rgb(147, 51, 234); /* burgundy-500 */
-    box-shadow: 0 0 0 3px rgba(147, 51, 234, 0.1); /* burgundy-500 with opacity */
-  }
-  
-  #feed-select:hover {
-    background-color: rgb(249, 247, 244); /* brown-100 */
-  }
-  
-  #feed-select option {
-    background-color: rgb(253, 252, 251); /* brown-50 */
-    color: rgb(87, 83, 78); /* espresso-700 */
-    padding: 8px 12px;
-  }
-  
-  #feed-select option:hover,
-  #feed-select option:focus,
-  #feed-select option:checked {
-    background-color: rgb(147, 51, 234); /* burgundy-500 */
-    color: white;
-  }
-</style>

@@ -8,10 +8,10 @@
   import Article from '$cards/Article.svelte';
   import Editor from '$cards/Editor.svelte';
   import Welcome from '$cards/Welcome.svelte';
-  import Search from '$cards/Search.svelte';
+  import SearchResults from '$cards/SearchResults.svelte';
   import Settings from '$cards/Settings.svelte';
   import Relay from '$cards/Relay.svelte';
-  import New from '$cards/New.svelte';
+  import NewSearch from '$cards/NewSearch.svelte';
   import User from '$cards/User.svelte';
   import Book from '$cards/Book.svelte';
   import Diff from '$cards/Diff.svelte';
@@ -44,9 +44,7 @@
       .slice(0, index + 1)
       .concat(newChild)
       .concat($cards.slice(index + 1));
-    goto('/' + newCards.map((card) => toURL(card)).join('/'), {
-      state: [index + 1, serializeCardForRouter(newChild)]
-    });
+    goto('/' + newCards.map((card) => toURL(card)).join('/'));
 
     setTimeout(() => {
       if (!isElementInViewport(String(newChild.id))) {
@@ -173,9 +171,9 @@
     {#if card.type === 'article'}
       <Article {createChild} {replaceSelf} {back} {card} />
     {:else if card.type === 'new'}
-      <New {replaceNewCard} />
+      <NewSearch {replaceNewCard} />
     {:else if card.type === 'find'}
-      <Search {createChild} {replaceSelf} {card} />
+      <SearchResults {createChild} {replaceSelf} {card} />
     {:else if card.type === 'welcome'}
       <Welcome {createChild} />
     {:else if card.type === 'relay'}

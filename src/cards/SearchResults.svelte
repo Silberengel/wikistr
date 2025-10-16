@@ -17,7 +17,6 @@
   import { cards } from '$lib/state';
   import { isDiffQuery } from '$lib/diff';
   import { account } from '$lib/nostr';
-  import { refreshBookConfigurations } from '$lib/bookConfig';
   import { relayService } from '$lib/relayService';
 
   // Theme configuration
@@ -303,14 +302,6 @@
     }
   }
 
-  async function refreshBookConfigs() {
-    try {
-      await refreshBookConfigurations();
-      console.log('Book configurations refreshed successfully');
-    } catch (error) {
-      console.error('Failed to refresh book configurations:', error);
-    }
-  }
 </script>
 
 <div class="mt-2 font-bold text-4xl flex items-center gap-4">
@@ -323,14 +314,6 @@
     bind:textContent={query}
   ></span>"
   
-  <!-- Refresh Book Configurations Button -->
-  <button
-    onclick={refreshBookConfigs}
-    class="text-sm px-3 py-1 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded text-gray-700 hover:text-gray-900 transition-colors"
-    title="Refresh book configurations from Nostr events"
-  >
-    🔄 Refresh Books
-  </button>
 </div>
 
 

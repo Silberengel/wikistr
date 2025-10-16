@@ -1,4 +1,6 @@
 {
+  "app": "Wikistr",
+  "type": "book-config",
   "name": "jane_eyre",
   "displayName": "Jane Eyre",
   "books": {

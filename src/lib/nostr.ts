@@ -23,38 +23,56 @@ export const wikiKind = 30818;
 let setWOT: (_: string) => Promise<void>;
 export const wot = readable<{ [pubkey: string]: number }>({}, (set) => {
   setWOT = async (pubkey) => {
-    const cached = await idbkv.get('wikistr:wot');
-    if (cached && cached.when > startTime - 7 * 24 * 60 * 60) {
-      set(cached.scoremap);
-      return;
-    }
+    try {
+      const cached = await idbkv.get('wikistr:wot');
+      if (cached && cached.when > startTime - 7 * 24 * 60 * 60) {
+        set(cached.scoremap);
+        return;
+      }
 
-    const scoremap: { [pubkey: string]: number } = {};
-    await Promise.all([
-      recurse(loadFollowsList, 10, pubkey, 30),
-      recurse(loadWikiAuthors, 6, pubkey, 30)
-    ]);
-    idbkv.set(`wikistr:wot`, { when: startTime, scoremap });
-    set(scoremap);
+      const scoremap: { [pubkey: string]: number } = {};
+      
+      // Define recurse function inside the scope where scoremap is available
+      const recurse = async (
+        fetch: (srcpk: string) => Promise<Result<string>>,
+        degrade: number,
+        src: string,
+        score: number
+      ) => {
+        scoremap[src] = (scoremap[src] || 0) + score;
 
-    async function recurse(
-      fetch: (srcpk: string) => Promise<Result<string>>,
-      degrade: number,
-      src: string,
-      score: number
-    ) {
-      scoremap[src] = (scoremap[src] || 0) + score;
+        if (score <= degrade) return;
 
-      if (score <= degrade) return;
-
-      const nextkeys = await fetch(src);
-      await Promise.all(
-        nextkeys.items.map(async (next) => {
-          return recurse(fetch, degrade, next, score - degrade);
-        })
+        const nextkeys = await fetch(src);
+        await Promise.all(
+          nextkeys.items.map(async (next) => {
+            return recurse(fetch, degrade, next, score - degrade);
+          })
+        );
+      };
+      
+      // Add timeout protection to prevent blocking
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('WOT calculation timeout')), 15000)
       );
+      
+      const wotPromise = Promise.all([
+        recurse(loadFollowsList, 10, pubkey, 30),
+        recurse(loadWikiAuthors, 6, pubkey, 30)
+      ]);
+      
+      await Promise.race([wotPromise, timeoutPromise]);
+      idbkv.set(`wikistr:wot`, { when: startTime, scoremap });
+      set(scoremap);
+    } catch (error) {
+      console.error('WOT calculation failed:', error);
+      // Set empty scoremap to prevent blocking
+      set({});
     }
   };
+  
+  // Return cleanup function (required by readable)
+  return () => {};
 });
 
 let setAccount: (_: string | null) => Promise<void>;
@@ -69,21 +87,46 @@ export const account = readable<NostrUser | null>(null, (set) => {
     }
   };
 
-  // try to load account from local storage on startup
+  // try to load account from local storage on startup with timeout protection
   setTimeout(async () => {
-    const data = await idbkv.get('wikistr:loggedin');
-    if (data) set(data);
+    try {
+      const loadPromise = idbkv.get('wikistr:loggedin');
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Account loading timeout')), 5000)
+      );
+      
+      const data = await Promise.race([loadPromise, timeoutPromise]);
+      if (data) {
+        console.log('Loading account from localStorage:', data.pubkey);
+        set(data);
+      } else {
+        console.log('No account found in localStorage');
+      }
+    } catch (error) {
+      console.error('Failed to load account from localStorage:', error);
+      // Don't retry automatically to prevent loops
+    }
   }, 700);
+  
+  // Return cleanup function (required by readable)
+  return () => {};
 });
 
-const unsub = account.subscribe((account) => {
-  if (account) {
-    setTimeout(() => {
-      setWOT(account.pubkey);
-      unsub();
-    }, 300);
-  }
-});
+// Temporarily disable automatic WOT calculation to prevent startup doom loop
+// const unsub = account.subscribe((account) => {
+//   if (account) {
+//     console.log('Account loaded, starting WOT calculation for:', account.pubkey);
+//     setTimeout(() => {
+//       // Run WOT calculation in background without blocking UI
+//       setWOT(account.pubkey).catch(error => {
+//         console.error('Background WOT calculation failed:', error);
+//       });
+//       unsub();
+//     }, 300);
+//   } else {
+//     console.log('No account loaded, skipping WOT calculation');
+//   }
+// });
 
 // ensure these subscriptions are always on
 account.subscribe(() => {});
@@ -165,13 +208,35 @@ export { setAccount };
 export const signer = {
   getPublicKey: async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pubkey = await (window as any).nostr.getPublicKey();
+    const nostr = (window as any).nostr;
+    if (!nostr) {
+      throw new Error('Nostr extension not found');
+    }
+    
+    // Add timeout to prevent infinite blocking
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Nostr extension timeout')), 10000)
+    );
+    
+    const pubkeyPromise = nostr.getPublicKey();
+    const pubkey = await Promise.race([pubkeyPromise, timeoutPromise]) as string;
     setAccount(pubkey);
     return pubkey;
   },
   signEvent: async (event: EventTemplate): Promise<Event> => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const se: Event = await (window as any).nostr.signEvent(event);
+    const nostr = (window as any).nostr;
+    if (!nostr) {
+      throw new Error('Nostr extension not found');
+    }
+    
+    // Add timeout to prevent infinite blocking
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Nostr extension timeout')), 10000)
+    );
+    
+    const signPromise = nostr.signEvent(event);
+    const se: Event = await Promise.race([signPromise, timeoutPromise]) as Event;
     setAccount(se.pubkey);
     return se;
   }

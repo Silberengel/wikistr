@@ -54,8 +54,14 @@
       if (userEvent) {
         try {
           const content = JSON.parse(userEvent.content);
-          // Generate npub from pubkey
-          const npub = nip19.npubEncode(userEvent.pubkey);
+          // Generate npub from pubkey (with safety check)
+          let npub = '';
+          try {
+            npub = nip19.npubEncode(userEvent.pubkey);
+          } catch (e) {
+            console.warn('Invalid pubkey for npub encoding:', userEvent.pubkey);
+            npub = userEvent.pubkey; // fallback to raw pubkey
+          }
           user = {
             pubkey: userEvent.pubkey,
             npub: npub,

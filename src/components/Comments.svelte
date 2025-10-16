@@ -7,7 +7,7 @@
   import ProfilePopup from './ProfilePopup.svelte';
   import { browser } from '$app/environment';
   import { loadRelayList } from '@nostr/gadgets/lists';
-  import { formatDate } from '$lib/utils';
+  import { formatRelativeTime } from '$lib/utils';
   import { getThemeConfig } from '$lib/themes';
   import { relayService } from '$lib/relayService';
 
@@ -170,7 +170,7 @@
         false // Don't show toast for comments
       );
       
-      const attempts = result.publishedTo.concat(result.failedRelays).map(relay => ({
+      const attempts = result.publishedTo.concat(result.failedRelays).map((relay: string) => ({
         status: result.publishedTo.includes(relay) ? 'success' as const : 'failure' as const,
         url: relay,
         message: result.publishedTo.includes(relay) ? 'Published' : 'Failed'
@@ -443,7 +443,7 @@
             <div class="flex items-center space-x-3 flex-1 min-w-0">
               <UserBadge pubkey={comment.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" />
               <span class="text-xs text-gray-500 whitespace-nowrap">
-                {formatDate(comment.created_at)}
+                {formatRelativeTime(comment.created_at)}
               </span>
             </div>
             
@@ -524,7 +524,7 @@
                     <div class="flex items-center space-x-3 flex-1 min-w-0">
                       <UserBadge pubkey={reply.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" />
                       <span class="text-xs text-gray-500 whitespace-nowrap">
-                        {formatDate(reply.created_at)}
+                        {formatRelativeTime(reply.created_at)}
                       </span>
                     </div>
                     
@@ -606,7 +606,7 @@
                             <div class="flex items-center space-x-3 flex-1 min-w-0">
                               <UserBadge pubkey={nestedReply.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" />
                               <span class="text-xs text-gray-500 whitespace-nowrap">
-                                {formatDate(nestedReply.created_at)}
+                                {formatRelativeTime(nestedReply.created_at)}
                               </span>
                             </div>
                             

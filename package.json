@@ -4,15 +4,14 @@
   "description": "A decentralized Bible study and wiki system built on Nostr",
   "private": true,
   "scripts": {
-    "dev": "npm run themes && npm run book-configs && vite dev",
-    "build": "npm run themes && npm run book-configs && vite build",
+    "dev": "npm run themes && vite dev",
+    "build": "npm run themes && vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
     "themes": "node scripts/list-themes.js",
-    "book-configs": "node scripts/discover-book-configs.js",
     "publish-book-config": "node scripts/publish-book-config.js"
   },
   "devDependencies": {
