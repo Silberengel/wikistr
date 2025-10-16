@@ -483,7 +483,7 @@
       
       rows.forEach((row) => {
         const cells = row.trim().split('|').filter(cell => cell.trim());
-        cells.forEach(cell => {
+          cells.forEach(cell => {
           asciidocTable += `|${cell.trim()}\n`;
         });
       });
@@ -583,7 +583,7 @@
           if (element.className.includes('language-')) {
             // Has language class
             if (!element.className.includes('language-undefined')) {
-              hljs.highlightElement(element);
+          hljs.highlightElement(element);
             }
           } else {
             // No language class, try to auto-detect
