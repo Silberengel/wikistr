@@ -26,7 +26,48 @@
 
   /* Override default button colors */
   .btn-primary {
-    @apply bg-espresso-700 hover:bg-espresso-800 text-white;
+    background-color: #fbbf24 !important;
+    color: #6b7280 !important;
+  }
+  
+  .btn-primary:hover {
+    background-color: #f59e0b !important;
+  }
+
+  /* Force mustard background with gray text on all dark background buttons */
+  button[class*="bg-primary"], 
+  button[class*="bg-espresso"], 
+  button[class*="bg-gray-6"], 
+  button[class*="bg-gray-7"], 
+  button[class*="bg-gray-8"] {
+    background-color: #fbbf24 !important;
+    color: #6b7280 !important;
+  }
+  
+  button[class*="bg-primary"]:hover, 
+  button[class*="bg-espresso"]:hover, 
+  button[class*="bg-gray-6"]:hover, 
+  button[class*="bg-gray-7"]:hover, 
+  button[class*="bg-gray-8"]:hover {
+    background-color: #f59e0b !important;
+  }
+
+  /* Override input focus styles for quranstr theme */
+  input[class*="focus:ring-amber"]:focus,
+  input[class*="focus:border-amber"]:focus,
+  textarea[class*="focus:ring-amber"]:focus,
+  textarea[class*="focus:border-amber"]:focus {
+    --tw-ring-color: #fbbf24 !important;
+    border-color: #fbbf24 !important;
+    outline: none !important;
+  }
+
+  /* Force golden theme colors on all inputs and textareas */
+  input:focus,
+  textarea:focus {
+    --tw-ring-color: #fbbf24 !important;
+    border-color: #fbbf24 !important;
+    outline: none !important;
   }
 
   .btn-secondary {
@@ -36,7 +77,13 @@
 
 @layer components {
   .btn-primary {
-    @apply bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
+    @apply font-medium py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
+    background-color: #fbbf24 !important;
+    color: #6b7280 !important;
+  }
+  
+  .btn-primary:hover {
+    background-color: #f59e0b !important;
   }
   
   .btn-secondary {

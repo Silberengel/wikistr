@@ -1,7 +1,7 @@
 # YAML Theme Configuration for Quranstr
 name: quranstr
 title: Quranstr
-tagline: "ٱقْرَأْ بِٱسْمِ رَبِّكَ ٱلَّذِى خَلَقَ ١ خَلَقَ ٱلْإِنسَـٰنَ مِنْ عَلَقٍ ٢ ٱقْرَأْ وَرَبُّكَ ٱلْأَكْرَمُ ٣ ٱلَّذِى عَلَّمَ بِٱلْقَلَمِ ٤ عَلَّمَ ٱلْإِنسَـٰنَ مَا لَمْ يَعْلَمْ ٥"
+tagline: "ٱقْرَأْ بِٱسْمِ رَبِّكَ ٱلَّذِى خَلَقَ ١<br/>خَلَقَ ٱلْإِنسَـٰنَ مِنْ عَلَقٍ ٢<br/>ٱقْرَأْ وَرَبُّكَ ٱلْأَكْرَمُ ٣<br/>ٱلَّذِى عَلَّمَ بِٱلْقَلَمِ ٤<br/>عَلَّمَ ٱلْإِنسَـٰنَ مَا لَمْ يَعْلَمْ ٥"
 description: A decentralized Quran study and wiki system built on Nostr
 brandColor: "#d4af37"
 backgroundColor: "#f8f6f0"
@@ -69,4 +69,4 @@ styling:
   headerStyle: "font-serif font-normal tracking-wide"
   buttonStyle: "font-serif transition-all duration-300 hover:shadow-lg"
   cardStyle: "border border-amber-200 bg-amber-50 rounded-lg shadow-lg"
-  inputStyle: "border border-amber-300 rounded-md focus:ring-2 focus:ring-amber-500 focus:border-transparent bg-amber-50 text-amber-900"
+  inputStyle: "border border-amber-300 rounded-md focus:ring-2 focus:ring-amber-400 focus:border-amber-400 bg-amber-50 text-amber-900 focus:outline-none"

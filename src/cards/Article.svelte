@@ -516,9 +516,7 @@
               onclick={() => vote('+')}
             >
               <svg
-                class:fill-stone-600={likeStatus !== 'liked' && !isVoting}
-                class:fill-cyan-500={likeStatus === 'liked'}
-                class:fill-gray-400={isVoting}
+                style="fill: {likeStatus === 'liked' ? '#fbbf24' : '#9ca3af'};"
                 width="18"
                 height="18"
                 viewBox="0 0 18 18"><path d="M1 12h16L9 4l-8 8Z"></path></svg
@@ -527,7 +525,7 @@
           {:else}
             <!-- Display-only for anonymous users -->
             <svg
-              class="fill-stone-600"
+              style="fill: #9ca3af;"
               width="18"
               height="18"
               viewBox="0 0 18 18"><path d="M1 12h16L9 4l-8 8Z"></path></svg
@@ -549,9 +547,7 @@
               onclick={() => vote('-')}
             >
               <svg
-                class:fill-stone-600={likeStatus !== 'disliked' && !isVoting}
-                class:fill-rose-400={likeStatus === 'disliked'}
-                class:fill-gray-400={isVoting}
+                style="fill: {likeStatus === 'disliked' ? '#fbbf24' : '#9ca3af'};"
                 width="18"
                 height="18"
                 viewBox="0 0 18 18"><path d="M1 6h16l-8 8-8-8Z"></path></svg
@@ -560,7 +556,7 @@
           {:else}
             <!-- Display-only for anonymous users -->
             <svg
-              class="fill-stone-600"
+              style="fill: #9ca3af;"
               width="18"
               height="18"
               viewBox="0 0 18 18"><path d="M1 6h16l-8 8-8-8Z"></path></svg

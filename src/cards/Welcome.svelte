@@ -670,7 +670,7 @@
 <!-- Theme-aware Header -->
 <section class="mb-8 text-center" style="font-family: {theme.typography.fontFamilyHeading};">
   <h1 class="text-6xl font-bold mb-2 {theme.styling.headerStyle}" style="font-size: {theme.typography.fontSize['6xl']}; color: {theme.textColor};">{theme.title}</h1>
-  <p class="text-lg italic" style="font-size: {theme.typography.fontSize.lg}; color: {theme.textColor}; opacity: 0.8;">{theme.tagline}</p>
+  <p class="text-lg italic mx-auto max-w-prose" style="font-size: {theme.typography.fontSize.lg}; color: {theme.textColor}; opacity: 0.8; direction: rtl;">{@html theme.tagline}</p>
   <div class="mt-4 text-sm" style="font-size: {theme.typography.fontSize.sm}; color: {theme.textColor}; opacity: 0.9;">
     {theme.description}
   </div>
@@ -692,7 +692,8 @@
       <button
         onclick={doLogout}
         type="button"
-        class="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-white"
+        class="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+        style="color: #fbbf24;"
       >
         Logout
       </button>

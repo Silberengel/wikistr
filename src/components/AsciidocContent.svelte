@@ -852,7 +852,8 @@
   }
   
   :global(.read-instead-button) {
-    @apply bg-burgundy-700 text-white border-none px-3 py-2 rounded text-sm cursor-pointer transition-colors hover:bg-burgundy-800;
+    @apply bg-burgundy-700 border-none px-3 py-2 rounded text-sm cursor-pointer transition-colors hover:bg-burgundy-800;
+    color: #fbbf24;
   }
   
   :global(.read-instead-link) {
