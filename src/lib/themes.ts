@@ -1,10 +1,7 @@
-import wikistrConfig from './themes/wikistr.yml?raw';
-import biblestrConfig from './themes/biblestr.yml?raw';
-import quranstrConfig from './themes/quranstr.yml?raw';
-import torahstrConfig from './themes/torahstr.yml?raw';
 import yaml from 'js-yaml';
 
-export type ThemeType = 'wikistr' | 'biblestr' | 'quranstr' | 'torahstr';
+// Dynamic theme type - will be determined by available theme files
+export type ThemeType = string;
 
 export interface ThemeConfig {
   name: string;
@@ -47,14 +44,28 @@ export interface ThemeConfig {
   };
 }
 
-// Theme-specific relays take priority over default relays
-// Each theme can have its own specialized relay sets (e.g., Arabic relays, regional relays, etc.)
-// The relayService will use theme relays first, then fall back to defaults
-//
-// Example: To create a theme with Arabic relays, add:
-// 1. Create src/lib/themes/arabic.yml
-// 2. Add import: import arabicConfig from './themes/arabic.yml?raw';
-// 3. Add to loadTheme function
+// Dynamic theme discovery and loading
+// Themes are automatically discovered from the themes/ folder
+// To add a new theme, simply create a new YAML file in src/lib/themes/
+// No TypeScript code changes required!
+
+// Dynamically import all YAML files from the themes folder
+const themeModules = import.meta.glob('./themes/*.yml', { query: '?raw', import: 'default', eager: true });
+
+// Extract theme names from file paths
+const availableThemes = Object.keys(themeModules)
+  .map(path => path.replace('./themes/', '').replace('.yml', ''))
+  .sort();
+
+// Log discovered themes
+console.log(`🎨 Wikistr themes discovered: ${availableThemes.join(', ')}`);
+
+// Theme configurations mapping
+const themeConfigs: Record<string, string> = {};
+Object.entries(themeModules).forEach(([path, content]) => {
+  const themeName = path.replace('./themes/', '').replace('.yml', '');
+  themeConfigs[themeName] = content as string;
+});
 
 // Cache for loaded themes
 const themeCache = new Map<ThemeType, ThemeConfig>();
@@ -65,51 +76,48 @@ function loadTheme(themeType: ThemeType): ThemeConfig {
     return themeCache.get(themeType)!;
   }
 
-  let config: ThemeConfig;
-  
-  switch (themeType) {
-    case 'wikistr':
-      config = yaml.load(wikistrConfig) as ThemeConfig;
-      break;
-    case 'biblestr':
-      config = yaml.load(biblestrConfig) as ThemeConfig;
-      break;
-    case 'quranstr':
-      config = yaml.load(quranstrConfig) as ThemeConfig;
-      break;
-    case 'torahstr':
-      config = yaml.load(torahstrConfig) as ThemeConfig;
-      break;
-    default:
-      config = yaml.load(wikistrConfig) as ThemeConfig;
-      break;
+  if (!availableThemes.includes(themeType)) {
+    console.warn(`Theme '${themeType}' not found, falling back to 'wikistr'`);
+    themeType = 'wikistr';
   }
 
-  themeCache.set(themeType, config);
-  return config;
+  try {
+    const config = yaml.load(themeConfigs[themeType]) as ThemeConfig;
+    themeCache.set(themeType, config);
+    return config;
+  } catch (error) {
+    console.error(`Failed to load theme '${themeType}':`, error);
+    // Fallback to wikistr
+    const config = yaml.load(themeConfigs['wikistr']) as ThemeConfig;
+    themeCache.set(themeType, config);
+    return config;
+  }
 }
 
-// Export themes object that loads from YAML
-export const themes: Record<ThemeType, ThemeConfig> = {
-  get wikistr() { return loadTheme('wikistr'); },
-  get biblestr() { return loadTheme('biblestr'); },
-  get quranstr() { return loadTheme('quranstr'); },
-  get torahstr() { return loadTheme('torahstr'); }
-};
+// Get all available themes
+export function getAvailableThemes(): ThemeType[] {
+  return [...availableThemes];
+}
+
+// Check if a theme exists
+export function isThemeAvailable(themeType: ThemeType): boolean {
+  return availableThemes.includes(themeType);
+}
 
 // Get theme from environment variable, default to 'wikistr'
 export function getCurrentTheme(): ThemeType {
   // Check for injected theme variable (set at build time)
   if (typeof __THEME__ !== 'undefined') {
     const theme = __THEME__ as ThemeType;
-    return theme && theme in themes ? theme : 'wikistr';
+    return isThemeAvailable(theme) ? theme : 'wikistr';
   }
   
   // Default fallback - theme is injected at build time via vite config
   return 'wikistr';
 }
 
+// Get theme configuration (synchronous for backward compatibility)
 export function getThemeConfig(theme?: ThemeType): ThemeConfig {
   const currentTheme = theme || getCurrentTheme();
-  return themes[currentTheme];
+  return loadTheme(currentTheme);
 }

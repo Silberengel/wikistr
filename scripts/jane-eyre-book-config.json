@@ -1,0 +1,38 @@
+{
+  "name": "jane_eyre",
+  "displayName": "Jane Eyre",
+  "books": {
+    "Jane Eyre": ["Jane Eyre", "JE", "Jane"],
+    "The Professor": ["The Professor", "Prof", "Professor"],
+    "Shirley": ["Shirley", "Shir"],
+    "Villette": ["Villette", "Vil"],
+    "The Tenant of Wildfell Hall": ["The Tenant of Wildfell Hall", "Tenant", "Wildfell Hall", "Wildfell"],
+    "Agnes Grey": ["Agnes Grey", "Agnes"],
+    "Wuthering Heights": ["Wuthering Heights", "WH", "Wuthering"]
+  },
+  "versions": {
+    "original": "Original 1847 Edition",
+    "modern": "Modern Edition", 
+    "annotated": "Annotated Edition",
+    "academic": "Academic Edition",
+    "penguin": "Penguin Classics",
+    "oxford": "Oxford World's Classics"
+  },
+  "parsingRules": {
+    "bookPattern": "^(?:Jane Eyre|The Professor|Shirley|Villette|The Tenant of Wildfell Hall|Agnes Grey|Wuthering Heights|JE|Prof|Shir|Vil|Tenant|Wildfell|Agnes|WH|Wuthering)\\s+(?:Chapter\\s+)?(\\d+)(?::(\\d+))?(?:\\s*[-,]\\s*(\\d+))?$",
+    "chapterPattern": "Chapter\\s+(\\d+)",
+    "versePattern": "\\b(\\d+)\\b",
+    "versionPattern": "\\b(original|modern|annotated|academic|penguin|oxford)\\b"
+  },
+  "displayFormat": {
+    "bookChapterVerse": "function(book, chapter, verse) { return `${book} Chapter ${chapter}${verse ? `:${verse}` : ''}`; }",
+    "withVersion": "function(ref, version) { return `${ref} (${version})`; }"
+  },
+  "description": "Charlotte Brontë's classic novel Jane Eyre with comprehensive chapter and verse references. Includes all Brontë sisters' works.",
+  "author": "Charlotte Brontë",
+  "publicationYear": 1847,
+  "genre": "Gothic Fiction",
+  "tags": ["classic", "gothic", "romance", "victorian", "literature", "bronte", "charlotte-bronte", "jane-eyre"],
+  "language": "en",
+  "region": "uk"
+}
