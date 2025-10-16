@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { EventTemplate } from '@nostr/tools/pure';
   import AsciidocContent from '$components/AsciidocContent.svelte';
-  import { DEFAULT_WIKI_RELAYS } from '$lib/defaults';
   import { wikiKind, account, signer, loadBlockedRelays } from '$lib/nostr';
   import type { ArticleCard, Card, EditorCard, EditorData } from '$lib/types.ts';
   import {

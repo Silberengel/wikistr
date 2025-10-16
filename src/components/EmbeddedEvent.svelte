@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import type { NostrEvent } from '@nostr/tools/pure';
   import { pool } from '@nostr/gadgets/global';
-  import { DEFAULT_WIKI_RELAYS } from '$lib/defaults';
+  import { relayService } from '$lib/relayService';
   import { formatDate } from '$lib/utils';
   import AsciidocContent from './AsciidocContent.svelte';
   import { nip19 } from '@nostr/tools';
@@ -83,62 +83,69 @@
       }
 
       // Fetch the event
-      const fetchedEvent = await new Promise<NostrEvent | null>((resolve) => {
+      const fetchedEvent = await new Promise<NostrEvent | null>(async (resolve) => {
         let eventData: NostrEvent | null = null;
-        const relays = [...DEFAULT_WIKI_RELAYS];
+        // relays are now handled by relayService
         
         let sub: any;
         if (type === 'naddr') {
           const decoded = nip19.decode(bech32);
           if (decoded.type === 'naddr') {
             // For naddr, use authors, kinds, and d-tag filters
-            sub = pool.subscribeMany(
-              relays,
-              [{ 
-                authors: [decoded.data.pubkey],
-                kinds: [decoded.data.kind],
-                '#d': [decoded.data.identifier],
-                limit: 1 
-              }],
-              {
-                onevent(evt) {
-                  if (evt.pubkey === decoded.data.pubkey && 
-                      evt.kind === decoded.data.kind &&
-                      evt.tags.some(([tag, value]) => tag === 'd' && value === decoded.data.identifier)) {
-                    eventData = evt;
-                  }
-                },
-                oneose() {
-                  sub.close();
-                  resolve(eventData);
+            try {
+              const result = await relayService.queryEvents(
+                'anonymous',
+                'wiki-read',
+                [{ 
+                  authors: [decoded.data.pubkey],
+                  kinds: [decoded.data.kind],
+                  '#d': [decoded.data.identifier],
+                  limit: 1 
+                }],
+                {
+                  excludeUserContent: false,
+                  currentUserPubkey: undefined
                 }
+              );
+
+              const evt = result.events.find(evt => 
+                evt.pubkey === decoded.data.pubkey && 
+                evt.kind === decoded.data.kind &&
+                evt.tags.some(([tag, value]) => tag === 'd' && value === decoded.data.identifier)
+              );
+              
+              if (evt) {
+                eventData = evt;
               }
-            );
+              resolve(eventData);
+            } catch (error) {
+              console.error('Failed to fetch naddr event:', error);
+              resolve(eventData);
+            }
           }
         } else {
           // For nevent and note, use event ID
-          sub = pool.subscribeMany(
-            relays,
-            [{ ids: [eventId], limit: 1 }],
-            {
-              onevent(evt) {
-                if (evt.id === eventId) {
-                  eventData = evt;
-                }
-              },
-              oneose() {
-                sub.close();
-                resolve(eventData);
+          try {
+            const result = await relayService.queryEvents(
+              'anonymous',
+              'wiki-read',
+              [{ ids: [eventId], limit: 1 }],
+              {
+                excludeUserContent: false,
+                currentUserPubkey: undefined
               }
+            );
+
+            const evt = result.events.find(evt => evt.id === eventId);
+            if (evt) {
+              eventData = evt;
             }
-          );
+            resolve(eventData);
+          } catch (error) {
+            console.error('Failed to fetch event:', error);
+            resolve(eventData);
+          }
         }
-        
-        // Timeout after 5 seconds
-        setTimeout(() => {
-          sub.close();
-          resolve(eventData);
-        }, 5000);
       });
 
       if (fetchedEvent) {

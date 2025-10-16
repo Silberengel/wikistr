@@ -11,7 +11,7 @@
   import { wot, userWikiRelays } from '$lib/nostr';
   import type { Card } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next, unique } from '$lib/utils';
-  import { DEFAULT_SEARCH_RELAYS } from '$lib/defaults';
+  import { relayService } from '$lib/relayService';
   import { 
     parseBookWikilink, 
     generateBookSearchQuery, 
@@ -43,7 +43,6 @@
 
   // close handlers
   let uwrcancel: () => void;
-  let search: SubCloser;
   let subs: SubCloser[] = [];
 
   onMount(() => {
@@ -59,7 +58,7 @@
   function destroy() {
     if (uwrcancel) uwrcancel();
     subs.forEach((sub) => sub.close());
-    if (search) search.close();
+    // search is now handled by relayService
   }
 
   async function performBookSearch() {
@@ -120,50 +119,50 @@
       // Search for book events (kind 30041) with book tags
       const searchQueries = generateBookSearchQuery(parsedQuery!.references, bookType, parsedQuery!.version, parsedQuery!.versions);
       
-      for (const searchQuery of searchQueries) {
-        let subc = pool.subscribeMany(
-          relaysToUseNow,
+      // Use relayService for book search
+      try {
+        const result = await relayService.queryEvents(
+          'anonymous',
+          'search-read',
           [{ kinds: [30041], '#type': [bookType], limit: 25 }],
           {
-            id: 'find-book-exact',
-            onevent(evt) {
-              tried = true;
-
-              // Check if this event matches our book criteria
-              if (isBookEvent(evt as BookEvent, bookType) && matchesBookQuery(evt as BookEvent, parsedQuery!, bookType)) {
-                if (addUniqueTaggedReplaceable(results, evt)) update();
-              }
-            },
-            oneose,
-            receivedEvent: (relay: any, id: string) => {
-            if (!(id in seenCache)) seenCache[id] = [];
-            if (seenCache[id].indexOf(relay.url) === -1) seenCache[id].push(relay.url);
-          }
+            excludeUserContent: false,
+            currentUserPubkey: undefined
           }
         );
 
-        subs.push(subc);
+        tried = true;
+        for (const evt of result.events) {
+          // Check if this event matches our book criteria
+          if (isBookEvent(evt as BookEvent, bookType) && matchesBookQuery(evt as BookEvent, parsedQuery!, bookType)) {
+            if (addUniqueTaggedReplaceable(results, evt)) update();
+          }
+        }
+      } catch (error) {
+        console.error('Failed to search for books:', error);
       }
     });
 
     // Also search using general search for book-related content
-    search = pool.subscribeMany(
-      DEFAULT_SEARCH_RELAYS,
-      [{ kinds: [30041], search: query, limit: 10 }],
-      {
-        id: 'find-book-search',
-        onevent(evt) {
-          if (isBookEvent(evt as BookEvent, bookType) && matchesBookQuery(evt as BookEvent, parsedQuery!, bookType)) {
-            if (addUniqueTaggedReplaceable(results, evt)) update();
-          }
-        },
-        oneose,
-        receivedEvent: (relay: any, id: string) => {
-          if (!(id in seenCache)) seenCache[id] = [];
-          if (seenCache[id].indexOf(relay.url) === -1) seenCache[id].push(relay.url);
+    try {
+      const searchResult = await relayService.queryEvents(
+        'anonymous',
+        'search-read',
+        [{ kinds: [30041], search: query, limit: 10 }],
+        {
+          excludeUserContent: false,
+          currentUserPubkey: undefined
+        }
+      );
+
+      for (const evt of searchResult.events) {
+        if (isBookEvent(evt as BookEvent, bookType) && matchesBookQuery(evt as BookEvent, parsedQuery!, bookType)) {
+          if (addUniqueTaggedReplaceable(results, evt)) update();
         }
       }
-    );
+    } catch (error) {
+      console.error('Failed to search for books:', error);
+    }
 
     function oneose() {
       eosed++;
@@ -206,36 +205,32 @@
       });
     }, 500);
 
-    for (const searchQuery of searchQueries) {
-      let subc = pool.subscribeMany(
-        DEFAULT_SEARCH_RELAYS,
+    // Use relayService for fallback search
+    try {
+      const fallbackResult = await relayService.queryEvents(
+        'anonymous',
+        'search-read',
         [{ kinds: [30041], '#type': [bookType], limit: 25 }],
         {
-          id: 'find-book-fallback',
-          onevent(evt) {
-            // Check if this event matches our book criteria (without version restriction)
-            if (isBookEvent(evt as BookEvent, bookType) && matchesBookQuery(evt as BookEvent, fallbackQuery, bookType)) {
-              if (addUniqueTaggedReplaceable(fallbackResults, evt)) fallbackUpdate();
-            }
-          },
-          oneose() {
-            fallbackEosed++;
-            if (fallbackEosed >= 1) {
-              // Update the main results with fallback results
-              results = fallbackResults;
-              if (onResults) {
-                onResults(results);
-              }
-            }
-          },
-          receivedEvent: (relay: any, id: string) => {
-            if (!(id in seenCache)) seenCache[id] = [];
-            if (seenCache[id].indexOf(relay.url) === -1) seenCache[id].push(relay.url);
-          }
+          excludeUserContent: false,
+          currentUserPubkey: undefined
         }
       );
 
-      fallbackSubs.push(subc);
+      for (const evt of fallbackResult.events) {
+        // Check if this event matches our book criteria (without version restriction)
+        if (isBookEvent(evt as BookEvent, bookType) && matchesBookQuery(evt as BookEvent, fallbackQuery, bookType)) {
+          if (addUniqueTaggedReplaceable(fallbackResults, evt)) fallbackUpdate();
+        }
+      }
+
+      // Update the main results with fallback results
+      results = fallbackResults;
+      if (onResults) {
+        onResults(results);
+      }
+    } catch (error) {
+      console.error('Failed to search for fallback books:', error);
     }
   }
 

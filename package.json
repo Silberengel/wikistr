@@ -17,6 +17,7 @@
     "@sveltejs/kit": "^2.20.7",
     "@sveltejs/vite-plugin-svelte": "^5.0.3",
     "@types/debounce": "^1.2.1",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^24.7.2",
     "@typescript-eslint/eslint-plugin": "^6.6.0",
     "@typescript-eslint/parser": "^6.6.0",
@@ -50,6 +51,7 @@
     "debounce": "^2.2.0",
     "highlight.js": "^11.11.1",
     "idb-keyval": "^6.2.1",
+    "js-yaml": "^4.1.0",
     "katex": "^0.16.25",
     "tailwind-scrollbar": "^3.1.0"
   }

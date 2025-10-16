@@ -9,7 +9,7 @@
   import { nip19 } from '@nostr/tools';
   import katex from 'katex';
   import { pool } from '@nostr/gadgets/global';
-  import { DEFAULT_METADATA_QUERY_RELAYS, DEFAULT_WIKI_RELAYS } from '$lib/defaults';
+  import { relayService } from '$lib/relayService';
   import { next } from '$lib/utils';
   import type { ArticleCard } from '$lib/types';
   import ProfilePopup from './ProfilePopup.svelte';
@@ -50,9 +50,9 @@
     // Create a search card for this user
     const searchCard: Card = {
       id: next(),
-      type: 'search',
-      data: [`author:${pubkey}`],
-      relayHints: []
+      type: 'find',
+      data: `author:${pubkey}`,
+      preferredAuthors: []
     };
     createChild(searchCard);
   }
@@ -152,52 +152,37 @@
     }
     
     try {
-      // Fetch user metadata directly using the metadata query relays
-      const user = await new Promise((resolve) => {
-        let userData: any = null;
-        const sub = pool.subscribeMany(
-          DEFAULT_METADATA_QUERY_RELAYS,
-          [{ kinds: [0], authors: [pubkey], limit: 1 }],
-          {
-            onevent(event) {
-              if (event.pubkey === pubkey) {
-                try {
-                  const content = JSON.parse(event.content);
-                  userData = {
-                    pubkey: event.pubkey,
-                    display_name: content.display_name,
-                    name: content.name,
-                    shortName: content.display_name || content.name || `npub1${pubkey.slice(0, 8)}...`,
-                    ...content
-                  };
-                } catch (e) {
-                  console.error('Failed to parse user metadata:', e);
-                }
-              }
-            },
-            oneose() {
-              sub.close();
-              resolve(userData);
-            }
-          }
-        );
-        
-        // Timeout after 3 seconds
-        setTimeout(() => {
-          sub.close();
-          resolve(userData);
-        }, 3000);
-      });
-      
-      
-      if (user) {
-        userCache.set(pubkey, user);
-        // Return display_name -> name -> shortName -> shortened npub fallback
-        return (user as any).display_name || (user as any).name || (user as any).shortName || `npub1${pubkey.slice(0, 8)}...`;
-      } else {
-        // If no metadata found, return shortened npub
-        return `npub1${pubkey.slice(0, 8)}...`;
+      // Fetch user metadata using relayService
+      const result = await relayService.queryEvents(
+        'anonymous',
+        'metadata-read',
+        [{ kinds: [0], authors: [pubkey], limit: 1 }],
+        {
+          excludeUserContent: false,
+          currentUserPubkey: undefined
+        }
+      );
+
+      const userEvent = result.events.find(event => event.pubkey === pubkey);
+      if (userEvent) {
+        try {
+          const content = JSON.parse(userEvent.content);
+          const user = {
+            pubkey: userEvent.pubkey,
+            display_name: content.display_name,
+            name: content.name,
+            shortName: content.display_name || content.name || `npub1${pubkey.slice(0, 8)}...`,
+            ...content
+          };
+          userCache.set(pubkey, user);
+          return user.shortName;
+        } catch (e) {
+          console.error('Failed to parse user metadata:', e);
+        }
       }
+      
+      // If no metadata found, return shortened npub
+      return `npub1${pubkey.slice(0, 8)}...`;
     } catch (e) {
       // If fetch fails, return shortened npub
       return `npub1${pubkey.slice(0, 8)}...`;
@@ -239,35 +224,21 @@
       
       if (!eventId) return;
       
-      // Fetch the event by ID
-      const fetchedEvent = await new Promise<NostrEvent | null>((resolve) => {
-        let eventData: NostrEvent | null = null;
-        const relays = [...DEFAULT_WIKI_RELAYS];
-        
-        const sub = pool.subscribeMany(
-          relays,
+      // Fetch the event by ID using relayService
+      try {
+        const result = await relayService.queryEvents(
+          'anonymous',
+          'wiki-read',
           [{ ids: [eventId], limit: 1 }],
           {
-            onevent(evt) {
-              if (evt.id === eventId) {
-                eventData = evt;
-              }
-            },
-            oneose() {
-              sub.close();
-              resolve(eventData);
-            }
+            excludeUserContent: false,
+            currentUserPubkey: undefined
           }
         );
+
+        const fetchedEvent = result.events.find(evt => evt.id === eventId) || null;
         
-        // Timeout after 5 seconds
-        setTimeout(() => {
-          sub.close();
-          resolve(eventData);
-        }, 5000);
-      });
-      
-      if (fetchedEvent) {
+        if (fetchedEvent) {
         // Create an ArticleCard for the fetched event
         const dTag = fetchedEvent.tags.find(([k]) => k === 'd')?.[1] || fetchedEvent.id;
         const articleCard: ArticleCard = {
@@ -278,8 +249,11 @@
           actualEvent: fetchedEvent
         };
         createChild(articleCard);
-      } else {
-        console.log(`Event ${bech32} not found`);
+        } else {
+          console.log(`Event ${bech32} not found`);
+        }
+      } catch (e) {
+        console.error('Failed to fetch embedded event:', e);
       }
     } catch (e) {
       console.error('Failed to fetch embedded event:', e);
@@ -593,10 +567,9 @@
             // Fetch the event to determine its real kind
             const eventPromise = new Promise<NostrEvent | null>((resolve) => {
               let eventData: NostrEvent | null = null;
-              const relays = [...DEFAULT_WIKI_RELAYS];
-              
-              const sub = pool.subscribeMany(
-                relays,
+              relayService.queryEvents(
+                'anonymous',
+                'wiki-read',
                 [{ 
                   authors: [data.pubkey],
                   '#d': [data.identifier],
@@ -604,25 +577,17 @@
                   limit: 1 
                 }],
                 {
-                  onevent(evt) {
-                    if (evt.pubkey === data.pubkey && 
-                        evt.tags.some(([tag, value]) => tag === 'd' && value === data.identifier) &&
-                        evt.kind === data.kind) {
-                      eventData = evt;
-                    }
-                  },
-                  oneose() {
-                    sub.close();
-                    resolve(eventData);
-                  }
+                  excludeUserContent: false,
+                  currentUserPubkey: undefined
                 }
-              );
-              
-              // Timeout after 3 seconds
-              setTimeout(() => {
-                sub.close();
-                resolve(null);
-              }, 3000);
+              ).then(result => {
+                const event = result.events.find(evt => 
+                  evt.pubkey === data.pubkey && 
+                  evt.tags.some(([tag, value]) => tag === 'd' && value === data.identifier) &&
+                  evt.kind === data.kind
+                );
+                resolve(event || null);
+              }).catch(() => resolve(null));
             });
             
             try {
@@ -687,10 +652,9 @@
             // Fetch the event to determine its real kind
             const eventPromise = new Promise<NostrEvent | null>((resolve) => {
               let eventData: NostrEvent | null = null;
-              const relays = [...DEFAULT_WIKI_RELAYS];
-              
-              const sub = pool.subscribeMany(
-                relays,
+              relayService.queryEvents(
+                'anonymous',
+                'wiki-read',
                 [{ 
                   authors: [data.pubkey],
                   '#d': [data.identifier],
@@ -698,25 +662,17 @@
                   limit: 1 
                 }],
                 {
-                  onevent(evt) {
-                    if (evt.pubkey === data.pubkey && 
-                        evt.tags.some(([tag, value]) => tag === 'd' && value === data.identifier) &&
-                        evt.kind === data.kind) {
-                      eventData = evt;
-                    }
-                  },
-                  oneose() {
-                    sub.close();
-                    resolve(eventData);
-                  }
+                  excludeUserContent: false,
+                  currentUserPubkey: undefined
                 }
-              );
-              
-              // Timeout after 3 seconds
-              setTimeout(() => {
-                sub.close();
-                resolve(null);
-              }, 3000);
+              ).then(result => {
+                const event = result.events.find(evt => 
+                  evt.pubkey === data.pubkey && 
+                  evt.tags.some(([tag, value]) => tag === 'd' && value === data.identifier) &&
+                  evt.kind === data.kind
+                );
+                resolve(event || null);
+              }).catch(() => resolve(null));
             });
             
             try {

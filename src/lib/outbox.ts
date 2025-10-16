@@ -1,31 +1,56 @@
 import type { Filter } from '@nostr/tools/filter';
-import type { SubCloser, SubscribeManyParams } from '@nostr/tools/pool';
-import { pool } from '@nostr/gadgets/global';
-import { loadRelayList } from '@nostr/gadgets/lists';
-import { outboxFilterRelayBatch } from '@nostr/gadgets/outbox';
-import { createFilteredSubscription } from './filtering';
+import type { SubCloser } from '@nostr/tools/pool';
 import { relayService } from './relayService';
+
+type OutboxParams = {
+  onevent?: (event: any) => void;
+  oneose?: () => void;
+  receivedEvent?: (relay: any, id: string) => void;
+};
 
 export function subscribeAllOutbox(
   pubkeys: string[],
   baseFilter: Omit<Filter, 'authors'> & { limit: number },
-  params: SubscribeManyParams
+  params: OutboxParams
 ): SubCloser {
   let closed = false;
-  let subc: SubCloser;
 
-  outboxFilterRelayBatch(pubkeys, baseFilter).then((requests) => {
-    subc = pool.subscribeMap(requests, { id: 'alloutbox', ...params } as any);
-    if (closed) {
-      subc.close();
+  // Use relayService for all outbox queries
+  Promise.all(pubkeys.map(pubkey => {
+    const filter = { ...baseFilter, authors: [pubkey] } as Filter;
+    return relayService.queryEvents(
+      pubkey,
+      'wiki-read',
+      [filter],
+      {
+        excludeUserContent: false,
+        currentUserPubkey: pubkey
+      }
+    );
+  })).then(results => {
+    if (closed) return;
+    
+    // Process all events from all results
+    results.forEach(result => {
+      result.events.forEach(event => {
+        if (params.onevent) {
+          params.onevent(event);
+        }
+      });
+    });
+    
+    if (params.oneose) {
+      params.oneose();
+    }
+  }).catch(error => {
+    console.error('Failed to query outbox events:', error);
+    if (params.oneose) {
+      params.oneose();
     }
   });
 
   return {
     close() {
-      if (subc) {
-        subc.close();
-      }
       closed = true;
     }
   };
@@ -34,7 +59,7 @@ export function subscribeAllOutbox(
 export function subscribeOutbox(
   pubkey: string,
   baseFilter: Omit<Filter, 'authors'> & { limit: number },
-  params: SubscribeManyParams
+  params: OutboxParams
 ): SubCloser {
   let closed = false;
   let subc: SubCloser;
@@ -56,6 +81,13 @@ export function subscribeOutbox(
     
     // Process events and call the original handlers
     result.events.forEach(event => {
+      // Simulate receivedEvent callback for each relay that returned this event
+      if (params.receivedEvent) {
+        result.relays.forEach(relay => {
+          params.receivedEvent!({ url: relay }, event.id);
+        });
+      }
+      
       if (params.onevent) {
         params.onevent(event);
       }

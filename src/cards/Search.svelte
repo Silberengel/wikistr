@@ -11,7 +11,7 @@
   import { wot, wikiKind, userWikiRelays } from '$lib/nostr';
   import type { ArticleCard, SearchCard, Card } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next, unique } from '$lib/utils';
-  import { DEFAULT_SEARCH_RELAYS, DEFAULT_WIKI_RELAYS, DEFAULT_METADATA_QUERY_RELAYS } from '$lib/defaults';
+  import { DEFAULT_SEARCH_RELAYS } from '$lib/defaults';
   import { getThemeConfig } from '$lib/themes';
   import ArticleListItem from '$components/ArticleListItem.svelte';
   import { replaceState } from '$app/navigation';

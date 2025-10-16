@@ -1,59 +1,31 @@
-export const DEFAULT_METADATA_QUERY_RELAYS = [
-  'wss://purplepag.es',
-  'wss://profiles.nostr1.com',
-  'wss://relay.damus.io',
-  'wss://relay.nostr.band'
-];
+// Do not change these relay sets!
+// They are used by the relayService to get default relays for operations.
+// Note to AI: these must be manually updated by a human.
 
-export const DEFAULT_RELAYLIST_RELAYS = [
+export const DEFAULT_METADATA_RELAYS = [
   'wss://purplepag.es',
   'wss://relay.nos.social',
   'wss://user.kindpag.es',
-  'wss://profiles.nostr1.com'
-];
-
-export const DEFAULT_ARBITRARY_IDS_RELAYS = [
-  'wss://cache2.primal.net/v1',
+  'wss://profiles.nostr1.com',
   'wss://relay.damus.io',
   'wss://relay.nostr.band',
+  'wss://thecitadel.nostr1.com',
   'wss://aggr.nostr.land'
-];
-
-export const DEFAULT_FALLBACK_RELAYS = [
-  'wss://relay.wikifreedia.xyz',
-  'wss://nos.lol',
-  'wss://relay.nostr.bg',
-  'wss://relay.nostr.band',
-  'wss://thecitadel.nostr1.com',
-  'wss://orly-relay.imwald.eu',
-  'wss://nostr.land',
-  'wss://nostr.wine'
-];
-
-export const DEFAULT_WIKI_RELAYS = [
-  'wss://relay.wikifreedia.xyz',
-  'wss://nostr.wine',
-  'wss://nostr21.com',
-  'wss://relay.nostr.band',
-  'wss://thecitadel.nostr1.com',
-  'wss://orly-relay.imwald.eu',
-  'wss://nostr.land'
-];
-
-export const DEFAULT_SOCIAL_RELAYS = [
-  'wss://theforest.nostr1.com',
-  'wss://nostr.wine',
-  'wss://nostr21.com',
-  'wss://orly-relay.imwald.eu',
-  'wss://nostr.land',
-  'wss://aggr.nostr.land',
-  'wss://bevo.nostr1.com'
 ];
 
 export const DEFAULT_WRITE_RELAYS = [
   'wss://relay.damus.io',
   'wss://freelay.sovbit.host',
+  'wss://thecitadel.nostr1.com',
   'wss://bevo.nostr1.com'
 ];
 
-export const DEFAULT_SEARCH_RELAYS = ['wss://relay.wikifreedia.xyz', 'wss://custom.fiatjaf.com', 'wss://aggr.nostr.land', 'wss://orly-relay.imwald.eu', 'wss://nostr.wine'];
+export const DEFAULT_SEARCH_RELAYS = [
+  'wss://relay.wikifreedia.xyz',
+  'wss://custom.fiatjaf.com',
+  'wss://aggr.nostr.land',
+  'wss://orly-relay.imwald.eu',
+  'wss://nostr.wine',
+  'wss://thecitadel.nostr1.com',
+  'wss://relay.nostr.band'
+];

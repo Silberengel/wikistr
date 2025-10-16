@@ -1,0 +1,51 @@
+{
+  "yaml.format.enable": true,
+  "yaml.format.singleQuote": false,
+  "yaml.format.bracketSpacing": true,
+  "yaml.format.proseWrap": "preserve",
+  "yaml.format.printWidth": 80,
+  "yaml.format.tabWidth": 2,
+  "yaml.format.useTabs": false,
+  "yaml.schemas": {
+    "https://json.schemastore.org/github-workflow.json": ".github/workflows/*.yml"
+  },
+  "files.associations": {
+    "*.yml": "yaml",
+    "*.yaml": "yaml",
+    "**/themes/*.yml": "yaml"
+  },
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "redhat.vscode-yaml",
+  "[yaml]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "editor.semanticHighlighting.enabled": true
+  },
+  "yaml.validate": true,
+  "yaml.hover": true,
+  "yaml.completion": true,
+  "editor.tokenColorCustomizations": {
+    "textMateRules": [
+      {
+        "scope": "entity.name.tag.yaml",
+        "settings": {
+          "foreground": "#569CD6"
+        }
+      },
+      {
+        "scope": "string.quoted.double.yaml",
+        "settings": {
+          "foreground": "#CE9178"
+        }
+      },
+      {
+        "scope": "constant.numeric.yaml",
+        "settings": {
+          "foreground": "#B5CEA8"
+        }
+      }
+    ]
+  }
+}

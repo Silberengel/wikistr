@@ -2,8 +2,9 @@ import { derived, readable } from 'svelte/store';
 import * as idbkv from 'idb-keyval';
 
 import type { EventTemplate, Event } from '@nostr/tools/pure';
-import { DEFAULT_WIKI_RELAYS, DEFAULT_METADATA_QUERY_RELAYS } from './defaults';
+import { relayService } from './relayService';
 import { unique, deduplicateRelays } from './utils';
+import { DEFAULT_METADATA_RELAYS } from './defaults';
 import {
   loadFollowsList,
   loadRelayList,
@@ -91,46 +92,53 @@ wot.subscribe(() => {});
 export const userWikiRelays = derived(
   account,
   (account, set) => {
-    account ? getBasicUserWikiRelays(account.pubkey).then(set) : set(DEFAULT_WIKI_RELAYS);
+    if (account) {
+      getBasicUserWikiRelays(account.pubkey).then(set);
+    } else {
+      // Use relayService to get default wiki relays
+      relayService.getRelaysForOperation('anonymous', 'wiki-read').then(set);
+    }
   },
-  DEFAULT_WIKI_RELAYS
+  [] as string[] // Start with empty array
 );
 
-export async function loadBlockedRelays(pubkey: string): Promise<string[]> {
-  return new Promise((resolve) => {
-    const blockedRelays: string[] = [];
-    const sub = pool.subscribeMany(
-      DEFAULT_METADATA_QUERY_RELAYS,
+export async function loadBlockedRelays(pubkey: string, relays: string[]): Promise<string[]> {
+  try {
+    // Use relayService to load blocked relays
+    const result = await relayService.queryEvents(
+      pubkey,
+      'metadata-read',
       [{ kinds: [10006], authors: [pubkey], limit: 1 }],
       {
-        onevent(event) {
-          // Extract relay URLs from 't' tags
-          event.tags.forEach(([tag, value]) => {
-            if (tag === 't' && value) {
-              blockedRelays.push(value);
-            }
-          });
-        },
-        oneose() {
-          sub.close();
-          resolve(blockedRelays);
-        }
+        excludeUserContent: false,
+        currentUserPubkey: pubkey
       }
     );
 
-    // Timeout after 3 seconds if no response
-    setTimeout(() => {
-      sub.close();
-      resolve(blockedRelays);
-    }, 3000);
-  });
+    const blockedRelays: string[] = [];
+    for (const event of result.events) {
+      // Extract relay URLs from 't' tags
+      event.tags.forEach((tagArray) => {
+        const [tag, value] = tagArray;
+        if (tag === 't' && value) {
+          blockedRelays.push(value);
+        }
+      });
+    }
+    
+    return blockedRelays;
+  } catch (error) {
+    console.error('Failed to load blocked relays:', error);
+    return [];
+  }
 }
 
 export async function getBasicUserWikiRelays(pubkey: string): Promise<string[]> {
-  const [rl1, blockedRelays] = await Promise.all([
-    loadWikiRelays(pubkey).then((rl) => rl.items),
-    loadBlockedRelays(pubkey)
-  ]);
+  // Get user's relay list first
+  const rl1 = await loadWikiRelays(pubkey).then((rl) => rl.items);
+  
+  // Load blocked relays using relayService
+  const blockedRelays = await loadBlockedRelays(pubkey, DEFAULT_METADATA_RELAYS);
 
   const normalizedBlocked = new Set(deduplicateRelays(blockedRelays));
   let list = rl1;
@@ -142,7 +150,9 @@ export async function getBasicUserWikiRelays(pubkey: string): Promise<string[]> 
   list = list.filter(url => !normalizedBlocked.has(url));
   
   if (list.length < 2) {
-    list = unique(list, DEFAULT_WIKI_RELAYS);
+    // Use relayService to get default wiki relays as fallback
+    const defaultRelays = await relayService.getRelaysForOperation('anonymous', 'wiki-read');
+    list = unique(list, defaultRelays);
     list = deduplicateRelays(list);
     list = list.filter(url => !normalizedBlocked.has(url));
   }

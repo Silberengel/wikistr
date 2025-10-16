@@ -24,7 +24,6 @@
   } from '$lib/nostr';
   import type { ArticleCard, Card } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next } from '$lib/utils';
-  import { DEFAULT_WIKI_RELAYS } from '$lib/defaults';
   import { getThemeConfig, getCurrentTheme } from '$lib/themes';
   import { createFilteredSubscription } from '$lib/filtering';
   import { relayService } from '$lib/relayService';
@@ -151,13 +150,14 @@
 
   // Helper Functions
   async function getUserInboxRelays(pubkey: string): Promise<string[]> {
-    // Only use DEFAULT_WIKI_RELAYS to avoid querying user's relay lists
-    return DEFAULT_WIKI_RELAYS;
+    // Use relayService to get default wiki relays
+    return await relayService.getRelaysForOperation('anonymous', 'wiki-read');
   }
 
   async function getCombinedRelays(pubkey: string): Promise<string[]> {
-    // Only use DEFAULT_WIKI_RELAYS to avoid querying user's relay lists
-    return [...new Set([...DEFAULT_WIKI_RELAYS])];
+    // Use relayService to get default wiki relays
+    const relays = await relayService.getRelaysForOperation('anonymous', 'wiki-read');
+    return [...new Set([...relays])];
   }
 
   function createSubscription(
@@ -267,9 +267,39 @@
     let sub: SubCloser | undefined;
     let cancel = account.subscribe(async (account) => {
       if (sub) sub.close();
-      if (!account) return;
+      
+      // For anonymous users, use relayService with anonymous pubkey
+      if (!account) {
+        console.log('Anonymous user - using relayService for wiki content');
+        
+        try {
+          const result = await relayService.queryEvents(
+            'anonymous',
+            'wiki-read',
+            [{ kinds: [wikiKind], limit: 15 }],
+            {
+              excludeUserContent: true,
+              currentUserPubkey: undefined
+            }
+          );
+          
+          currentRelays = result.relays;
+          console.log('Anonymous feed - relays:', result.relays);
+          
+          result.events.forEach(evt => {
+            if (addUniqueTaggedReplaceable(results, evt)) {
+              // Populate seenCache with the relays used
+              seenCache[evt.id] = result.relays;
+              update();
+            }
+          });
+        } catch (error) {
+          console.error('Failed to load anonymous feed:', error);
+        }
+        return;
+      }
 
-      // Use relay service for all relays feed
+      // Use relay service for logged-in users
       relayService.queryEvents(
         account.pubkey,
         'wiki-read',
@@ -283,7 +313,11 @@
         console.log('All relays feed - relays:', result.relays);
         
         result.events.forEach(evt => {
-          if (addUniqueTaggedReplaceable(results, evt)) update();
+          if (addUniqueTaggedReplaceable(results, evt)) {
+            // Populate seenCache with the relays used
+            seenCache[evt.id] = result.relays;
+            update();
+          }
         });
       });
     });

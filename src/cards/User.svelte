@@ -3,7 +3,7 @@
   import debounce from 'debounce';
   import type { NostrEvent } from '@nostr/tools/pure';
 
-  import type { ArticleCard, Card } from '$lib/types';
+  import type { ArticleCard, Card, UserCard } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next } from '$lib/utils';
   import { wikiKind } from '$lib/nostr';
   import ArticleListItem from '$components/ArticleListItem.svelte';
@@ -13,7 +13,7 @@
   import { account } from '$lib/nostr';
 
   interface Props {
-    card: Card;
+    card: UserCard;
     createChild: (card: Card) => void;
   }
 

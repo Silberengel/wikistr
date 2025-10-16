@@ -1,5 +1,5 @@
-import { pool } from '@nostr/gadgets/global';
 import { account } from './nostr';
+import { relayService } from './relayService';
 import { get } from 'svelte/store';
 
 /**
@@ -15,76 +15,88 @@ let muteListSubscriptions = new Map<string, () => void>();
 /**
  * Load deletion events (kind 5) to track which events have been deleted
  */
-export function loadDeletionEvents(relays: string[]): () => void {
+export async function loadDeletionEvents(relays: string[]): Promise<void> {
   const cacheKey = relays.sort().join(',');
   
-  // Return existing subscription if already loaded
+  // Return if already loaded
   if (deletionSubscriptions.has(cacheKey)) {
-    return deletionSubscriptions.get(cacheKey)!;
+    return;
   }
 
-  const sub = pool.subscribeMany(
-    relays,
-    [{ kinds: [5], limit: 1000 }], // Load deletion events
-    {
-      onevent(deletionEvent) {
-        // Extract deleted event IDs from 'e' tags
-        deletionEvent.tags.forEach(([tag, value]) => {
-          if (tag === 'e' && value) {
-            deletedEvents.add(value);
-          }
-        });
+  try {
+    const result = await relayService.queryEvents(
+      'anonymous',
+      'social-read',
+      [{ kinds: [5], limit: 1000 }], // Load deletion events
+      {
+        excludeUserContent: false,
+        currentUserPubkey: undefined
       }
-    }
-  );
+    );
 
-  const unsubscribe = () => {
-    sub.close();
-    deletionSubscriptions.delete(cacheKey);
-  };
+    // Extract deleted event IDs from 'e' tags
+    result.events.forEach(deletionEvent => {
+      deletionEvent.tags.forEach(([tag, value]) => {
+        if (tag === 'e' && value) {
+          deletedEvents.add(value);
+        }
+      });
+    });
 
-  deletionSubscriptions.set(cacheKey, unsubscribe);
-  return unsubscribe;
+    const unsubscribe = () => {
+      deletionSubscriptions.delete(cacheKey);
+    };
+
+    deletionSubscriptions.set(cacheKey, unsubscribe);
+  } catch (error) {
+    console.error('Failed to load deletion events:', error);
+  }
 }
 
 /**
  * Load mute lists (kind 10000) to track muted users
  */
-export function loadMuteLists(relays: string[]): () => void {
+export async function loadMuteLists(relays: string[]): Promise<void> {
   const cacheKey = relays.sort().join(',');
   
-  // Return existing subscription if already loaded
+  // Return if already loaded
   if (muteListSubscriptions.has(cacheKey)) {
-    return muteListSubscriptions.get(cacheKey)!;
+    return;
   }
 
   const currentAccount = get(account);
   if (!currentAccount) {
-    return () => {}; // No account, no mute list to load
+    return; // No account, no mute list to load
   }
 
-  const sub = pool.subscribeMany(
-    relays,
-    [{ kinds: [10000], authors: [currentAccount.pubkey], limit: 1 }],
-    {
-      onevent(muteListEvent) {
-        // Extract muted pubkeys from 'p' tags
-        muteListEvent.tags.forEach(([tag, value]) => {
-          if (tag === 'p' && value) {
-            mutedUsers.add(value);
-          }
-        });
+  try {
+    const result = await relayService.queryEvents(
+      currentAccount.pubkey,
+      'social-read',
+      [{ kinds: [10000], authors: [currentAccount.pubkey], limit: 1 }],
+      {
+        excludeUserContent: false,
+        currentUserPubkey: currentAccount.pubkey
       }
-    }
-  );
+    );
 
-  const unsubscribe = () => {
-    sub.close();
-    muteListSubscriptions.delete(cacheKey);
-  };
+    // Extract muted pubkeys from 'p' tags
+    result.events.forEach(muteListEvent => {
+      muteListEvent.tags.forEach(([tag, value]) => {
+        if (tag === 'p' && value) {
+          mutedUsers.add(value);
+        }
+      });
+    });
 
-  muteListSubscriptions.set(cacheKey, unsubscribe);
-  return unsubscribe;
+    const unsubscribe = () => {
+      muteListSubscriptions.delete(cacheKey);
+    };
+
+    muteListSubscriptions.set(cacheKey, unsubscribe);
+  } catch (error) {
+    console.error('Failed to load mute lists:', error);
+  }
 }
 
 /**
@@ -123,6 +135,7 @@ export function filterUserEvents<T extends { id: string; pubkey: string }>(event
 
 /**
  * Enhanced relay subscription that automatically filters deleted events and muted users
+ * This function now uses relayService internally but maintains the same interface
  */
 export function createFilteredSubscription(
   relays: string[],
@@ -138,14 +151,19 @@ export function createFilteredSubscription(
     currentUserPubkey?: string;
   } = {}
 ): { close: () => void } {
-  // Load deletion events and mute lists for these relays
-  const unsubscribeDeletions = loadDeletionEvents(relays);
-  const unsubscribeMutes = loadMuteLists(relays);
+  // Load deletion events and mute lists for these relays (async, but don't wait)
+  loadDeletionEvents(relays);
+  loadMuteLists(relays);
 
-  // Create the subscription with filtering
-  const sub = pool.subscribeMany(relays, filters, {
-    ...handlers,
-    onevent: (event) => {
+  // Use relayService to query events
+  relayService.queryEvents(
+    options.currentUserPubkey || 'anonymous',
+    'social-read',
+    filters,
+    options
+  ).then(result => {
+    // Process events with filtering
+    result.events.forEach(event => {
       // Filter out deleted events and muted users
       if (isEventDeleted(event.id) || isUserMuted(event.pubkey)) {
         return;
@@ -160,15 +178,24 @@ export function createFilteredSubscription(
       if (handlers.onevent) {
         handlers.onevent(event);
       }
+    });
+
+    // Call oneose handler
+    if (handlers.oneose) {
+      handlers.oneose();
+    }
+  }).catch(error => {
+    console.error('Failed to query events in createFilteredSubscription:', error);
+    // Call oneose handler even on error
+    if (handlers.oneose) {
+      handlers.oneose();
     }
   });
 
-  // Return a closer that also cleans up our subscriptions
+  // Return a closer (no-op since we're using one-time queries)
   return {
     close: () => {
-      sub.close();
-      unsubscribeDeletions();
-      unsubscribeMutes();
+      // No-op since we're using one-time queries
     }
   };
 }

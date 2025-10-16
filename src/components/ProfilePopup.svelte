@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { pool } from '@nostr/gadgets/global';
-  import { DEFAULT_METADATA_QUERY_RELAYS } from '$lib/defaults';
+  import { relayService } from '$lib/relayService';
   import { nip19 } from '@nostr/tools';
   import UserBadge from './UserBadge.svelte';
 
@@ -38,57 +38,41 @@
     userData = null;
     
     try {
-      const user = await new Promise((resolve) => {
-        let userResult: any = null;
-        let resolved = false;
-        
-        const sub = pool.subscribeMany(
-          DEFAULT_METADATA_QUERY_RELAYS,
-          [{ kinds: [0], authors: [pubkey], limit: 1 }],
-          {
-            onevent(event) {
-              if (event.pubkey === pubkey && event.kind === 0) {
-                try {
-                  const content = JSON.parse(event.content);
-                  // Generate npub from pubkey
-                  const npub = nip19.npubEncode(event.pubkey);
-                  userResult = {
-                    pubkey: event.pubkey,
-                    npub: npub,
-                    display_name: content.display_name,
-                    name: content.name,
-                    about: content.about,
-                    picture: content.picture,
-                    banner: content.banner,
-                    website: content.website,
-                    lud16: content.lud16,
-                    nip05: content.nip05,
-                    ...content
-                  };
-                } catch (e) {
-                  console.error('Failed to parse user metadata:', e);
-                }
-              }
-            },
-            oneose() {
-              if (!resolved) {
-                resolved = true;
-                sub.close();
-                resolve(userResult);
-              }
-            }
-          }
-        );
-        
-        // Timeout after 3 seconds
-        setTimeout(() => {
-          if (!resolved) {
-            resolved = true;
-            sub.close();
-            resolve(userResult);
-          }
-        }, 3000);
-      });
+      const result = await relayService.queryEvents(
+        'anonymous',
+        'metadata-read',
+        [{ kinds: [0], authors: [pubkey], limit: 1 }],
+        {
+          excludeUserContent: false,
+          currentUserPubkey: undefined
+        }
+      );
+
+      const userEvent = result.events.find(event => event.pubkey === pubkey && event.kind === 0);
+      let user = null;
+      
+      if (userEvent) {
+        try {
+          const content = JSON.parse(userEvent.content);
+          // Generate npub from pubkey
+          const npub = nip19.npubEncode(userEvent.pubkey);
+          user = {
+            pubkey: userEvent.pubkey,
+            npub: npub,
+            display_name: content.display_name,
+            name: content.name,
+            about: content.about,
+            picture: content.picture,
+            banner: content.banner,
+            website: content.website,
+            lud16: content.lud16,
+            nip05: content.nip05,
+            ...content
+          };
+        } catch (e) {
+          console.error('Failed to parse user metadata:', e);
+        }
+      }
       
       userData = user;
     } catch (e) {

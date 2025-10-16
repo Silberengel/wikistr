@@ -5,7 +5,7 @@
 
 import type { NostrEvent } from '@nostr/tools/pure';
 import { pool } from '@nostr/gadgets/global';
-import { DEFAULT_WIKI_RELAYS } from './defaults';
+import { relayService } from './relayService';
 import type { BookType } from './books';
 
 export interface BookConfiguration {
@@ -169,34 +169,29 @@ function createWithVersionFunction(format: string): (ref: string, version?: stri
  * Load book configurations from Nostr events
  */
 export async function loadBookConfigurations(): Promise<BookConfiguration[]> {
-  const configurations: BookConfiguration[] = [];
-  
-  return new Promise((resolve) => {
-    const sub = pool.subscribeMany(
-      DEFAULT_WIKI_RELAYS,
+  try {
+    const result = await relayService.queryEvents(
+      'anonymous',
+      'arbitrary-ids-read',
       [{ kinds: [30078], limit: 100 }],
-      {
-        onevent(event) {
-          if (event.kind === 30078) {
-            const config = parseBookConfigFromEvent(event);
-            if (config) {
-              configurations.push(config);
-            }
-          }
-        },
-        oneose() {
-          sub.close();
-          resolve(configurations);
+      { excludeUserContent: false, currentUserPubkey: undefined }
+    );
+
+    const configurations: BookConfiguration[] = [];
+    for (const event of result.events) {
+      if (event.kind === 30078) {
+        const config = parseBookConfigFromEvent(event);
+        if (config) {
+          configurations.push(config);
         }
       }
-    );
+    }
     
-    // Timeout after 10 seconds
-    setTimeout(() => {
-      sub.close();
-      resolve(configurations);
-    }, 10000);
-  });
+    return configurations;
+  } catch (error) {
+    console.error('Failed to load book configurations:', error);
+    return [];
+  }
 }
 
 /**

@@ -6,7 +6,6 @@
   import AsciidocContent from './AsciidocContent.svelte';
   import ProfilePopup from './ProfilePopup.svelte';
   import { browser } from '$app/environment';
-  import { DEFAULT_SOCIAL_RELAYS } from '$lib/defaults';
   import { loadRelayList } from '@nostr/gadgets/lists';
   import { formatDate } from '$lib/utils';
   import { getThemeConfig } from '$lib/themes';
@@ -292,7 +291,7 @@
       publishStatus.attempts = [];
 
       // Get user's actual inbox relays (kind 10002) for publishing comments
-      const socialRelays = DEFAULT_SOCIAL_RELAYS;
+      const socialRelays = await relayService.getRelaysForOperation($account?.pubkey || 'anonymous', 'social-write'); // Using relayService
       let userInboxRelays: string[] = [];
       
       if ($account) {
@@ -356,61 +355,34 @@
     if (!browser) return;
     
     try {
-      // Use broader filter to avoid relay rejections - do all filtering client-side
-      const filter = {
-        kinds: [1111],
-        limit: 200 // Get more comments to filter client-side
-      };
-
-      // Get user's actual inbox relays (kind 10002) for fetching comments
-      const socialRelays = DEFAULT_SOCIAL_RELAYS;
-      let userInboxRelays: string[] = [];
-      
-      if ($account) {
-        try {
-          const relayList = await loadRelayList($account.pubkey);
-          userInboxRelays = relayList.items
-            .filter((ri) => ri.read)
-            .map((ri) => ri.url);
-        } catch (error) {
-          console.error('Error loading user inbox relays:', error);
-        }
-      }
-      
-      const relays = [...new Set([...socialRelays, ...userInboxRelays])];
-      
-      
-      const events: NostrEvent[] = [];
-      let timeoutId: ReturnType<typeof setTimeout>;
-      
-      const sub = pool.subscribeMany(
-        relays,
-        [filter],
-        {
-          onevent(commentEvent) {
-            // Client-side filtering for our specific wiki article
-            const aTag = commentEvent.tags.find(([k]) => k === 'A');
-            const kTag = commentEvent.tags.find(([k]) => k === 'K');
-            
-            // Check if this comment references our wiki article
-            if (aTag && aTag[1] === articleCoordinate && 
-                kTag && kTag[1] === event.kind.toString()) {
-              events.push(commentEvent as NostrEvent);
-            }
-          },
-          oneose() {
-            clearTimeout(timeoutId);
-            sub.close();
-            comments = events;
+      // Use relayService for consistent relay handling
+      const result = await relayService.queryEvents(
+        $account?.pubkey || 'anonymous',
+        'social-read',
+        [
+          {
+            kinds: [1111],
+            limit: 200
           }
+        ],
+        {
+          excludeUserContent: false,
+          currentUserPubkey: $account?.pubkey
         }
       );
-      
-      // Set a timeout to close the subscription after 10 seconds
-      timeoutId = setTimeout(() => {
-        sub.close();
-        comments = events;
-      }, 10000);
+
+      // Client-side filtering for our specific wiki article
+      const filteredComments = result.events.filter(commentEvent => {
+        const aTag = commentEvent.tags.find(([k]) => k === 'A');
+        const kTag = commentEvent.tags.find(([k]) => k === 'K');
+        
+        // Check if this comment references our wiki article
+        return aTag && aTag[1] === articleCoordinate && 
+               kTag && kTag[1] === event.kind.toString();
+      });
+
+      comments = filteredComments;
+      console.log('Loaded comments:', filteredComments.length, 'from relays:', result.relays);
     } catch (error) {
       console.error('Error fetching comments:', error);
     }

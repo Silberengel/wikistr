@@ -1,12 +1,44 @@
 import { pool } from '@nostr/gadgets/global';
 import { loadRelayList } from '@nostr/gadgets/lists';
-import { DEFAULT_WIKI_RELAYS, DEFAULT_SOCIAL_RELAYS, DEFAULT_WRITE_RELAYS } from '$lib/defaults';
+import { 
+  DEFAULT_WRITE_RELAYS,
+  DEFAULT_METADATA_RELAYS,
+  DEFAULT_SEARCH_RELAYS
+} from '$lib/defaults';
+import { getThemeConfig } from '$lib/themes';
 import { createFilteredSubscription, isEventDeleted, isUserMuted } from '$lib/filtering';
 import { showToast } from '$lib/toast';
 import { loadBlockedRelays } from '$lib/nostr';
 import type { NostrEvent } from '@nostr/tools/pure';
 
-export type RelaySetType = 'wiki-read' | 'wiki-write' | 'social-read' | 'social-write';
+/**
+ * Relay set types for different operations
+ * 
+ * Wiki Operations:
+ * - 'wiki-read': Reading wiki articles (uses theme.wiki relays)
+ * - 'wiki-write': Publishing wiki articles (uses theme.wiki relays)
+ * 
+ * Social Operations:
+ * - 'social-read': Reading reactions, comments, zaps (uses theme.social relays)
+ * - 'social-write': Publishing reactions, comments, zaps (uses theme.social relays)
+ * 
+ * Metadata Operations:
+ * - 'metadata-read': User profiles (kind 0) (uses theme.social + metadata relays)
+ * - 'relaylist-read': Relay lists (kind 10002) (uses theme.social + metadata relays)
+ * - 'arbitrary-ids-read': Arbitrary IDs (kind 30078) (uses theme.social + metadata relays)
+ * 
+ * Search Operations:
+ * - 'search-read': Search queries (uses theme.wiki + search relays)
+ * 
+ * Fallback Operations:
+ * - 'fallback-write': Emergency publishing when primary relays fail
+ */
+export type RelaySetType = 
+  | 'wiki-read' | 'wiki-write' 
+  | 'social-read' | 'social-write'
+  | 'metadata-read' | 'relaylist-read' 
+  | 'arbitrary-ids-read' | 'search-read'
+  | 'fallback-write';
 
 export interface RelayServiceOptions {
   excludeUserContent?: boolean;
@@ -24,10 +56,24 @@ export interface QueryResult<T> {
   relays: string[];
 }
 
+/**
+ * RelayService manages relay selection and operations
+ * 
+ * Features:
+ * - Theme-specific relay priority (wiki vs social)
+ * - User relay list integration (inbox/outbox)
+ * - Blocked relay filtering (kind 10006)
+ * - Automatic fallback handling
+ * - Consistent API for all relay operations
+ */
 class RelayService {
   private blockedRelays = new Set<string>();
   private userRelayLists = new Map<string, { inboxes: string[]; outboxes: string[] }>();
   private blockedRelaysLoaded = false;
+  
+  // Connection pooling optimizations
+  private activeSubscriptions = new Map<string, number>();
+  private relayHealth = new Map<string, { lastSeen: number; failures: number }>();
 
   /**
    * Normalize relay URLs to ws:// or wss:// format and remove trailing slashes
@@ -45,13 +91,46 @@ class RelayService {
   }
 
   /**
+   * Track relay health for connection optimization
+   */
+  private updateRelayHealth(relayUrl: string, success: boolean) {
+    const now = Date.now();
+    const health = this.relayHealth.get(relayUrl) || { lastSeen: 0, failures: 0 };
+    
+    if (success) {
+      health.lastSeen = now;
+      health.failures = Math.max(0, health.failures - 1); // Gradually reduce failure count
+    } else {
+      health.failures += 1;
+    }
+    
+    this.relayHealth.set(relayUrl, health);
+  }
+
+  /**
+   * Get healthy relays, prioritizing those with good health scores
+   */
+  private prioritizeHealthyRelays(relays: string[]): string[] {
+    return relays.sort((a, b) => {
+      const healthA = this.relayHealth.get(a) || { lastSeen: 0, failures: 0 };
+      const healthB = this.relayHealth.get(b) || { lastSeen: 0, failures: 0 };
+      
+      // Prioritize relays with fewer failures and more recent activity
+      const scoreA = healthA.lastSeen - (healthA.failures * 10000);
+      const scoreB = healthB.lastSeen - (healthB.failures * 10000);
+      
+      return scoreB - scoreA;
+    });
+  }
+
+  /**
    * Load blocked relays (kind 10006) from user's blocked relay list
    */
   private async loadBlockedRelays(userPubkey: string): Promise<void> {
     if (this.blockedRelaysLoaded) return;
 
     try {
-      const blockedRelays = await loadBlockedRelays(userPubkey);
+      const blockedRelays = await loadBlockedRelays(userPubkey, DEFAULT_METADATA_RELAYS);
       const normalizedBlockedRelays = blockedRelays
         .map(url => this.normalizeRelayUrl(url))
         .filter(url => url && (url.startsWith('ws://') || url.startsWith('wss://')));
@@ -97,29 +176,63 @@ class RelayService {
     }
   }
 
-  /**
-   * Get relays for a specific operation type
-   */
-  private async getRelaysForOperation(userPubkey: string, type: RelaySetType): Promise<string[]> {
+/**
+ * Get relays for a specific operation type
+ * 
+ * Priority order:
+ * 1. Theme-specific relays (wiki or social based on operation type)
+ * 2. Default system relays (for metadata, search, fallback)
+ * 3. User's personal relay lists (inbox/outbox)
+ */
+  async getRelaysForOperation(userPubkey: string, type: RelaySetType): Promise<string[]> {
     // Load blocked relays first
     await this.loadBlockedRelays(userPubkey);
     
     const userRelays = await this.loadUserRelayLists(userPubkey);
     
+    // Get theme-specific relays
+    const theme = getThemeConfig();
+    const themeWikiRelays = theme.relays?.wiki || [];
+    const themeSocialRelays = theme.relays?.social || [];
+    
     let relays: string[] = [];
     
     switch (type) {
       case 'wiki-read':
-        relays = [...DEFAULT_WIKI_RELAYS, ...userRelays.inboxes];
+        // Wiki content reading: theme wiki relays + user inboxes
+        relays = [...themeWikiRelays, ...userRelays.inboxes];
         break;
       case 'wiki-write':
-        relays = [...DEFAULT_WIKI_RELAYS, ...userRelays.outboxes];
+        // Wiki content writing: theme wiki relays + user outboxes
+        relays = [...themeWikiRelays, ...userRelays.outboxes];
         break;
       case 'social-read':
-        relays = [...DEFAULT_SOCIAL_RELAYS, ...userRelays.inboxes];
+        // Social content reading (reactions, comments, zaps): theme social relays + user inboxes
+        relays = [...themeSocialRelays, ...userRelays.inboxes];
         break;
       case 'social-write':
-        relays = [...DEFAULT_SOCIAL_RELAYS, ...userRelays.outboxes];
+        // Social content writing (reactions, comments, zaps): theme social relays + user outboxes
+        relays = [...themeSocialRelays, ...userRelays.outboxes];
+        break;
+      case 'metadata-read':
+        // User profiles (kind 0): theme social relays + metadata relays + user inboxes
+        relays = [...themeSocialRelays, ...DEFAULT_METADATA_RELAYS, ...userRelays.inboxes];
+        break;
+      case 'relaylist-read':
+        // Relay lists (kind 10002): theme social relays + metadata relays + user inboxes
+        relays = [...themeSocialRelays, ...DEFAULT_METADATA_RELAYS, ...userRelays.inboxes];
+        break;
+      case 'arbitrary-ids-read':
+        // Arbitrary IDs (kind 30078): theme social relays + metadata relays + user inboxes
+        relays = [...themeSocialRelays, ...DEFAULT_METADATA_RELAYS, ...userRelays.inboxes];
+        break;
+      case 'search-read':
+        // Search operations: theme wiki relays + search relays + user inboxes
+        relays = [...themeWikiRelays, ...DEFAULT_SEARCH_RELAYS, ...userRelays.inboxes];
+        break;
+      case 'fallback-write':
+        // Emergency fallback when primary relays fail: write relays only
+        relays = [...DEFAULT_WRITE_RELAYS];
         break;
     }
     
@@ -134,11 +247,18 @@ class RelayService {
       console.log(`Filtered out ${blockedCount} blocked relays`);
     }
     
-    return filteredRelays;
+    // Prioritize healthy relays for better performance
+    return this.prioritizeHealthyRelays(filteredRelays);
   }
 
   /**
-   * Query events from relays with proper filtering
+   * Query events from relays with theme-specific relay selection
+   * 
+   * @param userPubkey - User's public key for relay list loading
+   * @param type - Operation type (determines which theme relays to use)
+   * @param filters - Nostr filters for the query
+   * @param options - Additional options for filtering
+   * @returns Promise with events and relays used
    */
   async queryEvents<T extends NostrEvent>(
     userPubkey: string,
@@ -185,7 +305,13 @@ class RelayService {
   }
 
   /**
-   * Publish an event to relays with fallback
+   * Publish an event to relays with theme-specific selection and fallback
+   * 
+   * @param userPubkey - User's public key for relay list loading
+   * @param type - Operation type (determines which theme relays to use)
+   * @param event - Nostr event to publish
+   * @param showToastNotification - Whether to show success/failure toast
+   * @returns Promise with publish results
    */
   async publishEvent(
     userPubkey: string,
@@ -265,7 +391,10 @@ class RelayService {
   }
 
   /**
-   * Get human-readable operation name for toasts
+   * Get human-readable operation name for toast notifications
+   * 
+   * @param type - Relay set type
+   * @returns Human-readable operation name
    */
   private getOperationName(type: RelaySetType): string {
     switch (type) {
@@ -277,13 +406,24 @@ class RelayService {
         return 'Social Query';
       case 'social-write':
         return 'Social Event';
+      case 'metadata-read':
+        return 'Profile Query';
+      case 'relaylist-read':
+        return 'Relay List Query';
+      case 'arbitrary-ids-read':
+        return 'Arbitrary ID Query';
+      case 'search-read':
+        return 'Search Query';
+      case 'fallback-write':
+        return 'Fallback Publish';
       default:
         return 'Event';
     }
   }
 
   /**
-   * Clear cached relay lists (useful for testing or when user changes relays)
+   * Clear cached relay lists and blocked relays
+   * Useful for testing or when user changes their relay configuration
    */
   clearCache(): void {
     this.userRelayLists.clear();
@@ -292,7 +432,10 @@ class RelayService {
   }
 
   /**
-   * Get cached relay lists for a user
+   * Get cached relay lists for a user (for debugging)
+   * 
+   * @param userPubkey - User's public key
+   * @returns Cached relay lists or null if not loaded
    */
   getCachedRelayLists(userPubkey: string): { inboxes: string[]; outboxes: string[] } | null {
     return this.userRelayLists.get(userPubkey) || null;
@@ -300,6 +443,8 @@ class RelayService {
 
   /**
    * Get blocked relays for debugging
+   * 
+   * @returns Array of blocked relay URLs
    */
   getBlockedRelays(): string[] {
     return Array.from(this.blockedRelays);
@@ -307,6 +452,9 @@ class RelayService {
 
   /**
    * Check if a relay is blocked
+   * 
+   * @param url - Relay URL to check
+   * @returns True if relay is blocked
    */
   isRelayBlocked(url: string): boolean {
     return this.blockedRelays.has(this.normalizeRelayUrl(url));
