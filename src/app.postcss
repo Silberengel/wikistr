@@ -56,18 +56,71 @@
   input[class*="focus:ring-amber"]:focus,
   input[class*="focus:border-amber"]:focus,
   textarea[class*="focus:ring-amber"]:focus,
-  textarea[class*="focus:border-amber"]:focus {
+  textarea[class*="focus:border-amber"]:focus,
+  select[class*="focus:ring-amber"]:focus,
+  select[class*="focus:border-amber"]:focus {
     --tw-ring-color: #fbbf24 !important;
     border-color: #fbbf24 !important;
     outline: none !important;
   }
 
-  /* Force golden theme colors on all inputs and textareas */
+  /* Force golden theme colors on all inputs, textareas, and selects */
   input:focus,
-  textarea:focus {
+  textarea:focus,
+  select:focus {
     --tw-ring-color: #fbbf24 !important;
     border-color: #fbbf24 !important;
     outline: none !important;
+  }
+
+  /* Override option selection highlight color */
+  option:checked,
+  option:focus,
+  option:hover {
+    background-color: #fbbf24 !important;
+    color: #6b7280 !important;
+  }
+
+  /* Override select option colors for theme consistency */
+  select option {
+    background-color: white;
+    color: #2c2c2c;
+  }
+
+  /* Force dropdown selection color - more specific selectors */
+  select option:checked {
+    background-color: #fbbf24 !important;
+    color: #6b7280 !important;
+  }
+
+  /* Override browser default selection styling */
+  select option[selected] {
+    background-color: #fbbf24 !important;
+    color: #6b7280 !important;
+  }
+
+  /* Make LaTeX expressions larger and more readable */
+  .katex {
+    font-size: 1.3em !important;
+  }
+
+  /* LaTeX inline math styling */
+  .katex-display {
+    font-size: 1.4em !important;
+  }
+
+  /* Make general text larger for better readability */
+  .prose {
+    font-size: 1.1rem !important;
+  }
+
+  .prose p {
+    font-size: 1.1rem !important;
+  }
+
+  .prose td,
+  .prose th {
+    font-size: 1rem !important;
   }
 
   .btn-secondary {
@@ -175,5 +228,38 @@
       opacity: 1;
       transform: translateY(0);
     }
+  }
+
+  /* Fix table spacing issues */
+  table {
+    border-collapse: collapse !important;
+    border-spacing: 0 !important;
+  }
+
+  table td,
+  table th {
+    padding: 0.5rem !important;
+    border: 1px solid #d1d5db !important;
+    vertical-align: top !important;
+    margin: 0 !important;
+    line-height: 1.4 !important;
+  }
+
+  table tr {
+    margin: 0 !important;
+    padding: 0 !important;
+    line-height: 1.4 !important;
+  }
+
+  /* Remove any extra spacing from AsciiDoc table output */
+  .prose table {
+    margin: 0 !important;
+  }
+
+  .prose table td,
+  .prose table th {
+    padding: 0.5rem !important;
+    margin: 0 !important;
+    border-spacing: 0 !important;
   }
 }

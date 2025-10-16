@@ -426,50 +426,20 @@
   function convertMarkdownToAsciiDoc(markdown: string): string {
     let asciidoc = markdown;
     
-    // Convert headers: # Header -> = Header, ## Header -> == Header, etc.
-    asciidoc = asciidoc.replace(/^(#{1,6})\s+(.+)$/gm, (match, hashes, text) => {
-      const level = hashes.length;
-      return '='.repeat(level) + ' ' + text;
-    });
-    
-    // Convert horizontal rules: --- -> '''
-    asciidoc = asciidoc.replace(/^---\s*$/gm, "'''");
-    asciidoc = asciidoc.replace(/^\*\*\*\s*$/gm, "'''");
-    asciidoc = asciidoc.replace(/^___\s*$/gm, "'''");
-    
-    // Convert bold: **text** -> *text*
-    asciidoc = asciidoc.replace(/(\*\*|__)([^*_]+)\1/g, '*$2*');
-    
-    // Convert italic: *text* -> _text_ (but avoid conflicts with bold)
-    asciidoc = asciidoc.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '_$1_');
-    asciidoc = asciidoc.replace(/(?<!_)_([^_]+)_(?!_)/g, '_$1_');
-    
     // Convert strikethrough: ~~text~~ -> [line-through]#text#
     asciidoc = asciidoc.replace(/~~([^~]+)~~/g, '[line-through]#$1#');
     
-    // Convert blockquotes: > text -> [quote]
-    asciidoc = asciidoc.replace(/^>\s*(.+)$/gm, '[quote]\n____\n$1\n____');
-    
     // Convert code blocks: ```lang ... ``` -> [source,lang]
-    asciidoc = asciidoc.replace(/```(\w+)?\n?([\s\S]*?)```/g, (match, lang, code) => {
+    asciidoc = asciidoc.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
       const langAttr = lang ? `,${lang}` : '';
       return `[source${langAttr}]\n----\n${code.trim()}\n----`;
     });
-    
-    // Convert inline code: `code` -> `code` (AsciiDoc uses same syntax)
-    // This is already correct for AsciiDoc
-    
-    // Convert unordered lists: * item -> * item (AsciiDoc uses same syntax)
-    // This is already correct for AsciiDoc
-    
-    // Convert ordered lists: 1. item -> . item
-    asciidoc = asciidoc.replace(/^\d+\.\s+(.+)$/gm, '. $1');
-    
+
     // Convert images: ![alt](url) -> image:url[alt]
-    asciidoc = asciidoc.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, 'image:$2[$1]');
+    asciidoc = asciidoc.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, 'image::$2[$1]');
     
-    // Convert links: [text](url) -> text:url[]
-    asciidoc = asciidoc.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1:$2[]');
+    // Convert links: [text](url) -> link:text[text]
+    asciidoc = asciidoc.replace(/\[([^\]]+)\]\(([^)]+)\)/g, 'link:$2[$1]');
     
     // Convert tables: | col1 | col2 | -> [cols="1,1"]
     asciidoc = asciidoc.replace(/^(\|[^|\n]*(?:\|[^|\n]*)*\|)\s*$/gm, (match) => {
@@ -481,11 +451,19 @@
       
       let asciidocTable = `[cols="${'1,'.repeat(colCount).slice(0, -1)}"]\n|===\n`;
       
-      rows.forEach((row) => {
+      rows.forEach((row, index) => {
         const cells = row.trim().split('|').filter(cell => cell.trim());
-          cells.forEach(cell => {
-          asciidocTable += `|${cell.trim()}\n`;
+        // Skip separator rows (rows with only dashes)
+        if (cells.every(cell => /^-+$/.test(cell.trim()))) {
+          return;
+        }
+        
+        // Build the row with all cells on one line
+        let rowContent = '';
+        cells.forEach(cell => {
+          rowContent += `|${cell.trim()}`;
         });
+        asciidocTable += rowContent + '\n';
       });
       
       asciidocTable += '|===';
@@ -500,24 +478,16 @@
     // Count Markdown indicators
     const markdownIndicators = [
       /^#{1,6}\s+/gm,           // Headers
-      /\*\*[^*]+\*\*/,          // Bold
-      /__[^_]+__/,              // Bold
-      /\*[^*]+\*/,              // Italic
-      /_[^_]+_/,                // Italic
       /```[\s\S]*?```/,         // Code blocks
       /^\|.*\|$/gm,             // Tables
       /!\[.*?\]\(.*?\)/,        // Images
       /\[.*?\]\(.*?\)/,         // Links
-      /^>\s+/gm,                // Blockquotes
-      /^\d+\.\s+/gm,            // Ordered lists
-      /^[\*\-\+]\s+/gm,         // Unordered lists
     ];
     
     // Count AsciiDoc indicators
     const asciidocIndicators = [
       /^=+\s+/gm,               // AsciiDoc headers
       /\[\[.*?\]\]/,            // AsciiDoc links
-      /^\.{3,}$/gm,             // Horizontal rules
       /^\[source,/gm,           // Source blocks
       /^\[NOTE\]/gm,            // Admonitions
     ];
@@ -575,31 +545,24 @@
   // Apply syntax highlighting to code blocks
   function applySyntaxHighlighting() {
     if (contentDiv) {
-      // Highlight all code blocks
+      // AsciiDoc is already handling highlighting, so we just need to ensure
+      // any code blocks without proper highlighting get processed
       contentDiv.querySelectorAll('pre code').forEach((block) => {
         const element = block as HTMLElement;
-        // Highlight if it has a language class or if it's plain code
-        if (!element.dataset.highlighted) {
-          if (element.className.includes('language-')) {
-            // Has language class
-            if (!element.className.includes('language-undefined')) {
-          hljs.highlightElement(element);
-            }
+        
+        // Only process if not already highlighted by AsciiDoc
+        if (!element.className.includes('hljs')) {
+          // Get the current language class
+          const currentLang = element.className.match(/language-(\w+)/);
+          const lang = currentLang ? currentLang[1] : null;
+          
+          if (lang && lang !== 'undefined' && lang !== 'none') {
+            // Has valid language class
+            hljs.highlightElement(element);
           } else {
             // No language class, try to auto-detect
             hljs.highlightElement(element);
           }
-          element.dataset.highlighted = 'yes';
-        }
-      });
-      
-      // Highlight inline code that might have been missed
-      contentDiv.querySelectorAll('code:not(pre code)').forEach((block) => {
-        const element = block as HTMLElement;
-        // Only highlight if it has a language class and it's not undefined and hasn't been highlighted yet
-        if (!element.dataset.highlighted && element.className.includes('language-') && !element.className.includes('language-undefined')) {
-          hljs.highlightElement(element);
-          element.dataset.highlighted = 'yes';
         }
       });
     }
@@ -661,8 +624,10 @@
       backend: 'html5',
       doctype: 'book',
       attributes: {
-        'source-highlighter': 'highlightjs',
-        'highlightjs-theme': 'github'
+        'source-highlighter': 'none',
+        'sectnums': '',
+        'toc': 'left',
+        'toclevels': 3
       }
     });
 
@@ -952,11 +917,11 @@
   }
   
   :global(.prose pre) {
-    @apply overflow-x-auto bg-gray-50 p-4 rounded-md;
+    @apply overflow-x-auto bg-gray-700 p-4 rounded-md;
   }
   
   :global(.prose pre code) {
-    @apply bg-transparent p-0 rounded-none;
+    @apply bg-transparent p-2 rounded-none;
   }
 
   /* Ensure proper styling for postprocessed markdown elements */
@@ -968,9 +933,36 @@
     @apply italic;
   }
 
-  /* Highlight.js theme integration */
+  /* Highlight.js theme integration - force override any conflicting styles */
   :global(.prose .hljs) {
-    @apply bg-gray-50;
+    background: #374151 !important;
+    color: #f9fafb !important;
+    padding: 1rem !important;
+  }
+  
+  /* Ensure highlight.js colors are visible on dark background */
+  :global(.prose .hljs .hljs-keyword) {
+    color: #f87171 !important;
+  }
+  
+  :global(.prose .hljs .hljs-string) {
+    color: #86efac !important;
+  }
+  
+  :global(.prose .hljs .hljs-function) {
+    color: #a78bfa !important;
+  }
+  
+  :global(.prose .hljs .hljs-variable) {
+    color: #fbbf24 !important;
+  }
+  
+  :global(.prose .hljs .hljs-comment) {
+    color: #9ca3af !important;
+  }
+  
+  :global(.prose .hljs .hljs-number) {
+    color: #60a5fa !important;
   }
 
   /* Table styling for postprocessed markdown tables */
@@ -1012,7 +1004,12 @@
   }
   
   :global(.prose pre) {
-    @apply bg-gray-100 p-4 rounded-md overflow-x-auto my-4;
+    @apply p-4 rounded-md overflow-x-auto my-4;
+  }
+  
+  /* Don't override highlight.js background */
+  :global(.prose pre:not(.hljs)) {
+    @apply bg-gray-100;
   }
   
   :global(.prose code:not(pre code)) {

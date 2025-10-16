@@ -107,7 +107,12 @@ class RelayService {
       
       // Normalize and deduplicate
       relays = [...new Set(relays.map(url => this.normalizeRelayUrl(url)))]
-        .filter(url => url && url !== 'undefined' && (url.startsWith('ws://') || url.startsWith('wss://')));
+        .filter(url => url && 
+                      url !== 'undefined' && 
+                      url !== 'null' && 
+                      url !== '' && 
+                      typeof url === 'string' &&
+                      (url.startsWith('ws://') || url.startsWith('wss://')));
       
       // Cache the result
       this.relayCache.set(cacheKey, relays);
@@ -166,8 +171,16 @@ class RelayService {
   ): Promise<QueryResult<T>> {
     await this.ensureInitialized();
     
-    const relays = await this.getRelaysForOperation(userPubkey, type);
+    let relays = await this.getRelaysForOperation(userPubkey, type);
     
+    
+    // Extra safety filter for undefined/null relays
+    relays = relays.filter(url => url && 
+                                  url !== 'undefined' && 
+                                  url !== 'null' && 
+                                  url !== '' && 
+                                  typeof url === 'string' &&
+                                  (url.startsWith('ws://') || url.startsWith('wss://')));
     
     if (relays.length === 0) {
       console.warn('No relays available for query');

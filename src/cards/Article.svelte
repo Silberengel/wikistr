@@ -310,7 +310,7 @@
     }
     
     console.log('[snapshot] Final vote counts:', { likes, dislikes });
-    console.log('Final vote counts:', voteCounts);
+    console.log('Final vote counts:', $state.snapshot(voteCounts));
     console.log('User reaction:', userReaction?.id, 'Status:', likeStatus);
   }
 

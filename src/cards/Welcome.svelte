@@ -511,8 +511,8 @@
     currentRelays = contentCache.getAllRelays();
     
     console.log(`✅ ${currentFeedType} feed built: ${results.length} articles from ${currentRelays.length} relays`);
-    console.log(`📊 Results array:`, results);
-    console.log(`📊 Current relays:`, currentRelays);
+    console.log(`📊 Results array:`, $state.snapshot(results));
+    console.log(`📊 Current relays:`, $state.snapshot(currentRelays));
   }
 
 
