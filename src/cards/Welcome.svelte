@@ -47,6 +47,7 @@
   let selectedUserPubkey = $state('');
   let selectedUserBech32 = $state('');
 
+
   // Feed Configuration
   const FEED_CONFIGS: FeedConfig[] = [
     {
@@ -619,6 +620,7 @@
     profilePopupOpen = true;
   }
 
+
   /**
    * Get cached content for other components to use
    */
@@ -772,7 +774,7 @@
     </div>
   {/if}
   
-  <!-- Relay List -->
+  <!-- Current Relays List -->
   <div class="flex items-center flex-wrap mt-2">
     <div class="mr-1 font-normal text-xs">from</div>
     {#each currentRelays as url}

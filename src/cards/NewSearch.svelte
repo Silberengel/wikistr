@@ -60,6 +60,13 @@
         !themeWikiRelays.includes(relay) && !themeSocialRelays.includes(relay)
       );
       
+      console.log('🔍 Relay loading debug:');
+      console.log('  Theme wiki relays:', themeWikiRelays);
+      console.log('  Theme social relays:', themeSocialRelays);
+      console.log('  All wiki relays:', allWikiRelays);
+      console.log('  All social relays:', allSocialRelays);
+      console.log('  User-only relays:', userOnlyRelays);
+      
       // Combine theme relays + user-only relays
       const allRelays = new Set([...themeWikiRelays, ...themeSocialRelays, ...userOnlyRelays]);
       
@@ -76,6 +83,13 @@
           isUserRelay: isUserRelay
         };
       });
+      
+      console.log('🔍 Final relay display:');
+      console.log('  Total relays to display:', themeRelays.length);
+      themeRelays.forEach((relay, index) => {
+        console.log(`  ${index + 1}. ${relay.url} (wiki: ${relay.hasWiki}, social: ${relay.hasSocial}, user: ${relay.isUserRelay})`);
+      });
+      
       relaysLoaded = true;
     } catch (error) {
       console.error('Failed to load relay information:', error);
