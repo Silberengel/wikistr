@@ -1,7 +1,7 @@
 # YAML Theme Configuration for Biblestr
 name: biblestr
 title: Biblestr
-tagline: READ THE ORIGINAL. MAKE CONNECTIONS. CULTIVATE KNOWLEDGE.
+tagline: In the beginning was the Word, and the Word was with God, and the Word was God.
 description: A decentralized Bible study and wiki system built on Nostr
 brandColor: "#059669"
 backgroundColor: "#fefefe"
@@ -50,7 +50,7 @@ searchHelpText: |
   • diff::article1; article2; article3
   • diff::book:bible:John 3:16 KJV | ESV
 
-  Use <code>diff::</code> prefix to compare wiki articles, Bible versions, or any content. Supports pipe <code>|</code> and semicolon <code>;</code> separation.
+  Use diff:: prefix to compare wiki articles, Bible versions, or any content. Supports pipe '|' and semicolon ';' separation.
 typography:
   fontFamily: '"Crimson Text", "Times New Roman", "Times", "Georgia", serif'
   fontFamilyHeading: '"Crimson Text", "Times New Roman", "Times", "Georgia", serif'

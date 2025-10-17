@@ -502,7 +502,7 @@
         <div class="py-4 px-4 bg-gray-50 rounded-lg border border-gray-200">
           <div class="flex items-center mb-2">
             <div class="flex items-center space-x-3 flex-1 min-w-0">
-              <UserBadge pubkey={comment.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" />
+              <UserBadge pubkey={comment.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" hideSearchIcon={false} />
               <span class="text-xs text-gray-500 whitespace-nowrap">
                 {formatRelativeTime(comment.created_at)}
               </span>
@@ -585,7 +585,7 @@
                 <div class="py-3 px-3 rounded-lg border border-gray-100" style="background-color: var(--theme-bg);">
                   <div class="flex items-center mb-1">
                     <div class="flex items-center space-x-3 flex-1 min-w-0">
-                      <UserBadge pubkey={reply.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" />
+                      <UserBadge pubkey={reply.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" hideSearchIcon={false} />
                       <span class="text-xs text-gray-500 whitespace-nowrap">
                         {formatRelativeTime(reply.created_at)}
                       </span>
@@ -669,7 +669,7 @@
                         <div class="py-2 px-3 bg-gray-50 rounded border border-gray-200">
                           <div class="flex items-center mb-1">
                             <div class="flex items-center space-x-3 flex-1 min-w-0">
-                              <UserBadge pubkey={nestedReply.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" />
+                              <UserBadge pubkey={nestedReply.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" hideSearchIcon={false} />
                               <span class="text-xs text-gray-500 whitespace-nowrap">
                                 {formatRelativeTime(nestedReply.created_at)}
                               </span>
@@ -775,5 +775,4 @@
   bech32={selectedUserBech32}
   isOpen={profilePopupOpen}
   onClose={() => profilePopupOpen = false}
-  createChild={() => {}}
 />

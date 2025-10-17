@@ -11,4 +11,4 @@
   let { pubkey, createChild, showAvatar = true }: Props = $props();
 </script>
 
-<UserBadge {pubkey} {createChild} {showAvatar} size="small" />
+<UserBadge {pubkey} {createChild} {showAvatar} size="small" hideSearchIcon={false} />

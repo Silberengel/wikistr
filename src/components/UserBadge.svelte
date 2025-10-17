@@ -12,23 +12,45 @@
     size?: 'tiny' | 'small' | 'medium' | 'large';
     showAvatar?: boolean;
     onProfileClick?: (pubkey: string) => void;
+    hideSearchIcon?: boolean;
   }
 
-  let { pubkey, createChild = undefined, size = 'medium', showAvatar = true, onProfileClick }: Props = $props();
+  let { pubkey, createChild = undefined, size = 'medium', showAvatar = true, onProfileClick, hideSearchIcon = false }: Props = $props();
 
   onMount(async () => {
-    user = await loadNostrUser(pubkey);
+    // Set immediate fallback user
+    user = {
+      pubkey: pubkey,
+      npub: pubkey,
+      shortName: pubkey.slice(0, 8) + '...',
+      image: undefined,
+      metadata: {},
+      lastUpdated: Date.now()
+    };
+    
+    try {
+      // Try to load real user data in background
+      const loadPromise = loadNostrUser(pubkey);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('UserBadge load timeout')), 3000)
+      );
+      
+      user = await Promise.race([loadPromise, timeoutPromise]) as any;
+    } catch (e) {
+      // Keep fallback user if loading fails
+      console.error('UserBadge: Failed to load user:', e);
+    }
   });
 
-  function handleUsernameClick() {
-    if (createChild) {
-      createChild({ id: next(), type: 'user', data: pubkey } as UserCard);
+  function handleProfileClick() {
+    if (onProfileClick) {
+      onProfileClick(pubkey);
     }
   }
 
-  function handleAvatarClick() {
-    if (onProfileClick) {
-      onProfileClick(pubkey);
+  function handleSearchClick() {
+    if (createChild) {
+      createChild({ id: next(), type: 'user', data: pubkey } as UserCard);
     }
   }
 
@@ -70,7 +92,7 @@
         style="aspect-ratio: 1/1;"
         alt="user avatar"
         title="View profile"
-        onclick={handleAvatarClick}
+        onclick={handleProfileClick}
         onerror={(e) => (e.target as HTMLImageElement).style.display = 'none'}
       />
     {:else}
@@ -78,7 +100,7 @@
         class="{config.avatarSize} rounded bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold border border-gray-300 cursor-pointer hover:opacity-80 transition-opacity" 
         style="aspect-ratio: 1/1;"
         title="View profile"
-        onclick={handleAvatarClick}
+        onclick={handleProfileClick}
       >
         {user?.shortName?.charAt(0)?.toUpperCase() || pubkey.slice(0, 2).toUpperCase()}
       </div>
@@ -88,8 +110,21 @@
   <span 
     class="text-gray-600 font-[600] {config.textSize} cursor-pointer hover:text-gray-800 transition-colors" 
     title={user?.npub}
-    onclick={handleUsernameClick}
+    onclick={handleProfileClick}
   >
     {user?.shortName || pubkey}
   </span>
+  
+  <!-- Search icon for article search (except in comments and NewSearch Silberengel) -->
+  {#if createChild && !hideSearchIcon}
+    <button
+      class="ml-1 p-1 rounded hover:bg-gray-100 transition-colors"
+      title="Search articles by this user"
+      onclick={handleSearchClick}
+    >
+      <svg class="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+      </svg>
+    </button>
+  {/if}
 </div>

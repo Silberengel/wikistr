@@ -14,6 +14,7 @@
   import ProfilePopup from '$components/ProfilePopup.svelte';
   import ArticleListItem from '$components/ArticleListItem.svelte';
   import RelayItem from '$components/RelayItem.svelte';
+  import ModeToggle from '$components/ModeToggle.svelte';
 
   // Theme configuration
   const theme = getThemeConfig();
@@ -82,7 +83,7 @@
   const MIN_LOAD_INTERVAL = 5000; // 5 seconds minimum between loads
   
   /**
-   * Load wiki articles from inbox relays only (for inbox feed)
+   * Load wiki articles from user's inbox/social relays
    */
   async function loadInboxWikiArticles(): Promise<void> {
     const userAccount = $account;
@@ -101,12 +102,13 @@
     isLoading = true;
 
     try {
-      console.log('🔄 Loading inbox wiki articles...');
+      console.log('🔄 Loading inbox wiki articles from user relays...');
       
-      // Query wiki articles from inbox/social relays only
+      // Query wiki articles from social relays (which include user's inbox relays)
+      // The relay service automatically includes user's relay list (kind 10002) in all operations
       const result = await relayService.queryEvents(
         userAccount.pubkey,
-        'social-read', // Use social relays for inbox
+        'social-read',
         [{ kinds: [wikiKind], limit: 100 }],
         {
           excludeUserContent: true, // Exclude user's own content for inbox
@@ -118,6 +120,7 @@
       currentRelays = result.relays;
       
       console.log(`📰 Inbox feed: ${results.length} articles from ${currentRelays.length} relays`);
+      console.log(`📥 Inbox relays:`, currentRelays);
       
     } catch (error) {
       console.error('❌ Failed to load inbox wiki articles:', error);
@@ -134,6 +137,22 @@
   async function backgroundCacheUpdate(): Promise<void> {
     try {
       console.log('🔄 Background cache update started...');
+      
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Background cache update timeout')), 30000)
+      );
+      
+      const updatePromise = performBackgroundUpdate();
+      await Promise.race([updatePromise, timeoutPromise]);
+      
+    } catch (error) {
+      console.error('❌ Background cache update failed:', error);
+    }
+  }
+  
+  async function performBackgroundUpdate(): Promise<void> {
+    try {
       
       const userPubkey = $account?.pubkey || 'anonymous';
       const relaySet = new Set<string>();
@@ -285,12 +304,14 @@
       const relaySet = new Set<string>();
       
       // First, get wiki articles to extract their IDs for reaction queries
+      console.log('🔄 Querying wiki articles from wiki-read relays...');
       const wikiResult = await relayService.queryEvents(
         userPubkey,
         'wiki-read',
         [{ kinds: [wikiKind], limit: 100 }],
         { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
       );
+      console.log(`📚 Wiki query used ${wikiResult.relays.length} relays:`, wikiResult.relays);
       
       // Extract wiki article IDs for targeted reaction queries
       const wikiArticleIds = wikiResult.events.map(event => event.id);
@@ -674,9 +695,11 @@
         switchFeed(current, true); // Force initial load
       }, 1500); // Increased delay to ensure cache is loaded
       
-      // Start background cache updates every 2 minutes
+      // Start background cache updates every 2 minutes (only if not already loading)
       backgroundUpdateInterval = setInterval(() => {
-        backgroundCacheUpdate().catch(console.error);
+        if (!isLoading) {
+          backgroundCacheUpdate().catch(console.error);
+        }
       }, 2 * 60 * 1000); // 2 minutes
     }
     
@@ -718,7 +741,7 @@
     <!-- User Profile -->
     <div class="mt-2 flex items-center justify-between">
       <div class="flex items-center">
-        <UserBadge pubkey={$account.pubkey} {createChild} onProfileClick={handleProfileClick} size="medium" />
+        <UserBadge pubkey={$account.pubkey} {createChild} onProfileClick={handleProfileClick} size="medium" hideSearchIcon={false} />
       </div>
       <button
         onclick={doLogout}
@@ -802,5 +825,4 @@
   bech32={selectedUserBech32}
   isOpen={profilePopupOpen}
   onClose={() => profilePopupOpen = false}
-  {createChild}
 />

@@ -1,8 +1,8 @@
 # YAML Theme Configuration for Biblestr
-name: biblestr
-title: Biblestr
-tagline: READ THE ORIGINAL. MAKE CONNECTIONS. CULTIVATE KNOWLEDGE.
-description: A decentralized Bible study and wiki system built on Nostr
+name: torahstr
+title: Torahstr
+tagline: Assemble the people - men, women and children, and the foreigners residing in your towns - so they can listen and learn to fear the Lord your God and follow carefully all the words of this law.
+description: A decentralized Torah study and wiki system built on Nostr
 brandColor: "#059669"
 backgroundColor: "#fefefe"
 textColor: "#1a1a1a"
@@ -20,7 +20,7 @@ relays:
     - wss://aggr.nostr.land
     - wss://bevo.nostr1.com
     - wss://nostr.sovbit.host
-showBibleLinks: true
+showBibleLinks: false
 searchHelpText: |
   Search for articles by title, content, or author. Use "author:pubkey" to find articles by a specific author.
 
@@ -53,7 +53,7 @@ searchHelpText: |
   • diff::article1; article2; article3
   • diff::book:bible:John 3:16 KJV | ESV
 
-  Use <code>diff::</code> prefix to compare wiki articles, Bible versions, or any content. Supports pipe <code>|</code> and semicolon <code>;</code> separation.
+  Use diff:: prefix to compare wiki articles, Bible versions, or any content. Supports pipe '|' and semicolon ';' separation.
 typography:
   fontFamily: '"Crimson Text", "Times New Roman", "Times", "Georgia", serif'
   fontFamilyHeading: '"Crimson Text", "Times New Roman", "Times", "Georgia", serif'

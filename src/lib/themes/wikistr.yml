@@ -39,7 +39,7 @@ searchHelpText: |
   • diff::article1; article2; article3
   • diff::book:bible:John 3:16 KJV | ESV
 
-  Use <code>diff::</code> prefix to compare wiki articles, book versions, or any content. Supports pipe <code>|</code> and semicolon <code>;</code> separation.
+  Use diff:: prefix to compare wiki articles, book versions, or any content. Supports pipe '|' and semicolon ';' separation.
 typography:
   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
   fontFamilyHeading: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'

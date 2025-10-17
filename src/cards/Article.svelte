@@ -569,7 +569,7 @@
       <div class="ml-2 mb-4">
         <div class="mt-2 font-bold text-4xl mb-4">{title || dTag}</div>
         <div class="flex items-center space-x-3 mb-4">
-          <UserBadge pubkey={event.pubkey} {createChild} onProfileClick={handleProfileClick} size="small" />
+          <UserBadge pubkey={event.pubkey} {createChild} onProfileClick={handleProfileClick} size="small" hideSearchIcon={false} />
           {#if event.created_at}
             <span class="text-xs text-gray-500 whitespace-nowrap">
               {formatRelativeTime(event.created_at)}
@@ -656,5 +656,4 @@
   bech32={selectedUserBech32}
   isOpen={profilePopupOpen}
   onClose={() => profilePopupOpen = false}
-  {createChild}
 />

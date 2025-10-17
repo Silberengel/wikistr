@@ -49,7 +49,7 @@ searchHelpText: |
   • diff::article1; article2; article3
   • diff::book:quran:Al-Fatiha 1-7 | SAHIH SHAKIR
 
-  Use <code>diff::</code> prefix to compare wiki articles, Quran translations, or any content. Supports pipe <code>|</code> and semicolon <code>;</code> separation.
+  Use diff:: prefix to compare wiki articles, Quran translations, or any content. Supports pipe '|' and semicolon ';' separation.
 typography:
   fontFamily: '"Crimson Text", "Times New Roman", "Times", "Georgia", serif'
   fontFamilyHeading: '"Crimson Text", "Times New Roman", "Times", "Georgia", serif'

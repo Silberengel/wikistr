@@ -194,7 +194,7 @@
           <div class="flex items-center space-x-3">
             <!-- Small round profile picture using Tailwind avatar -->
             <div class="flex-shrink-0">
-            <UserBadge pubkey={pubkey} {createChild} onProfileClick={handleProfileClick} size="small" />
+            <UserBadge pubkey={pubkey} {createChild} onProfileClick={handleProfileClick} size="small" hideSearchIcon={false} />
           </div>
           
           <!-- Date -->
@@ -291,7 +291,6 @@
   bech32={selectedUserBech32}
   isOpen={profilePopupOpen}
   onClose={() => profilePopupOpen = false}
-  {createChild}
 />
 
 <style>

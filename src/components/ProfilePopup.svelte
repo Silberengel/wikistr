@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { pool } from '@nostr/gadgets/global';
   import { relayService } from '$lib/relayService';
   import { nip19 } from '@nostr/tools';
   import UserBadge from './UserBadge.svelte';
@@ -10,27 +9,28 @@
     bech32: string;
     isOpen: boolean;
     onClose: () => void;
-    createChild?: ((card: any) => void) | undefined;
   }
 
-  let { pubkey, bech32, isOpen, onClose, createChild }: Props = $props();
+  let { pubkey, bech32, isOpen, onClose }: Props = $props();
   
   let userData = $state<any>(null);
   let loading = $state(true);
   let isMobile = $state(false);
-
+  let aboutElement = $state<HTMLElement>();
+  let nip05Verified = $state(false);
+  let nip05Verifying = $state(false);
 
   // Detect if we're on mobile
   onMount(() => {
     const checkMobile = () => {
-      isMobile = window.innerWidth < 768; // Tailwind md breakpoint
+      isMobile = window.innerWidth < 768;
     };
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   });
 
-  // Fetch user profile data when popup opens
+  // Fetch user profile data
   async function fetchUserData() {
     if (!isOpen || !pubkey) return;
     
@@ -38,59 +38,125 @@
     userData = null;
     
     try {
-      const result = await relayService.queryEvents(
+      // Decode npub to get hex pubkey if needed
+      let hexPubkey = pubkey;
+      let npub = pubkey;
+      
+      if (pubkey.startsWith('npub')) {
+        try {
+          const decoded = nip19.decode(pubkey);
+          if (decoded.type === 'npub') {
+            hexPubkey = decoded.data;
+            npub = pubkey; // Keep original npub
+          }
+        } catch (e) {
+          console.error('Failed to decode npub:', e);
+          throw e;
+        }
+      } else {
+        // If it's already a hex pubkey, encode it to npub for display
+        try {
+          npub = nip19.npubEncode(pubkey);
+        } catch (e) {
+          console.error('Failed to encode npub:', e);
+          npub = pubkey; // Fallback to original
+        }
+      }
+      
+      // Fetch profile data with timeout
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Profile fetch timeout')), 10000)
+      );
+      
+      const fetchPromise = relayService.queryEvents(
         'anonymous',
         'metadata-read',
-        [{ kinds: [0], authors: [pubkey], limit: 1 }],
+        [{ kinds: [0], authors: [hexPubkey], limit: 1 }],
         {
           excludeUserContent: false,
           currentUserPubkey: undefined
         }
       );
-
-      const userEvent = result.events.find(event => event.pubkey === pubkey && event.kind === 0);
-      let user = null;
+      
+      const result = await Promise.race([fetchPromise, timeoutPromise]) as any;
+      const userEvent = result.events.find((event: any) => event.pubkey === hexPubkey && event.kind === 0);
       
       if (userEvent) {
         try {
           const content = JSON.parse(userEvent.content);
-          // Generate npub from pubkey (with safety check)
-          let npub = '';
-          try {
-            npub = nip19.npubEncode(userEvent.pubkey);
-          } catch (e) {
-            console.warn('Invalid pubkey for npub encoding:', userEvent.pubkey);
-            npub = userEvent.pubkey; // fallback to raw pubkey
-          }
-          user = {
-            pubkey: userEvent.pubkey,
+          
+          userData = {
+            pubkey: hexPubkey,
             npub: npub,
-            display_name: content.display_name,
-            name: content.name,
-            about: content.about,
-            picture: content.picture,
-            banner: content.banner,
-            website: content.website,
-            lud16: content.lud16,
-            nip05: content.nip05,
-            ...content
+            display_name: content.display_name || content.name || 'Unknown',
+            name: content.name || 'Unknown',
+            about: content.about || '',
+            picture: content.picture || '',
+            banner: content.banner || '',
+            website: content.website || '',
+            lud16: content.lud16 || '',
+            nip05: content.nip05 || ''
           };
+          
         } catch (e) {
           console.error('Failed to parse user metadata:', e);
+          throw e;
         }
+      } else {
+        userData = {
+          pubkey: hexPubkey,
+          npub: npub,
+          display_name: 'Unknown',
+          name: 'Unknown',
+          about: '',
+          picture: '',
+          banner: '',
+          website: '',
+          lud16: '',
+          nip05: ''
+        };
       }
-      
-      userData = user;
     } catch (e) {
       console.error('ProfilePopup: Failed to fetch user data:', e);
+      userData = {
+        pubkey: pubkey,
+        npub: pubkey,
+        display_name: 'Profile Unavailable',
+        name: 'Profile Unavailable',
+        about: 'Unable to load profile data. This may be due to network issues or the profile not being found.',
+        picture: '',
+        banner: '',
+        website: '',
+        lud16: '',
+        nip05: ''
+      };
     } finally {
       loading = false;
     }
   }
 
-  // Watch for changes to isOpen and pubkey
-  $effect(() => {
+  // Initialize when component mounts
+  onMount(() => {
+    // Reset NIP-05 states
+    nip05Verifying = false;
+    nip05Verified = false;
     if (isOpen && pubkey) {
+      // Set immediate fallback profile
+      userData = {
+        pubkey: pubkey,
+        npub: pubkey,
+        display_name: 'Loading...',
+        name: 'Loading...',
+        about: 'Loading profile data...',
+        picture: '',
+        banner: '',
+        website: '',
+        lud16: '',
+        nip05: ''
+      };
+      loading = true; // Keep loading true until fetchUserData completes
+      
+      // Try to load real profile data in background
       fetchUserData();
     }
   });
@@ -107,163 +173,250 @@
     }
   }
 
+  // Process links in about text
+  function processAboutLinks() {
+    if (!aboutElement || !userData?.about) return;
+
+    const text = userData.about;
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const parts = text.split(urlRegex);
+
+    aboutElement.innerHTML = '';
+
+    parts.forEach((part: string) => {
+      if (urlRegex.test(part)) {
+        const link = document.createElement('a');
+        link.href = part;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.className = 'text-blue-600 hover:text-blue-800 underline';
+        link.textContent = part;
+        aboutElement?.appendChild(link);
+      } else {
+        const textNode = document.createTextNode(part);
+        aboutElement?.appendChild(textNode);
+      }
+    });
+  }
+
+  // Verify NIP-05
+  async function verifyNip05() {
+    if (!userData?.nip05 || nip05Verifying || nip05Verified) return;
+    
+    nip05Verifying = true;
+    
+    try {
+      const [name, domain] = userData.nip05.split('@');
+      const wellKnownUrl = `https://${domain}/.well-known/nostr.json?name=${name}`;
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      const response = await fetch(wellKnownUrl, {
+        signal: controller.signal,
+        mode: 'cors'
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (response.ok) {
+        const data = await response.json();
+        const names = data.names || {};
+        const wellKnownPubkey = names[name];
+        nip05Verified = wellKnownPubkey === userData.pubkey;
+      } else {
+        nip05Verified = false;
+      }
+      
+      // Reset verifying state
+      nip05Verifying = false;
+    } catch (e) {
+      console.error('NIP-05 verification failed:', e);
+      nip05Verified = false;
+    } finally {
+      nip05Verifying = false;
+    }
+  }
+
+  // Open NIP-05 well-known URL
+  function openNip05WellKnown() {
+    if (!userData?.nip05) return;
+    
+    const [name, domain] = userData.nip05.split('@');
+    const wellKnownUrl = `https://${domain}/.well-known/nostr.json?name=${name}`;
+    window.open(wellKnownUrl, '_blank', 'noopener,noreferrer');
+  }
+
+  // Process links when userData changes
+  $effect(() => {
+    if (userData && aboutElement) {
+      processAboutLinks();
+    }
+    
+    // Verify NIP-05 when userData is loaded
+    if (userData && userData.nip05 && !nip05Verifying) {
+      verifyNip05();
+    }
+  });
 </script>
 
+<!-- Profile Popup -->
 {#if isOpen}
-  <!-- Backdrop -->
-  <div 
-    class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
-    class:items-center={!isMobile}
-    class:items-end={isMobile}
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
     onclick={handleBackdropClick}
-    onkeydown={handleKeydown}
-    tabindex="-1"
+    onkeydown={(e) => {
+      handleKeydown(e);
+      if (e.key === 'Enter' || e.key === ' ') {
+        handleBackdropClick(e as any);
+      }
+    }}
     role="dialog"
     aria-modal="true"
-    aria-labelledby="profile-title"
+    tabindex="-1"
+    aria-label="Profile popup"
   >
-    <!-- Popup/Drawer Content -->
-    <div 
-      class="rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-hidden"
-      style="background-color: white !important;"
-      class:rounded-t-lg={isMobile}
-      class:rounded-b-none={isMobile}
-      class:max-w-md={!isMobile}
-      class:w-full={isMobile}
-      class:max-h-[70vh]={!isMobile}
-      class:max-h-[85vh]={isMobile}
+    <div
+      class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
+      role="dialog"
+      tabindex="-1"
     >
       <!-- Header -->
       <div class="flex items-center justify-between p-4 border-b">
-        <h2 id="profile-title" class="text-lg font-semibold text-gray-900">
-          Profile
-        </h2>
+        <h3 class="text-lg font-semibold text-gray-900">Profile</h3>
         <button
           onclick={onClose}
           class="text-gray-400 hover:text-gray-600 transition-colors"
           aria-label="Close profile"
         >
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
           </svg>
         </button>
       </div>
 
       <!-- Content -->
-      <div class="p-4 overflow-y-auto">
+      <div class="p-4">
         {#if loading}
           <div class="flex items-center justify-center py-8">
-            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
-            <span class="ml-2 text-gray-600">Loading profile...</span>
+            <div class="w-8 h-8 border-4 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
+            <span class="ml-3 text-gray-600">Loading profile...</span>
           </div>
         {:else if userData}
-          <!-- Profile Picture and Basic Info -->
-          <div class="flex flex-col items-center text-center mb-6">
-            <div class="mb-4">
-              <UserBadge pubkey={pubkey} {createChild} size="large" />
+          <!-- Profile Picture and Name -->
+          <div class="flex items-center space-x-4 mb-6">
+            {#if userData.picture}
+              <img
+                src={userData.picture}
+                alt={userData.display_name}
+                class="w-16 h-16 rounded-full object-cover"
+                onerror={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  if (target) target.style.display = 'none';
+                }}
+              />
+            {:else}
+              <div class="w-16 h-16 bg-gray-300 rounded-full flex items-center justify-center">
+                <svg class="w-8 h-8 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
+                </svg>
+              </div>
+            {/if}
+            <div>
+              <h2 class="text-xl font-semibold text-gray-900">{userData.display_name}</h2>
+              {#if userData.name && userData.name !== userData.display_name}
+                <p class="text-gray-600">@{userData.name}</p>
+              {/if}
             </div>
-            
           </div>
 
           <!-- About Section -->
           {#if userData.about}
             <div class="mb-6">
               <h4 class="font-semibold text-gray-900 mb-2">About</h4>
-              <p class="text-gray-700 whitespace-pre-wrap">{userData.about}</p>
+              <div class="text-gray-700 whitespace-pre-wrap" bind:this={aboutElement}>
+                {userData.about}
+              </div>
             </div>
           {/if}
 
-          <!-- Contact Info -->
-          <div class="space-y-3">
-            {#if userData.website}
-              <div>
-                <h4 class="font-semibold text-gray-900 mb-1">Website</h4>
-                <a 
-                  href={userData.website.startsWith('http') ? userData.website : `https://${userData.website}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="text-burgundy-700 hover:text-burgundy-800 underline break-all"
+          <!-- Website -->
+          {#if userData.website}
+            <div class="mb-6">
+              <h4 class="font-semibold text-gray-900 mb-1">Website</h4>
+              <a
+                href={userData.website}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-blue-600 hover:text-blue-800 underline break-all"
+              >
+                {userData.website}
+              </a>
+            </div>
+          {/if}
+
+          <!-- NIP-05 -->
+          {#if userData.nip05}
+            <div class="mb-6">
+              <h4 class="font-semibold text-gray-900 mb-1">NIP-05</h4>
+              <div class="flex items-center space-x-2">
+                <button
+                  onclick={openNip05WellKnown}
+                  class="text-gray-700 font-mono hover:text-gray-900 underline cursor-pointer"
+                  title="Open well-known JSON"
                 >
-                  {userData.website}
-                </a>
+                  {userData.nip05}
+                </button>
+                {#if nip05Verifying && !nip05Verified}
+                  <div class="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
+                {:else if nip05Verified}
+                  <svg class="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                  </svg>
+                {/if}
               </div>
-            {/if}
+            </div>
+          {/if}
 
-            {#if userData.nip05}
-              <div>
-                <h4 class="font-semibold text-gray-900 mb-1">NIP-05</h4>
-                <span class="text-gray-700 font-mono">{userData.nip05}</span>
-              </div>
-            {/if}
-
-            {#if userData.lud16}
-              <div>
-                <h4 class="font-semibold text-gray-900 mb-1">Lightning</h4>
+          <!-- Lightning -->
+          {#if userData.lud16}
+            <div class="mb-6">
+              <h4 class="font-semibold text-gray-900 mb-1">Lightning</h4>
+              <div class="flex items-center space-x-2">
                 <span class="text-gray-700 font-mono">{userData.lud16}</span>
+                <button
+                  onclick={() => navigator.clipboard.writeText(userData.lud16)}
+                  class="p-1 rounded hover:bg-gray-100 transition-colors"
+                  title="Copy lightning address"
+                >
+                  <svg class="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"/>
+                  </svg>
+                </button>
               </div>
-            {/if}
-          </div>
+            </div>
+          {/if}
 
           <!-- Technical Info -->
-          <div class="mt-6 pt-4 border-t border-gray-200">
+          <div class="pt-4 border-t border-gray-200">
             <h4 class="font-semibold text-gray-900 mb-2">Technical Info</h4>
             <div class="text-sm text-gray-600 space-y-1">
-              {#if bech32.startsWith('npub1')}
-                <p><span class="font-medium">Npub:</span> 
-                  <a 
-                    href="https://jumble.imwald.eu/users/{bech32}" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    class="font-mono break-all text-burgundy-700 hover:text-burgundy-800 underline"
-                  >
-                    {bech32}
-                  </a>
-                </p>
-              {:else if bech32.startsWith('nprofile1')}
-                <p><span class="font-medium">Nprofile:</span> <span class="font-mono break-all">{bech32}</span></p>
-                <p><span class="font-medium">Npub:</span> 
-                  <a 
-                    href="https://jumble.imwald.eu/users/{userData.npub}" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    class="font-mono break-all text-burgundy-700 hover:text-burgundy-800 underline"
-                  >
-                    {userData.npub}
-                  </a>
-                </p>
-              {/if}
-              <p><span class="font-medium">Public Key:</span> <span class="font-mono break-all">{userData.pubkey}</span></p>
+              <p><span class="font-medium">Npub:</span>
+                <a
+                  href="https://jumble.imwald.eu/users/{userData.npub}"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="font-mono break-all text-blue-600 hover:text-blue-800 underline ml-1"
+                >
+                  {userData.npub}
+                </a>
+              </p>
             </div>
-          </div>
-        {:else}
-          <div class="text-center py-8">
-            <p class="text-gray-500">Failed to load profile data</p>
-            <p class="text-sm text-gray-400 mt-1">The user may not have published their profile information</p>
           </div>
         {/if}
       </div>
     </div>
   </div>
 {/if}
-
-<style>
-  /* Custom scrollbar for the content area */
-  .overflow-y-auto::-webkit-scrollbar {
-    width: 6px;
-  }
-  
-  .overflow-y-auto::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 3px;
-  }
-  
-  .overflow-y-auto::-webkit-scrollbar-thumb {
-    background: #c1c1c1;
-    border-radius: 3px;
-  }
-  
-  .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-    background: #a8a8a8;
-  }
-</style>
-

@@ -912,153 +912,25 @@
 {/each}
 
 <style>
-  :global(.prose code) {
-    @apply bg-gray-100 text-gray-800 px-1.5 py-0.5 rounded text-sm font-mono;
-  }
+  /* Component-specific styles only - main styling handled in app.postcss */
   
-  :global(.prose pre) {
-    @apply overflow-x-auto bg-gray-700 p-4 rounded-md;
-  }
-  
-  :global(.prose pre code) {
-    @apply bg-transparent p-2 rounded-none;
-  }
-
-  /* Ensure proper styling for postprocessed markdown elements */
-  :global(.prose strong) {
-    @apply font-bold;
-  }
-  
-  :global(.prose em) {
-    @apply italic;
-  }
-
-  /* Highlight.js theme integration - force override any conflicting styles */
-  :global(.prose .hljs) {
-    background: #374151 !important;
-    color: #f9fafb !important;
-    padding: 1rem !important;
-  }
-  
-  /* Ensure highlight.js colors are visible on dark background */
-  :global(.prose .hljs .hljs-keyword) {
-    color: #f87171 !important;
-  }
-  
-  :global(.prose .hljs .hljs-string) {
-    color: #86efac !important;
-  }
-  
-  :global(.prose .hljs .hljs-function) {
-    color: #a78bfa !important;
-  }
-  
-  :global(.prose .hljs .hljs-variable) {
-    color: #fbbf24 !important;
-  }
-  
-  :global(.prose .hljs .hljs-comment) {
-    color: #9ca3af !important;
-  }
-  
-  :global(.prose .hljs .hljs-number) {
-    color: #60a5fa !important;
-  }
-
-  /* Table styling for postprocessed markdown tables */
-  :global(.prose table) {
-    @apply w-full border-collapse border border-gray-300;
-  }
-  
-  /* Enhanced markdown element styling */
-  :global(.prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6) {
-    @apply font-bold text-gray-900;
-  }
-  
-  :global(.prose h1) {
-    @apply text-3xl mt-8 mb-4;
-  }
-  
-  :global(.prose h2) {
-    @apply text-2xl mt-6 mb-3;
-  }
-  
-  :global(.prose h3) {
-    @apply text-xl mt-4 mb-2;
-  }
-  
-  :global(.prose strong) {
-    @apply font-bold text-gray-900;
-  }
-  
-  :global(.prose em) {
-    @apply italic;
-  }
-  
-  :global(.prose del) {
-    @apply line-through text-gray-500;
-  }
-  
-  :global(.prose blockquote) {
-    @apply border-l-4 border-gray-300 pl-4 py-2 my-4 bg-gray-50 italic;
-  }
-  
-  :global(.prose pre) {
-    @apply p-4 rounded-md overflow-x-auto my-4;
-  }
-  
-  /* Don't override highlight.js background */
-  :global(.prose pre:not(.hljs)) {
-    @apply bg-gray-100;
-  }
-  
-  :global(.prose code:not(pre code)) {
-    @apply bg-gray-100 px-1 py-0.5 rounded text-sm font-mono;
-  }
-  
-  :global(.prose ul, .prose ol) {
-    @apply my-4 pl-6;
-  }
-  
-  :global(.prose ul) {
-    @apply list-disc;
-  }
-  
-  :global(.prose ol) {
-    @apply list-decimal;
-  }
-  
-  :global(.prose li) {
-    @apply my-1;
-  }
-  
-  :global(.prose img) {
-    @apply max-w-full h-auto rounded-md shadow-sm my-4;
-  }
-  
-  :global(.prose th) {
-    @apply border border-gray-300 px-4 py-2 bg-gray-100 font-semibold;
-  }
-  
-  :global(.prose td) {
-    @apply border border-gray-300 px-4 py-2;
-  }
-  
-  :global(.prose img) {
-    @apply max-w-full h-auto rounded;
-  }
-
-  /* Nostr link styling */
+  /* Nostr link styling - component-specific */
   :global(.nostr-user-link) {
-    @apply text-burgundy-700 hover:text-burgundy-800 cursor-pointer underline;
+    color: var(--accent);
+    cursor: pointer;
+    text-decoration: underline;
   }
   
   :global(.nostr-event-link) {
-    @apply text-burgundy-700 hover:text-burgundy-800 cursor-pointer underline;
+    color: var(--accent);
+    cursor: pointer;
+    text-decoration: underline;
   }
   
   :global(.read-instead-container) {
-    @apply flex flex-col my-4 px-4 py-3 bg-brown-50 border border-espresso-300 rounded-lg;
+    @apply flex flex-col my-4 px-4 py-3 rounded-lg border;
+    background-color: var(--bg-secondary);
+    border-color: var(--border);
   }
   
   :global(.read-instead-text) {
@@ -1070,11 +942,18 @@
   }
   
   :global(.read-instead-button) {
-    @apply bg-burgundy-700 border-none px-3 py-2 rounded text-sm cursor-pointer transition-colors hover:bg-burgundy-800;
-    color: #fbbf24;
+    @apply px-3 py-2 rounded text-sm cursor-pointer transition-colors;
+    background-color: var(--accent);
+    color: white;
+  }
+  
+  :global(.read-instead-button:hover) {
+    background-color: var(--accent-hover);
   }
   
   :global(.read-instead-link) {
-    @apply text-burgundy-700 hover:text-burgundy-800 cursor-pointer underline;
+    color: var(--accent);
+    cursor: pointer;
+    text-decoration: underline;
   }
 </style>
