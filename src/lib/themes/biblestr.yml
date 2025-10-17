@@ -4,6 +4,8 @@ title: Biblestr
 tagline: In the beginning was the Word, and the Word was with God, and the Word was God.
 description: A decentralized Bible study and wiki system built on Nostr
 accentColor: "#FFDB58"
+defaultMode: "light"
+readingDirection: "ltr"
 relays:
   wiki:
     - wss://thecitadel.nostr1.com
@@ -26,6 +28,12 @@ searchHelpText: |
   • John 3:16 KJV (with version)
   • Romans 1:16-25; Psalm 19:2-3 (multiple references)
 
+  **RCC Catechism Search Examples:**
+  • CCC 1 (Catechism paragraph)
+  • CCC 1-10 (paragraph range)
+  • CCC 1, 3, 5 (multiple paragraphs)
+  • CCC 1 KJV (with version)
+
   **Common Bible Abbreviations:**
   • Gen, Exod, Lev, Num, Deut (Pentateuch)
   • Josh, Judg, Ruth, 1 Sam, 2 Sam, 1 Kgs, 2 Kgs (Historical)
@@ -38,32 +46,17 @@ searchHelpText: |
   • Heb, Jas, 1 Pet, 2 Pet, 1 Jn, 2 Jn, 3 Jn, Jude, Rev (General/Catholic)
 
   **Bible Versions:**
-  KJV, NIV, ESV, NASB, NRSV, DRB, RSV, NLT, MSG, AMP, TLB, NKJV, ASV, YLT, WEB, NET, CSB, NAB, NJB, CEV, GNT, NIRV, BSB, LSB, MEV, NLV, TPT, AMPC, CJB, DARBY, ERV, EXB, GNV, GW, ICB, ISV, JUB, KJV21, LEB, MOUNCE, NABRE, NCV, NIRV, NLV, NRSV, OJB, RGT, TLV, TPT, VOICE, WYC, YLT98
+  KJV, ASV, YLT, WEB, DARBY, ERV, GNV, GW, WYC, YLT98, DRB, RSV
 
   **Compare content with diff:**
   • diff::article1 | article2
-  • diff::book:bible:John 3:16 KJV | NIV
+  • diff::book:bible:John 3:16 KJV | ASV
+  • diff::book:catechism:CCC 1 | CCC 2
   • diff::article1; article2; article3
-  • diff::book:bible:John 3:16 KJV | ESV
+  • diff::book:bible:John 3:16 KJV | YLT
 
-  Use diff:: prefix to compare wiki articles, Bible versions, or any content. Supports pipe '|' and semicolon ';' separation.
+  Use diff:: prefix to compare wiki articles, Bible versions, Catechism paragraphs, or any content. Supports pipe '|' and semicolon ';' separation.
 typography:
   fontFamily: '"Crimson Text", "Times New Roman", "Times", "Georgia", serif'
   fontFamilyHeading: '"Crimson Text", "Times New Roman", "Times", "Georgia", serif'
   fontFamilyMono: '"Courier New", "Courier", "Liberation Mono", monospace'
-  fontSize:
-    xs: "0.75rem"
-    sm: "0.875rem"
-    base: "1.125rem"
-    lg: "1.25rem"
-    xl: "1.375rem"
-    "2xl": "1.625rem"
-    "3xl": "2rem"
-    "4xl": "2.5rem"
-    "5xl": "3.25rem"
-    "6xl": "4rem"
-styling:
-  headerStyle: "font-serif font-normal tracking-wide"
-  buttonStyle: "font-serif transition-all duration-300 hover:shadow-lg"
-  cardStyle: "border border-amber-200 bg-amber-50 rounded-none shadow-md"
-  inputStyle: "border border-amber-300 rounded-none focus:ring-2 focus:ring-green-600 focus:border-transparent bg-amber-50"

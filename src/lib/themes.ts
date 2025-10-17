@@ -9,6 +9,8 @@ export interface ThemeConfig {
   tagline: string;
   description: string;
   accentColor: string;
+  defaultMode: 'light' | 'dark';
+  readingDirection: 'ltr' | 'rtl';
   relays: {
     wiki: string[];
     social: string[];
@@ -19,24 +21,6 @@ export interface ThemeConfig {
     fontFamily: string;
     fontFamilyHeading: string;
     fontFamilyMono: string;
-    fontSize: {
-      xs: string;
-      sm: string;
-      base: string;
-      lg: string;
-      xl: string;
-      '2xl': string;
-      '3xl': string;
-      '4xl': string;
-      '5xl': string;
-      '6xl': string;
-    };
-  };
-  styling: {
-    headerStyle: string;
-    buttonStyle: string;
-    cardStyle: string;
-    inputStyle: string;
   };
 }
 
@@ -200,4 +184,10 @@ export function generatePaletteFromAccent(accentColor: string) {
 export function getThemeConfig(theme?: ThemeType): ThemeConfig {
   const currentTheme = theme || getCurrentTheme();
   return loadTheme(currentTheme);
+}
+
+// Get the default mode for a theme
+export function getThemeDefaultMode(theme?: ThemeType): 'light' | 'dark' {
+  const themeConfig = getThemeConfig(theme);
+  return themeConfig.defaultMode || 'dark'; // fallback to dark if not specified
 }

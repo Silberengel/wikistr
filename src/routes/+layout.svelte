@@ -4,7 +4,7 @@
   import { cards } from '$lib/state';
   import { isElementInViewport, getParentCard } from '$lib/utils';
   import CardElement from '$components/CardElement.svelte';
-  import { getThemeConfig, generatePaletteFromAccent } from '$lib/themes';
+  import { getThemeConfig, generatePaletteFromAccent, getThemeDefaultMode } from '$lib/themes';
   import Toast from '$components/Toast.svelte';
 
   // Theme configuration
@@ -12,6 +12,9 @@
   
   // Generate palette from accent color
   const palette = generatePaletteFromAccent(theme.accentColor);
+  
+  // Get theme's default mode
+  const themeDefaultMode = getThemeDefaultMode();
   
   interface Props {
     children?: import('svelte').Snippet;
@@ -219,7 +222,7 @@
 </svelte:head>
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div class="flex overflow-x-scroll pb-2" draggable="false" bind:this={slider} data-theme={theme.name} data-mode="dark">
+<div class="flex overflow-x-scroll pb-2" draggable="false" bind:this={slider} data-theme={theme.name} data-mode={themeDefaultMode}>
   <CardElement card={{ type: 'welcome', id: -1 }} />
 
   {#each $cards as card (card.id)}

@@ -723,19 +723,19 @@
 
 <!-- Theme-aware Header -->
 <section class="mb-8 text-center" style="font-family: {theme.typography.fontFamilyHeading};">
-  <h1 class="text-6xl font-bold mb-2 {theme.styling.headerStyle}" style="font-size: {theme.typography.fontSize['6xl']}; color: {theme.textColor};">{theme.title}</h1>
-  <p class="text-lg italic mx-auto max-w-prose" style="font-size: {theme.typography.fontSize.lg}; color: {theme.textColor}; opacity: 0.8; direction: rtl;">{@html theme.tagline}</p>
-  <div class="mt-4 text-sm" style="font-size: {theme.typography.fontSize.sm}; color: {theme.textColor}; opacity: 0.9;">
+  <h1 class="text-6xl font-bold mb-2" style="color: var(--text-primary);">{theme.title}</h1>
+  <p class="text-lg italic mx-auto max-w-prose" style="color: var(--text-primary); opacity: 0.8;" dir={theme.readingDirection}>{@html theme.tagline}</p>
+  <div class="mt-4 text-sm" style="color: var(--text-primary); opacity: 0.9;">
     {theme.description}
   </div>
-  <div class="mt-3 text-xs border-t pt-3" style="color: {theme.textColor}; opacity: 0.8; border-color: {theme.textColor}; opacity: 0.5;">
+  <div class="mt-3 text-xs border-t pt-3" style="color: var(--text-primary); opacity: 0.8; border-color: var(--text-primary); opacity: 0.5;">
     A <a href="https://jumble.imwald.eu/users/npub1s3ht77dq4zqnya8vjun5jp3p44pr794ru36d0ltxu65chljw8xjqd975wz" class="text-burgundy-700 hover:text-burgundy-800 underline">GitCitadel</a> fork of <a href="https://github.com/silberengel/wikistr" class="text-burgundy-700 hover:text-burgundy-800 underline">WikiStr</a>
   </div>
 </section>
 
 <!-- Account Section -->
 <section class="mb-4">
-  <h2 class="font-bold text-2xl" style="color: {theme.textColor};">Account</h2>
+  <h2 class="font-bold text-2xl" style="color: var(--text-primary);">Account</h2>
   
   {#if $account}
     <!-- User Profile -->
@@ -755,15 +755,15 @@
 
     <!-- Feed Selector -->
     <div class="mt-4 flex items-center space-x-2">
-      <label for="feed-select" class="text-sm font-medium" style="color: {theme.textColor}; opacity: 0.95;">
+      <label for="feed-select" class="text-sm font-medium" style="color: var(--text-primary); opacity: 0.95;">
         Browse articles from:
       </label>
       <select
         id="feed-select"
         bind:value={current}
         onchange={() => switchFeed(current)}
-        class="px-3 py-2 border rounded-lg shadow-sm focus:outline-none transition-colors sm:text-sm w-48 {theme.styling.inputStyle}"
-        style="font-family: {theme.typography.fontFamily}; font-size: {theme.typography.fontSize.sm};"
+        class="px-3 py-2 border rounded-lg shadow-sm focus:outline-none transition-colors sm:text-sm w-48"
+        style="font-family: {theme.typography.fontFamily};"
       >
         {#each FEED_CONFIGS as feed, index}
           <option value={index}>{feed.label}</option>
@@ -786,7 +786,7 @@
 
 <!-- Articles Section -->
 <section>
-  <h2 class="mb-2 font-bold text-2xl" style="color: {theme.textColor};">
+  <h2 class="mb-2 font-bold text-2xl" style="color: var(--text-primary);">
     {currentFeed.title}
   </h2>
   

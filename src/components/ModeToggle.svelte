@@ -1,13 +1,17 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { getThemeConfig, getThemeDefaultMode } from '$lib/themes';
   
   let currentMode = $state<'light' | 'dark'>('dark');
   
-  // Load saved mode preference or default to dark
+  // Load saved mode preference or use theme default
   onMount(() => {
     const savedMode = localStorage.getItem('wikistr-mode') as 'light' | 'dark' | null;
     if (savedMode) {
       currentMode = savedMode;
+    } else {
+      // Use theme's default mode if no saved preference
+      currentMode = getThemeDefaultMode();
     }
     applyMode();
   });

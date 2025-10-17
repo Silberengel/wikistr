@@ -4,6 +4,8 @@ title: Quranstr
 tagline: "ٱقْرَأْ بِٱسْمِ رَبِّكَ ٱلَّذِى خَلَقَ ١<br/>خَلَقَ ٱلْإِنسَـٰنَ مِنْ عَلَقٍ ٢<br/>ٱقْرَأْ وَرَبُّكَ ٱلْأَكْرَمُ ٣<br/>ٱلَّذِى عَلَّمَ بِٱلْقَلَمِ ٤<br/>عَلَّمَ ٱلْإِنسَـٰنَ مَا لَمْ يَعْلَمْ ٥"
 description: A decentralized Quran study and wiki system built on Nostr
 accentColor: "#228B22"
+defaultMode: "light"
+readingDirection: "rtl"
 relays:
   wiki:
     - wss://relay.wikifreedia.xyz
@@ -37,32 +39,16 @@ searchHelpText: |
   • Al-Ahqaf, Muhammad, Al-Fath, Al-Hujurat, Qaf (46-50)
 
   **Popular Quran Translations:**
-  SAHIH, PICKTHALL, SHAKIR, YUSUFALI, MOHAMMED, CLEAR, KORAN, ABDELHALEEM, AHMEDALI, BEWLEY, FAROOQ, KHAN, MAUDUDI, QARAI, SARWAR, WAHIDUDDIN
+  PICKTHALL, SHAKIR, YUSUFALI, CLEAR, KORAN
 
   **Compare content with diff:**
   • diff::article1 | article2
-  • diff::book:quran:Al-Fatiha 1-7 | SAHIH PICKTHALL
+  • diff::book:quran:Al-Fatiha 1-7 | PICKTHALL
   • diff::article1; article2; article3
-  • diff::book:quran:Al-Fatiha 1-7 | SAHIH SHAKIR
+  • diff::book:quran:Al-Fatiha 1-7 | SHAKIR
 
   Use diff:: prefix to compare wiki articles, Quran translations, or any content. Supports pipe '|' and semicolon ';' separation.
 typography:
-  fontFamily: '"Crimson Text", "Times New Roman", "Times", "Georgia", serif'
-  fontFamilyHeading: '"Crimson Text", "Times New Roman", "Times", "Georgia", serif'
-  fontFamilyMono: '"Courier New", "Courier", "Liberation Mono", monospace'
-  fontSize:
-    xs: "0.75rem"
-    sm: "0.875rem"
-    base: "1.125rem"
-    lg: "1.25rem"
-    xl: "1.375rem"
-    "2xl": "1.625rem"
-    "3xl": "2rem"
-    "4xl": "2.5rem"
-    "5xl": "3.25rem"
-    "6xl": "4rem"
-styling:
-  headerStyle: "font-serif font-normal tracking-wide"
-  buttonStyle: "font-serif transition-all duration-300 hover:shadow-lg"
-  cardStyle: "border border-amber-200 bg-amber-50 rounded-lg shadow-lg"
-  inputStyle: "border border-amber-300 rounded-md focus:ring-2 focus:ring-amber-400 focus:border-amber-400 bg-amber-50 text-amber-900 focus:outline-none"
+  fontFamily: '"Scheherazade New", "Amiri", "Traditional Arabic", "Arabic Typesetting", "Times New Roman", "Times", serif'
+  fontFamilyHeading: '"Scheherazade New", "Amiri", "Traditional Arabic", "Arabic Typesetting", "Times New Roman", "Times", serif'
+  fontFamilyMono: '"Courier New", "Courier", "Liberation Mono", "Nimbus Mono L", "Cousine", monospace'
