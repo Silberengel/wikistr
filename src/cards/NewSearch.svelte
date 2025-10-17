@@ -167,15 +167,15 @@ import UserBadge from '$components/UserBadge.svelte';
   <div class="relative flex items-stretch flex-grow focus-within:z-10">
     <input
       bind:value={query}
-      class="block w-full sm:text-sm {theme.styling.inputStyle}"
-      style="font-family: {theme.typography.fontFamily}; font-size: {theme.typography.fontSize.sm};"
+      class="block w-full sm:text-sm"
+      style="font-family: {theme.typography.fontFamily};"
       placeholder="article name, search term, or book:type:reference"
     />
   </div>
   <button
     type="submit"
-    class="-ml-px inline-flex items-center space-x-2 px-3 py-2 text-sm font-medium rounded-r-md {theme.styling.buttonStyle}"
-    style="font-family: {theme.typography.fontFamily}; font-size: {theme.typography.fontSize.sm};"
+    class="-ml-px inline-flex items-center space-x-2 px-3 py-2 text-sm font-medium rounded-r-md"
+    style="font-family: {theme.typography.fontFamily};"
     >Go</button>
 </form>
 

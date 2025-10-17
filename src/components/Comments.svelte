@@ -468,7 +468,7 @@
           <textarea
             bind:value={commentText}
             placeholder="Write a comment..."
-            class="w-full p-3 border rounded-lg transition-colors resize-none {theme.styling.inputStyle}"
+            class="w-full p-3 border rounded-lg transition-colors resize-none"
             style="font-family: {theme.typography.fontFamily};"
             rows="3"
             disabled={isSubmitting}
@@ -477,8 +477,8 @@
         <div class="flex justify-end">
           <button
             type="submit"
-            class="px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed {theme.styling.buttonStyle}"
-            style="background-color: {theme.brandColor}; color: {theme.textColor}; font-family: {theme.typography.fontFamily};"
+            class="px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            style="font-family: {theme.typography.fontFamily};"
             disabled={!commentText.trim() || isSubmitting}
           >
             {isSubmitting ? 'Posting...' : 'Post Comment'}
@@ -552,7 +552,7 @@
               <textarea
                 bind:value={replyText}
                 placeholder="Write a reply..."
-                class="w-full p-3 border rounded-lg text-sm resize-none {theme.styling.inputStyle}"
+                class="w-full p-3 border rounded-lg text-sm resize-none"
                 style="font-family: {theme.typography.fontFamily};"
                 rows="3"
                 disabled={isSubmitting}
@@ -636,7 +636,7 @@
                       <textarea
                         bind:value={replyText}
                         placeholder="Write a reply..."
-                        class="w-full p-3 border rounded-lg text-sm resize-none {theme.styling.inputStyle}"
+                        class="w-full p-3 border rounded-lg text-sm resize-none"
                 style="font-family: {theme.typography.fontFamily};"
                         rows="3"
                         disabled={isSubmitting}
@@ -720,7 +720,7 @@
 <!-- Publish Status Dialog -->
 {#if publishStatus.show}
   <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-    <div class="rounded-lg p-6 max-w-md w-full mx-4" style="background-color: {theme.backgroundColor}; color: {theme.textColor};">
+    <div class="rounded-lg p-6 max-w-md w-full mx-4" style="color: var(--text-primary);">
       <h3 class="text-lg font-semibold mb-4">{publishStatus.title}</h3>
       
       <div class="space-y-3 mb-6">
@@ -729,28 +729,28 @@
             <div class="flex-shrink-0">
               {#if attempt.status === 'pending'}
                 <div class="w-4 h-4 border-2 border-espresso-500 border-t-transparent rounded-full animate-spin"></div>
-                <span class="text-xs" style="color: {theme.textColor};">Publishing...</span>
+                <span class="text-xs" style="color: var(--text-primary);">Publishing...</span>
               {:else if attempt.status === 'success'}
                 <div class="w-4 h-4 bg-burgundy-700 rounded-full flex items-center justify-center">
                   <svg class="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
                     <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
                   </svg>
                 </div>
-                <span class="text-xs" style="color: {theme.accentColor};">Success</span>
+                <span class="text-xs" style="color: var(--accent);">Success</span>
               {:else if attempt.status === 'failure'}
                 <div class="w-4 h-4 bg-burgundy-800 rounded-full flex items-center justify-center">
                   <svg class="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
                     <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
                   </svg>
                 </div>
-                <span class="text-xs" style="color: {theme.textColor};">Failed</span>
+                <span class="text-xs" style="color: var(--text-primary);">Failed</span>
               {/if}
             </div>
           </div>
           
           {#if attempt.status === 'failure' && attempt.message}
-            <div class="ml-4 p-2 border-l-2 rounded-r" style="background-color: {theme.backgroundColor}; border-color: {theme.accentColor};">
-              <p class="text-xs" style="color: {theme.textColor};">{attempt.message}</p>
+            <div class="ml-4 p-2 border-l-2 rounded-r" style="border-color: var(--accent);">
+              <p class="text-xs" style="color: var(--text-primary);">{attempt.message}</p>
             </div>
           {/if}
         {/each}
