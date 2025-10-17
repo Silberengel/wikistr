@@ -3,11 +3,7 @@ name: biblestr
 title: Biblestr
 tagline: In the beginning was the Word, and the Word was with God, and the Word was God.
 description: A decentralized Bible study and wiki system built on Nostr
-brandColor: "#059669"
-backgroundColor: "#fefefe"
-textColor: "#1a1a1a"
-accentColor: "#d97706"
-highlightColor: "#b91c1c"
+accentColor: "#FFDB58"
 relays:
   wiki:
     - wss://thecitadel.nostr1.com

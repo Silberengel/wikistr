@@ -4,11 +4,14 @@
   import { cards } from '$lib/state';
   import { isElementInViewport, getParentCard } from '$lib/utils';
   import CardElement from '$components/CardElement.svelte';
-  import { getThemeConfig } from '$lib/themes';
+  import { getThemeConfig, generatePaletteFromAccent } from '$lib/themes';
   import Toast from '$components/Toast.svelte';
 
   // Theme configuration
   const theme = getThemeConfig();
+  
+  // Generate palette from accent color
+  const palette = generatePaletteFromAccent(theme.accentColor);
   
   interface Props {
     children?: import('svelte').Snippet;
@@ -180,13 +183,37 @@
 <svelte:head>
   <title>{theme.title}</title>
   <style>
-    /* Theme variables - minimal override for dynamic theme switching */
+    /* Theme variables - dynamically generated from accent color */
     :root {
-      --accent: {theme.accentColor};
-      --accent-hover: {theme.accentColor};
-      --highlight: {theme.highlightColor};
+      /* Dark mode palette */
+      --bg-primary: {palette.dark.primary};
+      --bg-secondary: {palette.dark.secondary};
+      --bg-tertiary: {palette.dark.tertiary};
+      --text-primary: {palette.dark.text};
+      --text-secondary: {palette.dark.textSecondary};
+      --text-muted: {palette.dark.textMuted};
+      --border: {palette.dark.border};
+      --accent: {palette.dark.accent};
+      --accent-hover: {palette.dark.accentHover};
+      --highlight: {palette.dark.highlight};
+      --page-bg: {palette.dark.pageBg};
       --font-family: {theme.typography.fontFamily};
       --font-family-heading: {theme.typography.fontFamilyHeading};
+    }
+    
+    /* Light mode palette */
+    [data-mode="light"] {
+      --bg-primary: {palette.light.primary};
+      --bg-secondary: {palette.light.secondary};
+      --bg-tertiary: {palette.light.tertiary};
+      --text-primary: {palette.light.text};
+      --text-secondary: {palette.light.textSecondary};
+      --text-muted: {palette.light.textMuted};
+      --border: {palette.light.border};
+      --accent: {palette.light.accent};
+      --accent-hover: {palette.light.accentHover};
+      --highlight: {palette.light.highlight};
+      --page-bg: {palette.light.pageBg};
     }
   </style>
 </svelte:head>

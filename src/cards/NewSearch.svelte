@@ -180,8 +180,8 @@ import UserBadge from '$components/UserBadge.svelte';
 </form>
 
 <!-- Search Instructions -->
-<div class="mt-4 p-3 rounded-lg border" style="background-color: {theme.backgroundColor}; border-color: {theme.accentColor};">
-  <div class="text-sm whitespace-pre-line" style="color: {theme.textColor};">
+<div class="mt-4 p-3 rounded-lg border bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600">
+  <div class="text-sm whitespace-pre-line text-gray-600 dark:text-gray-300">
     {theme.searchHelpText}
   </div>
 </div>
@@ -190,7 +190,7 @@ import UserBadge from '$components/UserBadge.svelte';
 <div class="mt-4 flex justify-between items-center">
   <!-- About Statement (Bottom Left) -->
   <div class="flex items-center space-x-2">
-    <span class="text-xs" style="color: {theme.textColor}; opacity: 0.7;">
+    <span class="text-xs text-gray-600 dark:text-gray-300">
       Need help? Contact 
     </span>
     <UserBadge 
@@ -200,7 +200,7 @@ import UserBadge from '$components/UserBadge.svelte';
       onProfileClick={openProfilePopup}
       hideSearchIcon={true}
     />
-    <span class="text-xs" style="color: {theme.textColor}; opacity: 0.7;">
+    <span class="text-xs text-gray-600 dark:text-gray-300">
       for support.
     </span>
   </div>
@@ -208,8 +208,7 @@ import UserBadge from '$components/UserBadge.svelte';
   <!-- Settings Button (Bottom Right) -->
   <button
     onclick={toggleSettings}
-    class="p-2 rounded-md border transition-all duration-200 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2"
-    style="background-color: {theme.backgroundColor}; color: {theme.textColor}; border-color: {theme.accentColor};"
+    class="p-2 rounded-md border transition-all duration-200 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border-gray-200 dark:border-gray-600"
     title="Settings"
     aria-label="Open settings"
   >
@@ -224,13 +223,12 @@ import UserBadge from '$components/UserBadge.svelte';
 {#if showSettings}
 <!-- Mobile: Full-screen drawer -->
 <div class="md:hidden fixed inset-0 z-50 bg-black bg-opacity-50" onclick={toggleSettings} onkeydown={(e) => e.key === 'Escape' && toggleSettings()} role="dialog" aria-modal="true" tabindex="-1">
-  <div class="fixed bottom-0 left-0 right-0 p-4 rounded-t-lg border-t" style="background-color: {theme.backgroundColor}; border-color: {theme.accentColor};" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="button" tabindex="0">
+  <div class="fixed bottom-0 left-0 right-0 p-4 rounded-t-lg border-t bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="button" tabindex="0">
     <div class="flex items-center justify-between mb-4">
-      <h3 class="text-lg font-semibold" style="color: {theme.textColor};">Settings</h3>
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Settings</h3>
       <button
         onclick={toggleSettings}
-        class="p-1 rounded hover:bg-gray-100 transition-colors"
-        style="color: {theme.textColor};"
+        class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-600 dark:text-gray-300"
         aria-label="Close settings"
       >
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -241,22 +239,22 @@ import UserBadge from '$components/UserBadge.svelte';
     
     <!-- Mode Toggle -->
     <div class="mb-4">
-      <div class="block text-sm font-medium mb-2" style="color: {theme.textColor};">Appearance</div>
+      <div class="block text-sm font-medium mb-2 text-gray-900 dark:text-white">Appearance</div>
       <div class="flex items-center space-x-3">
         <ModeToggle />
-        <span class="text-sm" style="color: {theme.textColor}; opacity: 0.8;">Toggle light/dark mode</span>
+        <span class="text-sm text-gray-600 dark:text-gray-300">Toggle light/dark mode</span>
       </div>
     </div>
     
     <!-- Relays Section -->
     <div>
-      <div class="block text-sm font-medium mb-2" style="color: {theme.textColor};">Relays</div>
+      <div class="block text-sm font-medium mb-2 text-gray-900 dark:text-white">Relays</div>
       {#if relaysLoaded}
         {#if themeRelays.length > 0}
           <div class="space-y-2 max-h-48 overflow-y-auto">
             {#each themeRelays as relay}
-              <div class="flex items-center justify-between p-2 rounded border" style="background-color: {theme.backgroundColor}; border-color: {theme.accentColor};">
-                <span class="font-mono text-sm" style="color: {theme.textColor};">{relay.url}</span>
+              <div class="flex items-center justify-between p-2 rounded border bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600">
+                <span class="font-mono text-sm text-gray-900 dark:text-white">{relay.url}</span>
                 <div class="flex items-center space-x-2">
                   <!-- Wiki icon -->
                   <svg 
@@ -287,10 +285,10 @@ import UserBadge from '$components/UserBadge.svelte';
             {/each}
           </div>
         {:else}
-          <p class="text-sm italic" style="color: {theme.textColor}; opacity: 0.7;">No relays configured</p>
+          <p class="text-sm italic text-gray-600 dark:text-gray-300">No relays configured</p>
         {/if}
       {:else}
-        <p class="text-sm" style="color: {theme.textColor}; opacity: 0.7;">Loading relays...</p>
+        <p class="text-sm text-gray-600 dark:text-gray-300">Loading relays...</p>
       {/if}
     </div>
   </div>
@@ -298,13 +296,12 @@ import UserBadge from '$components/UserBadge.svelte';
 
 <!-- Desktop: Popup -->
 <div class="hidden md:block fixed inset-0 z-50 bg-black bg-opacity-50" onclick={toggleSettings} onkeydown={(e) => e.key === 'Escape' && toggleSettings()} role="dialog" aria-modal="true" tabindex="-1">
-  <div class="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 max-w-md p-4 rounded-lg border shadow-lg" style="background-color: {theme.backgroundColor}; border-color: {theme.accentColor};" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="button" tabindex="0">
+  <div class="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 max-w-md p-4 rounded-lg border shadow-lg bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="button" tabindex="0">
     <div class="flex items-center justify-between mb-4">
-      <h3 class="text-lg font-semibold" style="color: {theme.textColor};">Settings</h3>
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Settings</h3>
       <button
         onclick={toggleSettings}
-        class="p-1 rounded hover:bg-gray-100 transition-colors"
-        style="color: {theme.textColor};"
+        class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-600 dark:text-gray-300"
         aria-label="Close settings"
       >
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -315,22 +312,22 @@ import UserBadge from '$components/UserBadge.svelte';
     
     <!-- Mode Toggle -->
     <div class="mb-4">
-      <div class="block text-sm font-medium mb-2" style="color: {theme.textColor};">Appearance</div>
+      <div class="block text-sm font-medium mb-2 text-gray-900 dark:text-white">Appearance</div>
       <div class="flex items-center space-x-3">
         <ModeToggle />
-        <span class="text-sm" style="color: {theme.textColor}; opacity: 0.8;">Toggle light/dark mode</span>
+        <span class="text-sm text-gray-600 dark:text-gray-300">Toggle light/dark mode</span>
       </div>
     </div>
     
     <!-- Relays Section -->
     <div>
-      <div class="block text-sm font-medium mb-2" style="color: {theme.textColor};">Relays</div>
+      <div class="block text-sm font-medium mb-2 text-gray-900 dark:text-white">Relays</div>
       {#if relaysLoaded}
         {#if themeRelays.length > 0}
           <div class="space-y-2 max-h-48 overflow-y-auto">
             {#each themeRelays as relay}
-              <div class="flex items-center justify-between p-2 rounded border" style="background-color: {theme.backgroundColor}; border-color: {theme.accentColor};">
-                <span class="font-mono text-sm" style="color: {theme.textColor};">{relay.url}</span>
+              <div class="flex items-center justify-between p-2 rounded border bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600">
+                <span class="font-mono text-sm text-gray-900 dark:text-white">{relay.url}</span>
                 <div class="flex items-center space-x-2">
                   <!-- Wiki icon -->
                   <svg 
@@ -361,10 +358,10 @@ import UserBadge from '$components/UserBadge.svelte';
             {/each}
           </div>
         {:else}
-          <p class="text-sm italic" style="color: {theme.textColor}; opacity: 0.7;">No relays configured</p>
+          <p class="text-sm italic text-gray-600 dark:text-gray-300">No relays configured</p>
         {/if}
       {:else}
-        <p class="text-sm" style="color: {theme.textColor}; opacity: 0.7;">Loading relays...</p>
+        <p class="text-sm text-gray-600 dark:text-gray-300">Loading relays...</p>
       {/if}
     </div>
   </div>

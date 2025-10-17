@@ -1,13 +1,9 @@
-# YAML Theme Configuration for Biblestr
+# YAML Theme Configuration for Torahstr
 name: torahstr
 title: Torahstr
 tagline: Assemble the people - men, women and children, and the foreigners residing in your towns - so they can listen and learn to fear the Lord your God and follow carefully all the words of this law.
 description: A decentralized Torah study and wiki system built on Nostr
-brandColor: "#059669"
-backgroundColor: "#fefefe"
-textColor: "#1a1a1a"
-accentColor: "#d97706"
-highlightColor: "#b91c1c"
+accentColor: "#0038b8"
 relays:
   wiki:
     - wss://thecitadel.nostr1.com

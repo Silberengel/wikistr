@@ -8,11 +8,7 @@ export interface ThemeConfig {
   title: string;
   tagline: string;
   description: string;
-  brandColor: string;
-  backgroundColor: string;
-  textColor: string;
   accentColor: string;
-  highlightColor: string;
   relays: {
     wiki: string[];
     social: string[];
@@ -114,6 +110,90 @@ export function getCurrentTheme(): ThemeType {
   
   // Default fallback - theme is injected at build time via vite config
   return 'wikistr';
+}
+
+// Color palette generation from accent color
+export function generatePaletteFromAccent(accentColor: string) {
+  // Convert hex to HSL for easier manipulation
+  const hexToHsl = (hex: string) => {
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    let h = 0, s = 0, l = (max + min) / 2;
+    
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      switch (max) {
+        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+        case g: h = (b - r) / d + 2; break;
+        case b: h = (r - g) / d + 4; break;
+      }
+      h /= 6;
+    }
+    
+    return { h: h * 360, s: s * 100, l: l * 100 };
+  };
+  
+  const hslToHex = (h: number, s: number, l: number) => {
+    const hue2rgb = (p: number, q: number, t: number) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1/6) return p + (q - p) * 6 * t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    };
+    
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    const r = hue2rgb(p, q, h + 1/3);
+    const g = hue2rgb(p, q, h);
+    const b = hue2rgb(p, q, h - 1/3);
+    
+    const toHex = (c: number) => {
+      const hex = Math.round(c * 255).toString(16);
+      return hex.length === 1 ? '0' + hex : hex;
+    };
+    
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+  };
+  
+  const { h, s, l } = hexToHsl(accentColor);
+  
+  return {
+    // Light mode palette
+    light: {
+      primary: '#ffffff',
+      secondary: '#f8fafc',
+      tertiary: '#f1f5f9',
+      text: '#1e293b',
+      textSecondary: '#475569',
+      textMuted: '#64748b',
+      border: '#e2e8f0',
+      accent: accentColor,
+      accentHover: hslToHex(h, s, Math.max(0, l - 10)),
+      highlight: hslToHex(h, s, Math.max(0, l - 20)),
+      pageBg: '#f1f5f9'
+    },
+    // Dark mode palette
+    dark: {
+      primary: '#0f172a',
+      secondary: '#1e293b',
+      tertiary: '#334155',
+      text: '#f8fafc',
+      textSecondary: '#cbd5e1',
+      textMuted: '#94a3b8',
+      border: '#475569',
+      accent: accentColor,
+      accentHover: hslToHex(h, s, Math.min(100, l + 10)),
+      highlight: hslToHex(h, s, Math.min(100, l + 20)),
+      pageBg: '#0f172a'
+    }
+  };
 }
 
 // Get theme configuration (synchronous for backward compatibility)

@@ -3,11 +3,7 @@ name: wikistr
 title: Wikistr
 tagline: READ. WRITE. CONNECT.
 description: A decentralized wiki system built on Nostr
-brandColor: "#9333ea"
-backgroundColor: "#0f172a"
-textColor: "#f8fafc"
-accentColor: "#3b82f6"
-highlightColor: "#ef4444"
+accentColor: "#9333ea"
 relays:
   wiki:
     - wss://thecitadel.nostr1.com
