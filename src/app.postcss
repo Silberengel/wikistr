@@ -122,23 +122,6 @@
     font-style: italic;
   }
 
-  p {
-    color: var(--text-primary);
-    line-height: 1.6;
-  }
-
-  /* Links */
-  a {
-    color: var(--accent);
-    text-decoration: none;
-    transition: color 0.2s ease;
-  }
-
-  a:hover {
-    color: var(--accent-hover);
-    text-decoration: underline;
-  }
-
   /* Focus States */
   *:focus {
     outline: 2px solid var(--accent);
@@ -244,7 +227,7 @@
     font-size: 0.9em;
   }
 
-  /* Code Blocks */
+  /* Code Blocks - NO INTERNAL BORDERS */
   pre {
     @apply p-4 rounded-md overflow-x-auto my-4;
     background-color: var(--code-block-bg);
@@ -255,16 +238,7 @@
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
   }
 
-  /* Force remove borders from pre elements specifically */
-  pre {
-    border-top: none !important;
-    border-bottom: none !important;
-    border-left: none !important;
-    border-right: none !important;
-    border: 0.5px solid var(--code-block-border) !important;
-  }
-
-  /* Code block content */
+  /* Code block content - NO INTERNAL BORDERS */
   pre code {
     background: transparent;
     border: none;
@@ -279,55 +253,6 @@
   .hljs,
   .hljs * {
     line-height: 1.2 !important;
-  }
-
-  /* Nuclear option - remove ALL possible sources of horizontal lines */
-  pre,
-  pre *,
-  code,
-  code *,
-  .hljs,
-  .hljs * {
-    border-top: none !important;
-    border-bottom: none !important;
-    border-left: none !important;
-    border-right: none !important;
-    border: none !important;
-    outline: none !important;
-    box-shadow: none !important;
-    background-image: none !important;
-    background-position: none !important;
-    background-repeat: none !important;
-    text-decoration: none !important;
-    text-decoration-line: none !important;
-    text-decoration-color: none !important;
-    text-underline-offset: none !important;
-  }
-
-  /* Remove any pseudo-elements that might create lines */
-  pre::before,
-  pre::after,
-  pre *::before,
-  pre *::after,
-  code::before,
-  code::after,
-  code *::before,
-  code *::after,
-  .hljs::before,
-  .hljs::after,
-  .hljs *::before,
-  .hljs *::after {
-    display: none !important;
-    content: none !important;
-    border: none !important;
-    outline: none !important;
-    box-shadow: none !important;
-  }
-
-  pre code {
-    background: transparent;
-    border: none;
-    padding: 0;
   }
 
   /* Prose-specific code blocks */
@@ -632,6 +557,9 @@
     background-color: var(--code-block-bg);
     color: var(--code-block-text);
     border: 0.5px solid var(--code-block-border);
+    line-height: 1.2 !important;
+    white-space: pre !important;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
   }
 
   .markdown pre code {
@@ -694,7 +622,7 @@
     border: 1px solid var(--border);
   }
 
-  /* Highlight.js Overrides */
+  /* Highlight.js Overrides - NO INTERNAL BORDERS */
   .hljs {
     background: var(--code-block-bg) !important;
     color: var(--code-block-text) !important;
@@ -741,7 +669,6 @@
   .hljs-json .hljs-literal {
     color: #fb7185 !important; /* Bright pink for JSON booleans */
   }
-
 
   /* Ultra-specific syntax highlighting overrides for dark mode */
   pre code .hljs-string,
@@ -817,15 +744,6 @@
     color: #fb7185 !important; /* Bright pink for JSON booleans */
   }
 
-  /* Nuclear option - target any span with syntax highlighting classes */
-  span.hljs-string,
-  span.hljs-number,
-  span.hljs-literal,
-  span.hljs-attr,
-  span.hljs-keyword {
-    color: inherit !important;
-  }
-
   /* Force colors on any element with these classes */
   *[class*="hljs-string"] {
     color: #6ee7b7 !important;
@@ -845,6 +763,52 @@
 
   *[class*="hljs-keyword"] {
     color: #a78bfa !important;
+  }
+
+  /* BRUTAL FORCE - Remove ALL possible horizontal lines from code blocks */
+  pre,
+  pre *,
+  code,
+  code *,
+  .hljs,
+  .hljs * {
+    border-top: none !important;
+    border-bottom: none !important;
+    border-left: none !important;
+    border-right: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background-image: none !important;
+    text-decoration: none !important;
+    text-decoration-line: none !important;
+    text-underline-offset: none !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+  }
+
+  /* Hide any line numbering or table structures */
+  .hljs-ln,
+  .hljs-ln *,
+  .hljs-ln-table,
+  .hljs-ln-table *,
+  .hljs-ln-line,
+  .hljs-ln-line *,
+  .hljs-ln-numbers,
+  .hljs-ln-numbers * {
+    display: none !important;
+    visibility: hidden !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
   }
 
   /* LaTeX Styling */
@@ -961,7 +925,9 @@
   .listingblock pre {
     background-color: var(--code-block-bg) !important;
     color: var(--code-block-text) !important;
-    border: 1px solid var(--code-block-border) !important;
+    line-height: 1.2 !important;
+    white-space: pre !important;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
   }
 
   /* AsciiDoc Literal Blocks */
@@ -977,7 +943,9 @@
   .literalblock pre {
     background-color: var(--code-block-bg) !important;
     color: var(--code-block-text) !important;
-    border: 1px solid var(--code-block-border) !important;
+    line-height: 1.2 !important;
+    white-space: pre !important;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
   }
 
   /* AsciiDoc Source Blocks */
@@ -993,13 +961,6 @@
   .sourceblock pre {
     background-color: var(--code-block-bg) !important;
     color: var(--code-block-text) !important;
-    border: 1px solid var(--code-block-border) !important;
-  }
-
-  /* AsciiDoc code blocks with proper line height */
-  .listingblock pre,
-  .literalblock pre,
-  .sourceblock pre {
     line-height: 1.2 !important;
     white-space: pre !important;
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
