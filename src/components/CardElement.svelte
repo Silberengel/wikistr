@@ -22,6 +22,14 @@
 
   let { card }: Props = $props();
 
+  // Expand state for diff cards
+  let expanded = $state(false);
+
+  function toggleExpand() {
+    expanded = !expanded;
+    console.log('🔄 CardElement toggle expand:', expanded);
+  }
+
   function close() {
     if (card.type === 'editor' && card.data.previous) replaceSelf(card.data.previous);
     else removeSelf();
@@ -124,15 +132,15 @@
   id={`wikicard-${card.id}`}
   class="
   overflow-y-auto
-  overflow-x-hidden
+  {card.type === 'diff' ? 'overflow-x-visible' : 'overflow-x-hidden'}
   mx-2 mt-2
-  min-w-[395px] max-w-[395px] lg:min-w-[32rem] lg:max-w-[32rem]
+  {card.type === 'diff' ? 'min-w-[395px] lg:min-w-[32rem]' : 'min-w-[395px] max-w-[395px] lg:min-w-[32rem] lg:max-w-[32rem]'}
   rounded-lg border-8
   h-[calc(100vh_-_32px)]
   p-4
   scrollbar-thin"
+  style="background-color: var(--bg-primary); border-color: var(--border); {card.type === 'diff' && expanded ? 'min-width: 1500px !important; width: 1500px !important; max-width: none !important; flex: 0 0 1500px !important;' : card.type === 'diff' && !expanded ? 'min-width: 32rem !important; width: 32rem !important; max-width: 32rem !important; flex: 0 0 32rem !important;' : ''}"
   ondblclick={scrollIntoViewIfNecessary}
-  style="background-color: var(--bg-primary); border-color: var(--border);"
 >
   {#if card.type !== 'welcome' && card.type !== 'new'}
     <div class="flex" class:justify-between={card.back} class:justify-end={!card.back}>
@@ -163,7 +171,7 @@
       </button>
     </div>
   {/if}
-  <article class="font-sans mx-auto p-2 lg:max-w-4xl">
+  <article class="font-sans mx-auto p-2 {card.type === 'diff' ? '' : 'lg:max-w-4xl'}">
     {#if card.type === 'article'}
       <Article {createChild} {replaceSelf} {back} {card} />
     {:else if card.type === 'new'}
@@ -183,7 +191,7 @@
     {:else if card.type === 'book'}
       <Book {createChild} {replaceSelf} {card} />
     {:else if card.type === 'diff'}
-      <Diff {card} />
+      <Diff {card} {expanded} {toggleExpand} />
     {/if}
   </article>
 </div>

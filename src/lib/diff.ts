@@ -9,11 +9,13 @@ export interface DiffResult {
     title: string;
     content: string;
     version?: string;
+    pubkey?: string;
   };
   right: {
     title: string;
     content: string;
     version?: string;
+    pubkey?: string;
   };
   changes: DiffChange[];
 }

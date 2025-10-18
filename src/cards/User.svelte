@@ -52,12 +52,23 @@
   });
 
   function openArticle(result: NostrEvent) {
+    // Create a clean, serializable copy of the event
+    const cleanEvent = {
+      id: result.id,
+      pubkey: result.pubkey,
+      created_at: result.created_at,
+      kind: result.kind,
+      tags: result.tags.map(tag => [...tag]), // Deep copy tags array
+      content: result.content,
+      sig: result.sig
+    };
+    
     let articleCard: ArticleCard = {
       id: next(),
       type: 'article',
       data: [getTagOr(result, 'd'), result.pubkey],
       relayHints: seenCache[result.id] || [],
-      actualEvent: result
+      actualEvent: cleanEvent
     };
     createChild(articleCard);
   }

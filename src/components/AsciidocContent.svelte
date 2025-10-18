@@ -913,6 +913,7 @@
         {createChild} 
         onProfileClick={handleProfileAvatarClick} 
         size="small" 
+        hideSearchIcon={true}
       />
       <span class="text-espresso-700"> instead.</span>
     </div>

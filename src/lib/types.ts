@@ -34,6 +34,9 @@ export function serializeCardForRouter(card: Card) {
       if (serialized.actualEvent)
         serialized.actualEvent = eventOutFromProxy(serialized.actualEvent);
       break;
+    case 'diff':
+      if (serialized.results) serialized.results = [...serialized.results].map(eventOutFromProxy);
+      break;
   }
 
   return serialized;
@@ -118,6 +121,7 @@ export type DiffCard = {
   type: 'diff';
   back?: Card;
   data: string; // diff query like "diff::John 3:16 KJV | NIV"
+  selectedEvents?: NostrEvent[]; // the actual events to compare
   results?: NostrEvent[];
   seenCache?: { [id: string]: string[] };
 };

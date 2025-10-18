@@ -22,18 +22,17 @@
   // Theme configuration
   const theme = getThemeConfig();
 
-  export let card: Card;
-  export let replaceSelf: (card: Card) => void;
-  export let createChild: (card: Card) => void;
-  let tried = false;
+  let { card, replaceSelf, createChild }: { card: Card; replaceSelf: (card: Card) => void; createChild: (card: Card) => void } = $props();
+  let tried = $state(false);
   let eosed = 0;
-  let editable = false;
+  let editable = $state(false);
 
   const searchCard = card as SearchCard;
 
-  let query: string;
+  let query: string = $state('');
   let seenCache: { [id: string]: string[] } = {};
-  let results: NostrEvent[] = [];
+  let results: NostrEvent[] = $state([]);
+  let selectedArticles: Set<string> = $state(new Set());
 
   // close handlers
   let uwrcancel: () => void;
@@ -132,16 +131,12 @@
       
       console.log(`🔍 Searching all ${allRelays.length} available relays for: "${query}"`);
 
-      // Multi-tier search: exact match, title, summary, then full-text
+      // Multi-tier search: exact match, then full-text (avoiding problematic tag filters)
       const searchQueries = [
         // 1. Exact match
         { kinds: [wikiKind], '#d': [normalizeIdentifier(query)], limit: 25 },
-        // 2. Title search
-        { kinds: [wikiKind], '#title': [query], limit: 15 },
-        // 3. Summary search  
-        { kinds: [wikiKind], '#summary': [query], limit: 15 },
-        // 4. Full-text search
-        { kinds: [wikiKind], search: query, limit: 20 }
+        // 2. Full-text search (most compatible)
+        { kinds: [wikiKind], search: query, limit: 50 }
       ];
 
       // Search all queries using relay service with all relays
@@ -159,7 +154,7 @@
             tried = true;
 
             // Check if this is an exact match from preferred authors
-            if (searchCard.preferredAuthors.includes(evt.pubkey)) {
+            if (searchCard.preferredAuthors?.includes(evt.pubkey)) {
               // we found an exact match that fits the list of preferred authors
               // jump straight into it
               openArticle(evt, undefined, true);
@@ -263,9 +258,8 @@
           result.events.forEach(evt => {
             tried = true;
 
-            if (searchCard.preferredAuthors.includes(evt.pubkey)) {
-              // we found an exact match that fits the list of preferred authors
-              // jump straight into it
+            if (searchCard.preferredAuthors?.includes(evt.pubkey)) {
+              // we found an exact match that fits e
               openArticle(evt, undefined, true);
             }
 
@@ -276,15 +270,11 @@
 
     });
 
-    // Multi-tier search: title, summary, then full-text
+    // Multi-tier search: full-text only (avoiding problematic tag filters)
     if ($account) {
       const searchQueries = [
-        // 1. title search
-        { kinds: [wikiKind], '#title': [query], limit: 10 },
-        // 2. summary search  
-        { kinds: [wikiKind], '#summary': [query], limit: 10 },
-        // 3. full-text search
-        { kinds: [wikiKind], search: query, limit: 10 }
+        // 1. full-text search (most compatible)
+        { kinds: [wikiKind], search: query, limit: 30 }
       ];
 
       // Search all queries using relay service
@@ -346,15 +336,34 @@
   }
 
   function openArticle(result: Event, ev?: MouseEvent, direct?: boolean) {
+    // Create a clean, serializable copy of the event
+    const cleanEvent = {
+      id: result.id,
+      pubkey: result.pubkey,
+      created_at: result.created_at,
+      kind: result.kind,
+      tags: result.tags.map(tag => [...tag]), // Deep copy tags array
+      content: result.content,
+      sig: result.sig
+    };
+    
     let articleCard: ArticleCard = {
       id: next(),
       type: 'article',
       data: [getTagOr(result, 'd'), result.pubkey],
       relayHints: seenCache[result.id],
-      actualEvent: result,
+      actualEvent: cleanEvent,
       versions:
         getTagOr(result, 'd') === normalizeIdentifier(query)
-          ? results.filter((evt) => getTagOr(evt, 'd') === normalizeIdentifier(query))
+          ? results.filter((evt) => getTagOr(evt, 'd') === normalizeIdentifier(query)).map(evt => ({
+              id: evt.id,
+              pubkey: evt.pubkey,
+              created_at: evt.created_at,
+              kind: evt.kind,
+              tags: evt.tags.map(tag => [...tag]),
+              content: evt.content,
+              sig: evt.sig
+            }))
           : undefined
     };
     if (ev?.button === 1) createChild(articleCard);
@@ -362,6 +371,68 @@
       // if this is called with 'direct' we won't give it a back button
       replaceSelf(articleCard);
     else replaceSelf({ ...articleCard, back: card }); // otherwise we will
+  }
+
+  function toggleArticleSelection(eventId: string) {
+    if (selectedArticles.has(eventId)) {
+      // If already selected, deselect it
+      selectedArticles.delete(eventId);
+    } else {
+      // If trying to select a new article, check if we're at the limit
+      if (selectedArticles.size >= 2) {
+        // Show a message or prevent selection
+        console.log('⚠️ Maximum of 2 articles can be selected for diff comparison');
+        return;
+      }
+      selectedArticles.add(eventId);
+    }
+    selectedArticles = new Set(selectedArticles); // Trigger reactivity
+  }
+
+  // Check if an article has "Read ... instead" content (redirect article)
+  function isRedirectArticle(event: NostrEvent): boolean {
+    // Check if the content contains "Read naddr... instead." pattern
+    return /Read (naddr[a-zA-Z0-9]+) instead\./.test(event.content);
+  }
+
+  function showDiff() {
+    if (selectedArticles.size < 2) return;
+    
+    const selectedEvents = results.filter(event => selectedArticles.has(event.id));
+    if (selectedEvents.length < 2) return;
+    
+    // Create diff query string from selected article titles
+    const articleTitles = selectedEvents.map(event => 
+      event.tags.find(t => t[0] === 'title')?.[1] || 
+      event.tags.find(t => t[0] === 'd')?.[1] || 
+      'Untitled'
+    );
+    
+    const diffQuery = `diff::${articleTitles.join(' | ')}`;
+    
+    // Store selected events in a global cache with the diff query as key
+    const diffKey = `diff_${diffQuery}`;
+    localStorage.setItem(diffKey, JSON.stringify(selectedEvents.map(event => ({
+      id: event.id,
+      pubkey: event.pubkey,
+      created_at: event.created_at,
+      kind: event.kind,
+      tags: event.tags.map(tag => [...tag]), // Deep copy tags
+      content: event.content,
+      sig: event.sig
+    }))));
+    
+    // Create diff card with just the query
+    const diffCard: Card = {
+      id: next(),
+      type: 'diff',
+      data: diffQuery
+    };
+    
+    console.log('🔍 Creating diff card with localStorage cache:', diffCard);
+    console.log('🔍 Stored events in localStorage with key:', diffKey);
+    
+    createChild(diffCard);
   }
 
   function startEditing() {
@@ -403,8 +474,10 @@
 </script>
 
 <div class="mt-2 font-bold text-4xl flex items-center gap-4">
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   "<span
+    role="textbox"
+    tabindex="0"
     ondblclick={startEditing}
     onblur={finishedEditing}
     onkeydown={preventKeys}
@@ -414,9 +487,47 @@
   
 </div>
 
+<!-- Diff Button -->
+{#if results.length > 1}
+  <div class="mt-4 mb-4">
+    <button
+      onclick={showDiff}
+      disabled={selectedArticles.size < 2}
+      class="inline-flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors disabled:cursor-not-allowed"
+      style="color: {theme.accentColor}; background-color: var(--bg-primary); border: 1px solid {theme.accentColor};"
+      onmouseover={(e) => {
+        if (selectedArticles.size >= 2 && e.target) {
+          (e.target as HTMLButtonElement).style.opacity = '0.8';
+        }
+      }}
+      onmouseout={(e) => {
+        if (selectedArticles.size >= 2 && e.target) {
+          (e.target as HTMLButtonElement).style.opacity = '1';
+        }
+      }}
+      onfocus={(e) => {
+        if (selectedArticles.size >= 2 && e.target) {
+          (e.target as HTMLButtonElement).style.opacity = '0.8';
+        }
+      }}
+      onblur={(e) => {
+        if (selectedArticles.size >= 2 && e.target) {
+          (e.target as HTMLButtonElement).style.opacity = '1';
+        }
+      }}
+    >
+      Diff ({selectedArticles.size}/2 selected)
+    </button>
+  </div>
+{/if}
 
 {#each results as result (result.id)}
-  <ArticleListItem event={result} {openArticle} />
+  <ArticleListItem 
+    event={result} 
+    {openArticle} 
+    toggleArticleSelection={isRedirectArticle(result) ? undefined : toggleArticleSelection} 
+    selected={selectedArticles.has(result.id)} 
+  />
 {/each}
 
 {#if tried}
@@ -426,7 +537,13 @@
     </p>
     <button
       onclick={() => {
-        replaceSelf({ id: next(), type: 'editor', data: { title: query, previous: card } } as any);
+        // Create a clean, serializable card reference
+        const cleanCard = {
+          id: card.id,
+          type: card.type,
+          data: (card as any).data || null
+        };
+        replaceSelf({ id: next(), type: 'editor', data: { title: query, previous: cleanCard } } as any);
       }}
       class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm"
       style="font-family: {theme.typography.fontFamily};"

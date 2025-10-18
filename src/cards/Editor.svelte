@@ -73,11 +73,22 @@
 
       if (result.success) {
         setTimeout(() => {
+          // Create a clean, serializable copy of the event
+          const cleanEvent = {
+            id: event.id,
+            pubkey: event.pubkey,
+            created_at: event.created_at,
+            kind: event.kind,
+            tags: event.tags.map(tag => [...tag]), // Deep copy tags array
+            content: event.content,
+            sig: event.sig
+          };
+          
           replaceSelf({
             id: next(),
             type: 'article',
             data: [getTagOr(event, 'd'), event.pubkey],
-            actualEvent: event,
+            actualEvent: cleanEvent,
             relayHints: result.publishedTo
           } as ArticleCard);
         }, 1400);
@@ -131,7 +142,7 @@
         <textarea
           placeholder="The **Greek alphabet** has been used to write the [[Greek language]] sincie the late 9th or early 8th century BC. The Greek alphabet is the ancestor of the [[Latin]] and [[Cyrillic]] scripts."
           bind:value={data.content}
-          class="h-64 shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md"
+          class="h-80 shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md"
         ></textarea>
       {/if}
     </label>
@@ -144,7 +155,7 @@
         <textarea
           bind:value={data.summary}
           placeholder="The Greek alphabet is the earliest known alphabetic script to have distict letters for vowels. The Greek alphabet existed in many local variants."
-          class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md"
+          class="h-32 shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md"
         ></textarea></label
       >
     </details>
@@ -181,14 +192,14 @@
     <button
       onclick={publish}
       class="cursor-pointer inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2"
-      style="font-family: {theme.typography.fontFamily}; focus:ring-color: {theme.highlightColor};"
+      style="font-family: {theme.typography.fontFamily};"
       >Save</button>
     <button
       onclick={() => {
         previewing = !previewing;
       }}
       class="cursor-pointer inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2"
-      style="font-family: {theme.typography.fontFamily}; focus:ring-color: {theme.highlightColor};"
+      style="font-family: {theme.typography.fontFamily};"
       >{#if previewing}Edit{:else}Preview{/if}</button>
   </div>
 {/if}

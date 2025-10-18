@@ -62,12 +62,23 @@
   });
 
   function openArticle(result: NostrEvent, ev: MouseEvent) {
+    // Create a clean, serializable copy of the event
+    const cleanEvent = {
+      id: result.id,
+      pubkey: result.pubkey,
+      created_at: result.created_at,
+      kind: result.kind,
+      tags: result.tags.map(tag => [...tag]), // Deep copy tags array
+      content: result.content,
+      sig: result.sig
+    };
+    
     let articleCard: ArticleCard = {
       id: next(),
       type: 'article',
       data: [getTagOr(result, 'd'), result.pubkey],
       relayHints: [relayCard.data],
-      actualEvent: result
+      actualEvent: cleanEvent
     };
     if (ev.button === 1) createChild(articleCard);
     else replaceSelf(articleCard);

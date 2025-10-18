@@ -240,7 +240,6 @@ class RelayService {
     
     let relays = await this.getRelaysForOperation(userPubkey, type);
     
-    
     // Extra safety filter for undefined/null relays
     relays = relays.filter(url => url && 
                                   url !== 'undefined' && 

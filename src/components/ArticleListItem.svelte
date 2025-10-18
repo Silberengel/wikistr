@@ -3,13 +3,19 @@
 
   import UserLabel from './UserLabel.svelte';
   import { formatRelativeTime } from '$lib/utils';
+  import { getThemeConfig } from '$lib/themes';
+
+  // Theme configuration
+  const theme = getThemeConfig();
 
   interface Props {
     openArticle: (event: NostrEvent, ev: MouseEvent) => void;
     event: NostrEvent;
+    toggleArticleSelection?: (eventId: string) => void;
+    selected?: boolean;
   }
 
-  let { openArticle, event }: Props = $props();
+  let { openArticle, event, toggleArticleSelection, selected = false }: Props = $props();
 
   let plainText = $derived(
     event.content
@@ -28,9 +34,24 @@
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div
   onmouseup={handleClick}
-  class="cursor-pointer p-4 border-2 border-stone-200 rounded-lg mt-2"
+  class="cursor-pointer p-4 border-2 border-stone-200 rounded-lg mt-2 relative"
   style="background-color: var(--theme-bg);"
 >
+  <!-- Checkbox for diff selection -->
+  {#if toggleArticleSelection}
+    <div class="absolute top-2 right-2" style="pointer-events: auto; z-index: 10;">
+      <input
+        type="checkbox"
+        checked={selected}
+        onchange={() => toggleArticleSelection(event.id)}
+        onclick={(e) => e.stopPropagation()}
+        onmousedown={(e) => e.stopPropagation()}
+        onmouseup={(e) => e.stopPropagation()}
+        class="w-4 h-4 rounded focus:ring-2"
+        style="pointer-events: auto; accent-color: {theme.accentColor}; --tw-ring-color: {theme.accentColor}; background-color: {selected ? theme.accentColor : 'white'}; border-color: {theme.accentColor};"
+      />
+    </div>
+  {/if}
   <h1>
     {event.tags.find((e) => e[0] == 'title')?.[0] && event.tags.find((e) => e[0] == 'title')?.[1]
       ? event.tags.find((e) => e[0] == 'title')?.[1]

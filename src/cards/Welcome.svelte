@@ -711,11 +711,22 @@
    * Open article
    */
   function openArticle(result: Event) {
+    // Create a clean, serializable copy of the event
+    const cleanEvent = {
+      id: result.id,
+      pubkey: result.pubkey,
+      created_at: result.created_at,
+      kind: result.kind,
+      tags: result.tags.map(tag => [...tag]), // Deep copy tags array
+      content: result.content,
+      sig: result.sig
+    };
+    
     createChild({
       id: next(),
       type: 'article',
       data: [result.tags.find(t => t[0] === 'd')?.[1] || '', result.pubkey],
-      actualEvent: result,
+      actualEvent: cleanEvent,
       relayHints: currentRelays
     } as ArticleCard);
   }
