@@ -1,14 +1,14 @@
-version: '3.8'
+version: "3.8"
 
 services:
   wikistr:
     image: silberengel/wikistr:latest-wikistr
-    container_name: wikistr-dark
+    container_name: wikistr-v3
     ports:
-      - "8080:80"
+      - "3000:80"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/"]
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -16,14 +16,39 @@ services:
 
   biblestr:
     image: silberengel/wikistr:latest-biblestr
-    container_name: wikistr-light
+    container_name: biblestr-v3
     ports:
-      - "8081:80"
+      - "4000:80"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/"]
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
 
+  quranstr:
+    image: silberengel/wikistr:latest-quranstr
+    container_name: quranstr-v3
+    ports:
+      - "4050:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  torahstr:
+    image: silberengel/wikistr:latest-torahstr
+    container_name: torahstr-v3
+    ports:
+      - "4080:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
