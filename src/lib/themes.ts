@@ -9,6 +9,7 @@ export interface ThemeConfig {
   tagline: string;
   description: string;
   accentColor: string;
+  pageBackground?: string; // Optional custom page background color
   defaultMode: 'light' | 'dark';
   readingDirection: 'ltr' | 'rtl';
   relays: {
@@ -97,7 +98,7 @@ export function getCurrentTheme(): ThemeType {
 }
 
 // Color palette generation from accent color
-export function generatePaletteFromAccent(accentColor: string) {
+export function generatePaletteFromAccent(accentColor: string, themeConfig?: ThemeConfig) {
   // Convert hex to HSL for easier manipulation
   const hexToHsl = (hex: string) => {
     const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -123,6 +124,11 @@ export function generatePaletteFromAccent(accentColor: string) {
   };
   
   const hslToHex = (h: number, s: number, l: number) => {
+    // Convert HSL values to 0-1 range
+    const hNorm = h / 360;
+    const sNorm = s / 100;
+    const lNorm = l / 100;
+    
     const hue2rgb = (p: number, q: number, t: number) => {
       if (t < 0) t += 1;
       if (t > 1) t -= 1;
@@ -132,11 +138,11 @@ export function generatePaletteFromAccent(accentColor: string) {
       return p;
     };
     
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-    const p = 2 * l - q;
-    const r = hue2rgb(p, q, h + 1/3);
-    const g = hue2rgb(p, q, h);
-    const b = hue2rgb(p, q, h - 1/3);
+    const q = lNorm < 0.5 ? lNorm * (1 + sNorm) : lNorm + sNorm - lNorm * sNorm;
+    const p = 2 * lNorm - q;
+    const r = hue2rgb(p, q, hNorm + 1/3);
+    const g = hue2rgb(p, q, hNorm);
+    const b = hue2rgb(p, q, hNorm - 1/3);
     
     const toHex = (c: number) => {
       const hex = Math.round(c * 255).toString(16);
@@ -148,34 +154,93 @@ export function generatePaletteFromAccent(accentColor: string) {
   
   const { h, s, l } = hexToHsl(accentColor);
   
+  // Generate derived background colors from accent color
+  // Create contextually appropriate backgrounds: golden for warm colors, grayish for cool colors
+  const deriveBackgroundColor = (hue: number, saturation: number, lightness: number) => {
+    // Determine if the color is warm or cool based on hue
+    // Warm colors: reds, oranges, yellows (0-60° and 300-360°)
+    // Cool colors: blues, greens, purples (60-300°)
+    const isWarm = (hue >= 0 && hue <= 60) || (hue >= 300 && hue <= 360);
+    
+    if (isWarm) {
+      // For warm colors: use the target golden color #B8965A
+      return '#B8965A';
+    } else {
+      // For cool colors: create a grayish, neutral background
+      // Desaturate significantly and adjust lightness for a neutral gray
+      const newLightness = Math.max(35, lightness * 0.7);
+      const newSaturation = Math.max(15, saturation * 0.3); // Very low saturation for grayish look
+      
+      return hslToHex(hue, newSaturation, newLightness);
+    }
+  };
+
+  // Use theme's pageBackground if provided, otherwise derive algorithmically
+  const basePageBg = themeConfig?.pageBackground || deriveBackgroundColor(h, s, l);
+  
+  // Create mode-specific backgrounds
+  const createModeSpecificBackground = (baseBg: string, isDarkMode: boolean) => {
+    if (isDarkMode) {
+      // For dark mode, make the background much darker
+      const baseHsl = hexToHsl(baseBg);
+      const darkerBg = hslToHex(baseHsl.h, baseHsl.s, Math.max(15, baseHsl.l * 0.3));
+      return darkerBg;
+    } else {
+      // For light mode, use the base background as-is
+      return baseBg;
+    }
+  };
+  
+  // Generate text colors that provide good contrast
+  const deriveTextColors = (isDarkMode: boolean) => {
+    if (isDarkMode) {
+      // Dark mode: light text
+      return {
+        primary: '#f8fafc',
+        secondary: '#cbd5e1', 
+        muted: '#94a3b8'
+      };
+    } else {
+      // Light mode: dark text
+      return {
+        primary: '#1a1a1a',
+        secondary: '#2d2d2d',
+        muted: '#404040'
+      };
+    }
+  };
+  
+  const lightTextColors = deriveTextColors(false);
+  const darkTextColors = deriveTextColors(true);
+
   return {
     // Light mode palette
     light: {
       primary: '#ffffff',
       secondary: '#f8fafc',
       tertiary: '#f1f5f9',
-      text: '#1e293b',
-      textSecondary: '#475569',
-      textMuted: '#64748b',
+      text: lightTextColors.primary,
+      textSecondary: lightTextColors.secondary,
+      textMuted: lightTextColors.muted,
       border: '#e2e8f0',
       accent: accentColor,
       accentHover: hslToHex(h, s, Math.max(0, l - 10)),
       highlight: hslToHex(h, s, Math.max(0, l - 20)),
-      pageBg: '#f1f5f9'
+      pageBg: createModeSpecificBackground(basePageBg, false)
     },
     // Dark mode palette
     dark: {
       primary: '#0f172a',
       secondary: '#1e293b',
       tertiary: '#334155',
-      text: '#f8fafc',
-      textSecondary: '#cbd5e1',
-      textMuted: '#94a3b8',
+      text: darkTextColors.primary,
+      textSecondary: darkTextColors.secondary,
+      textMuted: darkTextColors.muted,
       border: '#475569',
       accent: accentColor,
       accentHover: hslToHex(h, s, Math.min(100, l + 10)),
       highlight: hslToHex(h, s, Math.min(100, l + 20)),
-      pageBg: '#0f172a'
+      pageBg: createModeSpecificBackground(basePageBg, true)
     }
   };
 }

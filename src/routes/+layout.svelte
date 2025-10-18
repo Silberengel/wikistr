@@ -11,7 +11,7 @@
   const theme = getThemeConfig();
   
   // Generate palette from accent color
-  const palette = generatePaletteFromAccent(theme.accentColor);
+  const palette = generatePaletteFromAccent(theme.accentColor, theme);
   
   // Get theme's default mode
   const themeDefaultMode = getThemeDefaultMode();
@@ -209,16 +209,17 @@
     // Use the proper palette colors for each mode
     if (currentMode === 'light') {
       // Light mode: use light colors from palette
-      root.style.setProperty('--page-bg', paletteToUse.pageBg); // Light grayish background
+      // Page background is now derived from accent color
+      root.style.setProperty('--page-bg', paletteToUse.pageBg); // Derived from accent color
       root.style.setProperty('--bg-primary', paletteToUse.primary); // White/light beige panels
       root.style.setProperty('--bg-secondary', paletteToUse.secondary); // Slightly darker for secondary elements
       root.style.setProperty('--bg-tertiary', paletteToUse.tertiary); // Even darker for tertiary elements
-      root.style.setProperty('--text-primary', paletteToUse.text); // Dark text for light backgrounds
-      root.style.setProperty('--text-secondary', paletteToUse.textSecondary); // Slightly lighter dark text
-      root.style.setProperty('--text-muted', paletteToUse.textMuted); // Muted dark text
+      root.style.setProperty('--text-primary', paletteToUse.text); // Algorithmic text color
+      root.style.setProperty('--text-secondary', paletteToUse.textSecondary); // Algorithmic secondary text
+      root.style.setProperty('--text-muted', paletteToUse.textMuted); // Algorithmic muted text
     } else {
       // Dark mode: use dark colors from palette
-      root.style.setProperty('--page-bg', paletteToUse.pageBg); // Dark background
+      root.style.setProperty('--page-bg', paletteToUse.pageBg); // Derived from accent color
       root.style.setProperty('--bg-primary', paletteToUse.primary); // Dark panels
       root.style.setProperty('--bg-secondary', paletteToUse.secondary); // Slightly lighter dark for secondary elements
       root.style.setProperty('--bg-tertiary', paletteToUse.tertiary); // Even lighter dark for tertiary elements
