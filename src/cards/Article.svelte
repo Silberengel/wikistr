@@ -47,6 +47,38 @@
 
   let author = $state<NostrUser>(bareNostrUser(pubkey));
 
+  // Helper function to create fallback author object
+  function createFallbackAuthor() {
+    return {
+      pubkey: pubkey,
+      npub: pubkey,
+      shortName: pubkey.slice(0, 8) + '...',
+      image: undefined,
+      metadata: {},
+      lastUpdated: Date.now()
+    };
+  }
+
+  // Helper function to create author object from parsed content
+  function createAuthorFromContent(content: any) {
+    return {
+      pubkey: pubkey,
+      npub: pubkey,
+      shortName: content.display_name || content.name || pubkey.slice(0, 8) + '...',
+      image: content.picture || undefined,
+      metadata: content,
+      lastUpdated: Date.now()
+    };
+  }
+
+  // Helper function to create events to store in cache
+  function createEventsToStore(event: NostrEvent, relays: string[]) {
+    return [{
+      event,
+      relays
+    }];
+  }
+
   // Profile popup state
   let profilePopupOpen = $state(false);
   let selectedUserPubkey = $state('');
@@ -155,33 +187,30 @@
   }
 
   onMount(() => {
-    // load this article
+    // load this article - INSTANT CACHE LOOKUP
     if (articleCard.actualEvent) {
       event = articleCard.actualEvent;
       seenOn = articleCard.relayHints || [];
       return;
     }
 
-    (async () => {
-      try {
-        // Check cache first before making relay queries
-        const { contentCache } = await import('$lib/contentCache');
-        const cachedEvents = await contentCache.getEvents('wiki');
-        
-        // Find cached article for this specific pubkey and dTag
-        const cachedArticle = cachedEvents.find(cached => 
-          cached.event.pubkey === pubkey && 
-          getTagOr(cached.event, 'd') === dTag && 
-          cached.event.kind === wikiKind
-        );
-        
-        if (cachedArticle) {
-          console.log('Article: Found cached content for', dTag);
-          event = cachedArticle.event;
-          seenOn = cachedArticle.relays;
-          setupLikes();
-        } else {
-          console.log('Article: No cached content, loading from relays for', dTag);
+    // INSTANT: Check cache synchronously first
+    const cachedEvents = contentCache.getEvents('wiki');
+    const cachedArticle = cachedEvents.find(cached => 
+      cached.event.pubkey === pubkey && 
+      getTagOr(cached.event, 'd') === dTag && 
+      cached.event.kind === wikiKind
+    );
+    
+    if (cachedArticle) {
+      console.log('Article: Found cached content for', dTag, '- INSTANT LOAD');
+      event = cachedArticle.event;
+      seenOn = cachedArticle.relays;
+    } else {
+      console.log('Article: No cached content, loading from relays for', dTag);
+      // Only hit relays if not in cache
+      (async () => {
+        try {
           const result = await relayService.queryEvents(
             $account?.pubkey || 'anonymous',
             'wiki-read',
@@ -206,52 +235,40 @@
           if (articleEvent) {
             event = articleEvent;
             seenOn = result.relays;
-            setupLikes();
             
             // Store the article in cache for future use
-            const eventsToStore = [{
-              event: articleEvent,
-              relays: result.relays
-            }];
+            const eventsToStore = createEventsToStore(articleEvent, result.relays);
             await contentCache.storeEvents('wiki', eventsToStore);
             console.log('Article: Cached content for', dTag);
           }
+        } catch (error) {
+          console.error('Failed to load article:', error);
         }
-      } catch (error) {
-        console.error('Failed to load article:', error);
-      }
-    })();
+      })();
+    }
+  });
 
+  onMount(() => {
     // Load author data using relayService (only metadata-read relays)
-    (async () => {
+    // INSTANT: Check cache first for author metadata
+    const cachedEvents = contentCache.getEvents('metadata');
+    const cachedAuthorEvent = cachedEvents.find(cached => 
+      cached.event.pubkey === pubkey && cached.event.kind === 0
+    );
+    
+    if (cachedAuthorEvent) {
+      console.log('Article: Found cached author metadata for', pubkey.slice(0, 8) + '...', '- INSTANT LOAD');
       try {
-        // Check cache first before making relay queries
-        const { contentCache } = await import('$lib/contentCache');
-        const cachedEvents = await contentCache.getEvents('metadata');
-        const cachedAuthorEvent = cachedEvents.find(cached => 
-          cached.event.pubkey === pubkey && cached.event.kind === 0
-        );
-        
-        if (cachedAuthorEvent) {
-          console.log('Article: Found cached author metadata for', pubkey.slice(0, 8) + '...');
-          try {
-            const content = JSON.parse(cachedAuthorEvent.event.content);
-            author = {
-              pubkey: pubkey,
-              npub: pubkey,
-              shortName: content.display_name || content.name || pubkey.slice(0, 8) + '...',
-              image: content.picture || undefined,
-              metadata: content,
-              lastUpdated: Date.now()
-            };
-            return; // Exit early since we found cached data
-          } catch (e) {
-            console.warn('Article: Failed to parse cached author metadata:', e);
-          }
-        }
-        
-        // Only query relays if no cached author metadata found
-        console.log('Article: No cached author metadata, loading from relays for', pubkey.slice(0, 8) + '...');
+        const content = JSON.parse(cachedAuthorEvent.event.content);
+        author = createAuthorFromContent(content);
+      } catch (e) {
+        console.warn('Article: Failed to parse cached author metadata:', e);
+      }
+    } else {
+      console.log('Article: No cached author metadata, loading from relays for', pubkey.slice(0, 8) + '...');
+      // Only hit relays if not in cache
+      (async () => {
+        try {
         const { relayService } = await import('$lib/relayService');
         const result = await relayService.queryEvents(
           'anonymous', // Always use anonymous for metadata requests - relays are determined by type
@@ -264,109 +281,25 @@
           const event = result.events[0];
           try {
             const content = JSON.parse(event.content);
-            author = {
-              pubkey: pubkey,
-              npub: pubkey,
-              shortName: content.display_name || content.name || pubkey.slice(0, 8) + '...',
-              image: content.picture || undefined,
-              metadata: content,
-              lastUpdated: Date.now()
-            };
+            author = createAuthorFromContent(content);
             
             // Store the author metadata in cache for future use
-            const eventsToStore = [{
-              event,
-              relays: result.relays
-            }];
+            const eventsToStore = createEventsToStore(event, result.relays);
             await contentCache.storeEvents('metadata', eventsToStore);
             console.log('Article: Cached author metadata for', pubkey.slice(0, 8) + '...');
           } catch (e) {
             console.warn('Article: Failed to parse author metadata:', e);
-            author = {
-              pubkey: pubkey,
-              npub: pubkey,
-              shortName: pubkey.slice(0, 8) + '...',
-              image: undefined,
-              metadata: {},
-              lastUpdated: Date.now()
-            };
+            author = createFallbackAuthor();
           }
         } else {
-          author = {
-            pubkey: pubkey,
-            npub: pubkey,
-            shortName: pubkey.slice(0, 8) + '...',
-            image: undefined,
-            metadata: {},
-            lastUpdated: Date.now()
-          };
+          author = createFallbackAuthor();
         }
       } catch (e) {
         console.warn('Article: Failed to load author data:', e);
-        author = {
-          pubkey: pubkey,
-          npub: pubkey,
-          shortName: pubkey.slice(0, 8) + '...',
-          image: undefined,
-          metadata: {},
-          lastUpdated: Date.now()
-        };
+        author = createFallbackAuthor();
       }
     })();
-  });
-
-  onMount(() => {
-    // redraw likes thing when we have a logged in user
-    return account.subscribe(setupLikes);
-  });
-
-  onMount(() => {
-    // help nostr stay by publishing articles from others into their write relays
-    let to = setTimeout(async () => {
-      if (event) {
-        (await loadRelayList(event.pubkey)).items
-          .filter((ri) => ri.write && ri.url)
-          .map((ri) => ri.url)
-          .filter(url => url && url.startsWith('wss://'))
-          .slice(0, 3)
-          .forEach(async (url) => {
-            try {
-              // Use relayService to publish to wiki-write relays
-              if (event) {
-                const result = await relayService.publishEvent(
-                  event.pubkey,
-                  'wiki-write',
-                  event,
-                  false // Don't show toast notification for each relay
-                );
-                
-                if (result.success) {
-                  console.log('✅ Article published successfully to', result.publishedTo.length, 'relays');
-                } else {
-                  console.warn('⚠️ Article publishing had issues:', result.failedRelays);
-                }
-              }
-            } catch (err) {
-              console.warn('Failed to publish article to relay', url, err);
-            }
-          });
-      }
-    }, 5000);
-
-    return () => clearTimeout(to);
-  });
-
-  onMount(() => {
-    // preemptively load other versions if necessary
-    if (articleCard.versions) {
-      nOthers = articleCard.versions.length;
-      return;
     }
-  });
-
-  let cancelers: Array<() => void> = [];
-  onDestroy(() => {
-    cancelers.forEach((fn) => fn());
   });
 
   function setupLikes() {

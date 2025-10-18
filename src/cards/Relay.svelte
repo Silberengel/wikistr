@@ -37,45 +37,50 @@
       tried = true;
     }, 1500);
 
-    // Check cache first before making relay queries
-    const { contentCache } = await import('$lib/contentCache');
-    const cachedEvents = await contentCache.getEvents('wiki');
+    // Always query the specific relay directly (no cache for relay-specific views)
     const relayUrl = relayCard.data;
     
-    // Filter cached events for this specific relay
-    const relayCachedEvents = cachedEvents.filter(cached => 
-      cached.relays.includes(relayUrl)
-    );
-    
-    if (relayCachedEvents.length > 0) {
-      console.log(`Relay: Found ${relayCachedEvents.length} cached events for relay ${relayUrl}`);
-      relayCachedEvents.forEach(cached => {
-        if (addUniqueTaggedReplaceable(results, cached.event)) update();
-      });
-      tried = true;
-    } else {
-      // Use relay service for relay-specific queries if no cache
-      if ($account) {
-        try {
-          console.log(`Relay: No cached events, loading from relay ${relayUrl}`);
-          const result = await relayService.queryEvents(
-            $account.pubkey,
-            'wiki-read',
-            [{ kinds: [wikiKind], limit: 25 }],
-            {
-              excludeUserContent: true,
-              currentUserPubkey: $account.pubkey
+    if ($account) {
+      try {
+        console.log(`Relay: Querying ONLY relay ${relayUrl} directly`);
+        
+        // Query only the specific relay, not all relays
+        const filters = [{ kinds: [wikiKind], limit: 25 }];
+        const events: NostrEvent[] = [];
+        let subscriptionClosed = false;
+        
+        const subscription = pool.subscribeMany([relayUrl], filters, {
+          onevent: (event: any) => {
+            if (subscriptionClosed) return;
+            
+            // Filter out user's own content if requested
+            if (event.pubkey === $account.pubkey) {
+              return;
             }
-          );
-          
-          result.events.forEach(evt => {
-            if (addUniqueTaggedReplaceable(results, evt)) update();
-          });
-          tried = true;
-        } catch (err) {
-          console.warn('Failed to load relay articles:', err);
-          tried = true;
-        }
+            
+            events.push(event);
+            if (addUniqueTaggedReplaceable(results, event)) update();
+          },
+          oneose: () => {
+            if (subscriptionClosed) return;
+            subscriptionClosed = true;
+            subscription.close();
+            tried = true;
+          }
+        });
+        
+        // Timeout after 8 seconds
+        setTimeout(() => {
+          if (!subscriptionClosed) {
+            subscriptionClosed = true;
+            subscription.close();
+            tried = true;
+          }
+        }, 8000);
+        
+      } catch (err) {
+        console.warn('Failed to load relay articles:', err);
+        tried = true;
       }
     }
   });
