@@ -186,7 +186,7 @@ import UserBadge from '$components/UserBadge.svelte';
 <!-- Search Instructions -->
 <div class="mt-4 p-3 rounded-lg border" style="background-color: var(--bg-secondary); border-color: var(--border);">
   <div class="text-sm whitespace-pre-line" style="color: var(--text-primary);">
-    {theme.searchHelpText}
+    {@html theme.searchHelpText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}
   </div>
 </div>
 

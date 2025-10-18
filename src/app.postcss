@@ -42,7 +42,7 @@
 
   /* Global markdown-like content styling */
   h1 {
-    font-size: 2.25rem;
+    font-size: 2rem;
     font-weight: 700;
     border-bottom: 3px solid var(--border);
     padding-bottom: 0.5rem;
@@ -50,7 +50,7 @@
   }
 
   h2 {
-    font-size: 1.875rem;
+    font-size: 1.75rem;
     font-weight: 700;
     border-bottom: 2px solid var(--border);
     padding-bottom: 0.25rem;
@@ -58,25 +58,25 @@
   }
 
   h3 {
-    font-size: 1.5rem;
+    font-size: 1.375rem;
     font-weight: 600;
     margin-bottom: 0.75rem;
   }
 
   h4 {
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin-bottom: 0.5rem;
-  }
-
-  h5 {
     font-size: 1.125rem;
     font-weight: 600;
     margin-bottom: 0.5rem;
   }
 
-  h6 {
+  h5 {
     font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+
+  h6 {
+    font-size: 0.875rem;
     font-weight: 600;
     color: var(--text-secondary);
     margin-bottom: 0.5rem;
@@ -229,7 +229,9 @@
 
   /* Code Blocks - NO INTERNAL BORDERS */
   pre {
-    @apply p-4 rounded-md overflow-x-auto my-4;
+    @apply px-4 rounded-md overflow-x-auto my-4;
+    padding-top: 24px !important;
+    padding-bottom: 24px !important;
     background-color: var(--code-block-bg);
     color: var(--code-block-text);
     border: 0.5px solid var(--code-block-border);
@@ -257,7 +259,11 @@
 
   /* Prose-specific code blocks */
   .prose pre {
-    @apply p-4 rounded-md overflow-x-auto my-4;
+    @apply rounded-md overflow-x-auto my-4;
+    padding-top: 16px !important;
+    padding-bottom: 16px !important;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
     background-color: var(--code-block-bg);
     color: var(--code-block-text);
     border: 0.5px solid var(--code-block-border);
@@ -339,36 +345,36 @@
   }
 
   .prose h1 {
-    font-size: 2rem;
+    font-size: 1.75rem;
     font-weight: 700;
     border-bottom: 2px solid var(--border);
     padding-bottom: 0.5rem;
   }
 
   .prose h2 {
-    font-size: 1.75rem;
+    font-size: 1.5rem;
     font-weight: 700;
     border-bottom: 1px solid var(--border);
     padding-bottom: 0.25rem;
   }
 
   .prose h3 {
-    font-size: 1.5rem;
+    font-size: 1.375rem;
     font-weight: 600;
   }
 
   .prose h4 {
-    font-size: 1.25rem;
+    font-size: 1.125rem;
     font-weight: 600;
   }
 
   .prose h5 {
-    font-size: 1.1rem;
+    font-size: 1rem;
     font-weight: 600;
   }
 
   .prose h6 {
-    font-size: 1rem;
+    font-size: 0.875rem;
     font-weight: 600;
     color: var(--text-secondary);
   }
@@ -467,7 +473,7 @@
   }
 
   .markdown h1 {
-    font-size: 2.25rem;
+    font-size: 2rem;
     font-weight: 700;
     border-bottom: 3px solid var(--border);
     padding-bottom: 0.5rem;
@@ -475,7 +481,7 @@
   }
 
   .markdown h2 {
-    font-size: 1.875rem;
+    font-size: 1.75rem;
     font-weight: 700;
     border-bottom: 2px solid var(--border);
     padding-bottom: 0.25rem;
@@ -483,25 +489,25 @@
   }
 
   .markdown h3 {
-    font-size: 1.5rem;
+    font-size: 1.375rem;
     font-weight: 600;
     margin-bottom: 0.75rem;
   }
 
   .markdown h4 {
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin-bottom: 0.5rem;
-  }
-
-  .markdown h5 {
     font-size: 1.125rem;
     font-weight: 600;
     margin-bottom: 0.5rem;
   }
 
-  .markdown h6 {
+  .markdown h5 {
     font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+
+  .markdown h6 {
+    font-size: 0.875rem;
     font-weight: 600;
     color: var(--text-secondary);
     margin-bottom: 0.5rem;
@@ -784,31 +790,77 @@
     text-underline-offset: none !important;
     margin-top: 0 !important;
     margin-bottom: 0 !important;
-    padding-top: 0 !important;
-    padding-bottom: 0 !important;
     height: auto !important;
     min-height: auto !important;
     max-height: none !important;
   }
 
-  /* Hide any line numbering or table structures */
-  .hljs-ln,
-  .hljs-ln *,
-  .hljs-ln-table,
-  .hljs-ln-table *,
-  .hljs-ln-line,
-  .hljs-ln-line *,
-  .hljs-ln-numbers,
-  .hljs-ln-numbers * {
-    display: none !important;
-    visibility: hidden !important;
-    width: 0 !important;
-    height: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
+  /* Restore padding for main pre element */
+  pre {
+    padding-top: 16px !important;
+    padding-bottom: 16px !important;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+
+  /* Custom line numbers table */
+  .line-numbers-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    border-spacing: 0 !important;
     border: none !important;
     outline: none !important;
     box-shadow: none !important;
+    background: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .line-numbers-table tr {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .line-numbers {
+    color: var(--text-muted) !important;
+    background: none !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 0 8px 0 0 !important;
+    text-align: right !important;
+    user-select: none !important;
+    opacity: 0.6 !important;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
+    line-height: 1.2 !important;
+    white-space: pre !important;
+    vertical-align: top !important;
+    width: 1% !important;
+  }
+
+  .code-content {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
+    font-size: 1em !important;
+    line-height: 1.2 !important;
+    white-space: pre !important;
+    vertical-align: top !important;
+    width: 99% !important;
+    color: var(--code-block-text) !important;
+  }
+
+  .code-content * {
+    font-size: inherit !important;
   }
 
   /* LaTeX Styling */

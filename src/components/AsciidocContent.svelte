@@ -577,9 +577,42 @@
             // No language class, try to auto-detect
             hljs.highlightElement(element);
           }
+          
+          // Add line numbers after highlighting
+          addLineNumbers(element);
         }
       });
     }
+  }
+
+  // Add line numbers to code blocks
+  function addLineNumbers(codeElement: HTMLElement) {
+    const preElement = codeElement.parentElement;
+    if (!preElement || preElement.tagName !== 'PRE') return;
+    
+    // Skip if already has line numbers
+    if (preElement.querySelector('.line-numbers-table')) return;
+    
+    // Get the code content
+    const codeContent = codeElement.innerHTML;
+    const lines = codeContent.split('\n');
+    const lineCount = lines.length;
+    
+    // Generate line numbers
+    const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1).join('\n');
+    
+    // Create table structure for line numbers
+    const tableHTML = `
+      <table class="line-numbers-table">
+        <tr>
+          <td class="line-numbers">${lineNumbers}</td>
+          <td class="code-content">${codeContent}</td>
+        </tr>
+      </table>
+    `;
+    
+    // Replace the code content with the table
+    codeElement.innerHTML = tableHTML;
   }
 
   // Render LaTeX expressions in inline code
