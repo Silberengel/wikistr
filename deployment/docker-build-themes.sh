@@ -22,34 +22,34 @@ echo
 # Build Wikistr images
 echo -e "${BLUE}📦 Building Wikistr images...${NC}"
 echo -e "${YELLOW}Building image with tag: ${VERSION}-wikistr${NC}"
-docker build -f Dockerfile.wikistr -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${VERSION}-wikistr .
+docker build -f Dockerfile.wikistr -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${VERSION}-wikistr ..
 
 echo -e "${YELLOW}Building image with tag: latest-wikistr${NC}"
-docker build -f Dockerfile.wikistr -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${LATEST_TAG}-wikistr .
+docker build -f Dockerfile.wikistr -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${LATEST_TAG}-wikistr ..
 
 # Build Biblestr images
 echo -e "${BLUE}📦 Building Biblestr images...${NC}"
 echo -e "${YELLOW}Building image with tag: ${VERSION}-biblestr${NC}"
-docker build -f Dockerfile.biblestr -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${VERSION}-biblestr .
+docker build -f Dockerfile.biblestr -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${VERSION}-biblestr ..
 
 echo -e "${YELLOW}Building image with tag: latest-biblestr${NC}"
-docker build -f Dockerfile.biblestr -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${LATEST_TAG}-biblestr .
+docker build -f Dockerfile.biblestr -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${LATEST_TAG}-biblestr ..
 
 # Build Quranstr images
 echo -e "${BLUE}📦 Building Quranstr images...${NC}"
 echo -e "${YELLOW}Building image with tag: ${VERSION}-quranstr${NC}"
-docker build -f Dockerfile.quranstr -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${VERSION}-quranstr .
+docker build -f Dockerfile.quranstr -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${VERSION}-quranstr ..
 
 echo -e "${YELLOW}Building image with tag: latest-quranstr${NC}"
-docker build -f Dockerfile.quranstr -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${LATEST_TAG}-quranstr .
+docker build -f Dockerfile.quranstr -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${LATEST_TAG}-quranstr ..
 
 # Build Torahstr images
 echo -e "${BLUE}📦 Building Torahstr images...${NC}"
 echo -e "${YELLOW}Building image with tag: ${VERSION}-torahstr${NC}"
-docker build -f Dockerfile.torahstr -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${VERSION}-torahstr .
+docker build -f Dockerfile.torahstr -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${VERSION}-torahstr ..
 
 echo -e "${YELLOW}Building image with tag: latest-torahstr${NC}"
-docker build -f Dockerfile.torahstr -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${LATEST_TAG}-torahstr .
+docker build -f Dockerfile.torahstr -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${LATEST_TAG}-torahstr ..
 
 echo -e "${GREEN}✅ Build completed successfully!${NC}"
 echo
