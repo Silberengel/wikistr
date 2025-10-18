@@ -137,10 +137,11 @@
   {#if card.type !== 'welcome' && card.type !== 'new'}
     <div class="flex" class:justify-between={card.back} class:justify-end={!card.back}>
       {#if card.back}
-        <button aria-label="back" onclick={back}>
+        <button aria-label="back" onclick={back} class="transition-colors hover:opacity-70">
           <svg
             xmlns="http://www.w3.org/2000/svg"
-            class="w-6 h-6 stroke-stone-500"
+            class="w-6 h-6"
+            style="stroke: var(--text-secondary);"
             viewBox="0 0 219.151 219.151"
           >
             <path
@@ -149,11 +150,12 @@
           </svg>
         </button>
       {/if}
-      <button aria-label="close" onclick={close}>
+      <button aria-label="close" onclick={close} class="transition-colors hover:opacity-70">
         <svg
           xmlns="http://www.w3.org/2000/svg"
           fill="none"
-          class="w-6 h-6 stroke-stone-800"
+          class="w-6 h-6"
+          style="stroke: var(--text-secondary);"
           viewBox="0 0 24 24"
           stroke-width="1.5"
           ><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg

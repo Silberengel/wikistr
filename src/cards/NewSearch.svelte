@@ -232,8 +232,8 @@ import UserBadge from '$components/UserBadge.svelte';
       <h3 class="text-lg font-semibold" style="color: var(--text-primary);">Settings</h3>
       <button
         onclick={toggleSettings}
-        class="p-1 rounded transition-colors"
-        style="color: var(--text-secondary); background-color: var(--bg-secondary);"
+        class="p-1 rounded transition-colors hover:opacity-70"
+        style="color: var(--text-primary); background-color: var(--bg-secondary);"
         aria-label="Close settings"
       >
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -316,7 +316,7 @@ import UserBadge from '$components/UserBadge.svelte';
       <h3 class="text-lg font-semibold" style="color: var(--text-primary);">Settings</h3>
       <button
         onclick={toggleSettings}
-        class="p-1 rounded transition-colors" style="color: var(--text-secondary); background-color: var(--bg-secondary);"
+        class="p-1 rounded transition-colors hover:opacity-70" style="color: var(--text-primary); background-color: var(--bg-secondary);"
         aria-label="Close settings"
       >
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

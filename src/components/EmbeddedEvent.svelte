@@ -207,8 +207,8 @@
           {#if onClose}
             <button
               onclick={onClose}
-              class="flex-shrink-0 p-2 rounded-lg transition-colors"
-              style="color: var(--text-muted); background-color: var(--bg-secondary);"
+              class="flex-shrink-0 p-2 rounded-lg transition-colors hover:opacity-70"
+              style="color: var(--text-secondary); background-color: var(--bg-secondary);"
               title="Close embedded event"
             >
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

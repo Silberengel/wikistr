@@ -45,8 +45,8 @@
           <h2 class="text-xl font-bold" style="color: var(--text-primary);">Book Configurations</h2>
           <button
             onclick={onClose}
-            class="text-2xl transition-colors"
-            style="color: var(--text-muted);"
+            class="text-2xl transition-colors hover:opacity-70"
+            style="color: var(--text-secondary);"
           >
             ×
           </button>

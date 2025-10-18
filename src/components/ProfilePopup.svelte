@@ -288,8 +288,8 @@
         <h3 class="text-lg font-semibold" style="color: var(--text-primary);">Profile</h3>
         <button
           onclick={onClose}
-          class="transition-colors"
-          style="color: var(--text-muted);"
+          class="transition-colors hover:opacity-70"
+          style="color: var(--text-secondary);"
           aria-label="Close profile"
         >
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
