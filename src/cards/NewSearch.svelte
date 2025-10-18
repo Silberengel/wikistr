@@ -12,6 +12,7 @@ import ProfilePopup from '$components/ProfilePopup.svelte';
 import UserBadge from '$components/UserBadge.svelte';
   import { nip19 } from '@nostr/tools';
   import BookConfigList from '$components/BookConfigList.svelte';
+  import BookConfigForm from '$components/BookConfigForm.svelte';
 
   // Theme configuration
   const theme = getThemeConfig();
@@ -23,6 +24,7 @@ import UserBadge from '$components/UserBadge.svelte';
   let { replaceNewCard }: Props = $props();
   let query = $state('');
   let showBookConfigList = $state(false);
+  let showBookConfigForm = $state(false);
   let showSettings = $state(false);
   let showProfilePopup = $state(false);
   
@@ -115,6 +117,21 @@ import UserBadge from '$components/UserBadge.svelte';
 
   function closeBookConfigList() {
     showBookConfigList = false;
+  }
+
+  function openBookConfigForm() {
+    showBookConfigForm = true;
+  }
+
+  function closeBookConfigForm() {
+    showBookConfigForm = false;
+  }
+
+  function onConfigCreated() {
+    // Refresh the book config list when a new config is created
+    closeBookConfigForm();
+    // Optionally refresh the book config list
+    // This could trigger a reload of the BookConfigList component
   }
 
   function toggleSettings() {
@@ -395,6 +412,14 @@ import UserBadge from '$components/UserBadge.svelte';
 {#if showBookConfigList}
   <BookConfigList
     onClose={closeBookConfigList}
-    onCreateNew={() => {}}
+    onCreateNew={openBookConfigForm}
+  />
+{/if}
+
+<!-- Book Configuration Form Modal -->
+{#if showBookConfigForm}
+  <BookConfigForm
+    onClose={closeBookConfigForm}
+    onSuccess={onConfigCreated}
   />
 {/if}
