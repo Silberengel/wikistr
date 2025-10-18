@@ -5,7 +5,7 @@ services:
     image: silberengel/wikistr:latest-wikistr
     container_name: wikistr-v3
     ports:
-      - "8080:80"
+      - "3000:80"
     environment:
       - NODE_ENV=production
     restart: unless-stopped
@@ -20,7 +20,7 @@ services:
     image: silberengel/wikistr:latest-biblestr
     container_name: biblestr-v3
     ports:
-      - "8081:80"
+      - "4000:80"
     environment:
       - NODE_ENV=production
     restart: unless-stopped
@@ -35,7 +35,7 @@ services:
     image: silberengel/wikistr:latest-quranstr
     container_name: quranstr-v3
     ports:
-      - "8082:80"
+      - "4050:80"
     environment:
       - NODE_ENV=production
     restart: unless-stopped
@@ -50,7 +50,7 @@ services:
     image: silberengel/wikistr:latest-torahstr
     container_name: torahstr-v3
     ports:
-      - "8083:80"
+      - "4080:80"
     environment:
       - NODE_ENV=production
     restart: unless-stopped

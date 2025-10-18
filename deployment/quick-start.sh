@@ -58,22 +58,22 @@ case $choice in
         echo
         echo -e "${YELLOW}Individual Applications:${NC}"
         echo -e "  # Wikistr"
-        echo -e "  docker run -p 8080:80 silberengel/wikistr:latest-wikistr"
+        echo -e "  docker run -p 3000:80 silberengel/wikistr:latest-wikistr"
         echo
         echo -e "  # Biblestr"
-        echo -e "  docker run -p 8081:80 silberengel/wikistr:latest-biblestr"
+        echo -e "  docker run -p 4000:80 silberengel/wikistr:latest-biblestr"
         echo
         echo -e "  # Quranstr"
-        echo -e "  docker run -p 8082:80 silberengel/wikistr:latest-quranstr"
+        echo -e "  docker run -p 4050:80 silberengel/wikistr:latest-quranstr"
         echo
         echo -e "  # Torahstr"
-        echo -e "  docker run -p 8083:80 silberengel/wikistr:latest-torahstr"
+        echo -e "  docker run -p 4080:80 silberengel/wikistr:latest-torahstr"
         echo
         echo -e "${YELLOW}Access URLs:${NC}"
-        echo -e "  - Wikistr: http://localhost:8080"
-        echo -e "  - Biblestr: http://localhost:8081"
-        echo -e "  - Quranstr: http://localhost:8082"
-        echo -e "  - Torahstr: http://localhost:8083"
+        echo -e "  - Wikistr: http://localhost:3000"
+        echo -e "  - Biblestr: http://localhost:4000"
+        echo -e "  - Quranstr: http://localhost:4050"
+        echo -e "  - Torahstr: http://localhost:4080"
         ;;
     *)
         echo -e "${RED}❌ Invalid choice. Please run the script again.${NC}"

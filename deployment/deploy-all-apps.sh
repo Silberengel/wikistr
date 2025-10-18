@@ -58,10 +58,10 @@ echo
 echo -e "${GREEN}🎉 Deployment completed!${NC}"
 echo
 echo -e "${BLUE}📋 Services available at:${NC}"
-echo -e "  - Wikistr: http://localhost:8080"
-echo -e "  - Biblestr: http://localhost:8081"
-echo -e "  - Quranstr: http://localhost:8082"
-echo -e "  - Torahstr: http://localhost:8083"
+echo -e "  - Wikistr: http://localhost:3000"
+echo -e "  - Biblestr: http://localhost:4000"
+echo -e "  - Quranstr: http://localhost:4050"
+echo -e "  - Torahstr: http://localhost:4080"
 echo
 echo -e "${BLUE}💡 Management commands:${NC}"
 echo -e "  # View logs: docker-compose -f docker-compose.all-apps.yml logs -f"

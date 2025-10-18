@@ -112,14 +112,14 @@ echo
 echo -e "${GREEN}🎉 Done!${NC}"
 echo
 echo -e "${BLUE}💡 Usage examples:${NC}"
-echo -e "  # Run Wikistr on port 8080:${NC}"
-echo -e "  docker run -p 8080:80 ${DOCKER_REGISTRY}/${IMAGE_NAME}:${LATEST_TAG}-wikistr"
+echo -e "  # Run Wikistr on port 3000:${NC}"
+echo -e "  docker run -p 3000:80 ${DOCKER_REGISTRY}/${IMAGE_NAME}:${LATEST_TAG}-wikistr"
 echo
-echo -e "  # Run Biblestr on port 8081:${NC}"
-echo -e "  docker run -p 8081:80 ${DOCKER_REGISTRY}/${IMAGE_NAME}:${LATEST_TAG}-biblestr"
+echo -e "  # Run Biblestr on port 4000:${NC}"
+echo -e "  docker run -p 4000:80 ${DOCKER_REGISTRY}/${IMAGE_NAME}:${LATEST_TAG}-biblestr"
 echo
-echo -e "  # Run Quranstr on port 8082:${NC}"
-echo -e "  docker run -p 8082:80 ${DOCKER_REGISTRY}/${IMAGE_NAME}:${LATEST_TAG}-quranstr"
+echo -e "  # Run Quranstr on port 4050:${NC}"
+echo -e "  docker run -p 4050:80 ${DOCKER_REGISTRY}/${IMAGE_NAME}:${LATEST_TAG}-quranstr"
 echo
-echo -e "  # Run Torahstr on port 8083:${NC}"
-echo -e "  docker run -p 8083:80 ${DOCKER_REGISTRY}/${IMAGE_NAME}:${LATEST_TAG}-torahstr"
+echo -e "  # Run Torahstr on port 4080:${NC}"
+echo -e "  docker run -p 4080:80 ${DOCKER_REGISTRY}/${IMAGE_NAME}:${LATEST_TAG}-torahstr"

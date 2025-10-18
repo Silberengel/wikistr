@@ -63,10 +63,10 @@ docker-compose -f docker-compose.all-apps.yml down
 ```
 
 ### 3. Access Applications
-- **Wikistr**: http://localhost:8080
-- **Biblestr**: http://localhost:8081
-- **Quranstr**: http://localhost:8082
-- **Torahstr**: http://localhost:8083
+- **Wikistr**: http://localhost:3000
+- **Biblestr**: http://localhost:4000
+- **Quranstr**: http://localhost:4050
+- **Torahstr**: http://localhost:4080
 
 ## 🚀 Remote Deployment
 
@@ -116,10 +116,10 @@ chmod +x *.sh
 ssh user@your-server
 
 # Run each application
-docker run -d --name wikistr -p 8080:80 silberengel/wikistr:latest-wikistr
-docker run -d --name biblestr -p 8081:80 silberengel/wikistr:latest-biblestr
-docker run -d --name quranstr -p 8082:80 silberengel/wikistr:latest-quranstr
-docker run -d --name torahstr -p 8083:80 silberengel/wikistr:latest-torahstr
+docker run -d --name wikistr -p 3000:80 silberengel/wikistr:latest-wikistr
+docker run -d --name biblestr -p 4000:80 silberengel/wikistr:latest-biblestr
+docker run -d --name quranstr -p 4050:80 silberengel/wikistr:latest-quranstr
+docker run -d --name torahstr -p 4080:80 silberengel/wikistr:latest-torahstr
 ```
 
 #### Option C: Docker Compose on Server
@@ -254,7 +254,7 @@ docker-compose -f docker-compose.all-apps.yml up -d
 ```
 
 ### Access URLs
-- Wikistr: http://localhost:8080
-- Biblestr: http://localhost:8081
-- Quranstr: http://localhost:8082
-- Torahstr: http://localhost:8083
+- Wikistr: http://localhost:3000
+- Biblestr: http://localhost:4000
+- Quranstr: http://localhost:4050
+- Torahstr: http://localhost:4080
