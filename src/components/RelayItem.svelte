@@ -5,9 +5,15 @@
   interface Props {
     url: string;
     createChild: (card: Card) => void;
+    selected?: boolean;
   }
 
-  let { url, createChild }: Props = $props();
+  let { url, createChild, selected = false }: Props = $props();
+  
+  // Debug logging
+  if (selected) {
+    console.log('🎯 RelayItem selected:', url, 'selected:', selected);
+  }
 
   function openRelay(relay: string) {
     let relayCard: RelayCard = { id: next(), type: 'relay', data: relay };
@@ -16,7 +22,8 @@
 </script>
 
 <button
-  class="font-normal text-xs px-1 py-0.5 mr-1 my-0.5 rounded bg-brown-200 cursor-pointer hover:bg-brown-300 transition-colors text-espresso-800"
+  class="font-normal text-xs px-1 py-0.5 mr-1 my-0.5 rounded cursor-pointer transition-colors"
+  style="background-color: {selected ? 'var(--accent)' : 'var(--bg-secondary)'}; color: {selected ? 'white' : 'var(--text-primary)'}; border: 1px solid {selected ? 'var(--accent)' : 'var(--border)'}; opacity: {selected ? '0.9' : '1'};"
   onmouseup={openRelay.bind(null, url)}
 >
   {urlWithoutScheme(url)}

@@ -9,14 +9,14 @@
   let { diffResult }: Props = $props();
 </script>
 
-<div class="diff-container border border-gray-200 rounded-lg overflow-hidden" style="background-color: var(--theme-bg);">
+<div class="diff-container border rounded-lg overflow-hidden" style="background-color: var(--bg-primary); border-color: var(--border);">
   <!-- Header -->
-  <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
-    <h3 class="text-lg font-semibold text-gray-900">
+  <div class="px-4 py-3 border-b" style="background-color: var(--bg-secondary); border-color: var(--border);">
+    <h3 class="text-lg font-semibold" style="color: var(--text-primary);">
       📊 {diffResult.left.title} vs {diffResult.right.title}
     </h3>
     {#if diffResult.left.version || diffResult.right.version}
-      <p class="text-sm text-gray-600 mt-1">
+      <p class="text-sm mt-1" style="color: var(--text-secondary);">
         {diffResult.left.version || 'Unknown'} vs {diffResult.right.version || 'Unknown'}
       </p>
     {/if}
@@ -25,31 +25,31 @@
   <!-- Content Comparison -->
   <div class="grid grid-cols-1 md:grid-cols-2 gap-0">
     <!-- Left Side -->
-    <div class="border-r border-gray-200">
-      <div class="bg-red-50 px-4 py-2 border-b border-gray-200">
-        <h4 class="font-medium text-red-900">Left: {diffResult.left.title}</h4>
+    <div class="border-r" style="border-color: var(--border);">
+      <div class="px-4 py-2 border-b" style="background-color: var(--bg-secondary); border-color: var(--border);">
+        <h4 class="font-medium" style="color: var(--text-primary);">Left: {diffResult.left.title}</h4>
       </div>
       <div class="p-4">
-        <pre class="text-sm text-gray-800 whitespace-pre-wrap font-mono leading-relaxed">{diffResult.left.content}</pre>
+        <pre class="text-sm whitespace-pre-wrap font-mono leading-relaxed" style="color: var(--text-primary);">{diffResult.left.content}</pre>
       </div>
     </div>
 
     <!-- Right Side -->
     <div>
-      <div class="bg-brown-100 px-4 py-2 border-b border-gray-200">
-        <h4 class="font-medium text-espresso-900">Right: {diffResult.right.title}</h4>
+      <div class="px-4 py-2 border-b" style="background-color: var(--bg-secondary); border-color: var(--border);">
+        <h4 class="font-medium" style="color: var(--text-primary);">Right: {diffResult.right.title}</h4>
       </div>
       <div class="p-4">
-        <pre class="text-sm text-gray-800 whitespace-pre-wrap font-mono leading-relaxed">{diffResult.right.content}</pre>
+        <pre class="text-sm whitespace-pre-wrap font-mono leading-relaxed" style="color: var(--text-primary);">{diffResult.right.content}</pre>
       </div>
     </div>
   </div>
 
   <!-- Changes Summary -->
   {#if diffResult.changes.length > 0}
-    <div class="border-t border-gray-200 bg-gray-50">
+    <div class="border-t" style="border-color: var(--border); background-color: var(--bg-secondary);">
       <div class="px-4 py-3">
-        <h4 class="font-medium text-gray-900 mb-2">Changes ({diffResult.changes.length})</h4>
+        <h4 class="font-medium mb-2" style="color: var(--text-primary);">Changes ({diffResult.changes.length})</h4>
         <div class="space-y-1 max-h-40 overflow-y-auto">
           {#each diffResult.changes as change}
             <div class="text-xs font-mono px-2 py-1 rounded
@@ -64,8 +64,8 @@
       </div>
     </div>
   {:else}
-    <div class="border-t border-gray-200 bg-gray-50 px-4 py-3">
-      <p class="text-sm text-gray-600">✅ No differences found - content is identical</p>
+    <div class="border-t px-4 py-3" style="border-color: var(--border); background-color: var(--bg-secondary);">
+      <p class="text-sm" style="color: var(--text-secondary);">✅ No differences found - content is identical</p>
     </div>
   {/if}
 </div>

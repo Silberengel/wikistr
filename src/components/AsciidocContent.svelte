@@ -404,15 +404,15 @@
           if (type === 'npub' || type === 'nprofile') {
             const pubkey = type === 'npub' ? data : data.pubkey;
             const displayName = await getDisplayName(pubkey);
-            const replacement = `<span class="nostr-user-link" data-pubkey="${pubkey}" data-bech32="${bech32}" style="color: #3b82f6; cursor: pointer;">@${displayName}</span>`;
+            const replacement = `<span class="nostr-user-link" data-pubkey="${pubkey}" data-bech32="${bech32}" style="color: var(--accent); cursor: pointer;">@${displayName}</span>`;
             processed = processed.replace(match, replacement);
           } else if (type === 'nevent' || type === 'note') {
             const displayText = bech32.slice(0, 20) + '...';
-            const replacement = `<span class="nostr-event-link" data-bech32="${bech32}" data-type="${type}" style="color: #3b82f6; cursor: pointer;">${displayText}</span>`;
+            const replacement = `<span class="nostr-event-link" data-bech32="${bech32}" data-type="${type}" style="color: var(--accent); cursor: pointer;">${displayText}</span>`;
             processed = processed.replace(match, replacement);
           } else if (type === 'naddr') {
             const identifier = data.identifier || bech32.slice(0, 20) + '...';
-            const replacement = `<span class="nostr-event-link" data-bech32="${bech32}" data-type="${type}" style="color: #3b82f6; cursor: pointer;">${identifier}</span>`;
+            const replacement = `<span class="nostr-event-link" data-bech32="${bech32}" data-type="${type}" style="color: var(--accent); cursor: pointer;">${identifier}</span>`;
             processed = processed.replace(match, replacement);
           }
         }

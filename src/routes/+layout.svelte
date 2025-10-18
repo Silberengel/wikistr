@@ -16,6 +16,9 @@
   // Get theme's default mode
   const themeDefaultMode = getThemeDefaultMode();
   
+  // Reactive mode state - will be updated by ModeToggle
+  let currentMode = $state(themeDefaultMode);
+  
   interface Props {
     children?: import('svelte').Snippet;
   }
@@ -179,7 +182,97 @@
   onMount(() => {
     initializeLayout();
     
-    return cleanup;
+    // Initialize mode from localStorage
+    const savedMode = localStorage.getItem('wikistr-mode') as 'light' | 'dark' | null;
+    if (savedMode) {
+      currentMode = savedMode;
+    }
+    
+    // Listen for mode changes from ModeToggle
+    const handleModeChange = (event: CustomEvent) => {
+      currentMode = event.detail.mode;
+    };
+    
+    window.addEventListener('mode-change', handleModeChange as EventListener);
+    
+    return () => {
+      cleanup();
+      window.removeEventListener('mode-change', handleModeChange as EventListener);
+    };
+  });
+
+  // Reactive effect to update CSS variables when mode changes
+  $effect(() => {
+    const root = document.documentElement;
+    const paletteToUse = currentMode === 'light' ? palette.light : palette.dark;
+    
+    // Use the proper palette colors for each mode
+    if (currentMode === 'light') {
+      // Light mode: use light colors from palette
+      root.style.setProperty('--page-bg', paletteToUse.pageBg); // Light grayish background
+      root.style.setProperty('--bg-primary', paletteToUse.primary); // White/light beige panels
+      root.style.setProperty('--bg-secondary', paletteToUse.secondary); // Slightly darker for secondary elements
+      root.style.setProperty('--bg-tertiary', paletteToUse.tertiary); // Even darker for tertiary elements
+      root.style.setProperty('--text-primary', paletteToUse.text); // Dark text for light backgrounds
+      root.style.setProperty('--text-secondary', paletteToUse.textSecondary); // Slightly lighter dark text
+      root.style.setProperty('--text-muted', paletteToUse.textMuted); // Muted dark text
+    } else {
+      // Dark mode: use dark colors from palette
+      root.style.setProperty('--page-bg', paletteToUse.pageBg); // Dark background
+      root.style.setProperty('--bg-primary', paletteToUse.primary); // Dark panels
+      root.style.setProperty('--bg-secondary', paletteToUse.secondary); // Slightly lighter dark for secondary elements
+      root.style.setProperty('--bg-tertiary', paletteToUse.tertiary); // Even lighter dark for tertiary elements
+      root.style.setProperty('--text-primary', paletteToUse.text); // Light text for dark backgrounds
+      root.style.setProperty('--text-secondary', paletteToUse.textSecondary); // Slightly dimmed light text
+      root.style.setProperty('--text-muted', paletteToUse.textMuted); // Muted light text
+    }
+    root.style.setProperty('--border', paletteToUse.border);
+    root.style.setProperty('--accent', paletteToUse.accent);
+    root.style.setProperty('--accent-hover', paletteToUse.accentHover);
+    root.style.setProperty('--highlight', paletteToUse.highlight);
+    
+    // Code styling - inline code gets pale accent background
+    if (currentMode === 'light') {
+      root.style.setProperty('--code-bg', 'rgba(139, 92, 246, 0.1)'); // Pale accent color
+      root.style.setProperty('--code-text', '#374151'); // Dark gray text
+      root.style.setProperty('--code-border', 'rgba(139, 92, 246, 0.2)');
+    } else {
+      root.style.setProperty('--code-bg', 'rgba(139, 92, 246, 0.15)'); // Slightly more visible pale accent
+      root.style.setProperty('--code-text', '#e5e7eb'); // Light gray text
+      root.style.setProperty('--code-border', 'rgba(139, 92, 246, 0.3)');
+    }
+    
+    // Code block styling - use appropriate colors for each mode
+    root.style.setProperty('--code-block-bg', currentMode === 'light' ? '#374151' : '#1f2937');
+    root.style.setProperty('--code-block-text', currentMode === 'light' ? '#f9fafb' : '#e5e7eb');
+    root.style.setProperty('--code-block-border', currentMode === 'light' ? '#4b5563' : '#374151');
+    
+    // Syntax highlighting colors for better contrast
+    if (currentMode === 'light') {
+      // Light mode syntax highlighting
+      root.style.setProperty('--syntax-string', '#0d9488'); // Dark teal for strings
+      root.style.setProperty('--syntax-number', '#dc2626'); // Dark red for numbers
+      root.style.setProperty('--syntax-literal', '#7c2d12'); // Dark orange for literals
+      root.style.setProperty('--syntax-keyword', '#7c3aed'); // Purple for keywords
+      root.style.setProperty('--syntax-attr', '#059669'); // Dark green for attributes
+      root.style.setProperty('--syntax-json-key', '#2563eb'); // Dark blue for JSON keys
+      root.style.setProperty('--syntax-json-string', '#0d9488'); // Dark teal for JSON strings
+      root.style.setProperty('--syntax-json-number', '#dc2626'); // Dark red for JSON numbers
+      root.style.setProperty('--syntax-json-literal', '#7c2d12'); // Dark orange for JSON literals
+    } else {
+      // Dark mode syntax highlighting - brighter colors for better contrast
+      root.style.setProperty('--syntax-string', '#6ee7b7'); // Bright green for strings
+      root.style.setProperty('--syntax-number', '#fde047'); // Bright yellow for numbers
+      root.style.setProperty('--syntax-literal', '#fb7185'); // Bright pink for literals
+      root.style.setProperty('--syntax-keyword', '#a78bfa'); // Purple for keywords
+      root.style.setProperty('--syntax-attr', '#86efac'); // Bright green for attributes
+      root.style.setProperty('--syntax-json-key', '#93c5fd'); // Light blue for JSON keys
+      root.style.setProperty('--syntax-json-string', '#6ee7b7'); // Bright green for JSON strings
+      root.style.setProperty('--syntax-json-number', '#fde047'); // Bright yellow for JSON numbers
+      root.style.setProperty('--syntax-json-literal', '#fb7185'); // Bright pink for JSON literals
+    }
+    
+    console.log('🎨 CSS variables updated for mode:', currentMode);
   });
 </script>
 
@@ -188,7 +281,7 @@
   <style>
     /* Theme variables - dynamically generated from accent color */
     :root {
-      /* Dark mode palette */
+      /* Default dark mode palette */
       --bg-primary: {palette.dark.primary};
       --bg-secondary: {palette.dark.secondary};
       --bg-tertiary: {palette.dark.tertiary};
@@ -203,26 +296,11 @@
       --font-family: {theme.typography.fontFamily};
       --font-family-heading: {theme.typography.fontFamilyHeading};
     }
-    
-    /* Light mode palette */
-    [data-mode="light"] {
-      --bg-primary: {palette.light.primary};
-      --bg-secondary: {palette.light.secondary};
-      --bg-tertiary: {palette.light.tertiary};
-      --text-primary: {palette.light.text};
-      --text-secondary: {palette.light.textSecondary};
-      --text-muted: {palette.light.textMuted};
-      --border: {palette.light.border};
-      --accent: {palette.light.accent};
-      --accent-hover: {palette.light.accentHover};
-      --highlight: {palette.light.highlight};
-      --page-bg: {palette.light.pageBg};
-    }
   </style>
 </svelte:head>
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div class="flex overflow-x-scroll pb-2" draggable="false" bind:this={slider} data-theme={theme.name} data-mode={themeDefaultMode}>
+<div class="flex overflow-x-scroll pb-2" draggable="false" bind:this={slider} data-theme={theme.name} data-mode={currentMode}>
   <CardElement card={{ type: 'welcome', id: -1 }} />
 
   {#each $cards as card (card.id)}

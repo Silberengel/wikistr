@@ -17,6 +17,7 @@
   import RelayItem from '$components/RelayItem.svelte';
   import ProfilePopup from '$components/ProfilePopup.svelte';
   import { nip19 } from '@nostr/tools';
+  import { cards } from '$lib/state';
 
   interface Props {
     card: Card;
@@ -51,6 +52,12 @@
   let selectedUserBech32 = $state('');
 
   let title = $derived(event?.tags?.find?.(([k]) => k === 'title')?.[1] || dTag);
+  
+  // Get the currently selected relay URL from the cards array
+  const selectedRelayUrl = $derived.by(() => {
+    const relayCard = $cards.find(card => card.type === 'relay');
+    return relayCard ? (relayCard as any).data : null;
+  });
   let summary = $derived(event?.tags?.find(([k]) => k === 'summary')?.[1]);
   let rawEvent = $derived(event ? JSON.stringify(event, null, 2) : '{...}');
 
@@ -516,7 +523,7 @@
               onclick={() => vote('+')}
             >
               <svg
-                style="fill: {likeStatus === 'liked' ? '#fbbf24' : '#9ca3af'};"
+                style="fill: {likeStatus === 'liked' ? 'var(--accent)' : 'var(--text-muted)'};"
                 width="18"
                 height="18"
                 viewBox="0 0 18 18"><path d="M1 12h16L9 4l-8 8Z"></path></svg
@@ -525,13 +532,13 @@
           {:else}
             <!-- Display-only for anonymous users -->
             <svg
-              style="fill: #9ca3af;"
+              style="fill: var(--text-muted);"
               width="18"
               height="18"
               viewBox="0 0 18 18"><path d="M1 12h16L9 4l-8 8Z"></path></svg
             >
           {/if}
-          <span class="text-xs text-gray-500 mt-1">{voteCounts.likes}</span>
+          <span class="text-xs mt-1" style="color: var(--text-secondary);">{voteCounts.likes}</span>
         </div>
         
         <!-- Dislike button -->
@@ -547,7 +554,7 @@
               onclick={() => vote('-')}
             >
               <svg
-                style="fill: {likeStatus === 'disliked' ? '#fbbf24' : '#9ca3af'};"
+                style="fill: {likeStatus === 'disliked' ? 'var(--accent)' : 'var(--text-muted)'};"
                 width="18"
                 height="18"
                 viewBox="0 0 18 18"><path d="M1 6h16l-8 8-8-8Z"></path></svg
@@ -556,13 +563,13 @@
           {:else}
             <!-- Display-only for anonymous users -->
             <svg
-              style="fill: #9ca3af;"
+              style="fill: var(--text-muted);"
               width="18"
               height="18"
               viewBox="0 0 18 18"><path d="M1 6h16l-8 8-8-8Z"></path></svg
             >
           {/if}
-          <span class="text-xs text-gray-500 mt-1">{voteCounts.dislikes}</span>
+          <span class="text-xs mt-1" style="color: var(--text-secondary);">{voteCounts.dislikes}</span>
         </div>
       </div>
       
@@ -571,13 +578,13 @@
         <div class="flex items-center space-x-3 mb-4">
           <UserBadge pubkey={event.pubkey} {createChild} onProfileClick={handleProfileClick} size="small" hideSearchIcon={false} />
           {#if event.created_at}
-            <span class="text-xs text-gray-500 whitespace-nowrap">
+            <span class="text-xs whitespace-nowrap" style="color: var(--text-secondary);">
               {formatRelativeTime(event.created_at)}
             </span>
           {/if}
         </div>
         <div>
-          <a class="cursor-pointer underline text-burgundy-700 hover:text-burgundy-800" onclick={edit}>
+          <a class="cursor-pointer underline transition-colors" style="color: var(--accent);" onclick={edit}>
             {#if event?.pubkey === $account?.pubkey}
               Edit
             {:else}
@@ -585,20 +592,21 @@
             {/if}
           </a>
           &nbsp;• &nbsp;
-          <a class="cursor-pointer underline text-burgundy-700 hover:text-burgundy-800" onclick={shareCopy}>
+          <a class="cursor-pointer underline transition-colors" style="color: var(--accent);" onclick={shareCopy}>
             {#if copied}Copied!{:else}Share{/if}
           </a>
           &nbsp;• &nbsp;
-          <a class="cursor-pointer underline text-burgundy-700 hover:text-burgundy-800" onmouseup={seeOthers}>{nOthers || ''} Versions</a>
+          <a class="cursor-pointer underline transition-colors" style="color: var(--accent);" onmouseup={seeOthers}>{nOthers || ''} Versions</a>
           &nbsp;• &nbsp;
           {#if event}
             <button
               onclick={copyNevent}
-              class="p-2 text-burgundy-700 hover:text-burgundy-800 hover:bg-brown-200 rounded-lg transition-all duration-200"
+              class="p-2 rounded-lg transition-all duration-200"
+              style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
               title="Copy nevent"
             >
               {#if neventCopied}
-                <svg class="w-4 h-4 text-burgundy-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                 </svg>
               {:else}
@@ -608,7 +616,7 @@
               {/if}
             </button>
             {#if neventCopied}
-              <span class="text-xs text-burgundy-700 font-medium ml-2 animate-fade-in">Nevent copied!</span>
+              <span class="text-xs font-medium ml-2 animate-fade-in" style="color: var(--accent);">Nevent copied!</span>
             {/if}
           {/if}
         </div>
@@ -634,14 +642,15 @@
           onclick={() => {
             view = view === 'formatted' ? 'asciidoc' : view === 'asciidoc' ? 'raw' : 'formatted';
           }}
-          class="font-normal text-xs px-2 py-1 rounded cursor-pointer transition-colors bg-brown-400 hover:bg-brown-500 text-espresso-900 focus:outline-none"
+          class="font-normal text-xs px-2 py-1 rounded cursor-pointer transition-colors"
+          style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
           >see {#if view === 'formatted'}asciidoc source{:else if view === 'asciidoc'}raw event{:else}formatted{/if}</button
         >
         
         <!-- Relays (after source button) -->
         {#if seenOn.length}
           {#each seenOn as r (r)}
-            <RelayItem url={r} {createChild} />
+            <RelayItem url={r} {createChild} selected={selectedRelayUrl && (r === selectedRelayUrl || r.includes(selectedRelayUrl.replace(/^wss?:\/\//, '').replace(/\/$/, '')))} />
           {/each}
         {/if}
       </div>

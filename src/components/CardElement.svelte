@@ -127,18 +127,12 @@
   overflow-x-hidden
   mx-2 mt-2
   min-w-[395px] max-w-[395px] lg:min-w-[32rem] lg:max-w-[32rem]
-  rounded-lg border-8 bg-brown-100
+  rounded-lg border-8
   h-[calc(100vh_-_32px)]
   p-4
-  scrollbar-thin scrollbar-thumb-stone-300 scrollbar-track-stone-100 hover:scrollbar-thumb-stone-400"
+  scrollbar-thin"
   ondblclick={scrollIntoViewIfNecessary}
-  style:border-color={card.type === 'article'
-    ? '#e8ddd1'
-    : card.type === 'find'
-      ? '#e8ddd1'
-      : card.type === 'book'
-        ? '#e8ddd1'
-        : '#f2ede6'}
+  style="background-color: var(--bg-primary); border-color: var(--border);"
 >
   {#if card.type !== 'welcome' && card.type !== 'new'}
     <div class="flex" class:justify-between={card.back} class:justify-end={!card.back}>

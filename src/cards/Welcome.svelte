@@ -8,6 +8,7 @@
   import { getThemeConfig } from '$lib/themes';
   import { next } from '$lib/utils';
   import { contentCache } from '$lib/contentCache';
+  import { cards } from '$lib/state';
   
   // Components
   import UserBadge from '$components/UserBadge.svelte';
@@ -78,6 +79,12 @@
   ];
 
   const currentFeed = $derived(FEED_CONFIGS[current]);
+  
+  // Get the currently selected relay URL from the cards array
+  const selectedRelayUrl = $derived.by(() => {
+    const relayCard = $cards.find(card => card.type === 'relay');
+    return relayCard ? (relayCard as any).data : null;
+  });
 
   // Prevent doom loops with rate limiting
   const MIN_LOAD_INTERVAL = 5000; // 5 seconds minimum between loads
@@ -728,8 +735,8 @@
   <div class="mt-4 text-sm" style="color: var(--text-primary); opacity: 0.9;">
     {theme.description}
   </div>
-  <div class="mt-3 text-xs border-t pt-3" style="color: var(--text-primary); opacity: 0.8; border-color: var(--text-primary); opacity: 0.5;">
-    A <a href="https://jumble.imwald.eu/users/npub1s3ht77dq4zqnya8vjun5jp3p44pr794ru36d0ltxu65chljw8xjqd975wz" class="text-burgundy-700 hover:text-burgundy-800 underline">GitCitadel</a> fork of <a href="https://github.com/silberengel/wikistr" class="text-burgundy-700 hover:text-burgundy-800 underline">WikiStr</a>
+  <div class="mt-3 text-xs border-t pt-3" style="color: var(--text-secondary); border-color: var(--border);">
+    A <a href="https://jumble.imwald.eu/users/npub1s3ht77dq4zqnya8vjun5jp3p44pr794ru36d0ltxu65chljw8xjqd975wz" style="color: var(--accent); text-decoration: underline;">GitCitadel</a> fork of <a href="https://github.com/silberengel/wikistr" style="color: var(--accent); text-decoration: underline;">WikiStr</a>
   </div>
 </section>
 
@@ -746,8 +753,8 @@
       <button
         onclick={doLogout}
         type="button"
-        class="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-        style="color: #fbbf24;"
+        class="inline-flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors"
+        style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
       >
         Logout
       </button>
@@ -776,7 +783,8 @@
       <button
         onclick={doLogin}
         type="submit"
-        class="btn-primary"
+        class="inline-flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors"
+        style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
       >
         Login
       </button>
@@ -801,8 +809,15 @@
   <div class="flex items-center flex-wrap mt-2">
     <div class="mr-1 font-normal text-xs">from</div>
     {#each currentRelays as url}
-      <RelayItem {url} {createChild} />
+      <RelayItem {url} {createChild} selected={selectedRelayUrl && (url === selectedRelayUrl || url.includes(selectedRelayUrl.replace(/^wss?:\/\//, '').replace(/\/$/, '')))} />
     {/each}
+    
+    <!-- Debug info -->
+    {#if selectedRelayUrl}
+      <div class="text-xs text-gray-500 mt-1">
+        Debug: Selected relay = "{selectedRelayUrl}"
+      </div>
+    {/if}
   </div>
 
   <!-- Article List -->

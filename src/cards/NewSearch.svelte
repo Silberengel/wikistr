@@ -171,21 +171,21 @@ import UserBadge from '$components/UserBadge.svelte';
   <div class="relative flex items-stretch flex-grow focus-within:z-10">
     <input
       bind:value={query}
-      class="block w-full sm:text-sm"
-      style="font-family: {theme.typography.fontFamily};"
+      class="block w-full sm:text-sm border rounded-l-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-offset-2"
+      style="font-family: {theme.typography.fontFamily}; background-color: var(--bg-primary); color: var(--text-primary); border-color: var(--border); --tw-ring-color: var(--accent);"
       placeholder="article name, search term, or book:type:reference"
     />
   </div>
   <button
     type="submit"
-    class="-ml-px inline-flex items-center space-x-2 px-3 py-2 text-sm font-medium rounded-r-md"
-    style="font-family: {theme.typography.fontFamily};"
+    class="inline-flex items-center space-x-2 px-3 py-2 text-sm font-medium rounded-r-md border transition-colors hover:opacity-90"
+    style="font-family: {theme.typography.fontFamily}; background-color: var(--bg-primary); color: var(--accent); border-color: var(--accent);"
     >Go</button>
 </form>
 
 <!-- Search Instructions -->
-<div class="mt-4 p-3 rounded-lg border bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600">
-  <div class="text-sm whitespace-pre-line text-gray-600 dark:text-gray-300">
+<div class="mt-4 p-3 rounded-lg border" style="background-color: var(--bg-secondary); border-color: var(--border);">
+  <div class="text-sm whitespace-pre-line" style="color: var(--text-primary);">
     {theme.searchHelpText}
   </div>
 </div>
@@ -194,7 +194,7 @@ import UserBadge from '$components/UserBadge.svelte';
 <div class="mt-4 flex justify-between items-center">
   <!-- About Statement (Bottom Left) -->
   <div class="flex items-center space-x-2">
-    <span class="text-xs text-gray-600 dark:text-gray-300">
+    <span class="text-xs" style="color: var(--text-secondary);">
       Need help? Contact 
     </span>
     <UserBadge 
@@ -204,7 +204,7 @@ import UserBadge from '$components/UserBadge.svelte';
       onProfileClick={openProfilePopup}
       hideSearchIcon={true}
     />
-    <span class="text-xs text-gray-600 dark:text-gray-300">
+    <span class="text-xs" style="color: var(--text-secondary);">
       for support.
     </span>
   </div>
@@ -212,7 +212,7 @@ import UserBadge from '$components/UserBadge.svelte';
   <!-- Settings Button (Bottom Right) -->
   <button
     onclick={toggleSettings}
-    class="p-2 rounded-md border transition-all duration-200 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border-gray-200 dark:border-gray-600"
+    class="p-2 rounded-md border transition-all duration-200 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2" style="background-color: var(--bg-primary); color: var(--accent); border-color: var(--accent); --tw-ring-color: var(--accent);"
     title="Settings"
     aria-label="Open settings"
   >
@@ -227,12 +227,13 @@ import UserBadge from '$components/UserBadge.svelte';
 {#if showSettings}
 <!-- Mobile: Full-screen drawer -->
 <div class="md:hidden fixed inset-0 z-50 bg-black bg-opacity-50" onclick={toggleSettings} onkeydown={(e) => e.key === 'Escape' && toggleSettings()} role="dialog" aria-modal="true" tabindex="-1">
-  <div class="fixed bottom-0 left-0 right-0 p-4 rounded-t-lg border-t bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="button" tabindex="0">
+  <div class="fixed bottom-0 left-0 right-0 p-4 rounded-t-lg border-t" style="background-color: var(--bg-primary); border-color: var(--border);" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="button" tabindex="0">
     <div class="flex items-center justify-between mb-4">
-      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Settings</h3>
+      <h3 class="text-lg font-semibold" style="color: var(--text-primary);">Settings</h3>
       <button
         onclick={toggleSettings}
-        class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-600 dark:text-gray-300"
+        class="p-1 rounded transition-colors"
+        style="color: var(--text-secondary); background-color: var(--bg-secondary);"
         aria-label="Close settings"
       >
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -243,20 +244,21 @@ import UserBadge from '$components/UserBadge.svelte';
     
     <!-- Mode Toggle -->
     <div class="mb-4">
-      <div class="block text-sm font-medium mb-2 text-gray-900 dark:text-white">Appearance</div>
+      <div class="block text-sm font-medium mb-2" style="color: var(--text-primary);">Appearance</div>
       <div class="flex items-center space-x-3">
         <ModeToggle />
-        <span class="text-sm text-gray-600 dark:text-gray-300">Toggle light/dark mode</span>
+        <span class="text-sm" style="color: var(--text-secondary);">Toggle light/dark mode</span>
       </div>
     </div>
     
     <!-- Relays Section -->
     <div>
       <div class="flex items-center justify-between mb-2">
-        <div class="block text-sm font-medium text-gray-900 dark:text-white">Relays</div>
+        <div class="block text-sm font-medium" style="color: var(--text-primary);">Relays</div>
         <button
           onclick={loadRelayInfo}
-          class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 border border-gray-300 dark:border-gray-600 rounded text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
+          class="text-xs px-2 py-1 border rounded transition-colors hover:opacity-90"
+          style="color: var(--accent); background-color: var(--bg-primary); border-color: var(--accent);"
           title="Refresh relay list"
         >
           🔄 Refresh
@@ -266,8 +268,8 @@ import UserBadge from '$components/UserBadge.svelte';
         {#if themeRelays.length > 0}
           <div class="space-y-2 max-h-48 overflow-y-auto">
             {#each themeRelays as relay}
-              <div class="flex items-center justify-between p-2 rounded border bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600">
-                <span class="font-mono text-sm text-gray-900 dark:text-white">{relay.url}</span>
+              <div class="flex items-center justify-between p-2 rounded border" style="background-color: var(--bg-secondary); border-color: var(--border);">
+                <span class="font-mono text-sm" style="color: var(--text-primary);">{relay.url}</span>
                 <div class="flex items-center space-x-2">
                   <!-- Wiki icon -->
                   <svg 
@@ -298,10 +300,10 @@ import UserBadge from '$components/UserBadge.svelte';
             {/each}
           </div>
         {:else}
-          <p class="text-sm italic text-gray-600 dark:text-gray-300">No relays configured</p>
+          <p class="text-sm italic" style="color: var(--text-secondary);">No relays configured</p>
         {/if}
       {:else}
-        <p class="text-sm text-gray-600 dark:text-gray-300">Loading relays...</p>
+        <p class="text-sm" style="color: var(--text-secondary);">Loading relays...</p>
       {/if}
     </div>
   </div>
@@ -309,12 +311,12 @@ import UserBadge from '$components/UserBadge.svelte';
 
 <!-- Desktop: Popup -->
 <div class="hidden md:block fixed inset-0 z-50 bg-black bg-opacity-50" onclick={toggleSettings} onkeydown={(e) => e.key === 'Escape' && toggleSettings()} role="dialog" aria-modal="true" tabindex="-1">
-  <div class="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 max-w-md p-4 rounded-lg border shadow-lg bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="button" tabindex="0">
+  <div class="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 max-w-md p-4 rounded-lg border shadow-lg" style="background-color: var(--bg-primary); border-color: var(--border);" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="button" tabindex="0">
     <div class="flex items-center justify-between mb-4">
-      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Settings</h3>
+      <h3 class="text-lg font-semibold" style="color: var(--text-primary);">Settings</h3>
       <button
         onclick={toggleSettings}
-        class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-600 dark:text-gray-300"
+        class="p-1 rounded transition-colors" style="color: var(--text-secondary); background-color: var(--bg-secondary);"
         aria-label="Close settings"
       >
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -325,20 +327,21 @@ import UserBadge from '$components/UserBadge.svelte';
     
     <!-- Mode Toggle -->
     <div class="mb-4">
-      <div class="block text-sm font-medium mb-2 text-gray-900 dark:text-white">Appearance</div>
+      <div class="block text-sm font-medium mb-2" style="color: var(--text-primary);">Appearance</div>
       <div class="flex items-center space-x-3">
         <ModeToggle />
-        <span class="text-sm text-gray-600 dark:text-gray-300">Toggle light/dark mode</span>
+        <span class="text-sm" style="color: var(--text-secondary);">Toggle light/dark mode</span>
       </div>
     </div>
     
     <!-- Relays Section -->
     <div>
       <div class="flex items-center justify-between mb-2">
-        <div class="block text-sm font-medium text-gray-900 dark:text-white">Relays</div>
+        <div class="block text-sm font-medium" style="color: var(--text-primary);">Relays</div>
         <button
           onclick={loadRelayInfo}
-          class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 border border-gray-300 dark:border-gray-600 rounded text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
+          class="text-xs px-2 py-1 border rounded transition-colors hover:opacity-90"
+          style="color: var(--accent); background-color: var(--bg-primary); border-color: var(--accent);"
           title="Refresh relay list"
         >
           🔄 Refresh
@@ -348,8 +351,8 @@ import UserBadge from '$components/UserBadge.svelte';
         {#if themeRelays.length > 0}
           <div class="space-y-2 max-h-48 overflow-y-auto">
             {#each themeRelays as relay}
-              <div class="flex items-center justify-between p-2 rounded border bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600">
-                <span class="font-mono text-sm text-gray-900 dark:text-white">{relay.url}</span>
+              <div class="flex items-center justify-between p-2 rounded border" style="background-color: var(--bg-secondary); border-color: var(--border);">
+                <span class="font-mono text-sm" style="color: var(--text-primary);">{relay.url}</span>
                 <div class="flex items-center space-x-2">
                   <!-- Wiki icon -->
                   <svg 
@@ -380,10 +383,10 @@ import UserBadge from '$components/UserBadge.svelte';
             {/each}
           </div>
         {:else}
-          <p class="text-sm italic text-gray-600 dark:text-gray-300">No relays configured</p>
+          <p class="text-sm italic" style="color: var(--text-secondary);">No relays configured</p>
         {/if}
       {:else}
-        <p class="text-sm text-gray-600 dark:text-gray-300">Loading relays...</p>
+        <p class="text-sm" style="color: var(--text-secondary);">Loading relays...</p>
       {/if}
     </div>
   </div>
@@ -394,7 +397,8 @@ import UserBadge from '$components/UserBadge.svelte';
 <!-- <div class="mt-3 flex gap-2">
   <button
     onclick={refreshBookConfigs}
-    class="text-sm px-3 py-1 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded text-gray-700 hover:text-gray-900 transition-colors"
+    class="text-sm px-3 py-1 rounded transition-colors"
+    style="background-color: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border);"
     title="Refresh book configurations from Nostr events"
   >
     🔄 Refresh Books

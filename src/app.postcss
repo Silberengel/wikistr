@@ -4,7 +4,7 @@
    ========================================================================== */
 
 /* External Dependencies */
-@import 'highlight.js/styles/github.css';
+/* Removed highlight.js theme import to use our custom syntax highlighting */
 
 /* Tailwind CSS */
 @tailwind base;
@@ -40,6 +40,88 @@
     font-weight: 600;
   }
 
+  /* Global markdown-like content styling */
+  h1 {
+    font-size: 2.25rem;
+    font-weight: 700;
+    border-bottom: 3px solid var(--border);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  h2 {
+    font-size: 1.875rem;
+    font-weight: 700;
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 0.25rem;
+    margin-bottom: 1rem;
+  }
+
+  h3 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+  }
+
+  h4 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+
+  h5 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+
+  h6 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+  }
+
+  /* Global paragraph styling */
+  p {
+    color: var(--text-primary);
+    margin-bottom: 1rem;
+    line-height: 1.7;
+  }
+
+  /* Global list styling */
+  ul, ol {
+    color: var(--text-primary);
+    margin-bottom: 1rem;
+    padding-left: 1.5rem;
+  }
+
+  li {
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+  }
+
+  /* Global link styling */
+  a {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+
+  a:hover {
+    color: var(--accent-hover);
+  }
+
+  /* Global strong/em styling */
+  strong, b {
+    color: var(--text-primary);
+    font-weight: 700;
+  }
+
+  em, i {
+    color: var(--text-primary);
+    font-style: italic;
+  }
+
   p {
     color: var(--text-primary);
     line-height: 1.6;
@@ -67,6 +149,28 @@
   ::selection {
     background-color: var(--accent);
     color: white;
+  }
+
+  /* Scrollbar Styling */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background-color: var(--bg-secondary);
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin:hover::-webkit-scrollbar-thumb {
+    background-color: var(--text-muted);
   }
 }
 
@@ -130,18 +234,118 @@
     font-family: var(--font-family-mono);
   }
 
-  /* Code Blocks */
-  pre {
-    @apply p-4 rounded-md overflow-x-auto my-4;
+  /* Prose-specific inline code */
+  .prose code {
+    @apply px-2 py-1 rounded text-sm font-mono;
     background-color: var(--code-bg);
     color: var(--code-text);
     border: 0.5px solid var(--code-border);
+    font-family: var(--font-family-mono);
+    font-size: 0.9em;
+  }
+
+  /* Code Blocks */
+  pre {
+    @apply p-4 rounded-md overflow-x-auto my-4;
+    background-color: var(--code-block-bg);
+    color: var(--code-block-text);
+    border: 0.5px solid var(--code-block-border);
+    line-height: 1.2 !important;
+    white-space: pre !important;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
+  }
+
+  /* Force remove borders from pre elements specifically */
+  pre {
+    border-top: none !important;
+    border-bottom: none !important;
+    border-left: none !important;
+    border-right: none !important;
+    border: 0.5px solid var(--code-block-border) !important;
+  }
+
+  /* Code block content */
+  pre code {
+    background: transparent;
+    border: none;
+    padding: 0;
+    line-height: 1.2 !important;
+  }
+
+  /* Force line-height on all code block elements */
+  pre,
+  pre code,
+  pre code *,
+  .hljs,
+  .hljs * {
+    line-height: 1.2 !important;
+  }
+
+  /* Nuclear option - remove ALL possible sources of horizontal lines */
+  pre,
+  pre *,
+  code,
+  code *,
+  .hljs,
+  .hljs * {
+    border-top: none !important;
+    border-bottom: none !important;
+    border-left: none !important;
+    border-right: none !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background-image: none !important;
+    background-position: none !important;
+    background-repeat: none !important;
+    text-decoration: none !important;
+    text-decoration-line: none !important;
+    text-decoration-color: none !important;
+    text-underline-offset: none !important;
+  }
+
+  /* Remove any pseudo-elements that might create lines */
+  pre::before,
+  pre::after,
+  pre *::before,
+  pre *::after,
+  code::before,
+  code::after,
+  code *::before,
+  code *::after,
+  .hljs::before,
+  .hljs::after,
+  .hljs *::before,
+  .hljs *::after {
+    display: none !important;
+    content: none !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
   }
 
   pre code {
     background: transparent;
     border: none;
     padding: 0;
+  }
+
+  /* Prose-specific code blocks */
+  .prose pre {
+    @apply p-4 rounded-md overflow-x-auto my-4;
+    background-color: var(--code-block-bg);
+    color: var(--code-block-text);
+    border: 0.5px solid var(--code-block-border);
+    line-height: 1.2 !important;
+    white-space: pre !important;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
+  }
+
+  .prose pre code {
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: var(--code-block-text);
   }
 
   /* Blockquotes */
@@ -192,33 +396,455 @@
     @apply overflow-x-auto;
     font-size: 1.1rem;
     line-height: 1.7;
+    color: var(--text-primary);
   }
 
   .prose p {
     font-size: 1.1rem;
     margin-bottom: 1rem;
+    color: var(--text-primary);
   }
 
   .prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 {
     margin-top: 2rem;
     margin-bottom: 1rem;
     font-weight: 600;
+    color: var(--text-primary);
+    font-family: var(--font-family-heading);
+  }
+
+  .prose h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 0.5rem;
+  }
+
+  .prose h2 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.25rem;
+  }
+
+  .prose h3 {
+    font-size: 1.5rem;
+    font-weight: 600;
+  }
+
+  .prose h4 {
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
+
+  .prose h5 {
+    font-size: 1.1rem;
+    font-weight: 600;
+  }
+
+  .prose h6 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-secondary);
   }
 
   .prose ul, .prose ol {
     margin-bottom: 1rem;
     padding-left: 1.5rem;
+    color: var(--text-primary);
   }
 
   .prose li {
     margin-bottom: 0.5rem;
+    color: var(--text-primary);
+  }
+
+  .prose a {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+
+  .prose a:hover {
+    color: var(--accent-hover);
+  }
+
+  .prose strong, .prose b {
+    color: var(--text-primary);
+    font-weight: 700;
+  }
+
+  .prose em, .prose i {
+    color: var(--text-primary);
+    font-style: italic;
+  }
+
+  .prose blockquote {
+    margin: 1rem 0;
+    padding: 1rem;
+    border-left: 4px solid var(--accent);
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    font-style: italic;
+  }
+
+  .prose blockquote p {
+    margin: 0;
+    color: var(--text-primary);
+  }
+
+  .prose hr {
+    border: none;
+    border-top: 2px solid var(--border);
+    margin: 2rem 0;
+  }
+
+  .prose table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border);
+  }
+
+  .prose th, .prose td {
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    text-align: left;
+    color: var(--text-primary);
+  }
+
+  .prose th {
+    background-color: var(--bg-secondary);
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .prose td {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+  }
+
+  .prose img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 0.5rem;
+    border: 1px solid var(--border);
+  }
+
+  /* Markdown-specific elements */
+  .markdown {
+    color: var(--text-primary);
+  }
+
+  .markdown h1, .markdown h2, .markdown h3, .markdown h4, .markdown h5, .markdown h6 {
+    color: var(--text-primary);
+    font-family: var(--font-family-heading);
+  }
+
+  .markdown h1 {
+    font-size: 2.25rem;
+    font-weight: 700;
+    border-bottom: 3px solid var(--border);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .markdown h2 {
+    font-size: 1.875rem;
+    font-weight: 700;
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 0.25rem;
+    margin-bottom: 1rem;
+  }
+
+  .markdown h3 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+  }
+
+  .markdown h4 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+
+  .markdown h5 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+
+  .markdown h6 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+  }
+
+  .markdown p {
+    color: var(--text-primary);
+    margin-bottom: 1rem;
+    line-height: 1.7;
+  }
+
+  .markdown ul, .markdown ol {
+    color: var(--text-primary);
+    margin-bottom: 1rem;
+    padding-left: 1.5rem;
+  }
+
+  .markdown li {
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+  }
+
+  .markdown a {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+
+  .markdown a:hover {
+    color: var(--accent-hover);
+  }
+
+  .markdown strong, .markdown b {
+    color: var(--text-primary);
+    font-weight: 700;
+  }
+
+  .markdown em, .markdown i {
+    color: var(--text-primary);
+    font-style: italic;
+  }
+
+  .markdown code {
+    @apply px-2 py-1 rounded text-sm font-mono;
+    background-color: var(--code-bg);
+    color: var(--code-text);
+    border: 0.5px solid var(--code-border);
+    font-family: var(--font-family-mono);
+    font-size: 0.9em;
+  }
+
+  .markdown pre {
+    @apply p-4 rounded-md overflow-x-auto my-4;
+    background-color: var(--code-block-bg);
+    color: var(--code-block-text);
+    border: 0.5px solid var(--code-block-border);
+  }
+
+  .markdown pre code {
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: var(--code-block-text);
+  }
+
+  .markdown blockquote {
+    margin: 1rem 0;
+    padding: 1rem;
+    border-left: 4px solid var(--accent);
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    font-style: italic;
+  }
+
+  .markdown blockquote p {
+    margin: 0;
+    color: var(--text-primary);
+  }
+
+  .markdown hr {
+    border: none;
+    border-top: 2px solid var(--border);
+    margin: 2rem 0;
+  }
+
+  .markdown table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border);
+  }
+
+  .markdown th, .markdown td {
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    text-align: left;
+    color: var(--text-primary);
+  }
+
+  .markdown th {
+    background-color: var(--bg-secondary);
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .markdown td {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+  }
+
+  .markdown img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 0.5rem;
+    border: 1px solid var(--border);
   }
 
   /* Highlight.js Overrides */
   .hljs {
-    background: var(--code-bg) !important;
-    color: var(--code-text) !important;
-    border: 0.5px solid var(--code-border) !important;
+    background: var(--code-block-bg) !important;
+    color: var(--code-block-text) !important;
+    border: 0.5px solid var(--code-block-border) !important;
+    line-height: 1.2 !important;
+    white-space: pre !important;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
+  }
+
+  /* Syntax highlighting colors for better contrast */
+  .hljs-string {
+    color: #6ee7b7 !important; /* Bright green for strings */
+  }
+
+  .hljs-number {
+    color: #fde047 !important; /* Bright yellow for numbers */
+  }
+
+  .hljs-literal {
+    color: #fb7185 !important; /* Bright pink for booleans */
+  }
+
+  .hljs-attr {
+    color: #86efac !important; /* Bright green for attributes */
+  }
+
+  .hljs-keyword {
+    color: #a78bfa !important; /* Purple for keywords */
+  }
+
+  /* JSON-specific styling */
+  .hljs-json .hljs-attr {
+    color: #93c5fd !important; /* Light blue for JSON keys */
+  }
+
+  .hljs-json .hljs-string {
+    color: #6ee7b7 !important; /* Bright green for JSON strings */
+  }
+
+  .hljs-json .hljs-number {
+    color: #fde047 !important; /* Bright yellow for JSON numbers */
+  }
+
+  .hljs-json .hljs-literal {
+    color: #fb7185 !important; /* Bright pink for JSON booleans */
+  }
+
+
+  /* Ultra-specific syntax highlighting overrides for dark mode */
+  pre code .hljs-string,
+  pre .hljs-string,
+  code .hljs-string,
+  .hljs-string,
+  [class*="hljs"] .hljs-string {
+    color: #6ee7b7 !important; /* Bright green for strings */
+  }
+
+  pre code .hljs-number,
+  pre .hljs-number,
+  code .hljs-number,
+  .hljs-number,
+  [class*="hljs"] .hljs-number {
+    color: #fde047 !important; /* Bright yellow for numbers */
+  }
+
+  pre code .hljs-literal,
+  pre .hljs-literal,
+  code .hljs-literal,
+  .hljs-literal,
+  [class*="hljs"] .hljs-literal {
+    color: #fb7185 !important; /* Bright pink for booleans */
+  }
+
+  pre code .hljs-attr,
+  pre .hljs-attr,
+  code .hljs-attr,
+  .hljs-attr,
+  [class*="hljs"] .hljs-attr {
+    color: #86efac !important; /* Bright green for attributes */
+  }
+
+  pre code .hljs-keyword,
+  pre .hljs-keyword,
+  code .hljs-keyword,
+  .hljs-keyword,
+  [class*="hljs"] .hljs-keyword {
+    color: #a78bfa !important; /* Purple for keywords */
+  }
+
+  /* JSON-specific overrides */
+  pre code .hljs-json .hljs-attr,
+  pre .hljs-json .hljs-attr,
+  code .hljs-json .hljs-attr,
+  .hljs-json .hljs-attr,
+  [class*="hljs"] .hljs-json .hljs-attr {
+    color: #93c5fd !important; /* Light blue for JSON keys */
+  }
+
+  pre code .hljs-json .hljs-string,
+  pre .hljs-json .hljs-string,
+  code .hljs-json .hljs-string,
+  .hljs-json .hljs-string,
+  [class*="hljs"] .hljs-json .hljs-string {
+    color: #6ee7b7 !important; /* Bright green for JSON strings */
+  }
+
+  pre code .hljs-json .hljs-number,
+  pre .hljs-json .hljs-number,
+  code .hljs-json .hljs-number,
+  .hljs-json .hljs-number,
+  [class*="hljs"] .hljs-json .hljs-number {
+    color: #fde047 !important; /* Bright yellow for JSON numbers */
+  }
+
+  pre code .hljs-json .hljs-literal,
+  pre .hljs-json .hljs-literal,
+  code .hljs-json .hljs-literal,
+  .hljs-json .hljs-literal,
+  [class*="hljs"] .hljs-json .hljs-literal {
+    color: #fb7185 !important; /* Bright pink for JSON booleans */
+  }
+
+  /* Nuclear option - target any span with syntax highlighting classes */
+  span.hljs-string,
+  span.hljs-number,
+  span.hljs-literal,
+  span.hljs-attr,
+  span.hljs-keyword {
+    color: inherit !important;
+  }
+
+  /* Force colors on any element with these classes */
+  *[class*="hljs-string"] {
+    color: #6ee7b7 !important;
+  }
+
+  *[class*="hljs-number"] {
+    color: #fde047 !important;
+  }
+
+  *[class*="hljs-literal"] {
+    color: #fb7185 !important;
+  }
+
+  *[class*="hljs-attr"] {
+    color: #86efac !important;
+  }
+
+  *[class*="hljs-keyword"] {
+    color: #a78bfa !important;
   }
 
   /* LaTeX Styling */
@@ -228,6 +854,228 @@
 
   .katex-display {
     font-size: 1.4em !important;
+  }
+
+  /* AsciiDoc Table of Contents Styling */
+  .toc,
+  .toc2,
+  .toc3,
+  .toc4,
+  .toc5,
+  .toc6 {
+    background-color: var(--bg-secondary) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text-primary) !important;
+  }
+
+  .toc a,
+  .toc2 a,
+  .toc3 a,
+  .toc4 a,
+  .toc5 a,
+  .toc6 a {
+    color: var(--text-primary) !important;
+    text-decoration: none !important;
+  }
+
+  .toc a:hover,
+  .toc2 a:hover,
+  .toc3 a:hover,
+  .toc4 a:hover,
+  .toc5 a:hover,
+  .toc6 a:hover {
+    color: var(--accent) !important;
+    text-decoration: underline !important;
+  }
+
+  /* AsciiDoc Admonitions */
+  .admonitionblock,
+  .admonitionblock .content {
+    background-color: var(--bg-secondary) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text-primary) !important;
+  }
+
+  .admonitionblock .icon {
+    color: var(--accent) !important;
+  }
+
+  .admonitionblock .title {
+    color: var(--text-primary) !important;
+  }
+
+  /* AsciiDoc Sidebar */
+  .sidebarblock {
+    background-color: var(--bg-secondary) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text-primary) !important;
+  }
+
+  .sidebarblock .title {
+    color: var(--text-primary) !important;
+  }
+
+  /* AsciiDoc Quote Blocks */
+  .quoteblock {
+    background-color: var(--bg-secondary) !important;
+    border-left: 4px solid var(--accent) !important;
+    color: var(--text-primary) !important;
+  }
+
+  .quoteblock .title {
+    color: var(--text-secondary) !important;
+  }
+
+  /* AsciiDoc Verse Blocks */
+  .verseblock {
+    background-color: var(--bg-secondary) !important;
+    border-left: 4px solid var(--accent) !important;
+    color: var(--text-primary) !important;
+  }
+
+  .verseblock .title {
+    color: var(--text-secondary) !important;
+  }
+
+  /* AsciiDoc Example Blocks */
+  .exampleblock {
+    background-color: var(--bg-secondary) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text-primary) !important;
+  }
+
+  .exampleblock .title {
+    color: var(--text-primary) !important;
+  }
+
+  /* AsciiDoc Listing Blocks */
+  .listingblock {
+    background-color: var(--bg-secondary) !important;
+    border: 1px solid var(--border) !important;
+  }
+
+  .listingblock .title {
+    color: var(--text-primary) !important;
+  }
+
+  .listingblock pre {
+    background-color: var(--code-block-bg) !important;
+    color: var(--code-block-text) !important;
+    border: 1px solid var(--code-block-border) !important;
+  }
+
+  /* AsciiDoc Literal Blocks */
+  .literalblock {
+    background-color: var(--bg-secondary) !important;
+    border: 1px solid var(--border) !important;
+  }
+
+  .literalblock .title {
+    color: var(--text-primary) !important;
+  }
+
+  .literalblock pre {
+    background-color: var(--code-block-bg) !important;
+    color: var(--code-block-text) !important;
+    border: 1px solid var(--code-block-border) !important;
+  }
+
+  /* AsciiDoc Source Blocks */
+  .sourceblock {
+    background-color: var(--bg-secondary) !important;
+    border: 1px solid var(--border) !important;
+  }
+
+  .sourceblock .title {
+    color: var(--text-primary) !important;
+  }
+
+  .sourceblock pre {
+    background-color: var(--code-block-bg) !important;
+    color: var(--code-block-text) !important;
+    border: 1px solid var(--code-block-border) !important;
+  }
+
+  /* AsciiDoc code blocks with proper line height */
+  .listingblock pre,
+  .literalblock pre,
+  .sourceblock pre {
+    line-height: 1.2 !important;
+    white-space: pre !important;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
+  }
+
+  /* AsciiDoc Callouts */
+  .colist {
+    background-color: var(--bg-secondary) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text-primary) !important;
+  }
+
+  .colist .callout {
+    background-color: var(--accent) !important;
+    color: white !important;
+  }
+
+  /* AsciiDoc Lists */
+  .ulist,
+  .olist,
+  .dlist {
+    color: var(--text-primary) !important;
+  }
+
+  .ulist .title,
+  .olist .title,
+  .dlist .title {
+    color: var(--text-primary) !important;
+  }
+
+  /* AsciiDoc Images */
+  .imageblock {
+    background-color: var(--bg-secondary) !important;
+    border: 1px solid var(--border) !important;
+  }
+
+  .imageblock .title {
+    color: var(--text-secondary) !important;
+  }
+
+  /* AsciiDoc Tables */
+  .tableblock {
+    background-color: var(--bg-secondary) !important;
+    border: 1px solid var(--border) !important;
+  }
+
+  .tableblock .title {
+    color: var(--text-primary) !important;
+  }
+
+  .tableblock table {
+    background-color: var(--bg-primary) !important;
+    color: var(--text-primary) !important;
+  }
+
+  .tableblock th {
+    background-color: var(--bg-secondary) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border) !important;
+  }
+
+  .tableblock td {
+    background-color: var(--bg-primary) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border) !important;
+  }
+
+  /* AsciiDoc Open Blocks */
+  .openblock {
+    background-color: var(--bg-secondary) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text-primary) !important;
+  }
+
+  .openblock .title {
+    color: var(--text-primary) !important;
   }
 
   /* Animations */

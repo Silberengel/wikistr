@@ -152,13 +152,14 @@
 </script>
 
 <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-  <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+  <div class="rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" style="background-color: var(--bg-primary);">
     <div class="p-6">
       <div class="flex justify-between items-center mb-6">
-        <h2 class="text-2xl font-bold text-gray-900">Create Book Configuration</h2>
+        <h2 class="text-2xl font-bold" style="color: var(--text-primary);">Create Book Configuration</h2>
         <button
           onclick={onClose}
-          class="text-gray-400 hover:text-gray-600 text-2xl"
+          class="text-2xl transition-colors"
+          style="color: var(--text-muted);"
         >
           ×
         </button>
@@ -174,7 +175,7 @@
         <!-- Basic Information -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label for="name" class="block text-sm font-medium text-gray-700 mb-1">
+            <label for="name" class="block text-sm font-medium mb-1" style="color: var(--text-primary);">
               Book Type Name *
             </label>
             <input
@@ -182,14 +183,15 @@
               type="text"
               bind:value={formData.name}
               placeholder="e.g., torah, quran, hadith"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+              style="border-color: var(--border); background-color: var(--bg-primary); color: var(--text-primary);"
               required
             />
-            <p class="text-xs text-gray-500 mt-1">Unique identifier (lowercase, no spaces)</p>
+            <p class="text-xs mt-1" style="color: var(--text-muted);">Unique identifier (lowercase, no spaces)</p>
           </div>
           
           <div>
-            <label for="displayName" class="block text-sm font-medium text-gray-700 mb-1">
+            <label for="displayName" class="block text-sm font-medium mb-1" style="color: var(--text-primary);">
               Display Name *
             </label>
             <input
@@ -197,17 +199,18 @@
               type="text"
               bind:value={formData.displayName}
               placeholder="e.g., Torah, Quran, Hadith"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+              style="border-color: var(--border); background-color: var(--bg-primary); color: var(--text-primary);"
               required
             />
-            <p class="text-xs text-gray-500 mt-1">Human-readable name</p>
+            <p class="text-xs mt-1" style="color: var(--text-muted);">Human-readable name</p>
           </div>
         </div>
 
         <!-- Books Section -->
         <div>
           <div class="flex justify-between items-center mb-3">
-            <h3 class="text-lg font-medium text-gray-900">Books</h3>
+            <h3 class="text-lg font-medium" style="color: var(--text-primary);">Books</h3>
             <button
               type="button"
               onclick={addBook}
@@ -225,7 +228,8 @@
                     type="text"
                     bind:value={book.fullName}
                     placeholder="Full book name (e.g., Genesis, Surah Al-Fatiha)"
-                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+              style="border-color: var(--border); background-color: var(--bg-primary); color: var(--text-primary);"
                     required
                   />
                 </div>
@@ -234,7 +238,8 @@
                     type="text"
                     bind:value={book.abbreviations}
                     placeholder="Abbreviations (comma-separated, e.g., Gen, Ge, Gn)"
-                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+              style="border-color: var(--border); background-color: var(--bg-primary); color: var(--text-primary);"
                   />
                 </div>
                 {#if formData.books.length > 1}
@@ -254,7 +259,7 @@
         <!-- Versions Section -->
         <div>
           <div class="flex justify-between items-center mb-3">
-            <h3 class="text-lg font-medium text-gray-900">Versions</h3>
+            <h3 class="text-lg font-medium" style="color: var(--text-primary);">Versions</h3>
             <button
               type="button"
               onclick={addVersion}
@@ -272,7 +277,8 @@
                     type="text"
                     bind:value={version.abbrev}
                     placeholder="Version abbreviation (e.g., NIV, KJV, JPS)"
-                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+              style="border-color: var(--border); background-color: var(--bg-primary); color: var(--text-primary);"
                     required
                   />
                 </div>
@@ -281,7 +287,8 @@
                     type="text"
                     bind:value={version.fullName}
                     placeholder="Full version name (e.g., New International Version)"
-                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+              style="border-color: var(--border); background-color: var(--bg-primary); color: var(--text-primary);"
                     required
                   />
                 </div>
@@ -300,13 +307,13 @@
         </div>
 
         <!-- Advanced Parsing Rules -->
-        <details class="border border-gray-200 rounded-md">
-          <summary class="px-4 py-2 bg-gray-50 cursor-pointer hover:bg-gray-100">
+        <details class="border rounded-md" style="border-color: var(--border);">
+          <summary class="px-4 py-2 cursor-pointer transition-colors" style="background-color: var(--bg-secondary);">
             Advanced Parsing Rules (Optional)
           </summary>
           <div class="p-4 space-y-4">
             <div>
-              <label for="bookPattern" class="block text-sm font-medium text-gray-700 mb-1">
+              <label for="bookPattern" class="block text-sm font-medium mb-1" style="color: var(--text-primary);">
                 Book Pattern (Regex)
               </label>
               <input
@@ -314,12 +321,13 @@
                 type="text"
                 bind:value={formData.parsingRules.bookPattern}
                 placeholder="Regex pattern for matching book names"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+              style="border-color: var(--border); background-color: var(--bg-primary); color: var(--text-primary);"
               />
             </div>
             
             <div>
-              <label for="versionPattern" class="block text-sm font-medium text-gray-700 mb-1">
+              <label for="versionPattern" class="block text-sm font-medium mb-1" style="color: var(--text-primary);">
                 Version Pattern (Regex)
               </label>
               <input
@@ -327,7 +335,8 @@
                 type="text"
                 bind:value={formData.parsingRules.versionPattern}
                 placeholder="Regex pattern for matching version names"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+              style="border-color: var(--border); background-color: var(--bg-primary); color: var(--text-primary);"
               />
             </div>
           </div>
@@ -338,7 +347,8 @@
           <button
             type="button"
             onclick={onClose}
-            class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+            class="px-4 py-2 border rounded-md transition-colors"
+            style="border-color: var(--border); color: var(--text-primary); background-color: var(--bg-secondary);"
             disabled={isSubmitting}
           >
             Cancel

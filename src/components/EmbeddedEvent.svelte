@@ -166,15 +166,15 @@
 
 </script>
 
-<div class="embedded-event border-2 rounded-2xl p-6 my-6 shadow-lg hover:shadow-xl transition-all duration-300 max-w-5xl mx-auto bg-white border-gray-300">
+<div class="embedded-event border-2 rounded-2xl p-6 my-6 shadow-lg hover:shadow-xl transition-all duration-300 max-w-5xl mx-auto" style="background-color: var(--bg-primary); border-color: var(--border);">
   {#if loading}
     <div class="flex items-center space-x-2">
       <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
-      <span class="text-sm text-gray-600">Loading event...</span>
+      <span class="text-sm" style="color: var(--text-secondary);">Loading event...</span>
     </div>
   {:else if error}
-    <div class="text-center p-4 bg-gray-50 rounded-lg border border-gray-200">
-      <div class="text-gray-600 text-sm mb-3">
+    <div class="text-center p-4 rounded-lg border" style="background-color: var(--bg-secondary); border-color: var(--border);">
+      <div class="text-sm mb-3" style="color: var(--text-secondary);">
         Could not load embedded event
       </div>
       <a 
@@ -198,8 +198,8 @@
           </div>
           
           <!-- Date -->
-          <div class="flex items-center space-x-4 text-base text-gray-800">
-            <span class="text-gray-700 font-semibold">{formatRelativeTime(event.created_at)}</span>
+          <div class="flex items-center space-x-4 text-base" style="color: var(--text-primary);">
+            <span class="font-semibold" style="color: var(--text-primary);">{formatRelativeTime(event.created_at)}</span>
           </div>
           </div>
           
@@ -207,7 +207,8 @@
           {#if onClose}
             <button
               onclick={onClose}
-              class="flex-shrink-0 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              class="flex-shrink-0 p-2 rounded-lg transition-colors"
+              style="color: var(--text-muted); background-color: var(--bg-secondary);"
               title="Close embedded event"
             >
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -220,7 +221,7 @@
         <!-- Title on its own row -->
         {#if getTagValue(event, 'title')}
           <div class="mb-4">
-            <h3 class="text-2xl font-bold text-gray-900 leading-tight">
+            <h3 class="text-2xl font-bold leading-tight" style="color: var(--text-primary);">
               {getTagValue(event, 'title')}
             </h3>
           </div>
@@ -228,21 +229,21 @@
 
         <!-- Summary -->
         {#if getTagValue(event, 'summary')}
-          <div class="text-lg text-gray-900 italic bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-xl border-l-6 border-blue-500 font-semibold shadow-sm">
+          <div class="text-lg italic p-4 rounded-xl border-l-6 font-semibold shadow-sm" style="color: var(--text-primary); background: linear-gradient(to right, var(--bg-secondary), var(--bg-tertiary)); border-left-color: var(--accent);">
             {getTagValue(event, 'summary')}
           </div>
         {/if}
 
         <!-- Description -->
         {#if getTagValue(event, 'description')}
-          <div class="text-lg text-gray-900 leading-relaxed font-semibold bg-gray-50 p-4 rounded-lg">
+          <div class="text-lg leading-relaxed font-semibold p-4 rounded-lg" style="color: var(--text-primary); background-color: var(--bg-secondary);">
             {getTagValue(event, 'description')}
           </div>
         {/if}
 
         <!-- Content with markup parsing -->
         {#if event.content}
-          <div class="text-lg text-gray-900 leading-relaxed bg-gradient-to-br from-gray-50 to-gray-100 p-4 rounded-xl border-2 border-gray-200 shadow-inner">
+          <div class="text-lg leading-relaxed p-4 rounded-xl border-2 shadow-inner" style="color: var(--text-primary); background: linear-gradient(to bottom right, var(--bg-secondary), var(--bg-tertiary)); border-color: var(--border);">
             <AsciidocContent {event} createChild={() => {}} />
           </div>
         {/if}
@@ -260,18 +261,18 @@
 
         <!-- Other tags -->
         {#if getAllTagValues(event, 'author').length > 0}
-          <div class="text-base text-gray-700 bg-yellow-50 p-3 rounded-lg border-l-4 border-yellow-400">
-            <span class="font-bold text-gray-800">👥 Additional Authors:</span>
+          <div class="text-base p-3 rounded-lg border-l-4" style="color: var(--text-primary); background-color: var(--bg-secondary); border-left-color: var(--accent);">
+            <span class="font-bold" style="color: var(--text-primary);">👥 Additional Authors:</span>
             <div class="flex flex-wrap gap-3 mt-2">
               {#each getAllTagValues(event, 'author') as author}
-                <span class="text-sm bg-gray-100 px-2 py-1 rounded font-mono">{author.slice(0, 8)}...</span>
+                <span class="text-sm px-2 py-1 rounded font-mono" style="background-color: var(--bg-tertiary);">{author.slice(0, 8)}...</span>
               {/each}
             </div>
           </div>
         {/if}
 
         <!-- Event ID (as nevent link to Alexandria) -->
-        <div class="pt-4 border-t-2 border-gray-200">
+        <div class="pt-4 border-t-2" style="border-color: var(--border);">
           <a 
             href="https://next-alexandria.gitcitadel.eu/events?id={bech32}" 
             target="_blank" 

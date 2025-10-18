@@ -47,7 +47,8 @@
       <div class="flex-shrink-0 ml-3">
         <button
           onclick={() => dismissToast(toast.id)}
-          class="text-gray-400 hover:text-gray-600 focus:outline-none"
+          class="focus:outline-none"
+          style="color: var(--text-muted);"
           aria-label="Dismiss notification"
         >
           <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">

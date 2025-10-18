@@ -5,6 +5,7 @@
   import UserBadge from './UserBadge.svelte';
   import AsciidocContent from './AsciidocContent.svelte';
   import ProfilePopup from './ProfilePopup.svelte';
+  import ReplyToBlurb from './ReplyToBlurb.svelte';
   import { browser } from '$app/environment';
   import { loadRelayList } from '@nostr/gadgets/lists';
   import { formatRelativeTime } from '$lib/utils';
@@ -56,6 +57,8 @@
   interface ThreadedComment {
     comment: NostrEvent;
     replies: ThreadedComment[];
+    isDeeplyNested?: boolean;
+    originalParentId?: string;
   }
 
   function organizeCommentsIntoThreads(comments: NostrEvent[]): ThreadedComment[] {
@@ -108,7 +111,9 @@
           // Normal hierarchy for levels 1-3
           parent.replies.push(threadedComment);
         } else {
-          // Level 4+ or parent not found, treat as top-level
+          // Level 4+ or parent not found, treat as top-level but mark as deeply nested
+          threadedComment.isDeeplyNested = true;
+          threadedComment.originalParentId = parentId;
           topLevelComments.push(threadedComment);
         }
       } else {
@@ -458,11 +463,11 @@
 </script>
 
 <div class="mt-6">
-  <h3 class="text-lg font-semibold text-gray-900 mb-4">Comments</h3>
+  <h3 class="text-lg font-semibold mb-4" style="color: var(--text-primary);">Comments</h3>
   
   <!-- Comment Entry Form -->
   {#if $account}
-    <div class="mb-6 p-4 bg-gray-100 rounded-lg border border-gray-200">
+    <div class="mb-6 p-4 rounded-lg border" style="background-color: var(--bg-secondary); border-color: var(--border);">
       <form onsubmit={submitTopLevelComment}>
         <div class="mb-3">
           <textarea
@@ -487,23 +492,23 @@
       </form>
     </div>
   {:else}
-    <div class="mb-6 p-4 bg-gray-100 rounded-lg border border-gray-200 text-center">
-      <p class="text-gray-600">Please sign in to post comments.</p>
+    <div class="mb-6 p-4 rounded-lg border text-center" style="background-color: var(--bg-secondary); border-color: var(--border);">
+      <p style="color: var(--text-secondary);">Please sign in to post comments.</p>
     </div>
   {/if}
   
   {#if comments.length === 0}
-    <p class="text-gray-500 text-center py-8">No comments yet. Be the first to comment!</p>
+    <p class="text-center py-8" style="color: var(--text-secondary);">No comments yet. Be the first to comment!</p>
   {:else}
     <div class="space-y-4">
       {#each threadedComments as threadedComment (threadedComment.comment.id)}
         {@const comment = threadedComment.comment}
         <!-- Top-level comment -->
-        <div class="py-2 px-4 bg-gray-25 rounded-lg border border-gray-200">
+        <div class="py-2 px-4 rounded-lg border" style="background-color: var(--bg-primary); border-color: var(--border);">
           <div class="flex items-center mb-1">
             <div class="flex items-center space-x-3 flex-1 min-w-0">
               <UserBadge pubkey={comment.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" hideSearchIcon={false} />
-              <span class="text-xs text-gray-500 whitespace-nowrap">
+              <span class="text-xs whitespace-nowrap" style="color: var(--text-secondary);">
                 {formatRelativeTime(comment.created_at)}
               </span>
             </div>
@@ -511,7 +516,8 @@
             <div class="flex items-center space-x-2 flex-shrink-0 ml-2">
               <button
                 onclick={() => copyCommentNevent(comment.id)}
-                class="p-2 text-burgundy-700 hover:text-burgundy-800 hover:bg-brown-200 rounded-lg transition-all duration-200"
+                class="p-2 rounded-lg transition-all duration-200"
+                style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
                 title="Copy nevent"
               >
                 {#if copiedNevent.has(comment.id)}
@@ -525,12 +531,13 @@
                 {/if}
               </button>
               {#if copiedNeventMessage.has(comment.id)}
-                <span class="text-xs text-burgundy-700 font-medium animate-fade-in">Nevent copied!</span>
+                <span class="text-xs font-medium animate-fade-in" style="color: var(--accent);">Nevent copied!</span>
               {/if}
               {#if $account}
                 <button
                   onclick={() => startReply(comment.id)}
-                  class="p-2 text-burgundy-700 hover:text-burgundy-800 hover:bg-brown-200 rounded-lg transition-all duration-200"
+                  class="p-2 rounded-lg transition-all duration-200"
+                  style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
                   disabled={isSubmitting}
                   title="Reply"
                 >
@@ -548,17 +555,16 @@
             {#if parentETag}
               {@const parentComment = comments.find(c => c.id === parentETag[1])}
               {#if parentComment}
-                <div class="mb-1 text-xs text-gray-500 bg-gray-100 px-1 py-0 rounded-full flex items-center gap-1 leading-tight">
-                  <UserBadge pubkey={parentComment.pubkey} size="tiny" picOnly={true} />
-                  <div class="flex-1 min-w-0">
-                    <span class="block">reply to: {parentComment.content.length > 150 ? parentComment.content.substring(0, 150) + '...' : parentComment.content}</span>
-                  </div>
-                </div>
+                {#if threadedComment.isDeeplyNested}
+                  <ReplyToBlurb pubkey={parentComment.pubkey} content={parentComment.content} variant="deeply-nested" />
+                {:else}
+                  <ReplyToBlurb pubkey={parentComment.pubkey} content={parentComment.content} variant="inline" />
+                {/if}
               {/if}
             {/if}
           {/if}
 
-          <div class="text-gray-900 leading-relaxed mb-4">
+          <div class="leading-relaxed mb-4" style="color: var(--text-primary);">
             <AsciidocContent event={comment} createChild={() => {}} />
           </div>
 
@@ -566,11 +572,7 @@
           {#if replyingTo === comment.id && $account}
             <div class="mt-4 border-l-4 border-espresso-400 pl-4 py-3">
               <!-- Blurb showing parent comment -->
-              <div class="mb-3 text-xs text-gray-500 bg-gray-100 px-3 py-0.5 rounded-full flex items-center gap-2">
-                <span>reply to:</span>
-                <UserBadge pubkey={comment.pubkey} size="tiny" picOnly={true} />
-                <span>{comment.content.length > 150 ? comment.content.substring(0, 150) + '...' : comment.content}</span>
-              </div>
+              <ReplyToBlurb pubkey={comment.pubkey} content={comment.content} />
               <textarea
                 bind:value={replyText}
                 placeholder="Write a reply..."
@@ -582,7 +584,8 @@
               <div class="mt-3 flex justify-end space-x-3">
                 <button
                   onclick={cancelReply}
-                  class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 font-medium rounded-lg hover:bg-gray-100 transition-colors"
+                  class="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
+                  style="color: var(--text-secondary); background-color: var(--bg-secondary); border: 1px solid var(--border);"
                   disabled={isSubmitting}
                 >
                   Cancel
@@ -590,8 +593,8 @@
                 <button
                   onclick={() => submitReply(comment)}
                   disabled={!replyText.trim() || isSubmitting}
-                  class="px-4 py-2 text-sm bg-espresso-700 rounded-lg hover:bg-espresso-800 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
-                  style="color: #fbbf24;"
+                  class="px-4 py-2 text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+                  style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
                 >
                   {isSubmitting ? 'Submitting...' : 'Reply'}
                 </button>
@@ -604,11 +607,11 @@
             <div class="mt-6 ml-4 border-l-2 border-espresso-400 pl-4 space-y-3">
               {#each threadedComment.replies as replyThread (replyThread.comment.id)}
                 {@const reply = replyThread.comment}
-                <div class="py-1 px-3 rounded-lg border border-gray-100 bg-gray-25">
+                <div class="py-1 px-3 rounded-lg border" style="background-color: var(--bg-secondary); border-color: var(--border);">
                   <div class="flex items-center mb-1">
                     <div class="flex items-center space-x-3 flex-1 min-w-0">
                       <UserBadge pubkey={reply.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" hideSearchIcon={false} />
-                      <span class="text-xs text-gray-500 whitespace-nowrap">
+                      <span class="text-xs whitespace-nowrap" style="color: var(--text-secondary);">
                         {formatRelativeTime(reply.created_at)}
                       </span>
                     </div>
@@ -616,7 +619,8 @@
                     <div class="flex items-center space-x-2 flex-shrink-0 ml-2">
                       <button
                         onclick={() => copyCommentNevent(reply.id)}
-                        class="p-2 text-burgundy-700 hover:text-burgundy-800 hover:bg-brown-200 rounded-lg transition-all duration-200"
+                        class="p-2 rounded-lg transition-all duration-200"
+                        style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
                         title="Copy nevent"
                       >
                         {#if copiedNevent.has(reply.id)}
@@ -630,12 +634,13 @@
                         {/if}
                       </button>
                       {#if copiedNeventMessage.has(reply.id)}
-                        <span class="text-xs text-burgundy-700 font-medium animate-fade-in">Nevent copied!</span>
+                        <span class="text-xs font-medium animate-fade-in" style="color: var(--accent);">Nevent copied!</span>
                       {/if}
                       {#if $account}
                         <button
                           onclick={() => startReply(reply.id)}
-                          class="p-2 text-burgundy-700 hover:text-burgundy-800 hover:bg-brown-200 rounded-lg transition-all duration-200"
+                          class="p-2 rounded-lg transition-all duration-200"
+                          style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
                           disabled={isSubmitting}
                           title="Reply"
                         >
@@ -654,16 +659,12 @@
                   {#if parentETag}
                     {@const parentComment = comments.find(c => c.id === parentETag[1])}
                     {#if parentComment}
-                      <div class="mb-1 text-xs text-gray-500 bg-gray-100 px-3 py-0.5 rounded-full flex items-center gap-2">
-                        <span>reply to:</span>
-                        <UserBadge pubkey={parentComment.pubkey} size="tiny" picOnly={true} />
-                        <span>{parentComment.content.length > 150 ? parentComment.content.substring(0, 150) + '...' : parentComment.content}</span>
-                      </div>
+                      <ReplyToBlurb pubkey={parentComment.pubkey} content={parentComment.content} variant="compact" />
                     {/if}
                   {/if}
                 {/if}
 
-                <div class="text-gray-900 leading-relaxed mb-3">
+                <div class="leading-relaxed mb-3" style="color: var(--text-primary);">
                   <AsciidocContent event={reply} createChild={() => {}} />
                 </div>
 
@@ -671,11 +672,7 @@
               {#if replyingTo === reply.id && $account}
                 <div class="mt-3 border-l-4 border-espresso-400 pl-4 py-3">
                   <!-- Blurb showing parent comment -->
-                  <div class="mb-3 text-xs text-gray-500 bg-gray-100 px-3 py-0.5 rounded-full flex items-center gap-2">
-                    <span>reply to:</span>
-                    <UserBadge pubkey={reply.pubkey} size="tiny" picOnly={true} />
-                    <span>{reply.content.length > 150 ? reply.content.substring(0, 150) + '...' : reply.content}</span>
-                  </div>
+                  <ReplyToBlurb pubkey={reply.pubkey} content={reply.content} />
                   <textarea
                         bind:value={replyText}
                         placeholder="Write a reply..."
@@ -687,7 +684,8 @@
                       <div class="mt-3 flex justify-end space-x-3">
                         <button
                           onclick={cancelReply}
-                          class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 font-medium rounded-lg hover:bg-gray-100 transition-colors"
+                          class="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
+                  style="color: var(--text-secondary); background-color: var(--bg-secondary); border: 1px solid var(--border);"
                           disabled={isSubmitting}
                         >
                           Cancel
@@ -695,8 +693,8 @@
                         <button
                           onclick={() => submitReply(reply)}
                           disabled={!replyText.trim() || isSubmitting}
-                          class="px-4 py-2 text-sm bg-espresso-700 rounded-lg hover:bg-espresso-800 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
-                  style="color: #fbbf24;"
+                          class="px-4 py-2 text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+                          style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
                         >
                           {isSubmitting ? 'Submitting...' : 'Reply'}
                         </button>
@@ -709,11 +707,11 @@
                     <div class="mt-5 ml-4 border-l-2 border-brown-400 pl-4 space-y-2">
                       {#each replyThread.replies as nestedReplyThread (nestedReplyThread.comment.id)}
                         {@const nestedReply = nestedReplyThread.comment}
-                        <div class="py-1 px-3 bg-gray-25 rounded border border-gray-200">
+                        <div class="py-1 px-3 rounded border" style="background-color: var(--bg-tertiary); border-color: var(--border);">
                           <div class="flex items-center mb-1">
                             <div class="flex items-center space-x-3 flex-1 min-w-0">
                               <UserBadge pubkey={nestedReply.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" hideSearchIcon={false} />
-                              <span class="text-xs text-gray-500 whitespace-nowrap">
+                              <span class="text-xs whitespace-nowrap" style="color: var(--text-secondary);">
                                 {formatRelativeTime(nestedReply.created_at)}
                               </span>
                             </div>
@@ -721,7 +719,8 @@
                             <div class="flex items-center space-x-2 flex-shrink-0 ml-2">
                               <button
                                 onclick={() => copyCommentNevent(nestedReply.id)}
-                                class="p-2 text-burgundy-700 hover:text-burgundy-800 hover:bg-brown-200 rounded-lg transition-all duration-200"
+                                class="p-2 rounded-lg transition-all duration-200"
+                                style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
                                 title="Copy nevent"
                               >
                                 {#if copiedNevent.has(nestedReply.id)}
@@ -735,7 +734,7 @@
                                 {/if}
                               </button>
                               {#if copiedNeventMessage.has(nestedReply.id)}
-                                <span class="text-xs text-burgundy-700 font-medium animate-fade-in">Nevent copied!</span>
+                                <span class="text-xs font-medium animate-fade-in" style="color: var(--accent);">Nevent copied!</span>
                               {/if}
                             </div>
                           </div>
@@ -746,17 +745,12 @@
                             {#if parentETag}
                               {@const parentComment = comments.find(c => c.id === parentETag[1])}
                               {#if parentComment}
-                                <div class="mb-1 text-xs text-gray-500 bg-gray-100 px-1 py-0 rounded-full flex items-center gap-1 leading-tight">
-                                  <UserBadge pubkey={parentComment.pubkey} size="tiny" picOnly={true} />
-                                  <div class="flex-1 min-w-0">
-                                    <span class="block">reply to: {parentComment.content.length > 150 ? parentComment.content.substring(0, 150) + '...' : parentComment.content}</span>
-                                  </div>
-                                </div>
+                                <ReplyToBlurb pubkey={parentComment.pubkey} content={parentComment.content} variant="inline" />
                               {/if}
                             {/if}
                           {/if}
                           
-                          <div class="text-gray-900 leading-relaxed mb-2">
+                          <div class="leading-relaxed mb-2" style="color: var(--text-primary);">
                             <AsciidocContent event={nestedReply} createChild={() => {}} />
                           </div>
 
@@ -817,8 +811,8 @@
       <div class="flex justify-end">
         <button
           onclick={() => publishStatus.show = false}
-          class="px-4 py-2 bg-gray-600 rounded-md hover:bg-gray-700"
-          style="color: #fbbf24;"
+          class="px-4 py-2 rounded-md transition-colors"
+          style="background-color: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border);"
         >
           Close
         </button>

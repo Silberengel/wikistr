@@ -7,11 +7,16 @@
   // Load saved mode preference or use theme default
   onMount(() => {
     const savedMode = localStorage.getItem('wikistr-mode') as 'light' | 'dark' | null;
+    const themeDefault = getThemeDefaultMode();
+    console.log('🎨 Mode initialization:', { savedMode, themeDefault });
+    
     if (savedMode) {
       currentMode = savedMode;
+      console.log('🎨 Using saved mode:', savedMode);
     } else {
       // Use theme's default mode if no saved preference
-      currentMode = getThemeDefaultMode();
+      currentMode = themeDefault;
+      console.log('🎨 Using theme default mode:', themeDefault);
     }
     applyMode();
   });
@@ -23,7 +28,21 @@
   }
   
   function applyMode() {
+    console.log('🎨 Applying mode:', currentMode);
     document.documentElement.setAttribute('data-mode', currentMode);
+    // Also update the main container div that has data-mode attribute
+    const mainContainer = document.querySelector('[data-theme]');
+    if (mainContainer) {
+      mainContainer.setAttribute('data-mode', currentMode);
+      console.log('🎨 Updated main container data-mode to:', currentMode);
+    } else {
+      console.warn('⚠️ Main container with data-theme not found');
+    }
+    
+    // Dispatch custom event to notify layout of mode change
+    window.dispatchEvent(new CustomEvent('mode-change', { 
+      detail: { mode: currentMode } 
+    }));
   }
   
   // Export for external access

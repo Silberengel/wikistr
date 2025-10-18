@@ -321,7 +321,7 @@
 
 <div class="book-search-results">
   {#if tried && results.length === 0 && !versionNotFound}
-    <div class="text-gray-500 italic">
+    <div class="italic" style="color: var(--text-secondary);">
       No {bookTypeDisplayName.toLowerCase()} passages found for "{query}"
     </div>
   {:else if versionNotFound && results.length === 0}
@@ -355,7 +355,8 @@
         {@const metadata = extractBookMetadata(result)}
         {@const title = generateBookTitle(metadata)}
         <div 
-          class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+          class="border rounded-lg p-4 cursor-pointer transition-colors"
+          style="border-color: var(--border); background-color: var(--bg-secondary);"
           role="button"
           tabindex="0"
           onclick={(e) => openBookEvent(result, e)}
@@ -366,17 +367,17 @@
               <h3 class="font-semibold text-lg text-blue-600 hover:text-blue-800">
                 {title}
               </h3>
-              <div class="text-sm text-gray-600 mt-1">
+              <div class="text-sm mt-1" style="color: var(--text-secondary);">
                 by <span class="font-mono text-xs">{result.pubkey.slice(0, 8)}...</span>
                 {#if result.created_at}
                   • {formatRelativeTime(result.created_at)}
                 {/if}
               </div>
-              <div class="mt-2 text-sm text-gray-700 line-clamp-3">
+              <div class="mt-2 text-sm line-clamp-3" style="color: var(--text-primary);">
                 {result.content.slice(0, 200)}...
               </div>
             </div>
-            <div class="ml-4 text-xs text-gray-400">
+            <div class="ml-4 text-xs" style="color: var(--text-muted);">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
               </svg>
@@ -386,7 +387,7 @@
       {/each}
     </div>
   {:else if !tried}
-    <div class="text-gray-500 italic">
+    <div class="italic" style="color: var(--text-secondary);">
       Searching for {bookTypeDisplayName.toLowerCase()} passages...
     </div>
   {/if}

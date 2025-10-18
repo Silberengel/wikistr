@@ -89,8 +89,8 @@
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <img 
         src={user.image} 
-        class="{config.avatarSize} rounded object-cover border border-gray-300 cursor-pointer hover:opacity-80 transition-opacity" 
-        style="aspect-ratio: 1/1;"
+        class="{config.avatarSize} rounded object-cover border cursor-pointer hover:opacity-80 transition-opacity"
+        style="border-color: var(--border); aspect-ratio: 1/1;"
         alt="user avatar"
         title="View profile"
         onclick={handleProfileClick}
@@ -98,8 +98,8 @@
       />
     {:else}
       <div 
-        class="{config.avatarSize} rounded bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold border border-gray-300 cursor-pointer hover:opacity-80 transition-opacity" 
-        style="aspect-ratio: 1/1;"
+        class="{config.avatarSize} rounded bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold border cursor-pointer hover:opacity-80 transition-opacity"
+        style="border-color: var(--border); aspect-ratio: 1/1;"
         title="View profile"
         onclick={handleProfileClick}
       >
@@ -110,7 +110,8 @@
   
   {#if !picOnly}
     <span 
-      class="text-gray-600 font-[600] {config.textSize} cursor-pointer hover:text-gray-800 transition-colors" 
+      class="font-[600] {config.textSize} cursor-pointer transition-colors" 
+      style="color: var(--accent);"
       title={user?.npub}
       onclick={handleProfileClick}
     >
@@ -120,11 +121,12 @@
     <!-- Search icon for article search (except in comments and NewSearch Silberengel) -->
     {#if createChild && !hideSearchIcon}
       <button
-        class="ml-1 p-1 rounded hover:bg-gray-100 transition-colors"
+        class="ml-1 p-1 rounded transition-colors hover:opacity-80"
+        style="background-color: var(--bg-primary); color: var(--accent); border: 1px solid var(--accent);"
         title="Search articles by this user"
         onclick={handleSearchClick}
       >
-        <svg class="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
         </svg>
       </button>

@@ -285,10 +285,11 @@
     >
       <!-- Header -->
       <div class="flex items-center justify-between p-4 border-b">
-        <h3 class="text-lg font-semibold text-gray-900">Profile</h3>
+        <h3 class="text-lg font-semibold" style="color: var(--text-primary);">Profile</h3>
         <button
           onclick={onClose}
-          class="text-gray-400 hover:text-gray-600 transition-colors"
+          class="transition-colors"
+          style="color: var(--text-muted);"
           aria-label="Close profile"
         >
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -301,8 +302,8 @@
       <div class="p-4">
         {#if loading}
           <div class="flex items-center justify-center py-8">
-            <div class="w-8 h-8 border-4 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
-            <span class="ml-3 text-gray-600">Loading profile...</span>
+            <div class="w-8 h-8 border-4 border-gray-300 border-t-blue-600 rounded-full animate-spin" style="border-color: var(--border); border-top-color: var(--accent);"></div>
+            <span class="ml-3" style="color: var(--text-secondary);">Loading profile...</span>
           </div>
         {:else if userData}
           <!-- Profile Picture and Name -->
@@ -318,16 +319,16 @@
                 }}
               />
             {:else}
-              <div class="w-16 h-16 bg-gray-300 rounded-full flex items-center justify-center">
-                <svg class="w-8 h-8 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
+              <div class="w-16 h-16 rounded-full flex items-center justify-center" style="background-color: var(--bg-tertiary);">
+                <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20" style="color: var(--text-secondary);">
                   <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
                 </svg>
               </div>
             {/if}
             <div>
-              <h2 class="text-xl font-semibold text-gray-900">{userData.display_name}</h2>
+              <h2 class="text-xl font-semibold" style="color: var(--text-primary);">{userData.display_name}</h2>
               {#if userData.name && userData.name !== userData.display_name}
-                <p class="text-gray-600">@{userData.name}</p>
+                <p style="color: var(--text-secondary);">@{userData.name}</p>
               {/if}
             </div>
           </div>
@@ -335,8 +336,8 @@
           <!-- About Section -->
           {#if userData.about}
             <div class="mb-6">
-              <h4 class="font-semibold text-gray-900 mb-2">About</h4>
-              <div class="text-gray-700 whitespace-pre-wrap" bind:this={aboutElement}>
+              <h4 class="font-semibold mb-2" style="color: var(--text-primary);">About</h4>
+              <div class="whitespace-pre-wrap" style="color: var(--text-primary);" bind:this={aboutElement}>
                 {userData.about}
               </div>
             </div>
@@ -345,7 +346,7 @@
           <!-- Website -->
           {#if userData.website}
             <div class="mb-6">
-              <h4 class="font-semibold text-gray-900 mb-1">Website</h4>
+              <h4 class="font-semibold mb-1" style="color: var(--text-primary);">Website</h4>
               <a
                 href={userData.website}
                 target="_blank"
@@ -360,17 +361,18 @@
           <!-- NIP-05 -->
           {#if userData.nip05}
             <div class="mb-6">
-              <h4 class="font-semibold text-gray-900 mb-1">NIP-05</h4>
+              <h4 class="font-semibold mb-1">NIP-05</h4>
               <div class="flex items-center space-x-2">
                 <button
                   onclick={openNip05WellKnown}
-                  class="text-gray-700 font-mono hover:text-gray-900 underline cursor-pointer"
+                  class="font-mono underline cursor-pointer"
+                  style="color: var(--text-primary);"
                   title="Open well-known JSON"
                 >
                   {userData.nip05}
                 </button>
                 {#if nip05Verifying && !nip05Verified}
-                  <div class="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
+                  <div class="w-4 h-4 border-2 rounded-full animate-spin" style="border-color: var(--border); border-top-color: var(--accent);"></div>
                 {:else if nip05Verified}
                   <svg class="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
                     <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
@@ -383,12 +385,13 @@
           <!-- Lightning -->
           {#if userData.lud16}
             <div class="mb-6">
-              <h4 class="font-semibold text-gray-900 mb-1">Lightning</h4>
+              <h4 class="font-semibold mb-1">Lightning</h4>
               <div class="flex items-center space-x-2">
-                <span class="text-gray-700 font-mono">{userData.lud16}</span>
+                <span class="font-mono" style="color: var(--text-primary);">{userData.lud16}</span>
                 <button
                   onclick={() => navigator.clipboard.writeText(userData.lud16)}
-                  class="p-1 rounded hover:bg-gray-100 transition-colors"
+                  class="p-1 rounded transition-colors"
+                  style="background-color: var(--bg-secondary);"
                   title="Copy lightning address"
                 >
                   <svg class="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
@@ -400,9 +403,9 @@
           {/if}
 
           <!-- Technical Info -->
-          <div class="pt-4 border-t border-gray-200">
-            <h4 class="font-semibold text-gray-900 mb-2">Technical Info</h4>
-            <div class="text-sm text-gray-600 space-y-1">
+          <div class="pt-4 border-t" style="border-color: var(--border);">
+            <h4 class="font-semibold mb-2" style="color: var(--text-primary);">Technical Info</h4>
+            <div class="text-sm space-y-1" style="color: var(--text-secondary);">
               <p><span class="font-medium">Npub:</span>
                 <a
                   href="https://jumble.imwald.eu/users/{userData.npub}"
