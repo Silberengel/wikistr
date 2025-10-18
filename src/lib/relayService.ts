@@ -137,7 +137,7 @@ class RelayService {
     
     const loadPromise = loadRelayList(userPubkey).then(list => 
       list.items
-        .filter(ri => ri.read && ri.url)
+        .filter(ri => ri.url) // Include all relays with URLs, not just read-only ones
         .map(ri => this.normalizeRelayUrl(ri.url))
         .filter(url => url && (url.startsWith('ws://') || url.startsWith('wss://')))
     );

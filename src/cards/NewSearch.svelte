@@ -52,6 +52,8 @@ import UserBadge from '$components/UserBadge.svelte';
     try {
       const userPubkey = $account?.pubkey || 'anonymous';
       
+      console.log('🔍 Loading relay info for user:', userPubkey);
+      
       // Get theme relays directly from theme configuration
       const themeWikiRelays = theme.relays?.wiki || [];
       const themeSocialRelays = theme.relays?.social || [];
@@ -67,6 +69,7 @@ import UserBadge from '$components/UserBadge.svelte';
       );
       
       console.log('🔍 Relay loading debug:');
+      console.log('  User pubkey:', userPubkey);
       console.log('  Theme wiki relays:', themeWikiRelays);
       console.log('  Theme social relays:', themeSocialRelays);
       console.log('  All wiki relays:', allWikiRelays);
@@ -84,8 +87,8 @@ import UserBadge from '$components/UserBadge.svelte';
         
         return {
           url: relay,
-          hasWiki: isThemeWiki, // Only theme wiki relays have wiki capability
-          hasSocial: isThemeSocial, // Only theme social relays have social capability
+          hasWiki: isThemeWiki || allWikiRelays.includes(relay), // Show wiki capability if in wiki relays
+          hasSocial: isThemeSocial || allSocialRelays.includes(relay), // Show social capability if in social relays
           isUserRelay: isUserRelay
         };
       });
@@ -99,6 +102,7 @@ import UserBadge from '$components/UserBadge.svelte';
       relaysLoaded = true;
     } catch (error) {
       console.error('Failed to load relay information:', error);
+      relaysLoaded = true; // Still mark as loaded to show error state
     }
   }
 
@@ -248,7 +252,16 @@ import UserBadge from '$components/UserBadge.svelte';
     
     <!-- Relays Section -->
     <div>
-      <div class="block text-sm font-medium mb-2 text-gray-900 dark:text-white">Relays</div>
+      <div class="flex items-center justify-between mb-2">
+        <div class="block text-sm font-medium text-gray-900 dark:text-white">Relays</div>
+        <button
+          onclick={loadRelayInfo}
+          class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 border border-gray-300 dark:border-gray-600 rounded text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
+          title="Refresh relay list"
+        >
+          🔄 Refresh
+        </button>
+      </div>
       {#if relaysLoaded}
         {#if themeRelays.length > 0}
           <div class="space-y-2 max-h-48 overflow-y-auto">
@@ -321,7 +334,16 @@ import UserBadge from '$components/UserBadge.svelte';
     
     <!-- Relays Section -->
     <div>
-      <div class="block text-sm font-medium mb-2 text-gray-900 dark:text-white">Relays</div>
+      <div class="flex items-center justify-between mb-2">
+        <div class="block text-sm font-medium text-gray-900 dark:text-white">Relays</div>
+        <button
+          onclick={loadRelayInfo}
+          class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 border border-gray-300 dark:border-gray-600 rounded text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
+          title="Refresh relay list"
+        >
+          🔄 Refresh
+        </button>
+      </div>
       {#if relaysLoaded}
         {#if themeRelays.length > 0}
           <div class="space-y-2 max-h-48 overflow-y-auto">

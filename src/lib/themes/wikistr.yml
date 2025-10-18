@@ -16,7 +16,6 @@ relays:
     - wss://nostr21.com
     - wss://nostr.land
     - wss://aggr.nostr.land
-    - wss://bevo.nostr1.com
     - wss://nostr.sovbit.host
 showBibleLinks: false
 searchHelpText: |
