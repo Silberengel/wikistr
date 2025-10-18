@@ -442,9 +442,17 @@
     asciidoc = asciidoc.replace(/\[([^\]]+)\]\(([^)]+)\)/g, 'link:$2[$1]');
     
     // Convert tables: | col1 | col2 | -> [cols="1,1"]
-    asciidoc = asciidoc.replace(/^(\|[^|\n]*(?:\|[^|\n]*)*\|)\s*$/gm, (match) => {
+    asciidoc = asciidoc.replace(/^(\|[^|\n]*(?:\|[^|\n]*)*\|)\s*(?:\n\s*\|[^|\n]*(?:\|[^|\n]*)*\|)*\s*$/gm, (match) => {
       const rows = match.trim().split('\n').filter(row => row.trim());
       if (rows.length === 0) return match;
+      
+      // Check if this is a proper markdown table (has header separator)
+      const hasHeaderSeparator = rows.some(row => {
+        const cells = row.trim().split('|').filter(cell => cell.trim());
+        return cells.every(cell => /^-+$/.test(cell.trim()));
+      });
+      
+      if (!hasHeaderSeparator) return match; // Not a proper table, skip
       
       const firstRow = rows[0];
       const colCount = (firstRow.match(/\|/g) || []).length - 1;
@@ -461,7 +469,13 @@
         // Build the row with all cells on one line
         let rowContent = '';
         cells.forEach(cell => {
-          rowContent += `|${cell.trim()}`;
+          const trimmedCell = cell.trim();
+          // For header row (first row after separator), make it bold
+          if (index === 0) {
+            rowContent += `|*${trimmedCell}*`;
+          } else {
+            rowContent += `|${trimmedCell}`;
+          }
         });
         asciidocTable += rowContent + '\n';
       });
@@ -955,5 +969,30 @@
     color: var(--accent);
     cursor: pointer;
     text-decoration: underline;
+  }
+
+  /* Override table styling for markdown-converted tables */
+  :global(table) {
+    border-collapse: collapse;
+    border: none !important;
+  }
+
+  :global(table th),
+  :global(table td) {
+    padding: 0.5rem 0.75rem !important;
+    border: none !important;
+    border-bottom: 1px solid var(--border) !important;
+    background: transparent !important;
+  }
+
+  :global(table th) {
+    font-family: var(--theme-font, inherit) !important;
+    font-weight: bold !important;
+    border-bottom: 2px solid var(--border) !important;
+    padding-bottom: 0.75rem !important;
+  }
+
+  :global(table tr:last-child td) {
+    border-bottom: none !important;
   }
 </style>

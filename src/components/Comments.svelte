@@ -548,10 +548,11 @@
             {#if parentETag}
               {@const parentComment = comments.find(c => c.id === parentETag[1])}
               {#if parentComment}
-                <div class="mb-1 text-xs text-gray-500 bg-gray-100 px-3 py-0.5 rounded-full flex items-center gap-2">
-                  <span>reply to:</span>
+                <div class="mb-1 text-xs text-gray-500 bg-gray-100 px-1 py-0 rounded-full flex items-center gap-1 leading-tight">
                   <UserBadge pubkey={parentComment.pubkey} size="tiny" picOnly={true} />
-                  <span>{parentComment.content.length > 150 ? parentComment.content.substring(0, 150) + '...' : parentComment.content}</span>
+                  <div class="flex-1 min-w-0">
+                    <span class="block">reply to: {parentComment.content.length > 150 ? parentComment.content.substring(0, 150) + '...' : parentComment.content}</span>
+                  </div>
                 </div>
               {/if}
             {/if}
@@ -745,10 +746,11 @@
                             {#if parentETag}
                               {@const parentComment = comments.find(c => c.id === parentETag[1])}
                               {#if parentComment}
-                                <div class="mb-1 text-xs text-gray-500 bg-gray-100 px-1 py-0 rounded-full flex items-center gap-1 leading-none">
-                                  <span>reply to:</span>
+                                <div class="mb-1 text-xs text-gray-500 bg-gray-100 px-1 py-0 rounded-full flex items-center gap-1 leading-tight">
                                   <UserBadge pubkey={parentComment.pubkey} size="tiny" picOnly={true} />
-                                  <span>{parentComment.content.length > 150 ? parentComment.content.substring(0, 150) + '...' : parentComment.content}</span>
+                                  <div class="flex-1 min-w-0">
+                                    <span class="block">reply to: {parentComment.content.length > 150 ? parentComment.content.substring(0, 150) + '...' : parentComment.content}</span>
+                                  </div>
                                 </div>
                               {/if}
                             {/if}
