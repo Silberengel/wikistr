@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { loadNostrUser, type NostrUser } from '@nostr/gadgets/metadata';
+  import { type NostrUser } from '@nostr/gadgets/metadata';
   import type { Card, UserCard } from '$lib/types';
   import { next } from '$lib/utils';
 
@@ -19,6 +19,12 @@
   let { pubkey, createChild = undefined, size = 'medium', showAvatar = true, onProfileClick, hideSearchIcon = false, picOnly = false }: Props = $props();
 
   onMount(async () => {
+    // Don't try to load user data if pubkey is invalid
+    if (!pubkey || pubkey === 'anonymous' || pubkey === 'undefined' || pubkey === 'null') {
+      console.log('UserBadge: Skipping user load for invalid pubkey:', pubkey);
+      return;
+    }
+
     // Set immediate fallback user
     user = {
       pubkey: pubkey,
@@ -30,16 +36,70 @@
     };
     
     try {
-      // Try to load real user data in background
-      const loadPromise = loadNostrUser(pubkey);
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('UserBadge load timeout')), 3000)
+      // Check IndexedDB cache first
+      const { contentCache } = await import('$lib/contentCache');
+      const cachedEvents = await contentCache.getEvents('metadata');
+      const cachedUserEvent = cachedEvents.find(cached => cached.event.pubkey === pubkey && cached.event.kind === 0);
+      
+      if (cachedUserEvent) {
+        try {
+          const content = JSON.parse(cachedUserEvent.event.content);
+          user = {
+            pubkey: pubkey,
+            npub: pubkey,
+            shortName: content.display_name || content.name || pubkey.slice(0, 8) + '...',
+            image: content.picture || undefined,
+            metadata: content,
+            lastUpdated: Date.now()
+          };
+          console.log('UserBadge: Found cached metadata for', pubkey.slice(0, 8) + '...');
+          return; // Exit early since we found cached data
+        } catch (e) {
+          console.warn('UserBadge: Failed to parse cached user metadata:', e);
+        }
+      }
+      
+      // If user not found in cache, try to load metadata
+      console.log('UserBadge: No cached metadata found, loading for', pubkey.slice(0, 8) + '...');
+      
+      const { relayService } = await import('$lib/relayService');
+      const metadataResult = await relayService.queryEvents(
+        'anonymous',
+        'metadata-read',
+        [{ kinds: [0], authors: [pubkey], limit: 1 }],
+        { excludeUserContent: false, currentUserPubkey: undefined }
       );
       
-      user = await Promise.race([loadPromise, timeoutPromise]) as any;
+      if (metadataResult.events.length > 0) {
+        const event = metadataResult.events[0];
+        try {
+          const content = JSON.parse(event.content);
+          user = {
+            pubkey: pubkey,
+            npub: pubkey,
+            shortName: content.display_name || content.name || pubkey.slice(0, 8) + '...',
+            image: content.picture || undefined,
+            metadata: content,
+            lastUpdated: Date.now()
+          };
+          
+          // Store the metadata in cache for future use
+          const eventsToStore = [{
+            event,
+            relays: metadataResult.relays
+          }];
+          await contentCache.storeEvents('metadata', eventsToStore);
+          console.log('UserBadge: Loaded and cached metadata for', pubkey.slice(0, 8) + '...');
+        } catch (e) {
+          console.warn('UserBadge: Failed to parse user metadata:', e);
+        }
+      } else {
+        console.log('UserBadge: No metadata found for', pubkey.slice(0, 8) + '...');
+      }
+      
     } catch (e) {
       // Keep fallback user if loading fails
-      console.error('UserBadge: Failed to load user:', e);
+      console.warn('UserBadge: Failed to load metadata for', pubkey.slice(0, 8) + '...', e);
     }
   });
 
@@ -103,7 +163,7 @@
         title="View profile"
         onclick={handleProfileClick}
       >
-        {user?.shortName?.charAt(0)?.toUpperCase() || pubkey.slice(0, 2).toUpperCase()}
+        {user?.shortName?.charAt(0)?.toUpperCase() || (pubkey ? pubkey.slice(0, 2).toUpperCase() : '?')}
       </div>
     {/if}
   {/if}
@@ -112,10 +172,10 @@
     <span 
       class="font-[600] {config.textSize} cursor-pointer transition-colors" 
       style="color: var(--accent);"
-      title={user?.npub}
+      title={user?.npub || pubkey}
       onclick={handleProfileClick}
     >
-      {user?.shortName || pubkey}
+      {user?.shortName || (pubkey ? pubkey.slice(0, 8) + '...' : 'Anonymous')}
     </span>
     
     <!-- Search icon for article search (except in comments and NewSearch Silberengel) -->

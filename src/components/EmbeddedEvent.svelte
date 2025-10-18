@@ -6,7 +6,7 @@
   import { formatRelativeTime } from '$lib/utils';
   import AsciidocContent from './AsciidocContent.svelte';
   import { nip19 } from '@nostr/tools';
-  import { loadNostrUser, type NostrUser } from '@nostr/gadgets/metadata';
+  import type { NostrUser } from '@nostr/gadgets/metadata';
   import UserBadge from './UserBadge.svelte';
   import ProfilePopup from './ProfilePopup.svelte';
 
@@ -152,8 +152,60 @@
       if (fetchedEvent) {
         event = fetchedEvent;
         pubkey = fetchedEvent.pubkey;
-        // Load user data for profile picture
-        user = await loadNostrUser(fetchedEvent.pubkey);
+        // Load user data using relayService (only metadata-read relays)
+        try {
+          const { relayService } = await import('$lib/relayService');
+          const result = await relayService.queryEvents(
+            'anonymous',
+            'metadata-read',
+            [{ kinds: [0], authors: [fetchedEvent.pubkey], limit: 1 }],
+            { excludeUserContent: false, currentUserPubkey: undefined }
+          );
+          
+          if (result.events.length > 0) {
+            const event = result.events[0];
+            try {
+              const content = JSON.parse(event.content);
+              user = {
+                pubkey: fetchedEvent.pubkey,
+                npub: fetchedEvent.pubkey,
+                shortName: content.display_name || content.name || fetchedEvent.pubkey.slice(0, 8) + '...',
+                image: content.picture || undefined,
+                metadata: content,
+                lastUpdated: Date.now()
+              };
+            } catch (e) {
+              console.warn('EmbeddedEvent: Failed to parse user metadata:', e);
+              user = {
+                pubkey: fetchedEvent.pubkey,
+                npub: fetchedEvent.pubkey,
+                shortName: fetchedEvent.pubkey.slice(0, 8) + '...',
+                image: undefined,
+                metadata: {},
+                lastUpdated: Date.now()
+              };
+            }
+          } else {
+            user = {
+              pubkey: fetchedEvent.pubkey,
+              npub: fetchedEvent.pubkey,
+              shortName: fetchedEvent.pubkey.slice(0, 8) + '...',
+              image: undefined,
+              metadata: {},
+              lastUpdated: Date.now()
+            };
+          }
+        } catch (e) {
+          console.warn('EmbeddedEvent: Failed to load user data:', e);
+          user = {
+            pubkey: fetchedEvent.pubkey,
+            npub: fetchedEvent.pubkey,
+            shortName: fetchedEvent.pubkey.slice(0, 8) + '...',
+            image: undefined,
+            metadata: {},
+            lastUpdated: Date.now()
+          };
+        }
       } else {
         error = `Event ${bech32} not found`;
       }

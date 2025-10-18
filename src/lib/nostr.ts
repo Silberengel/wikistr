@@ -12,7 +12,7 @@ import {
   loadWikiRelays,
   type Result
 } from '@nostr/gadgets/lists';
-import { loadNostrUser, type NostrUser } from '@nostr/gadgets/metadata';
+import { type NostrUser } from '@nostr/gadgets/metadata';
 import { pool } from '@nostr/gadgets/global';
 
 const startTime = Math.round(Date.now() / 1000);
@@ -79,9 +79,66 @@ let setAccount: (_: string | null) => Promise<void>;
 export const account = readable<NostrUser | null>(null, (set) => {
   setAccount = async (pubkey: string | null) => {
     if (pubkey) {
-      const account = await loadNostrUser(pubkey);
-      idbkv.set('wikistr:loggedin', account);
-      set(account);
+      try {
+        // Load user data using relayService (only metadata-read relays)
+        const { relayService } = await import('$lib/relayService');
+        const result = await relayService.queryEvents(
+          'anonymous',
+          'metadata-read',
+          [{ kinds: [0], authors: [pubkey], limit: 1 }],
+          { excludeUserContent: false, currentUserPubkey: undefined }
+        );
+        
+        let account;
+        if (result.events.length > 0) {
+          const event = result.events[0];
+          try {
+            const content = JSON.parse(event.content);
+            account = {
+              pubkey: pubkey,
+              npub: pubkey,
+              shortName: content.display_name || content.name || pubkey.slice(0, 8) + '...',
+              image: content.picture || undefined,
+              metadata: content,
+              lastUpdated: Date.now()
+            };
+          } catch (e) {
+            console.warn('nostr.ts: Failed to parse account metadata:', e);
+            account = {
+              pubkey: pubkey,
+              npub: pubkey,
+              shortName: pubkey.slice(0, 8) + '...',
+              image: undefined,
+              metadata: {},
+              lastUpdated: Date.now()
+            };
+          }
+        } else {
+          account = {
+            pubkey: pubkey,
+            npub: pubkey,
+            shortName: pubkey.slice(0, 8) + '...',
+            image: undefined,
+            metadata: {},
+            lastUpdated: Date.now()
+          };
+        }
+        
+        idbkv.set('wikistr:loggedin', account);
+        set(account);
+      } catch (e) {
+        console.warn('nostr.ts: Failed to load account data:', e);
+        const account = {
+          pubkey: pubkey,
+          npub: pubkey,
+          shortName: pubkey.slice(0, 8) + '...',
+          image: undefined,
+          metadata: {},
+          lastUpdated: Date.now()
+        };
+        idbkv.set('wikistr:loggedin', account);
+        set(account);
+      }
     } else {
       set(null);
     }
@@ -117,23 +174,24 @@ export const account = readable<NostrUser | null>(null, (set) => {
   return () => {};
 });
 
-let lastWotPubkey: string | null = null;
-const unsub = account.subscribe((account) => {
-  if (account && account.pubkey !== lastWotPubkey) {
-    lastWotPubkey = account.pubkey;
-    console.log('Account loaded, starting WOT calculation for:', account.pubkey);
-    setTimeout(() => {
-      // Run WOT calculation in background without blocking UI
-      setWOT(account.pubkey).catch(error => {
-        console.error('Background WOT calculation failed:', error);
-      });
-      unsub();
-    }, 300);
-  } else if (!account) {
-    lastWotPubkey = null;
-    console.log('No account loaded, skipping WOT calculation');
-  }
-});
+// DISABLED: WOT calculation to prevent doom loops
+// let lastWotPubkey: string | null = null;
+// const unsub = account.subscribe((account) => {
+//   if (account && account.pubkey !== lastWotPubkey) {
+//     lastWotPubkey = account.pubkey;
+//     console.log('Account loaded, starting WOT calculation for:', account.pubkey);
+//     setTimeout(() => {
+//       // Run WOT calculation in background without blocking UI
+//       setWOT(account.pubkey).catch(error => {
+//         console.error('Background WOT calculation failed:', error);
+//       });
+//       unsub();
+//     }, 300);
+//   } else if (!account) {
+//     lastWotPubkey = null;
+//     console.log('No account loaded, skipping WOT calculation');
+//   }
+// });
 
 // ensure these subscriptions are always on
 account.subscribe(() => {});

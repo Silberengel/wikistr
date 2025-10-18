@@ -154,28 +154,30 @@
     isSubmitting = true;
     
     try {
-      const commentEvent = {
+      const commentEventTemplate = {
         kind: 1111,
         content: commentText.trim(),
         tags: [
-          ['A', articleCoordinate, 'wss://relay.example.com', 'article'],
+          ['A', articleCoordinate, 'article'],
           ['K', event.kind.toString()]
         ],
-        created_at: Math.floor(Date.now() / 1000),
-        pubkey: $account.pubkey
+        created_at: Math.floor(Date.now() / 1000)
       };
 
       publishStatus.show = true;
       publishStatus.title = 'Publishing comment...';
       publishStatus.attempts = [];
 
+      // Sign the event first
+      const signedEvent = await signer.signEvent(commentEventTemplate);
+      
       // Use relay service for comment publishing
       if (!$account) return;
       
       const result = await relayService.publishEvent(
         $account.pubkey,
         'social-write',
-        commentEvent as any, // Cast to proper NostrEvent type
+        signedEvent,
         false // Don't show toast for comments
       );
       
@@ -185,23 +187,32 @@
         message: result.publishedTo.includes(relay) ? 'Published' : 'Failed'
       }));
       publishStatus.attempts = attempts;
-
-      // Update the comment event tags with proper NIP-22 format
-      commentEvent.tags = [
-        ['A', articleCoordinate, 'article'],
-        ['K', event.kind.toString()]
-      ];
-
-      // Sign the event first
-      const signedEvent = await signer.signEvent(commentEvent);
+      
+      // Store the comment text before clearing the form
+      const commentContent = commentText.trim();
       
       // Clear the form
       commentText = '';
       
-      // Refresh comments after a short delay
+      // Add the new comment locally immediately
+      const newComment = {
+        ...signedEvent,
+        id: signedEvent.id,
+        pubkey: signedEvent.pubkey,
+        created_at: signedEvent.created_at,
+        kind: 1111,
+        content: commentContent,
+        tags: signedEvent.tags,
+        sig: signedEvent.sig
+      };
+      
+      // Add to local comments array immediately
+      comments = [...comments, newComment];
+      
+      // Refresh comments after a short delay to get any other new comments
       setTimeout(() => {
-        fetchComments();
-      }, 1000);
+        fetchComments(true); // Force refresh from relays
+      }, 2000);
       
       // If there are successful publications, keep modal open longer to show success
       if (result.publishedTo.length > 0) {
@@ -293,75 +304,83 @@
     isSubmitting = true;
     
     try {
-      const commentEvent = {
+      const commentEventTemplate = {
         kind: 1111,
         content: replyText.trim(),
         tags: [
-          ['A', articleCoordinate, 'wss://relay.example.com', 'article'],
-          ['e', parentComment.id, 'wss://relay.example.com', 'reply'],
+          ['A', articleCoordinate, 'article'],
+          ['e', parentComment.id, 'reply'],
           ['K', event.kind.toString()],
           ['p', parentComment.pubkey]
         ],
-        created_at: Math.floor(Date.now() / 1000),
-        pubkey: $account?.pubkey || ''
+        created_at: Math.floor(Date.now() / 1000)
       };
 
       publishStatus.show = true;
       publishStatus.title = 'Publishing comment...';
       publishStatus.attempts = [];
 
-      // Get user's actual inbox relays (kind 10002) for publishing comments
-      const socialRelays = await relayService.getRelaysForOperation($account?.pubkey || 'anonymous', 'social-write'); // Using relayService
-      let userInboxRelays: string[] = [];
-      
-      if ($account) {
-        try {
-          const relayList = await loadRelayList($account.pubkey);
-          userInboxRelays = relayList.items
-            .filter((ri) => ri.write)
-            .map((ri) => ri.url);
-        } catch (error) {
-          console.error('Error loading user inbox relays for publishing:', error);
-        }
-      }
-      
-      const relays = [...new Set([...socialRelays, ...userInboxRelays])];
-      const attempts = relays.map(relay => ({ status: 'pending' as const }));
-      publishStatus.attempts = attempts;
-
-      // Update the comment event tags with proper NIP-22 format
-      commentEvent.tags = [
-        ['A', articleCoordinate, relays[0], 'article'],
-        ['e', parentComment.id, relays[0], 'reply'],
-        ['K', event.kind.toString()],
-        ['p', parentComment.pubkey]
-      ];
-
       // Sign the event first
-      const signedEvent = await signer.signEvent(commentEvent);
+      const signedEvent = await signer.signEvent(commentEventTemplate);
       
-      const promises = relays.map(async (relay, index) => {
-        try {
-          await pool.publish([relay], signedEvent);
-          publishStatus.attempts[index] = { status: 'success' };
-        } catch (error) {
+      // Use relayService to publish to social-write relays
+      try {
+        const result = await relayService.publishEvent(
+          signedEvent.pubkey,
+          'social-write',
+          signedEvent,
+          false // Don't show toast notification
+        );
+        
+        if (result.success) {
+          publishStatus.attempts.forEach((_, index) => {
+            publishStatus.attempts[index] = { status: 'success' };
+          });
+          console.log('✅ Comment published successfully to', result.publishedTo.length, 'relays');
+        } else {
+          publishStatus.attempts.forEach((_, index) => {
+            publishStatus.attempts[index] = { 
+              status: 'failure', 
+              message: `Failed to publish to any relay. Issues: ${result.failedRelays.join(', ')}` 
+            };
+          });
+          console.warn('⚠️ Comment publishing had issues:', result.failedRelays);
+        }
+      } catch (error) {
+        publishStatus.attempts.forEach((_, index) => {
           publishStatus.attempts[index] = { 
             status: 'failure', 
             message: error instanceof Error ? error.message : 'Unknown error' 
           };
-        }
-      });
-
-      await Promise.all(promises);
+        });
+      }
+      
+      // Store the reply text before clearing the form
+      const replyContent = replyText.trim();
       
       // Reset form
       replyingTo = null;
       replyText = '';
       
-      // Refresh comments after a short delay
+      // Add the new reply locally immediately
+      const newReply = {
+        ...signedEvent,
+        id: signedEvent.id,
+        pubkey: signedEvent.pubkey,
+        created_at: signedEvent.created_at,
+        kind: 1111,
+        content: replyContent,
+        tags: signedEvent.tags,
+        sig: signedEvent.sig
+      };
+      
+      // Add to local comments array immediately
+      comments = [...comments, newReply];
+      
+      // Refresh comments after a short delay to get any other new comments
       setTimeout(() => {
-        fetchComments();
-      }, 1000);
+        fetchComments(true); // Force refresh from relays
+      }, 2000);
       
       // If there are successful publications, keep modal open longer to show success
       const successCount = publishStatus.attempts.filter(a => a.status === 'success').length;
@@ -399,34 +418,43 @@
     console.log('Processed comments:', filteredComments.length);
   }
 
-  async function fetchComments() {
+  async function fetchComments(forceRefresh = false) {
     if (!browser) return;
     
     try {
       let result;
       
-      // First, try to get comments from cache and display them immediately
-      const cachedComments = await contentCache.getEvents('kind1111');
-      
-      if (cachedComments.length > 0) {
-        console.log(`📦 Using ${cachedComments.length} cached comments`);
-        result = {
-          events: cachedComments.map(cached => cached.event),
-          relays: [...new Set(cachedComments.flatMap(cached => cached.relays))]
-        };
+      // Check cache first before making relay queries (unless forcing refresh)
+      if (!forceRefresh) {
+        const allCachedComments = await contentCache.getEvents('kind1111');
         
-        // Display cached results immediately
-        processComments(result.events);
+        // Filter cached comments to only show replies to the current article
+        const cachedComments = allCachedComments.filter(cached => 
+          cached.event.tags.some(tag => tag[0] === 'A' && tag[1] === articleCoordinate)
+        );
+        
+        if (cachedComments.length > 0) {
+          console.log(`📦 Using ${cachedComments.length} cached comments for article ${event.id}`);
+          result = {
+            events: cachedComments.map(cached => cached.event),
+            relays: [...new Set(cachedComments.flatMap(cached => cached.relays))]
+          };
+          
+          // Display cached results immediately and exit - don't query relays
+          processComments(result.events);
+          return;
+        }
       }
       
-      // Second pass: Always query relays for fresh data and update cache
-      console.log('🔄 Querying relays for fresh comments...');
+      // Only query relays if no cached comments found
+      console.log('🔄 No cached comments, loading from relays...');
       const freshResult = await relayService.queryEvents(
         $account?.pubkey || 'anonymous',
         'social-read',
         [
           {
             kinds: [1111],
+            '#A': [articleCoordinate], // Only get replies to the current article
             limit: 200
           }
         ],
@@ -441,14 +469,13 @@
         await contentCache.storeEvents('kind1111', 
           freshResult.events.map(event => ({ event, relays: freshResult.relays }))
         );
+        console.log('Comments: Cached', freshResult.events.length, 'comments');
       }
       
-      // Update display with fresh results
-      result = freshResult;
-      console.log('Loaded fresh comments from relays:', result.events.length);
+      console.log('Loaded fresh comments from relays:', freshResult.events.length);
       
       // Process fresh comments
-      processComments(result.events);
+      processComments(freshResult.events);
     } catch (error) {
       console.error('Error fetching comments:', error);
     }
@@ -772,7 +799,7 @@
 <!-- Publish Status Dialog -->
 {#if publishStatus.show}
   <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-    <div class="rounded-lg p-6 max-w-md w-full mx-4" style="color: var(--text-primary);">
+    <div class="rounded-lg p-6 max-w-md w-full mx-4" style="background-color: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border);">
       <h3 class="text-lg font-semibold mb-4">{publishStatus.title}</h3>
       
       <div class="space-y-3 mb-6">

@@ -37,26 +37,45 @@
       tried = true;
     }, 1500);
 
-    // Use relay service for relay-specific queries
-    if ($account) {
-      try {
-        const result = await relayService.queryEvents(
-          $account.pubkey,
-          'wiki-read',
-          [{ kinds: [wikiKind], limit: 25 }],
-          {
-            excludeUserContent: true,
-            currentUserPubkey: $account.pubkey
-          }
-        );
-        
-        result.events.forEach(evt => {
-          if (addUniqueTaggedReplaceable(results, evt)) update();
-        });
-        tried = true;
-      } catch (err) {
-        console.warn('Failed to load relay articles:', err);
-        tried = true;
+    // Check cache first before making relay queries
+    const { contentCache } = await import('$lib/contentCache');
+    const cachedEvents = await contentCache.getEvents('wiki');
+    const relayUrl = relayCard.data;
+    
+    // Filter cached events for this specific relay
+    const relayCachedEvents = cachedEvents.filter(cached => 
+      cached.relays.includes(relayUrl)
+    );
+    
+    if (relayCachedEvents.length > 0) {
+      console.log(`Relay: Found ${relayCachedEvents.length} cached events for relay ${relayUrl}`);
+      relayCachedEvents.forEach(cached => {
+        if (addUniqueTaggedReplaceable(results, cached.event)) update();
+      });
+      tried = true;
+    } else {
+      // Use relay service for relay-specific queries if no cache
+      if ($account) {
+        try {
+          console.log(`Relay: No cached events, loading from relay ${relayUrl}`);
+          const result = await relayService.queryEvents(
+            $account.pubkey,
+            'wiki-read',
+            [{ kinds: [wikiKind], limit: 25 }],
+            {
+              excludeUserContent: true,
+              currentUserPubkey: $account.pubkey
+            }
+          );
+          
+          result.events.forEach(evt => {
+            if (addUniqueTaggedReplaceable(results, evt)) update();
+          });
+          tried = true;
+        } catch (err) {
+          console.warn('Failed to load relay articles:', err);
+          tried = true;
+        }
       }
     }
   });

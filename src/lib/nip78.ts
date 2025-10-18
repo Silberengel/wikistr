@@ -246,21 +246,21 @@ export async function loadBookConfigurations(): Promise<BookConfiguration[]> {
     
     // Debug: specifically look for kind 30078 events
     const kind30078Events = allEvents.filter(e => e.kind === 30078);
-    console.log(`🔍 Found ${kind30078Events.length} kind 30078 events`);
-    kind30078Events.forEach(e => {
-      console.log(`📋 Kind 30078 event: ${e.id}, content preview: ${e.content?.slice(0, 200)}...`);
-    });
+    // console.log(`🔍 Found ${kind30078Events.length} kind 30078 events`);
+    // kind30078Events.forEach(e => {
+    //   console.log(`📋 Kind 30078 event: ${e.id}, content preview: ${e.content?.slice(0, 200)}...`);
+    // });
 
     const configurations: BookConfiguration[] = [];
     for (const event of allEvents) {
       if (event.kind === 30078) {
-        console.log(`🔍 Processing kind 30078 event: ${event.id}`);
+        // console.log(`🔍 Processing kind 30078 event: ${event.id}`);
         const config = parseBookConfigFromEvent(event);
         if (config) {
           configurations.push(config);
-          console.log(`📚 Found book config: ${config.displayName} (${config.name})`);
+          // console.log(`📚 Found book config: ${config.displayName} (${config.name})`);
         } else {
-          console.log(`❌ Failed to parse book config from event: ${event.id}`);
+          // console.log(`❌ Failed to parse book config from event: ${event.id}`);
         }
       }
     }

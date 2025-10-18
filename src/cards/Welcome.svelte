@@ -121,6 +121,16 @@
     isLoading = true;
 
     try {
+      // Check cache first to avoid unnecessary relay queries
+      const now = Date.now();
+      const wikiCacheFresh = await contentCache.isCacheFresh('wiki');
+      
+      if (wikiCacheFresh && now - cacheTimestamp < 30000) {
+        console.log('📦 Using cached wiki content for inbox feed');
+        buildFeedFromCache();
+        return;
+      }
+
       console.log('🔄 Loading inbox wiki articles from user relays...');
       
       // Query wiki articles from user's inbox relays only (no social relays)
@@ -139,6 +149,33 @@
       
       console.log(`📰 Inbox feed: ${results.length} articles from ${currentRelays.length} relays`);
       console.log(`📥 Inbox relays:`, $state.snapshot(currentRelays));
+      
+      // Immediately cache metadata for all authors
+      const uniqueAuthors = [...new Set(results.map(event => event.pubkey))];
+      console.log(`👥 Immediately caching metadata for ${uniqueAuthors.length} unique authors...`);
+      
+      try {
+        const metadataResult = await relayService.queryEvents(
+          'anonymous',
+          'metadata-read',
+          [{ kinds: [0], authors: uniqueAuthors, limit: uniqueAuthors.length }],
+          { excludeUserContent: false, currentUserPubkey: undefined }
+        );
+        
+        // Store metadata events in cache
+        if (metadataResult.events.length > 0) {
+          const eventsToStore = metadataResult.events.map(event => ({
+            event,
+            relays: metadataResult.relays
+          }));
+          await contentCache.storeEvents('metadata', eventsToStore);
+          console.log(`✅ Cached ${metadataResult.events.length} metadata events for ${uniqueAuthors.length} authors`);
+        } else {
+          console.log(`⚠️ No metadata found for ${uniqueAuthors.length} authors`);
+        }
+      } catch (error) {
+        console.warn('⚠️ Failed to cache author metadata:', error);
+      }
       
     } catch (error) {
       console.error('❌ Failed to load inbox wiki articles:', error);
@@ -161,8 +198,10 @@
         setTimeout(() => reject(new Error('Background cache update timeout')), 30000)
       );
       
-      const updatePromise = performBackgroundUpdate();
-      await Promise.race([updatePromise, timeoutPromise]);
+      // DISABLED: Background cache updates to prevent doom loops
+      // const updatePromise = performBackgroundUpdate();
+      // await Promise.race([updatePromise, timeoutPromise]);
+      console.log('⚠️ Background cache updates disabled to prevent doom loops');
       
     } catch (error) {
       console.error('❌ Background cache update failed:', error);
@@ -210,7 +249,20 @@
         queries.push(relayService.queryEvents(userPubkey, 'wiki-read', [{ kinds: [1], limit: 100 }], { excludeUserContent: false, currentUserPubkey: $account?.pubkey }));
       }
       if (!kind1111Fresh) {
-        queries.push(relayService.queryEvents(userPubkey, 'wiki-read', [{ kinds: [1111], limit: 100 }], { excludeUserContent: false, currentUserPubkey: $account?.pubkey }));
+        // Get article IDs from article content types for targeted comment queries
+        const [wikiEvents, kind30041Events] = await Promise.all([
+          contentCache.getEvents('wiki'),
+          contentCache.getEvents('kind30041')
+        ]);
+        
+        const allArticleIds = [
+          ...wikiEvents.map(cached => cached.event.id),
+          ...kind30041Events.map(cached => cached.event.id)
+        ];
+        
+        if (allArticleIds.length > 0) {
+          queries.push(relayService.queryEvents(userPubkey, 'wiki-read', [{ kinds: [1111], '#e': allArticleIds, limit: 200 }], { excludeUserContent: false, currentUserPubkey: $account?.pubkey }));
+        }
       }
       if (!kind30041Fresh) {
         queries.push(relayService.queryEvents(userPubkey, 'wiki-read', [{ kinds: [30041], limit: 100 }], { excludeUserContent: false, currentUserPubkey: $account?.pubkey }));
@@ -324,7 +376,36 @@
       );
       console.log(`📚 Wiki query used ${wikiResult.relays.length} relays:`, wikiResult.relays);
       
-      // Extract wiki article IDs for targeted reaction queries
+      // Immediately cache metadata for all authors
+      if (wikiResult.events.length > 0) {
+        const uniqueAuthors = [...new Set(wikiResult.events.map(event => event.pubkey))];
+        console.log(`👥 Immediately caching metadata for ${uniqueAuthors.length} unique authors...`);
+        
+        try {
+          const metadataResult = await relayService.queryEvents(
+            'anonymous',
+            'metadata-read',
+            [{ kinds: [0], authors: uniqueAuthors, limit: uniqueAuthors.length }],
+            { excludeUserContent: false, currentUserPubkey: undefined }
+          );
+          
+          // Store metadata events in cache
+          if (metadataResult.events.length > 0) {
+            const eventsToStore = metadataResult.events.map(event => ({
+              event,
+              relays: metadataResult.relays
+            }));
+            await contentCache.storeEvents('metadata', eventsToStore);
+            console.log(`✅ Cached ${metadataResult.events.length} metadata events for ${uniqueAuthors.length} authors`);
+          } else {
+            console.log(`⚠️ No metadata found for ${uniqueAuthors.length} authors`);
+          }
+        } catch (error) {
+          console.warn('⚠️ Failed to cache author metadata:', error);
+        }
+      }
+      
+      // Extract article IDs from all content types that can have comments
       const wikiArticleIds = wikiResult.events.map(event => event.id);
       
       // Parallel queries for remaining content types - all using wiki-read relays only
@@ -355,14 +436,6 @@
           { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
         ),
         
-        // Kind 1111 comments - using wiki-read relays
-        relayService.queryEvents(
-          userPubkey,
-          'wiki-read',
-          [{ kinds: [1111], limit: 100 }],
-          { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
-        ),
-        
         // Kind 30041 - Asciidoc Notes
         relayService.queryEvents(
           userPubkey,
@@ -381,7 +454,23 @@
       ];
       
       const results = await Promise.all(queries);
-      const [reactionsResult, deletesResult, kind1Result, kind1111Result, kind30041Result, bookConfigsResult] = results;
+      const [reactionsResult, deletesResult, kind1Result, kind30041Result, bookConfigsResult] = results;
+      
+      // Now get all article IDs from article content types for kind 1111 comments
+      const allArticleIds = [
+        ...wikiArticleIds,
+        ...kind30041Result.events.map(event => event.id)
+      ];
+      
+      // Query kind 1111 comments for all article types
+      const kind1111Result = allArticleIds.length > 0 
+        ? await relayService.queryEvents(
+            userPubkey,
+            'wiki-read',
+            [{ kinds: [1111], '#e': allArticleIds, limit: 200 }],
+            { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+          )
+        : { events: [], relays: [] };
       
       // Store all results in IndexedDB cache
       await Promise.all([
@@ -452,6 +541,31 @@
         results = [];
         currentRelays = [];
         return;
+      }
+      
+      // Immediately cache metadata for all trusted users
+      console.log(`👥 Immediately caching metadata for ${trustedUsers.length} trusted users...`);
+      try {
+        const metadataResult = await relayService.queryEvents(
+          'anonymous',
+          'metadata-read',
+          [{ kinds: [0], authors: trustedUsers, limit: trustedUsers.length }],
+          { excludeUserContent: false, currentUserPubkey: undefined }
+        );
+        
+        // Store metadata events in cache
+        if (metadataResult.events.length > 0) {
+          const eventsToStore = metadataResult.events.map(event => ({
+            event,
+            relays: metadataResult.relays
+          }));
+          await contentCache.storeEvents('metadata', eventsToStore);
+          console.log(`✅ Cached ${metadataResult.events.length} metadata events for ${trustedUsers.length} trusted users`);
+        } else {
+          console.log(`⚠️ No metadata found for ${trustedUsers.length} trusted users`);
+        }
+      } catch (error) {
+        console.warn('⚠️ Failed to cache trusted users metadata:', error);
       }
       
       // Get all articles from cache and filter for trusted users
@@ -558,6 +672,34 @@
     console.log(`✅ ${currentFeedType} feed built: ${results.length} articles from ${currentRelays.length} relays`);
     console.log(`📊 Results array:`, $state.snapshot(results));
     console.log(`📊 Current relays:`, $state.snapshot(currentRelays));
+    
+    // Immediately cache metadata for all authors in the results
+    if (results.length > 0) {
+      const uniqueAuthors = [...new Set(results.map(event => event.pubkey))];
+      console.log(`👥 Immediately caching metadata for ${uniqueAuthors.length} unique authors from cache build...`);
+      
+      // Load metadata asynchronously without blocking the UI
+      relayService.queryEvents(
+        'anonymous',
+        'metadata-read',
+        [{ kinds: [0], authors: uniqueAuthors, limit: uniqueAuthors.length }],
+        { excludeUserContent: false, currentUserPubkey: undefined }
+      ).then(async (metadataResult) => {
+        // Store metadata events in cache
+        if (metadataResult.events.length > 0) {
+          const eventsToStore = metadataResult.events.map(event => ({
+            event,
+            relays: metadataResult.relays
+          }));
+          await contentCache.storeEvents('metadata', eventsToStore);
+          console.log(`✅ Cached ${metadataResult.events.length} metadata events for ${uniqueAuthors.length} authors from cache build`);
+        } else {
+          console.log(`⚠️ No metadata found for ${uniqueAuthors.length} authors from cache build`);
+        }
+      }).catch(error => {
+        console.warn('⚠️ Failed to cache author metadata from cache build:', error);
+      });
+    }
   }
 
 
@@ -754,12 +896,12 @@
         await switchFeed(current, true); // Force initial load
       }, 1500); // Increased delay to ensure cache is loaded
       
-      // Start background cache updates every 2 minutes (only if not already loading)
-      backgroundUpdateInterval = setInterval(() => {
-        if (!isLoading) {
-          backgroundCacheUpdate().catch(console.error);
-        }
-      }, 2 * 60 * 1000); // 2 minutes
+      // DISABLED: Background cache updates to prevent doom loops
+      // backgroundUpdateInterval = setInterval(() => {
+      //   if (!isLoading) {
+      //     backgroundCacheUpdate().catch(console.error);
+      //   }
+      // }, 2 * 60 * 1000); // 2 minutes
     }
     
     // Cleanup on unmount
@@ -802,7 +944,9 @@
     <!-- User Profile -->
     <div class="mt-2 flex items-center justify-between">
       <div class="flex items-center">
-        <UserBadge pubkey={$account.pubkey} {createChild} onProfileClick={handleProfileClick} size="medium" hideSearchIcon={false} />
+        {#if $account?.pubkey}
+          <UserBadge pubkey={$account.pubkey} {createChild} onProfileClick={handleProfileClick} size="medium" hideSearchIcon={false} />
+        {/if}
       </div>
       <button
         onclick={doLogout}

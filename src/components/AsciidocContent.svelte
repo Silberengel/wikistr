@@ -10,7 +10,7 @@
   import katex from 'katex';
   import { pool } from '@nostr/gadgets/global';
   import { relayService } from '$lib/relayService';
-  import { loadNostrUser, type NostrUser } from '@nostr/gadgets/metadata';
+  import { type NostrUser } from '@nostr/gadgets/metadata';
   import { next } from '$lib/utils';
   import type { ArticleCard } from '$lib/types';
   import ProfilePopup from './ProfilePopup.svelte';

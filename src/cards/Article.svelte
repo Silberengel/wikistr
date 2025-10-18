@@ -4,7 +4,7 @@
   import { pool } from '@nostr/gadgets/global';
   import { loadRelayList } from '@nostr/gadgets/lists';
   import { relayService } from '$lib/relayService';
-  import { bareNostrUser, loadNostrUser, type NostrUser } from '@nostr/gadgets/metadata';
+  import { bareNostrUser, type NostrUser } from '@nostr/gadgets/metadata';
   import { naddrEncode } from '@nostr/tools/nip19';
   import { normalizeIdentifier } from '@nostr/tools/nip54';
 
@@ -16,6 +16,7 @@
   import ArticleContent from '$components/ArticleContent.svelte';
   import RelayItem from '$components/RelayItem.svelte';
   import ProfilePopup from '$components/ProfilePopup.svelte';
+  import Comments from '$components/Comments.svelte';
   import { nip19 } from '@nostr/tools';
   import { cards } from '$lib/state';
 
@@ -163,39 +164,154 @@
 
     (async () => {
       try {
-        const result = await relayService.queryEvents(
-          $account?.pubkey || 'anonymous',
-          'wiki-read',
-          [
-            {
-              authors: [pubkey],
-              '#d': [dTag],
-              kinds: [wikiKind]
-            }
-          ],
-          {
-            excludeUserContent: false,
-            currentUserPubkey: $account?.pubkey
-          }
+        // Check cache first before making relay queries
+        const { contentCache } = await import('$lib/contentCache');
+        const cachedEvents = await contentCache.getEvents('wiki');
+        
+        // Find cached article for this specific pubkey and dTag
+        const cachedArticle = cachedEvents.find(cached => 
+          cached.event.pubkey === pubkey && 
+          getTagOr(cached.event, 'd') === dTag && 
+          cached.event.kind === wikiKind
         );
-
-        // Find the most recent article (highest created_at)
-        const articleEvent = result.events
-          .filter(evt => evt.pubkey === pubkey && getTagOr(evt, 'd') === dTag && evt.kind === wikiKind)
-          .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
-
-        if (articleEvent) {
-          event = articleEvent;
-          seenOn = result.relays;
+        
+        if (cachedArticle) {
+          console.log('Article: Found cached content for', dTag);
+          event = cachedArticle.event;
+          seenOn = cachedArticle.relays;
           setupLikes();
+        } else {
+          console.log('Article: No cached content, loading from relays for', dTag);
+          const result = await relayService.queryEvents(
+            $account?.pubkey || 'anonymous',
+            'wiki-read',
+            [
+              {
+                authors: [pubkey],
+                '#d': [dTag],
+                kinds: [wikiKind]
+              }
+            ],
+            {
+              excludeUserContent: false,
+              currentUserPubkey: $account?.pubkey
+            }
+          );
+
+          // Find the most recent article (highest created_at)
+          const articleEvent = result.events
+            .filter(evt => evt.pubkey === pubkey && getTagOr(evt, 'd') === dTag && evt.kind === wikiKind)
+            .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
+
+          if (articleEvent) {
+            event = articleEvent;
+            seenOn = result.relays;
+            setupLikes();
+            
+            // Store the article in cache for future use
+            const eventsToStore = [{
+              event: articleEvent,
+              relays: result.relays
+            }];
+            await contentCache.storeEvents('wiki', eventsToStore);
+            console.log('Article: Cached content for', dTag);
+          }
         }
       } catch (error) {
         console.error('Failed to load article:', error);
       }
     })();
 
+    // Load author data using relayService (only metadata-read relays)
     (async () => {
-      author = await loadNostrUser(pubkey);
+      try {
+        // Check cache first before making relay queries
+        const { contentCache } = await import('$lib/contentCache');
+        const cachedEvents = await contentCache.getEvents('metadata');
+        const cachedAuthorEvent = cachedEvents.find(cached => 
+          cached.event.pubkey === pubkey && cached.event.kind === 0
+        );
+        
+        if (cachedAuthorEvent) {
+          console.log('Article: Found cached author metadata for', pubkey.slice(0, 8) + '...');
+          try {
+            const content = JSON.parse(cachedAuthorEvent.event.content);
+            author = {
+              pubkey: pubkey,
+              npub: pubkey,
+              shortName: content.display_name || content.name || pubkey.slice(0, 8) + '...',
+              image: content.picture || undefined,
+              metadata: content,
+              lastUpdated: Date.now()
+            };
+            return; // Exit early since we found cached data
+          } catch (e) {
+            console.warn('Article: Failed to parse cached author metadata:', e);
+          }
+        }
+        
+        // Only query relays if no cached author metadata found
+        console.log('Article: No cached author metadata, loading from relays for', pubkey.slice(0, 8) + '...');
+        const { relayService } = await import('$lib/relayService');
+        const result = await relayService.queryEvents(
+          'anonymous', // Always use anonymous for metadata requests - relays are determined by type
+          'metadata-read',
+          [{ kinds: [0], authors: [pubkey], limit: 1 }],
+          { excludeUserContent: false, currentUserPubkey: undefined }
+        );
+        
+        if (result.events.length > 0) {
+          const event = result.events[0];
+          try {
+            const content = JSON.parse(event.content);
+            author = {
+              pubkey: pubkey,
+              npub: pubkey,
+              shortName: content.display_name || content.name || pubkey.slice(0, 8) + '...',
+              image: content.picture || undefined,
+              metadata: content,
+              lastUpdated: Date.now()
+            };
+            
+            // Store the author metadata in cache for future use
+            const eventsToStore = [{
+              event,
+              relays: result.relays
+            }];
+            await contentCache.storeEvents('metadata', eventsToStore);
+            console.log('Article: Cached author metadata for', pubkey.slice(0, 8) + '...');
+          } catch (e) {
+            console.warn('Article: Failed to parse author metadata:', e);
+            author = {
+              pubkey: pubkey,
+              npub: pubkey,
+              shortName: pubkey.slice(0, 8) + '...',
+              image: undefined,
+              metadata: {},
+              lastUpdated: Date.now()
+            };
+          }
+        } else {
+          author = {
+            pubkey: pubkey,
+            npub: pubkey,
+            shortName: pubkey.slice(0, 8) + '...',
+            image: undefined,
+            metadata: {},
+            lastUpdated: Date.now()
+          };
+        }
+      } catch (e) {
+        console.warn('Article: Failed to load author data:', e);
+        author = {
+          pubkey: pubkey,
+          npub: pubkey,
+          shortName: pubkey.slice(0, 8) + '...',
+          image: undefined,
+          metadata: {},
+          lastUpdated: Date.now()
+        };
+      }
     })();
   });
 
@@ -215,10 +331,23 @@
           .slice(0, 3)
           .forEach(async (url) => {
             try {
-              let relay = await pool.ensureRelay(url);
-              relay.publish(event!);
+              // Use relayService to publish to wiki-write relays
+              if (event) {
+                const result = await relayService.publishEvent(
+                  event.pubkey,
+                  'wiki-write',
+                  event,
+                  false // Don't show toast notification for each relay
+                );
+                
+                if (result.success) {
+                  console.log('✅ Article published successfully to', result.publishedTo.length, 'relays');
+                } else {
+                  console.warn('⚠️ Article publishing had issues:', result.failedRelays);
+                }
+              }
             } catch (err) {
-              console.warn('Failed to publish to relay', url, err);
+              console.warn('Failed to publish article to relay', url, err);
             }
           });
       }
@@ -343,20 +472,20 @@
         cached.event.tags.some(tag => tag[0] === 'e' && tag[1] === articleEvent.id)
       );
       
-      let result;
       if (articleReactions.length > 0) {
         console.log(`📦 Using ${articleReactions.length} cached reactions for article: ${articleEvent.id}`);
-        result = {
+        const result = {
           events: articleReactions.map(cached => cached.event),
           relays: [...new Set(articleReactions.flatMap(cached => cached.relays))]
         };
         
-        // Display cached results immediately
+        // Display cached results immediately and exit - don't query relays
         processReactions(result.events);
+        return;
       }
       
-      // Second pass: Always query relays for fresh data and update cache
-      console.log('🔄 Querying relays for fresh reactions...');
+      // Only query relays if no cached reactions found
+      console.log('🔄 No cached reactions, loading from relays for article:', articleEvent.id);
       const freshResult = await relayService.queryEvents(
         $account?.pubkey || 'anonymous',
         'social-read',
@@ -378,15 +507,14 @@
         await contentCache.storeEvents('reactions', 
           freshResult.events.map(event => ({ event, relays: freshResult.relays }))
         );
+        console.log('Reactions: Cached', freshResult.events.length, 'reactions for article:', articleEvent.id);
       }
       
-      // Update display with fresh results
-      result = freshResult;
-      console.log('Loaded fresh reactions from relays:', result.events.length, 'for article:', articleEvent.id);
-      console.log('Using relays:', result.relays);
+      console.log('Loaded fresh reactions from relays:', freshResult.events.length, 'for article:', articleEvent.id);
+      console.log('Using relays:', freshResult.relays);
       
       // Process fresh reactions
-      processReactions(result.events);
+      processReactions(freshResult.events);
     } catch (error) {
       console.error('Failed to load reactions:', error);
     }
@@ -632,6 +760,11 @@
       <div class="prose prose-p:my-0 prose-li:my-0">
         <ArticleContent {event} {createChild} {replaceSelf} />
       </div>
+    {/if}
+
+    <!-- Comments Section -->
+    {#if event}
+      <Comments {event} {createChild} />
     {/if}
 
     <!-- Article Metadata Section (always visible) -->

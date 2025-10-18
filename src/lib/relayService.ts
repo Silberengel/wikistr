@@ -25,6 +25,107 @@ class RelayService {
   private initializationPromise: Promise<void> | null = null;
   private relayCache = new Map<string, string[]>();
   
+  // Subscription management to prevent concurrent request overload
+  private activeSubscriptions = new Set<string>();
+  private requestQueue: Array<() => Promise<void>> = [];
+  private maxConcurrentSubscriptions = 2; // Further reduced
+  private maxQueueSize = 20; // Limit queue size to prevent memory issues
+  private isProcessingQueue = false;
+  private requestDeduplication = new Map<string, Promise<any>>(); // Deduplicate identical requests
+  
+  /**
+   * Manage subscription queue to prevent relay overload
+   */
+  private async processQueue(): Promise<void> {
+    if (this.isProcessingQueue || this.requestQueue.length === 0) {
+      return;
+    }
+    
+    this.isProcessingQueue = true;
+    
+    while (this.requestQueue.length > 0 && this.activeSubscriptions.size < this.maxConcurrentSubscriptions) {
+      const request = this.requestQueue.shift();
+      if (request) {
+        try {
+          await request();
+        } catch (error) {
+          console.warn('Queue request failed:', error);
+        }
+      }
+    }
+    
+    this.isProcessingQueue = false;
+  }
+  
+  /**
+   * Add a request to the queue with throttling and deduplication
+   */
+  private async queueRequest<T>(requestFn: () => Promise<T>, subscriptionId: string): Promise<T> {
+    // Create a deduplication key based on the request type and target user
+    // Use type-userPubkey-targetUser for proper deduplication
+    const deduplicationKey = subscriptionId.split('-').slice(0, 4).join('-');
+    
+    // Check if we already have an identical request in progress
+    if (this.requestDeduplication.has(deduplicationKey)) {
+      console.log(`🔄 Deduplicating request ${subscriptionId} (identical to existing request)`);
+      return this.requestDeduplication.get(deduplicationKey)!;
+    }
+    
+    // Check queue size limit
+    if (this.requestQueue.length >= this.maxQueueSize) {
+      console.warn(`⚠️ Queue full (${this.requestQueue.length}/${this.maxQueueSize}), rejecting request ${subscriptionId}`);
+      throw new Error(`Request queue is full (${this.requestQueue.length}/${this.maxQueueSize})`);
+    }
+    
+    const promise = new Promise<T>((resolve, reject) => {
+      const queuedRequest = async () => {
+        try {
+          this.activeSubscriptions.add(subscriptionId);
+          console.log(`🚀 Starting subscription ${subscriptionId} (${this.activeSubscriptions.size}/${this.maxConcurrentSubscriptions} active)`);
+          const result = await requestFn();
+          resolve(result);
+        } catch (error) {
+          reject(error);
+        } finally {
+          this.activeSubscriptions.delete(subscriptionId);
+          this.requestDeduplication.delete(deduplicationKey);
+          console.log(`✅ Completed subscription ${subscriptionId} (${this.activeSubscriptions.size}/${this.maxConcurrentSubscriptions} active)`);
+          // Process next item in queue with a small delay
+          setTimeout(() => this.processQueue(), 500);
+        }
+      };
+      
+      this.requestQueue.push(queuedRequest);
+      console.log(`📝 Queued subscription ${subscriptionId} (queue size: ${this.requestQueue.length}/${this.maxQueueSize})`);
+      
+      // Clean up old deduplication entries periodically
+      if (Math.random() < 0.1) { // 10% chance to clean up
+        this.cleanupDeduplicationCache();
+      }
+      
+      this.processQueue();
+    });
+    
+    // Store the promise for deduplication
+    this.requestDeduplication.set(deduplicationKey, promise);
+    
+    return promise;
+  }
+
+  /**
+   * Clean up old deduplication entries to prevent memory leaks
+   */
+  private cleanupDeduplicationCache(): void {
+    // Remove entries older than 30 seconds
+    const now = Date.now();
+    for (const [key, promise] of this.requestDeduplication.entries()) {
+      const timestamp = parseInt(key.split('-')[2]);
+      if (now - timestamp > 30000) {
+        this.requestDeduplication.delete(key);
+      }
+    }
+  }
+
   /**
    * Ensure service is initialized only once
    */
@@ -87,8 +188,9 @@ class RelayService {
           relays = [...themeSocialRelays];
           break;
         case 'inbox-read':
-          // For inbox, start with empty array - only use user's relay list
-          relays = [];
+          // For inbox, start with theme social relays as fallback
+          // Only use user's relay list if available
+          relays = [...themeSocialRelays];
           break;
         case 'metadata-read':
           relays = [...themeSocialRelays, ...DEFAULT_METADATA_RELAYS];
@@ -98,21 +200,13 @@ class RelayService {
           break;
       }
       
-      // Add user's relay list if available and not anonymous
-      if (userPubkey !== 'anonymous' && userPubkey !== '0000000000000000000000000000000000000000000000000000000000000000') {
+      // Load user's own relays only for the logged-in user and only if we need more relays
+      if (userPubkey && userPubkey !== 'anonymous' && userPubkey !== 'undefined' && userPubkey !== 'null' && relays.length < 3) {
         try {
-          if (type === 'inbox-read') {
-            // For inbox, only use user's inbox relays (read-only)
-            const userInboxRelays = await this.loadUserInboxRelays(userPubkey);
-            relays = [...userInboxRelays];
-          } else {
-            // For other types, add user's inbox relays to theme relays
-            const userInboxRelays = await this.loadUserInboxRelays(userPubkey);
-            relays = [...relays, ...userInboxRelays];
-          }
+          const userRelays = await this.loadUserRelayList(userPubkey);
+          relays = [...relays, ...userRelays];
         } catch (error) {
-          console.warn('Failed to load user relay list:', error);
-          // Continue with default relays
+          console.warn('Failed to load user relays:', error);
         }
       }
       
@@ -138,58 +232,185 @@ class RelayService {
     }
   }
   
+  // Cache for user relay lists to prevent infinite loops
+  private userRelayCache = new Map<string, { relays: string[], timestamp: number }>();
+  private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
   /**
-   * Load user's relay list with timeout protection
+   * Load user's relay list with caching to prevent infinite loops
    */
   private async loadUserRelayList(userPubkey: string): Promise<string[]> {
-    const timeoutPromise = new Promise<string[]>((_, reject) => 
-      setTimeout(() => reject(new Error('Relay list timeout')), 3000)
-    );
-    
-    const loadPromise = loadRelayList(userPubkey).then(list => 
-      list.items
-        .filter(ri => ri.url) // Include all relays with URLs, not just read-only ones
-        .map(ri => this.normalizeRelayUrl(ri.url))
-        .filter(url => url && (url.startsWith('ws://') || url.startsWith('wss://')))
-    );
-    
-    return Promise.race([loadPromise, timeoutPromise]);
+    try {
+      // Check cache first
+      const cached = this.userRelayCache.get(userPubkey);
+      if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
+        console.log('📋 Using cached user relay list for:', userPubkey);
+        return cached.relays;
+      }
+      
+      console.log('🔍 Loading user relay list for:', userPubkey);
+      
+      // Only load relays for the logged-in user, not for other users
+      const { get } = await import('idb-keyval');
+      const loggedInData = await get('wikistr:loggedin');
+      
+      const currentUserPubkey = loggedInData ? loggedInData.pubkey : null;
+      
+      if (userPubkey !== currentUserPubkey) {
+        console.log('⏭️ Skipping relay list for non-logged-in user');
+        // Cache empty result to prevent repeated queries
+        this.userRelayCache.set(userPubkey, {
+          relays: [],
+          timestamp: Date.now()
+        });
+        return [];
+      }
+      
+      // Add timeout protection to prevent hanging
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('User relay list query timeout')), 10000)
+      );
+      
+      // Use metadata-read relays to load the user's kind 10002 event
+      const queryPromise = this.queryEvents(
+        userPubkey,
+        'metadata-read',
+        [{ kinds: [10002], authors: [userPubkey], limit: 1 }],
+        { excludeUserContent: false, currentUserPubkey }
+      );
+      
+      const result = await Promise.race([queryPromise, timeoutPromise]);
+      
+      let relays: string[] = [];
+      
+      if (result.events.length > 0) {
+        const event = result.events[0];
+        relays = event.tags
+          .filter(tag => tag[0] === 'r')
+          .map(tag => tag[1])
+          .filter(relay => relay && relay.startsWith('wss://'));
+        
+        console.log('📡 Found user relays:', relays);
+      } else {
+        console.log('📭 No user relay list found');
+      }
+      
+      // Cache the result
+      this.userRelayCache.set(userPubkey, {
+        relays,
+        timestamp: Date.now()
+      });
+      
+      return relays;
+    } catch (error) {
+      console.warn('Failed to load user relay list:', error);
+      
+      // Cache empty result to prevent repeated failures
+      this.userRelayCache.set(userPubkey, {
+        relays: [],
+        timestamp: Date.now()
+      });
+      
+      return [];
+    }
   }
   
+  // Cache for user inbox relays to prevent infinite loops
+  private userInboxCache = new Map<string, { relays: string[], timestamp: number }>();
+
   /**
-   * Load user's inbox relays (read-only) with timeout protection
+   * Load user's inbox relays (read-only) with caching to prevent infinite loops
    */
   private async loadUserInboxRelays(userPubkey: string): Promise<string[]> {
-    const timeoutPromise = new Promise<string[]>((_, reject) => 
-      setTimeout(() => reject(new Error('Inbox relay list timeout')), 3000)
-    );
-    
-    const loadPromise = loadRelayList(userPubkey).then(list => 
-      list.items
-        .filter(ri => ri.url && ri.read) // Only read-only relays (inboxes)
-        .map(ri => this.normalizeRelayUrl(ri.url))
-        .filter(url => url && (url.startsWith('ws://') || url.startsWith('wss://')))
-    );
-    
-    return Promise.race([loadPromise, timeoutPromise]);
+    try {
+      // Check cache first
+      const cached = this.userInboxCache.get(userPubkey);
+      if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
+        console.log('📋 Using cached user inbox relays for:', userPubkey);
+        return cached.relays;
+      }
+      
+      console.log('📥 Loading user inbox relays for:', userPubkey);
+      
+      // Only load for the logged-in user
+      const { get } = await import('idb-keyval');
+      const loggedInData = await get('wikistr:loggedin');
+      const currentUserPubkey = loggedInData ? loggedInData.pubkey : null;
+      
+      if (userPubkey !== currentUserPubkey) {
+        console.log('⏭️ Skipping inbox relays for non-logged-in user');
+        return [];
+      }
+      
+      // Get user's relay list and filter for read-only relays
+      const userRelays = await this.loadUserRelayList(userPubkey);
+      const inboxRelays = userRelays.filter(relay => {
+        // Filter for read-only relays (no write permission)
+        return relay && !relay.includes('write') && !relay.includes('wss://');
+      });
+      
+      console.log('📥 Found inbox relays:', inboxRelays);
+      
+      // Cache the result
+      this.userInboxCache.set(userPubkey, {
+        relays: inboxRelays,
+        timestamp: Date.now()
+      });
+      
+      return inboxRelays;
+    } catch (error) {
+      console.warn('Failed to load user inbox relays:', error);
+      return [];
+    }
   }
   
+  // Cache for user outbox relays to prevent infinite loops
+  private userOutboxCache = new Map<string, { relays: string[], timestamp: number }>();
+
   /**
-   * Load user's outbox relays (write-only) with timeout protection
+   * Load user's outbox relays (write-only) with caching to prevent infinite loops
    */
   private async loadUserOutboxRelays(userPubkey: string): Promise<string[]> {
-    const timeoutPromise = new Promise<string[]>((_, reject) => 
-      setTimeout(() => reject(new Error('Outbox relay list timeout')), 3000)
-    );
-    
-    const loadPromise = loadRelayList(userPubkey).then(list => 
-      list.items
-        .filter(ri => ri.url && ri.write) // Only write-only relays (outboxes)
-        .map(ri => this.normalizeRelayUrl(ri.url))
-        .filter(url => url && (url.startsWith('ws://') || url.startsWith('wss://')))
-    );
-    
-    return Promise.race([loadPromise, timeoutPromise]);
+    try {
+      // Check cache first
+      const cached = this.userOutboxCache.get(userPubkey);
+      if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
+        console.log('📋 Using cached user outbox relays for:', userPubkey);
+        return cached.relays;
+      }
+      
+      console.log('📤 Loading user outbox relays for:', userPubkey);
+      
+      // Only load for the logged-in user
+      const { get } = await import('idb-keyval');
+      const loggedInData = await get('wikistr:loggedin');
+      const currentUserPubkey = loggedInData ? loggedInData.pubkey : null;
+      
+      if (userPubkey !== currentUserPubkey) {
+        console.log('⏭️ Skipping outbox relays for non-logged-in user');
+        return [];
+      }
+      
+      // Get user's relay list and filter for write-only relays
+      const userRelays = await this.loadUserRelayList(userPubkey);
+      const outboxRelays = userRelays.filter(relay => {
+        // Filter for write-only relays (with write permission)
+        return relay && (relay.includes('write') || relay.startsWith('wss://'));
+      });
+      
+      console.log('📤 Found outbox relays:', outboxRelays);
+      
+      // Cache the result
+      this.userOutboxCache.set(userPubkey, {
+        relays: outboxRelays,
+        timestamp: Date.now()
+      });
+      
+      return outboxRelays;
+    } catch (error) {
+      console.warn('Failed to load user outbox relays:', error);
+      return [];
+    }
   }
   
   /**
@@ -228,7 +449,7 @@ class RelayService {
   }
   
   /**
-   * Query events from relays with timeout protection
+   * Query events from relays with timeout protection and request throttling
    */
   async queryEvents<T extends NostrEvent>(
     userPubkey: string,
@@ -238,70 +459,81 @@ class RelayService {
   ): Promise<QueryResult<T>> {
     await this.ensureInitialized();
     
-    let relays = await this.getRelaysForOperation(userPubkey, type);
+    // Create unique subscription ID for this request
+    // For metadata requests, include the target user's pubkey to avoid deduplication issues
+    const targetUser = filters.find(f => f.authors && f.authors.length > 0)?.authors?.[0];
+    const subscriptionId = targetUser 
+      ? `${type}-${userPubkey}-${targetUser.slice(0, 8)}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      : `${type}-${userPubkey}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    // Extra safety filter for undefined/null relays
-    relays = relays.filter(url => url && 
-                                  url !== 'undefined' && 
-                                  url !== 'null' && 
-                                  url !== '' && 
-                                  typeof url === 'string' &&
-                                  (url.startsWith('ws://') || url.startsWith('wss://')));
-    
-    if (relays.length === 0) {
-      console.warn('No relays available for query');
-      return { events: [], relays: [] };
-    }
-    
-    const events: T[] = [];
-    let subscriptionClosed = false;
-    
-    return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        if (!subscriptionClosed) {
-          subscriptionClosed = true;
-          console.log('Query timeout, returning partial results');
-          resolve({ events, relays });
-        }
-      }, 8000); // 8 second timeout
+    // Use the queue system to throttle requests
+    return this.queueRequest(async () => {
+      let relays = await this.getRelaysForOperation(userPubkey, type);
       
-      try {
-        const subscription = pool.subscribeMany(relays, filters, {
-          onevent: (event: any) => {
-            if (subscriptionClosed) return;
-            
-            const typedEvent = event as T;
-            
-            // Filter out user's own content if requested
-            if (options.excludeUserContent && options.currentUserPubkey && 
-                typedEvent.pubkey === options.currentUserPubkey) {
-              return;
-            }
-            
-            events.push(typedEvent);
-          },
-          oneose: () => {
-            if (!subscriptionClosed) {
-              subscriptionClosed = true;
-              clearTimeout(timeout);
-              subscription.close();
-              resolve({ events, relays });
-            }
-          }
-        });
-        
-        // Handle subscription errors with try-catch instead
-        // Note: SubCloser doesn't have 'on' method, so we rely on try-catch
-        
-      } catch (error) {
-        if (!subscriptionClosed) {
-          subscriptionClosed = true;
-          clearTimeout(timeout);
-          console.error('Failed to create subscription:', error);
-          resolve({ events, relays });
-        }
+      // Extra safety filter for undefined/null relays
+      relays = relays.filter(url => url && 
+                                    url !== 'undefined' && 
+                                    url !== 'null' && 
+                                    url !== '' && 
+                                    typeof url === 'string' &&
+                                    (url.startsWith('ws://') || url.startsWith('wss://')));
+      
+      if (relays.length === 0) {
+        console.warn('No relays available for query');
+        return { events: [], relays: [] };
       }
-    });
+      
+      const events: T[] = [];
+      let subscriptionClosed = false;
+      
+      return new Promise<QueryResult<T>>((resolve) => {
+        const timeout = setTimeout(() => {
+          if (!subscriptionClosed) {
+            subscriptionClosed = true;
+            console.log(`Query timeout for ${subscriptionId}, returning partial results`);
+            resolve({ events, relays });
+          }
+        }, 8000); // 8 second timeout
+        
+        try {
+          // Use pool.subscribeMany with our controlled relay sets
+          const subscription = pool.subscribeMany(relays, filters, {
+            onevent: (event: any) => {
+              if (subscriptionClosed) return;
+              
+              const typedEvent = event as T;
+              
+              // Filter out user's own content if requested
+              if (options.excludeUserContent && options.currentUserPubkey && 
+                  typedEvent.pubkey === options.currentUserPubkey) {
+                return;
+              }
+              
+              events.push(typedEvent);
+            },
+            oneose: () => {
+              if (!subscriptionClosed) {
+                subscriptionClosed = true;
+                clearTimeout(timeout);
+                subscription.close();
+                resolve({ events, relays });
+              }
+            }
+          });
+          
+          // Handle subscription errors with try-catch instead
+          // Note: SubCloser doesn't have 'on' method, so we rely on try-catch
+          
+        } catch (error) {
+          if (!subscriptionClosed) {
+            subscriptionClosed = true;
+            clearTimeout(timeout);
+            console.error(`Failed to create subscription for ${subscriptionId}:`, error);
+            resolve({ events, relays });
+          }
+        }
+      });
+    }, subscriptionId);
   }
   
   /**
@@ -320,14 +552,46 @@ class RelayService {
     let publishedTo: string[] = [];
     let failedRelays: string[] = [];
     
-    // Try to publish to each relay
+    // Publish to each relay using our controlled relay sets
     for (const url of relays) {
       try {
         const r = await pool.ensureRelay(url);
+        
+        // Try to authenticate if the relay requires it
+        try {
+          // Get the signer from the logged-in user
+          const { get } = await import('idb-keyval');
+          const loggedInUser = await get('wikistr:loggedin');
+          if (loggedInUser) {
+            if (loggedInUser.signer) {
+              await r.auth(loggedInUser.signer);
+              console.log('🔐 Authenticated to', url);
+            } else {
+              console.log('ℹ️ No signer available for', url);
+            }
+          } else {
+            console.log('ℹ️ No logged-in user for', url);
+          }
+        } catch (authErr) {
+          // If auth fails, continue anyway - some relays don't need auth for publishing
+          console.log('ℹ️ Auth failed for', url, authErr);
+        }
+        
         await r.publish(event);
         publishedTo.push(url);
         console.log('✅ Published to', url);
       } catch (err) {
+        // Handle specific error types
+        if (err instanceof Error) {
+          if (err.message.includes('UNIQUE constraint failed')) {
+            console.log('⚠️ Event already exists on', url, '- skipping');
+            continue; // Skip this relay, don't count as failure
+          }
+          if (err.message.includes('rate-limited')) {
+            console.log('⚠️ Rate limited on', url, '- skipping');
+            continue; // Skip this relay, don't count as failure
+          }
+        }
         failedRelays.push(url);
         console.warn('❌ Failed to publish to', url, err);
       }
@@ -341,6 +605,7 @@ class RelayService {
     
     return result;
   }
+
 
   /**
    * Clear cache (useful for testing)

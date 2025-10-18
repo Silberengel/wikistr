@@ -19,6 +19,7 @@
   let aboutElement = $state<HTMLElement>();
   let nip05Verified = $state(false);
   let nip05Verifying = $state(false);
+  let nip05RetryCount = $state(0);
 
   // Detect if we're on mobile
   onMount(() => {
@@ -63,22 +64,45 @@
         }
       }
       
-      // Fetch profile data with timeout
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Profile fetch timeout')), 10000)
-      );
+      // Check cache first before making relay queries
+      const { contentCache } = await import('$lib/contentCache');
+      const cachedEvents = await contentCache.getEvents('metadata');
+      const cachedUserEvent = cachedEvents.find(cached => cached.event.pubkey === hexPubkey && cached.event.kind === 0);
       
-      const fetchPromise = relayService.queryEvents(
-        'anonymous',
-        'metadata-read',
-        [{ kinds: [0], authors: [hexPubkey], limit: 1 }],
-        {
-          excludeUserContent: false,
-          currentUserPubkey: undefined
+      let result: any;
+      if (cachedUserEvent) {
+        console.log('ProfilePopup: Found cached metadata for', hexPubkey.slice(0, 8) + '...');
+        result = { events: [cachedUserEvent.event], relays: cachedUserEvent.relays };
+      } else {
+        console.log('ProfilePopup: No cached metadata, loading from relays for', hexPubkey.slice(0, 8) + '...');
+        
+        // Fetch profile data with timeout
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Profile fetch timeout')), 10000)
+        );
+        
+        const fetchPromise = relayService.queryEvents(
+          'anonymous', // Always use anonymous for metadata requests - relays are determined by type
+          'metadata-read',
+          [{ kinds: [0], authors: [hexPubkey], limit: 1 }],
+          {
+            excludeUserContent: false,
+            currentUserPubkey: undefined
+          }
+        );
+        
+        result = await Promise.race([fetchPromise, timeoutPromise]);
+        
+        // Store the metadata in cache for future use
+        if (result.events.length > 0) {
+          const eventsToStore = result.events.map((event: any) => ({
+            event,
+            relays: result.relays
+          }));
+          await contentCache.storeEvents('metadata', eventsToStore);
+          console.log('ProfilePopup: Cached metadata for', hexPubkey.slice(0, 8) + '...');
         }
-      );
-      
-      const result = await Promise.race([fetchPromise, timeoutPromise]) as any;
+      }
       const userEvent = result.events.find((event: any) => event.pubkey === hexPubkey && event.kind === 0);
       
       if (userEvent) {
@@ -103,12 +127,13 @@
           throw e;
         }
       } else {
+        // No user event found - provide basic profile info
         userData = {
           pubkey: hexPubkey,
           npub: npub,
-          display_name: 'Unknown',
-          name: 'Unknown',
-          about: '',
+          display_name: hexPubkey.slice(0, 8) + '...',
+          name: hexPubkey.slice(0, 8) + '...',
+          about: 'Profile not found on relays. This user may not have published their metadata yet.',
           picture: '',
           banner: '',
           website: '',
@@ -135,12 +160,14 @@
     }
   }
 
-  // Initialize when component mounts
-  onMount(() => {
-    // Reset NIP-05 states
-    nip05Verifying = false;
-    nip05Verified = false;
+  // Watch for isOpen prop changes
+  $effect(() => {
     if (isOpen && pubkey) {
+      // Reset NIP-05 states
+      nip05Verifying = false;
+      nip05Verified = false;
+      nip05RetryCount = 0;
+      
       // Set immediate fallback profile
       userData = {
         pubkey: pubkey,
@@ -156,8 +183,33 @@
       };
       loading = true; // Keep loading true until fetchUserData completes
       
-      // Try to load real profile data in background
-      fetchUserData();
+      // Try to load real profile data in background with a safety timeout
+      const safetyTimeout = setTimeout(() => {
+        if (loading) {
+          console.warn('ProfilePopup: Safety timeout reached, showing fallback profile');
+          loading = false;
+          userData = {
+            pubkey: pubkey,
+            npub: pubkey,
+            display_name: pubkey.slice(0, 8) + '...',
+            name: pubkey.slice(0, 8) + '...',
+            about: 'Profile loading timed out. This may be due to network issues.',
+            picture: '',
+            banner: '',
+            website: '',
+            lud16: '',
+            nip05: ''
+          };
+        }
+      }, 15000); // 15 second safety timeout
+      
+      fetchUserData().finally(() => {
+        clearTimeout(safetyTimeout);
+      });
+    } else if (!isOpen) {
+      // Reset state when closing
+      loading = false;
+      userData = null;
     }
   });
 
@@ -201,12 +253,21 @@
 
   // Verify NIP-05
   async function verifyNip05() {
-    if (!userData?.nip05 || nip05Verifying || nip05Verified) return;
+    if (!userData?.nip05 || nip05Verifying || nip05Verified || nip05RetryCount >= 2) return;
     
     nip05Verifying = true;
+    nip05RetryCount++;
     
     try {
       const [name, domain] = userData.nip05.split('@');
+      
+      // Validate domain exists and is not undefined
+      if (!domain || domain === 'undefined' || domain === 'null' || domain.trim() === '') {
+        console.warn('Invalid NIP-05 domain:', domain);
+        nip05Verified = false;
+        return;
+      }
+      
       const wellKnownUrl = `https://${domain}/.well-known/nostr.json?name=${name}`;
       
       const controller = new AbortController();
@@ -253,8 +314,8 @@
       processAboutLinks();
     }
     
-    // Verify NIP-05 when userData is loaded
-    if (userData && userData.nip05 && !nip05Verifying) {
+    // Verify NIP-05 when userData is loaded (max 2 attempts)
+    if (userData && userData.nip05 && !nip05Verifying && nip05RetryCount < 2) {
       verifyNip05();
     }
   });
@@ -277,14 +338,15 @@
     aria-label="Profile popup"
   >
     <div
-      class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto"
+      class="rounded-lg shadow-xl max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto"
+      style="background-color: var(--bg-primary); border: 1px solid var(--border);"
       onclick={(e) => e.stopPropagation()}
       onkeydown={(e) => e.stopPropagation()}
       role="dialog"
       tabindex="-1"
     >
       <!-- Header -->
-      <div class="flex items-center justify-between p-4 border-b">
+      <div class="flex items-center justify-between p-4" style="border-bottom: 1px solid var(--border);">
         <h3 class="text-lg font-semibold" style="color: var(--text-primary);">Profile</h3>
         <button
           onclick={onClose}
@@ -302,7 +364,7 @@
       <div class="p-4">
         {#if loading}
           <div class="flex items-center justify-center py-8">
-            <div class="w-8 h-8 border-4 border-gray-300 border-t-blue-600 rounded-full animate-spin" style="border-color: var(--border); border-top-color: var(--accent);"></div>
+            <div class="w-8 h-8 border-4 rounded-full animate-spin" style="border-color: var(--border); border-top-color: var(--accent);"></div>
             <span class="ml-3" style="color: var(--text-secondary);">Loading profile...</span>
           </div>
         {:else if userData}
@@ -351,7 +413,8 @@
                 href={userData.website}
                 target="_blank"
                 rel="noopener noreferrer"
-                class="text-blue-600 hover:text-blue-800 underline break-all"
+                class="underline break-all"
+                style="color: var(--accent);"
               >
                 {userData.website}
               </a>
@@ -374,7 +437,7 @@
                 {#if nip05Verifying && !nip05Verified}
                   <div class="w-4 h-4 border-2 rounded-full animate-spin" style="border-color: var(--border); border-top-color: var(--accent);"></div>
                 {:else if nip05Verified}
-                  <svg class="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" style="color: #10b981;">
                     <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
                   </svg>
                 {/if}
@@ -394,7 +457,7 @@
                   style="background-color: var(--bg-secondary);"
                   title="Copy lightning address"
                 >
-                  <svg class="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
+                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" style="color: #f59e0b;">
                     <path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"/>
                   </svg>
                 </button>
@@ -411,7 +474,8 @@
                   href="https://jumble.imwald.eu/users/{userData.npub}"
                   target="_blank"
                   rel="noopener noreferrer"
-                  class="font-mono break-all text-blue-600 hover:text-blue-800 underline ml-1"
+                  class="font-mono break-all underline ml-1"
+                  style="color: var(--accent);"
                 >
                   {userData.npub}
                 </a>

@@ -297,7 +297,8 @@ export const contentCache = new ContentCacheManager();
 // Initialize cache on import
 contentCache.initialize().catch(console.error);
 
-// Cleanup expired events every 5 minutes
-setInterval(() => {
-  contentCache.cleanup().catch(console.error);
-}, 5 * 60 * 1000);
+// DISABLED: Cleanup expired events to prevent doom loops
+// setInterval(() => {
+//   contentCache.cleanup().catch(console.error);
+// }, 5 * 60 * 1000);
+console.log('⚠️ Content cache cleanup disabled to prevent doom loops');
