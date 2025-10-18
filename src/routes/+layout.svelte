@@ -6,6 +6,7 @@
   import CardElement from '$components/CardElement.svelte';
   import { getThemeConfig, generatePaletteFromAccent, getThemeDefaultMode } from '$lib/themes';
   import Toast from '$components/Toast.svelte';
+  import { initializeBookConfigurations } from '$lib/bookConfig';
 
   // Theme configuration
   const theme = getThemeConfig();
@@ -60,6 +61,11 @@
       
       // Set up error handlers
       setupErrorHandlers();
+      
+      // Initialize book configurations
+      console.log('📚 Initializing book configurations...');
+      await initializeBookConfigurations();
+      console.log('✅ Book configurations initialized');
       
       initialized = true;
       console.log('✅ Layout initialized successfully');

@@ -216,7 +216,8 @@
         queries.push(relayService.queryEvents(userPubkey, 'wiki-read', [{ kinds: [30041], limit: 100 }], { excludeUserContent: false, currentUserPubkey: $account?.pubkey }));
       }
       if (!bookConfigsFresh) {
-        queries.push(relayService.queryEvents(userPubkey, 'wiki-read', [{ kinds: [30078], limit: 50 }], { excludeUserContent: false, currentUserPubkey: $account?.pubkey }));
+        // Query for book configurations with specific d-tag filtering only (no fallback)
+        queries.push(relayService.queryEvents(userPubkey, 'wiki-read', [{ kinds: [30078], '#d': ['wikistr-book-config'], limit: 50 }], { excludeUserContent: false, currentUserPubkey: $account?.pubkey }));
       }
       
       if (queries.length === 0) {
@@ -370,11 +371,11 @@
           { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
         ),
         
-        // Book configurations (kind 30078)
+        // Book configurations (kind 30078) - only query with specific d-tag
         relayService.queryEvents(
           userPubkey,
           'wiki-read',
-          [{ kinds: [30078], limit: 50 }],
+          [{ kinds: [30078], '#d': ['wikistr-book-config'], limit: 50 }],
           { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
         )
       ];

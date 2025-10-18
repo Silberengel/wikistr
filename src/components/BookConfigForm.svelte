@@ -4,25 +4,25 @@
   import type { NIP78BookConfig } from '$lib/nip78';
   import { showToast } from '$lib/toast';
 
-  export let onClose: () => void;
-  export let onSuccess: () => void;
+  let { onClose, onSuccess }: { onClose: () => void; onSuccess: () => void } = $props();
 
-  let formData = {
+  let formData = $state({
     name: '',
     displayName: '',
     description: '',
     books: [{ fullName: '', abbreviations: '' }],
+    chapters: [{ name: '', number: 1 }],
     versions: [{ abbrev: '', fullName: '' }],
     parsingRules: {
       bookPattern: '',
-      chapterPattern: '^\\d+$',
-      versePattern: '^\\d+(?:[-,\\s]\\d+)*$',
+      chapterPattern: '^[\\w\\-`]+$',
+      versePattern: '^[\\w\\-`.,\\s]+$',
       versionPattern: ''
     }
-  };
+  });
 
-  let isSubmitting = false;
-  let errorMessage = '';
+  let isSubmitting = $state(false);
+  let errorMessage = $state('');
 
   function addBook() {
     formData.books.push({ fullName: '', abbreviations: '' });
@@ -31,6 +31,16 @@
   function removeBook(index: number) {
     if (formData.books.length > 1) {
       formData.books.splice(index, 1);
+    }
+  }
+
+  function addChapter() {
+    formData.chapters.push({ name: '', number: formData.chapters.length + 1 });
+  }
+
+  function removeChapter(index: number) {
+    if (formData.chapters.length > 1) {
+      formData.chapters.splice(index, 1);
     }
   }
 
@@ -48,11 +58,16 @@
     if (!formData.name.trim()) return 'Book type name is required';
     if (!formData.displayName.trim()) return 'Display name is required';
     if (formData.books.some(book => !book.fullName.trim())) return 'All books must have a full name';
+    if (formData.chapters.some(chapter => !chapter.name.trim())) return 'All chapters must have a name';
     if (formData.versions.some(version => !version.abbrev.trim() || !version.fullName.trim())) return 'All versions must have both abbreviation and full name';
     
     // Validate that all book names are unique
     const bookNames = formData.books.map(b => b.fullName.toLowerCase());
     if (new Set(bookNames).size !== bookNames.length) return 'Book names must be unique';
+    
+    // Validate that all chapter names are unique
+    const chapterNames = formData.chapters.map(c => c.name.toLowerCase());
+    if (new Set(chapterNames).size !== chapterNames.length) return 'Chapter names must be unique';
     
     // Validate that all version abbreviations are unique
     const versionAbbrevs = formData.versions.map(v => v.abbrev.toLowerCase());
@@ -82,6 +97,11 @@
         books[book.fullName] = abbreviations.length > 0 ? abbreviations : [book.fullName];
       });
 
+      const chapters: { [name: string]: number } = {};
+      formData.chapters.forEach(chapter => {
+        chapters[chapter.name] = chapter.number;
+      });
+
       const versions: { [abbrev: string]: string } = {};
       formData.versions.forEach(version => {
         versions[version.abbrev] = version.fullName;
@@ -93,6 +113,7 @@
         name: formData.name.trim(),
         displayName: formData.displayName.trim(),
         books,
+        chapters,
         versions,
         parsingRules: {
           bookPattern: formData.parsingRules.bookPattern || '.*',
@@ -183,7 +204,7 @@
               type="text"
               bind:value={formData.name}
               placeholder="e.g., torah, quran, hadith"
-              class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+              class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-[var(--accent)]"
               style="border-color: var(--border); background-color: var(--bg-primary); color: var(--text-primary);"
               required
             />
@@ -199,7 +220,7 @@
               type="text"
               bind:value={formData.displayName}
               placeholder="e.g., Torah, Quran, Hadith"
-              class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+              class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-[var(--accent)]"
               style="border-color: var(--border); background-color: var(--bg-primary); color: var(--text-primary);"
               required
             />
@@ -214,7 +235,8 @@
             <button
               type="button"
               onclick={addBook}
-              class="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 text-sm"
+              class="px-3 py-1 rounded-md text-sm transition-colors"
+              style="background-color: var(--accent); color: white; border: 1px solid var(--accent);"
             >
               + Add Book
             </button>
@@ -228,7 +250,7 @@
                     type="text"
                     bind:value={book.fullName}
                     placeholder="Full book name (e.g., Genesis, Surah Al-Fatiha)"
-                    class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+                    class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-[var(--accent)]"
               style="border-color: var(--border); background-color: var(--bg-primary); color: var(--text-primary);"
                     required
                   />
@@ -238,7 +260,7 @@
                     type="text"
                     bind:value={book.abbreviations}
                     placeholder="Abbreviations (comma-separated, e.g., Gen, Ge, Gn)"
-                    class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+                    class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-[var(--accent)]"
               style="border-color: var(--border); background-color: var(--bg-primary); color: var(--text-primary);"
                   />
                 </div>
@@ -246,7 +268,60 @@
                   <button
                     type="button"
                     onclick={() => removeBook(index)}
-                    class="px-2 py-2 bg-red-500 text-white rounded-md hover:bg-red-600"
+                    class="px-2 py-2 rounded-md transition-colors"
+                    style="background-color: #dc2626; color: white; border: 1px solid #dc2626;"
+                  >
+                    ×
+                  </button>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        </div>
+
+        <!-- Chapters Section -->
+        <div>
+          <div class="flex justify-between items-center mb-3">
+            <h3 class="text-lg font-medium" style="color: var(--text-primary);">Chapters</h3>
+            <button
+              type="button"
+              onclick={addChapter}
+              class="px-3 py-1 rounded-md text-sm transition-colors"
+              style="background-color: var(--accent); color: white; border: 1px solid var(--accent);"
+            >
+              + Add Chapter
+            </button>
+          </div>
+          
+          <div class="space-y-3">
+            {#each formData.chapters as chapter, index}
+              <div class="flex gap-3 items-center">
+                <div class="flex-1">
+                  <input
+                    type="text"
+                    bind:value={chapter.name}
+                    placeholder="Chapter name (e.g., Chapter 1, Genesis, Al-Fatiha)"
+                    class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-[var(--accent)]"
+                    style="border-color: var(--border); background-color: var(--bg-primary); color: var(--text-primary);"
+                    required
+                  />
+                </div>
+                <div class="flex-1">
+                  <input
+                    type="number"
+                    bind:value={chapter.number}
+                    placeholder="Chapter number"
+                    class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-[var(--accent)]"
+                    style="border-color: var(--border); background-color: var(--bg-primary); color: var(--text-primary);"
+                    required
+                  />
+                </div>
+                {#if formData.chapters.length > 1}
+                  <button
+                    type="button"
+                    onclick={() => removeChapter(index)}
+                    class="px-2 py-2 rounded-md transition-colors"
+                    style="background-color: #dc2626; color: white; border: 1px solid #dc2626;"
                   >
                     ×
                   </button>
@@ -263,7 +338,8 @@
             <button
               type="button"
               onclick={addVersion}
-              class="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 text-sm"
+              class="px-3 py-1 rounded-md text-sm transition-colors"
+              style="background-color: var(--accent); color: white; border: 1px solid var(--accent);"
             >
               + Add Version
             </button>
@@ -277,7 +353,7 @@
                     type="text"
                     bind:value={version.abbrev}
                     placeholder="Version abbreviation (e.g., NIV, KJV, JPS)"
-                    class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+                    class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-[var(--accent)]"
               style="border-color: var(--border); background-color: var(--bg-primary); color: var(--text-primary);"
                     required
                   />
@@ -287,7 +363,7 @@
                     type="text"
                     bind:value={version.fullName}
                     placeholder="Full version name (e.g., New International Version)"
-                    class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+                    class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-[var(--accent)]"
               style="border-color: var(--border); background-color: var(--bg-primary); color: var(--text-primary);"
                     required
                   />
@@ -296,7 +372,8 @@
                   <button
                     type="button"
                     onclick={() => removeVersion(index)}
-                    class="px-2 py-2 bg-red-500 text-white rounded-md hover:bg-red-600"
+                    class="px-2 py-2 rounded-md transition-colors"
+                    style="background-color: #dc2626; color: white; border: 1px solid #dc2626;"
                   >
                     ×
                   </button>
@@ -321,7 +398,7 @@
                 type="text"
                 bind:value={formData.parsingRules.bookPattern}
                 placeholder="Regex pattern for matching book names"
-                class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+                class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-[var(--accent)]"
               style="border-color: var(--border); background-color: var(--bg-primary); color: var(--text-primary);"
               />
             </div>
@@ -335,7 +412,7 @@
                 type="text"
                 bind:value={formData.parsingRules.versionPattern}
                 placeholder="Regex pattern for matching version names"
-                class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+                class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-[var(--accent)]"
               style="border-color: var(--border); background-color: var(--bg-primary); color: var(--text-primary);"
               />
             </div>
@@ -348,14 +425,15 @@
             type="button"
             onclick={onClose}
             class="px-4 py-2 border rounded-md transition-colors"
-            style="border-color: var(--border); color: var(--text-primary); background-color: var(--bg-secondary);"
+            style="border-color: var(--accent); color: var(--accent); background-color: var(--bg-primary);"
             disabled={isSubmitting}
           >
             Cancel
           </button>
           <button
             type="submit"
-            class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
+            class="px-4 py-2 rounded-md transition-colors disabled:opacity-50"
+            style="background-color: var(--accent); color: white; border: 1px solid var(--accent);"
             disabled={isSubmitting}
           >
             {isSubmitting ? 'Publishing...' : 'Publish Configuration'}

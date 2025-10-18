@@ -157,8 +157,8 @@ export const BOOK_TYPES: { [type: string]: BookType } = {
     },
     parsingRules: {
       bookPattern: /^(?:Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|Esther|Job|Psalms|Proverbs|Ecclesiastes|Song|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|Galatians|Ephesians|Philippians|Colossians|Titus|Philemon|Hebrews|James|Jude|Revelation|Tobit|Judith|Wisdom|Sirach|Baruch|Prayer of Manasseh|Psalm 151|Additions to Esther|Additions to Daniel|Bel and the Dragon|Susanna|Prayer of Azariah|Song of the Three Young Men|\d+\s*(?:Samuel|Kings|Chronicles|Corinthians|Thessalonians|Timothy|Peter|John|Maccabees|Esdras))\s+\d+(?::\d+)?(?:\s*[-,]\s*\d+)*$/i,
-      chapterPattern: /^\d+$/,
-      versePattern: /^\d+(?:[-,\s]\d+)*$/,
+      chapterPattern: /^[\w\-`]+$/,
+      versePattern: /^[\w\-`.,\s]+$/,
       versionPattern: /^(KJV|NKJV|NIV|ESV|NASB|NLT|MSG|CEV|NRSV|RSV|ASV|YLT|WEB|GNV|DRB)$/i
     },
     displayFormat: {
@@ -311,8 +311,8 @@ export const BOOK_TYPES: { [type: string]: BookType } = {
     },
     parsingRules: {
       bookPattern: /^(?:Al-|Ash-|Az-|At-|Ad-)?[A-Za-z][A-Za-z-]+(?:\s+[A-Za-z-]+)*\s+\d+(?:[-,\s]\d+)*$/i,
-      chapterPattern: /^\d+$/,
-      versePattern: /^\d+(?:[-,\s]\d+)*$/,
+      chapterPattern: /^[\w\-`]+$/,
+      versePattern: /^[\w\-`.,\s]+$/,
       versionPattern: /^(SAHIH|PICKTHALL|YUSUFALI|SHAKIR|MUHD|CLEARQURAN|SARWAR|KHAN|QARIBULLAH|ARABIC)$/i
     },
     displayFormat: {
@@ -351,8 +351,8 @@ export const BOOK_TYPES: { [type: string]: BookType } = {
     },
     parsingRules: {
       bookPattern: /^(?:Article|Art|Part)\s+\d+(?:\s+[A-Za-z-]+)*\s+\d+(?:[-,\s]\d+)*$/i,
-      chapterPattern: /^\d+$/,
-      versePattern: /^\d+(?:[-,\s]\d+)*$/,
+      chapterPattern: /^[\w\-`]+$/,
+      versePattern: /^[\w\-`.,\s]+$/,
       versionPattern: /^(CCC|YOUCAT|COMPENDIUM)$/i
     },
     displayFormat: {
@@ -390,8 +390,8 @@ export const BOOK_TYPES: { [type: string]: BookType } = {
     },
     parsingRules: {
       bookPattern: /.*/,
-      chapterPattern: /^\d+$/,
-      versePattern: /^\d+(?:[-,\s]\d+)*$/,
+      chapterPattern: /^[\w\-`]+$/,
+      versePattern: /^[\w\-`.,\s]+$/,
       versionPattern: /.*/
     },
     displayFormat: {

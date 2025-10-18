@@ -11,9 +11,7 @@ import ModeToggle from '$components/ModeToggle.svelte';
 import ProfilePopup from '$components/ProfilePopup.svelte';
 import UserBadge from '$components/UserBadge.svelte';
   import { nip19 } from '@nostr/tools';
-  // import { refreshBookConfigurations } from '$lib/bookConfig';
-  // import BookConfigForm from '$components/BookConfigForm.svelte';
-  // import BookConfigList from '$components/BookConfigList.svelte';
+  import BookConfigList from '$components/BookConfigList.svelte';
 
   // Theme configuration
   const theme = getThemeConfig();
@@ -24,7 +22,6 @@ import UserBadge from '$components/UserBadge.svelte';
 
   let { replaceNewCard }: Props = $props();
   let query = $state('');
-  let showBookConfigForm = $state(false);
   let showBookConfigList = $state(false);
   let showSettings = $state(false);
   let showProfilePopup = $state(false);
@@ -111,35 +108,14 @@ import UserBadge from '$components/UserBadge.svelte';
     loadRelayInfo();
   });
 
-  // async function refreshBookConfigs() {
-  //   try {
-  //     await refreshBookConfigurations();
-  //     console.log('Book configurations refreshed successfully');
-  //   } catch (error) {
-  //     console.error('Failed to refresh book configurations:', error);
-  //   }
-  // }
 
-  // function openBookConfigForm() {
-  //   showBookConfigForm = true;
-  // }
+  function openBookConfigList() {
+    showBookConfigList = true;
+  }
 
-  // function closeBookConfigForm() {
-  //   showBookConfigForm = false;
-  // }
-
-  // function onBookConfigSuccess() {
-  //   // Refresh the book configurations after successful creation
-  //   refreshBookConfigs();
-  // }
-
-  // function openBookConfigList() {
-  //   showBookConfigList = true;
-  // }
-
-  // function closeBookConfigList() {
-  //   showBookConfigList = false;
-  // }
+  function closeBookConfigList() {
+    showBookConfigList = false;
+  }
 
   function toggleSettings() {
     showSettings = !showSettings;
@@ -393,33 +369,17 @@ import UserBadge from '$components/UserBadge.svelte';
 </div>
 {/if}
 
-<!-- Book Configuration Buttons - TEMPORARILY DISABLED -->
-<!-- <div class="mt-3 flex gap-2">
-  <button
-    onclick={refreshBookConfigs}
-    class="text-sm px-3 py-1 rounded transition-colors"
-    style="background-color: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border);"
-    title="Refresh book configurations from Nostr events"
-  >
-    🔄 Refresh Books
-  </button>
-  
+<!-- Book Configuration Button -->
+<div class="mt-3">
   <button
     onclick={openBookConfigList}
-    class="text-sm px-3 py-1 bg-blue-100 hover:bg-blue-200 border border-blue-300 rounded text-blue-700 hover:text-blue-900 transition-colors"
+    class="text-sm px-3 py-1 rounded transition-colors"
+    style="background-color: var(--bg-primary); color: var(--accent); border: 1px solid var(--accent);"
     title="View existing book configurations"
   >
-    📚 View Configs
+    View Configs
   </button>
-  
-  <button
-    onclick={openBookConfigForm}
-    class="text-sm px-3 py-1 bg-green-100 hover:bg-green-200 border border-green-300 rounded text-green-700 hover:text-green-900 transition-colors"
-    title="Create a new book configuration"
-  >
-    ➕ Create Config
-  </button>
-</div> -->
+</div>
 
 <!-- Profile Popup -->
 {#if showProfilePopup}
@@ -431,20 +391,10 @@ import UserBadge from '$components/UserBadge.svelte';
   />
 {/if}
 
-<!-- Book Configuration Modals - TEMPORARILY DISABLED -->
-<!-- {#if showBookConfigForm}
-  <BookConfigForm
-    onClose={closeBookConfigForm}
-    onSuccess={onBookConfigSuccess}
-  />
-{/if}
-
+<!-- Book Configuration Modal -->
 {#if showBookConfigList}
   <BookConfigList
     onClose={closeBookConfigList}
-    onCreateNew={() => {
-      closeBookConfigList();
-      openBookConfigForm();
-    }}
+    onCreateNew={() => {}}
   />
-{/if} -->
+{/if}

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { bookConfigurations } from '$lib/bookConfig';
+  import { bookConfigurations, allBookTypes } from '$lib/bookConfig';
+  import { BOOK_TYPES } from '$lib/books';
   import { onMount } from 'svelte';
 
   export let onClose: () => void;
@@ -10,12 +11,44 @@
   let isLoading = true;
 
   onMount(() => {
-    const unsubscribe = bookConfigurations.subscribe((configsList) => {
-      configs = configsList;
-      isLoading = false;
+    // Subscribe to both hardcoded and custom configurations
+    const unsubscribe1 = allBookTypes.subscribe((bookTypes) => {
+      // Convert hardcoded book types to config format
+      const hardcodedConfigs = Object.entries(bookTypes).map(([name, bookType]) => ({
+        id: `hardcoded-${name}`,
+        name: bookType.name,
+        displayName: bookType.displayName,
+        books: bookType.books,
+        versions: bookType.versions,
+        parsingRules: {
+          bookPattern: bookType.parsingRules.bookPattern.toString(),
+          chapterPattern: bookType.parsingRules.chapterPattern.toString(),
+          versePattern: bookType.parsingRules.versePattern.toString(),
+          versionPattern: bookType.parsingRules.versionPattern.toString()
+        },
+        displayFormat: {
+          bookChapterVerse: 'default',
+          withVersion: 'default'
+        },
+        created_at: 0, // Hardcoded configs have no timestamp
+        pubkey: 'system',
+        content: JSON.stringify(bookType),
+        isHardcoded: true
+      }));
+
+      // Get custom configurations from NIP-78 events
+      const unsubscribe2 = bookConfigurations.subscribe((customConfigs) => {
+        configs = [...hardcodedConfigs, ...customConfigs];
+        isLoading = false;
+      });
+
+      return () => {
+        unsubscribe1();
+        unsubscribe2();
+      };
     });
 
-    return unsubscribe;
+    return unsubscribe1;
   });
 
   function selectConfig(config: any) {
@@ -53,7 +86,8 @@
         </div>
         <button
           onclick={onCreateNew}
-          class="mt-3 w-full px-3 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 text-sm"
+          class="mt-3 w-full px-3 py-2 rounded-md text-sm transition-colors"
+          style="background-color: var(--accent); color: white; border: 1px solid var(--accent);"
         >
           + Create New Configuration
         </button>
@@ -80,12 +114,17 @@
                 <div class="font-medium" style="color: var(--text-primary);">{config.displayName}</div>
                 <div class="text-sm mt-1" style="color: var(--text-secondary);">
                   Type: {config.name}
+                  {#if config.isHardcoded}
+                    <span class="ml-2 px-2 py-1 text-xs rounded" style="background-color: var(--bg-secondary); color: var(--text-secondary);">Built-in</span>
+                  {/if}
                 </div>
                 <div class="text-xs mt-1" style="color: var(--text-muted);">
                   {Object.keys(config.books).length} books • {Object.keys(config.versions).length} versions
                 </div>
                 <div class="text-xs" style="color: var(--text-muted);">
-                  {formatDate(config.created_at)}
+                  {#if !config.isHardcoded}
+                    {formatDate(config.created_at)}
+                  {/if}
                 </div>
               </button>
             {/each}
@@ -137,19 +176,19 @@
             <div class="p-3 rounded-md space-y-2" style="background-color: var(--bg-secondary);">
               <div>
                 <span class="text-sm font-medium" style="color: var(--text-primary);">Book Pattern:</span>
-                <code class="text-sm ml-2" style="color: var(--text-secondary);">{selectedConfig.parsingRules.bookPattern}</code>
+                <code class="text-sm ml-2 px-2 py-1 rounded font-mono" style="background-color: var(--bg-secondary); color: var(--accent); border: 1px solid var(--border);">{selectedConfig.parsingRules.bookPattern}</code>
               </div>
               <div>
                 <span class="text-sm font-medium" style="color: var(--text-primary);">Chapter Pattern:</span>
-                <code class="text-sm ml-2" style="color: var(--text-secondary);">{selectedConfig.parsingRules.chapterPattern}</code>
+                <code class="text-sm ml-2 px-2 py-1 rounded font-mono" style="background-color: var(--bg-secondary); color: var(--accent); border: 1px solid var(--border);">{selectedConfig.parsingRules.chapterPattern}</code>
               </div>
               <div>
                 <span class="text-sm font-medium" style="color: var(--text-primary);">Verse Pattern:</span>
-                <code class="text-sm ml-2" style="color: var(--text-secondary);">{selectedConfig.parsingRules.versePattern}</code>
+                <code class="text-sm ml-2 px-2 py-1 rounded font-mono" style="background-color: var(--bg-secondary); color: var(--accent); border: 1px solid var(--border);">{selectedConfig.parsingRules.versePattern}</code>
               </div>
               <div>
                 <span class="text-sm font-medium" style="color: var(--text-primary);">Version Pattern:</span>
-                <code class="text-sm ml-2" style="color: var(--text-secondary);">{selectedConfig.parsingRules.versionPattern}</code>
+                <code class="text-sm ml-2 px-2 py-1 rounded font-mono" style="background-color: var(--bg-secondary); color: var(--accent); border: 1px solid var(--border);">{selectedConfig.parsingRules.versionPattern}</code>
               </div>
             </div>
           </div>
@@ -158,14 +197,25 @@
           <div>
             <h4 class="text-md font-medium mb-3" style="color: var(--text-primary);">Metadata</h4>
             <div class="p-3 rounded-md space-y-2" style="background-color: var(--bg-secondary);">
-              <div>
-                <span class="text-sm font-medium" style="color: var(--text-primary);">Created:</span>
-                <span class="text-sm ml-2" style="color: var(--text-secondary);">{formatDate(selectedConfig.created_at)}</span>
-              </div>
-              <div>
-                <span class="text-sm font-medium" style="color: var(--text-primary);">Publisher:</span>
-                <code class="text-sm ml-2" style="color: var(--text-secondary);">{selectedConfig.pubkey.slice(0, 16)}...</code>
-              </div>
+              {#if selectedConfig.isHardcoded}
+                <div>
+                  <span class="text-sm font-medium" style="color: var(--text-primary);">Type:</span>
+                  <span class="text-sm ml-2" style="color: var(--text-secondary);">Built-in Configuration</span>
+                </div>
+                <div>
+                  <span class="text-sm font-medium" style="color: var(--text-primary);">Source:</span>
+                  <span class="text-sm ml-2" style="color: var(--text-secondary);">Wikistr Core</span>
+                </div>
+              {:else}
+                <div>
+                  <span class="text-sm font-medium" style="color: var(--text-primary);">Created:</span>
+                  <span class="text-sm ml-2" style="color: var(--text-secondary);">{formatDate(selectedConfig.created_at)}</span>
+                </div>
+                <div>
+                  <span class="text-sm font-medium" style="color: var(--text-primary);">Publisher:</span>
+                  <code class="text-sm ml-2" style="color: var(--text-secondary);">{selectedConfig.pubkey.slice(0, 16)}...</code>
+                </div>
+              {/if}
             </div>
           </div>
 
