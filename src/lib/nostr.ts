@@ -96,11 +96,16 @@ export const account = readable<NostrUser | null>(null, (set) => {
       );
       
       const data = await Promise.race([loadPromise, timeoutPromise]);
-      if (data) {
+      if (data && data.pubkey !== '0000000000000000000000000000000000000000000000000000000000000000') {
         console.log('Loading account from localStorage:', data.pubkey);
         set(data);
       } else {
-        console.log('No account found in localStorage');
+        console.log('No valid account found in localStorage');
+        // Clear invalid dummy account from localStorage
+        if (data && data.pubkey === '0000000000000000000000000000000000000000000000000000000000000000') {
+          await idbkv.del('wikistr:loggedin');
+          console.log('Cleared dummy account from localStorage');
+        }
       }
     } catch (error) {
       console.error('Failed to load account from localStorage:', error);
@@ -112,21 +117,23 @@ export const account = readable<NostrUser | null>(null, (set) => {
   return () => {};
 });
 
-// Temporarily disable automatic WOT calculation to prevent startup doom loop
-// const unsub = account.subscribe((account) => {
-//   if (account) {
-//     console.log('Account loaded, starting WOT calculation for:', account.pubkey);
-//     setTimeout(() => {
-//       // Run WOT calculation in background without blocking UI
-//       setWOT(account.pubkey).catch(error => {
-//         console.error('Background WOT calculation failed:', error);
-//       });
-//       unsub();
-//     }, 300);
-//   } else {
-//     console.log('No account loaded, skipping WOT calculation');
-//   }
-// });
+let lastWotPubkey: string | null = null;
+const unsub = account.subscribe((account) => {
+  if (account && account.pubkey !== lastWotPubkey) {
+    lastWotPubkey = account.pubkey;
+    console.log('Account loaded, starting WOT calculation for:', account.pubkey);
+    setTimeout(() => {
+      // Run WOT calculation in background without blocking UI
+      setWOT(account.pubkey).catch(error => {
+        console.error('Background WOT calculation failed:', error);
+      });
+      unsub();
+    }, 300);
+  } else if (!account) {
+    lastWotPubkey = null;
+    console.log('No account loaded, skipping WOT calculation');
+  }
+});
 
 // ensure these subscriptions are always on
 account.subscribe(() => {});
@@ -195,7 +202,7 @@ export async function getBasicUserWikiRelays(pubkey: string): Promise<string[]> 
   if (list.length < 2) {
     // Use relayService to get default wiki relays as fallback
     const defaultRelays = await relayService.getRelaysForOperation('anonymous', 'wiki-read');
-    list = unique(list, defaultRelays);
+    list = unique([...list, ...defaultRelays]);
     list = deduplicateRelays(list);
     list = list.filter(url => !normalizedBlocked.has(url));
   }

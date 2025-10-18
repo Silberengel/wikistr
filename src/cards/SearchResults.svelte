@@ -127,11 +127,8 @@
       const userPubkey = $account?.pubkey || 'anonymous';
       const allWikiRelays = await relayService.getRelaysForOperation(userPubkey, 'wiki-read');
       const allSocialRelays = await relayService.getRelaysForOperation(userPubkey, 'social-read');
-      // Note: metadata relays are universal, not theme-specific
-      const allMetadataRelays = await relayService.getRelaysForOperation(userPubkey, 'metadata-read');
-      
       // Combine all relays (metadata relays are already universal via relayService)
-      const allRelays = [...new Set([...allWikiRelays, ...allSocialRelays, ...allMetadataRelays])];
+      const allRelays = [...new Set([...allWikiRelays, ...allSocialRelays])];
       
       console.log(`🔍 Searching all ${allRelays.length} available relays for: "${query}"`);
 

@@ -4,7 +4,7 @@ import { DEFAULT_METADATA_RELAYS, DEFAULT_WRITE_RELAYS, DEFAULT_SEARCH_RELAYS } 
 import { getThemeConfig } from '$lib/themes';
 import type { NostrEvent } from '@nostr/tools/pure';
 
-export type RelaySetType = 'wiki-read' | 'wiki-write' | 'social-read' | 'social-write' | 'metadata-read' | 'fallback-write';
+export type RelaySetType = 'wiki-read' | 'wiki-write' | 'social-read' | 'social-write' | 'metadata-read' | 'fallback-write' | 'inbox-read';
 
 export interface QueryResult<T> {
   events: T[];
@@ -86,6 +86,10 @@ class RelayService {
         case 'social-write':
           relays = [...themeSocialRelays];
           break;
+        case 'inbox-read':
+          // For inbox, start with empty array - only use user's relay list
+          relays = [];
+          break;
         case 'metadata-read':
           relays = [...themeSocialRelays, ...DEFAULT_METADATA_RELAYS];
           break;
@@ -97,8 +101,15 @@ class RelayService {
       // Add user's relay list if available and not anonymous
       if (userPubkey !== 'anonymous' && userPubkey !== '0000000000000000000000000000000000000000000000000000000000000000') {
         try {
-          const userRelays = await this.loadUserRelayList(userPubkey);
-          relays = [...relays, ...userRelays];
+          if (type === 'inbox-read') {
+            // For inbox, only use user's inbox relays (read-only)
+            const userInboxRelays = await this.loadUserInboxRelays(userPubkey);
+            relays = [...userInboxRelays];
+          } else {
+            // For other types, add user's inbox relays to theme relays
+            const userInboxRelays = await this.loadUserInboxRelays(userPubkey);
+            relays = [...relays, ...userInboxRelays];
+          }
         } catch (error) {
           console.warn('Failed to load user relay list:', error);
           // Continue with default relays
@@ -143,6 +154,62 @@ class RelayService {
     );
     
     return Promise.race([loadPromise, timeoutPromise]);
+  }
+  
+  /**
+   * Load user's inbox relays (read-only) with timeout protection
+   */
+  private async loadUserInboxRelays(userPubkey: string): Promise<string[]> {
+    const timeoutPromise = new Promise<string[]>((_, reject) => 
+      setTimeout(() => reject(new Error('Inbox relay list timeout')), 3000)
+    );
+    
+    const loadPromise = loadRelayList(userPubkey).then(list => 
+      list.items
+        .filter(ri => ri.url && ri.read) // Only read-only relays (inboxes)
+        .map(ri => this.normalizeRelayUrl(ri.url))
+        .filter(url => url && (url.startsWith('ws://') || url.startsWith('wss://')))
+    );
+    
+    return Promise.race([loadPromise, timeoutPromise]);
+  }
+  
+  /**
+   * Load user's outbox relays (write-only) with timeout protection
+   */
+  private async loadUserOutboxRelays(userPubkey: string): Promise<string[]> {
+    const timeoutPromise = new Promise<string[]>((_, reject) => 
+      setTimeout(() => reject(new Error('Outbox relay list timeout')), 3000)
+    );
+    
+    const loadPromise = loadRelayList(userPubkey).then(list => 
+      list.items
+        .filter(ri => ri.url && ri.write) // Only write-only relays (outboxes)
+        .map(ri => this.normalizeRelayUrl(ri.url))
+        .filter(url => url && (url.startsWith('ws://') || url.startsWith('wss://')))
+    );
+    
+    return Promise.race([loadPromise, timeoutPromise]);
+  }
+  
+  /**
+   * Load both inbox and outbox relays for settings popup
+   */
+  async loadUserRelayLists(userPubkey: string): Promise<{ inbox: string[]; outbox: string[] }> {
+    try {
+      const [inboxRelays, outboxRelays] = await Promise.all([
+        this.loadUserInboxRelays(userPubkey),
+        this.loadUserOutboxRelays(userPubkey)
+      ]);
+      
+      return {
+        inbox: inboxRelays,
+        outbox: outboxRelays
+      };
+    } catch (error) {
+      console.warn('Failed to load user relay lists:', error);
+      return { inbox: [], outbox: [] };
+    }
   }
   
   /**
