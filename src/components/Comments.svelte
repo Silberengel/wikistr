@@ -462,7 +462,7 @@
   
   <!-- Comment Entry Form -->
   {#if $account}
-    <div class="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+    <div class="mb-6 p-4 bg-gray-100 rounded-lg border border-gray-200">
       <form onsubmit={submitTopLevelComment}>
         <div class="mb-3">
           <textarea
@@ -499,8 +499,8 @@
       {#each threadedComments as threadedComment (threadedComment.comment.id)}
         {@const comment = threadedComment.comment}
         <!-- Top-level comment -->
-        <div class="py-4 px-4 bg-gray-50 rounded-lg border border-gray-200">
-          <div class="flex items-center mb-2">
+        <div class="py-2 px-4 bg-gray-25 rounded-lg border border-gray-200">
+          <div class="flex items-center mb-1">
             <div class="flex items-center space-x-3 flex-1 min-w-0">
               <UserBadge pubkey={comment.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" hideSearchIcon={false} />
               <span class="text-xs text-gray-500 whitespace-nowrap">
@@ -542,6 +542,21 @@
             </div>
           </div>
           
+          <!-- Show blurb if this is a reply -->
+          {#if comment.tags.find(([k]) => k === 'e')}
+            {@const parentETag = comment.tags.find(([k]) => k === 'e')}
+            {#if parentETag}
+              {@const parentComment = comments.find(c => c.id === parentETag[1])}
+              {#if parentComment}
+                <div class="mb-1 text-xs text-gray-500 bg-gray-100 px-3 py-0.5 rounded-full flex items-center gap-2">
+                  <span>reply to:</span>
+                  <UserBadge pubkey={parentComment.pubkey} size="tiny" picOnly={true} />
+                  <span>{parentComment.content.length > 150 ? parentComment.content.substring(0, 150) + '...' : parentComment.content}</span>
+                </div>
+              {/if}
+            {/if}
+          {/if}
+
           <div class="text-gray-900 leading-relaxed mb-4">
             <AsciidocContent event={comment} createChild={() => {}} />
           </div>
@@ -549,6 +564,12 @@
           <!-- Reply Form for top-level comment -->
           {#if replyingTo === comment.id && $account}
             <div class="mt-4 border-l-4 border-espresso-400 pl-4 py-3">
+              <!-- Blurb showing parent comment -->
+              <div class="mb-3 text-xs text-gray-500 bg-gray-100 px-3 py-0.5 rounded-full flex items-center gap-2">
+                <span>reply to:</span>
+                <UserBadge pubkey={comment.pubkey} size="tiny" picOnly={true} />
+                <span>{comment.content.length > 150 ? comment.content.substring(0, 150) + '...' : comment.content}</span>
+              </div>
               <textarea
                 bind:value={replyText}
                 placeholder="Write a reply..."
@@ -582,7 +603,7 @@
             <div class="mt-6 ml-4 border-l-2 border-espresso-400 pl-4 space-y-3">
               {#each threadedComment.replies as replyThread (replyThread.comment.id)}
                 {@const reply = replyThread.comment}
-                <div class="py-3 px-3 rounded-lg border border-gray-100" style="background-color: var(--theme-bg);">
+                <div class="py-1 px-3 rounded-lg border border-gray-100 bg-gray-25">
                   <div class="flex items-center mb-1">
                     <div class="flex items-center space-x-3 flex-1 min-w-0">
                       <UserBadge pubkey={reply.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" hideSearchIcon={false} />
@@ -626,14 +647,35 @@
                   </div>
                   
                   
-                  <div class="text-gray-900 leading-relaxed mb-3">
-                    <AsciidocContent event={reply} createChild={() => {}} />
-                  </div>
+                <!-- Show blurb if this is a reply -->
+                {#if reply.tags.find(([k]) => k === 'e')}
+                  {@const parentETag = reply.tags.find(([k]) => k === 'e')}
+                  {#if parentETag}
+                    {@const parentComment = comments.find(c => c.id === parentETag[1])}
+                    {#if parentComment}
+                      <div class="mb-1 text-xs text-gray-500 bg-gray-100 px-3 py-0.5 rounded-full flex items-center gap-2">
+                        <span>reply to:</span>
+                        <UserBadge pubkey={parentComment.pubkey} size="tiny" picOnly={true} />
+                        <span>{parentComment.content.length > 150 ? parentComment.content.substring(0, 150) + '...' : parentComment.content}</span>
+                      </div>
+                    {/if}
+                  {/if}
+                {/if}
 
-                  <!-- Reply Form for level 2 -->
-                  {#if replyingTo === reply.id && $account}
-                    <div class="mt-3 border-l-4 border-espresso-400 pl-4 py-3">
-                      <textarea
+                <div class="text-gray-900 leading-relaxed mb-3">
+                  <AsciidocContent event={reply} createChild={() => {}} />
+                </div>
+
+              <!-- Reply Form for level 2 -->
+              {#if replyingTo === reply.id && $account}
+                <div class="mt-3 border-l-4 border-espresso-400 pl-4 py-3">
+                  <!-- Blurb showing parent comment -->
+                  <div class="mb-3 text-xs text-gray-500 bg-gray-100 px-3 py-0.5 rounded-full flex items-center gap-2">
+                    <span>reply to:</span>
+                    <UserBadge pubkey={reply.pubkey} size="tiny" picOnly={true} />
+                    <span>{reply.content.length > 150 ? reply.content.substring(0, 150) + '...' : reply.content}</span>
+                  </div>
+                  <textarea
                         bind:value={replyText}
                         placeholder="Write a reply..."
                         class="w-full p-3 border rounded-lg text-sm resize-none"
@@ -666,7 +708,7 @@
                     <div class="mt-5 ml-4 border-l-2 border-brown-400 pl-4 space-y-2">
                       {#each replyThread.replies as nestedReplyThread (nestedReplyThread.comment.id)}
                         {@const nestedReply = nestedReplyThread.comment}
-                        <div class="py-2 px-3 bg-gray-50 rounded border border-gray-200">
+                        <div class="py-1 px-3 bg-gray-25 rounded border border-gray-200">
                           <div class="flex items-center mb-1">
                             <div class="flex items-center space-x-3 flex-1 min-w-0">
                               <UserBadge pubkey={nestedReply.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" hideSearchIcon={false} />
@@ -697,6 +739,20 @@
                             </div>
                           </div>
                           
+                          <!-- Show blurb if this is a reply -->
+                          {#if nestedReply.tags.find(([k]) => k === 'e')}
+                            {@const parentETag = nestedReply.tags.find(([k]) => k === 'e')}
+                            {#if parentETag}
+                              {@const parentComment = comments.find(c => c.id === parentETag[1])}
+                              {#if parentComment}
+                                <div class="mb-1 text-xs text-gray-500 bg-gray-100 px-1 py-0 rounded-full flex items-center gap-1 leading-none">
+                                  <span>reply to:</span>
+                                  <UserBadge pubkey={parentComment.pubkey} size="tiny" picOnly={true} />
+                                  <span>{parentComment.content.length > 150 ? parentComment.content.substring(0, 150) + '...' : parentComment.content}</span>
+                                </div>
+                              {/if}
+                            {/if}
+                          {/if}
                           
                           <div class="text-gray-900 leading-relaxed mb-2">
                             <AsciidocContent event={nestedReply} createChild={() => {}} />

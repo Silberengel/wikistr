@@ -13,9 +13,10 @@
     showAvatar?: boolean;
     onProfileClick?: (pubkey: string) => void;
     hideSearchIcon?: boolean;
+    picOnly?: boolean;
   }
 
-  let { pubkey, createChild = undefined, size = 'medium', showAvatar = true, onProfileClick, hideSearchIcon = false }: Props = $props();
+  let { pubkey, createChild = undefined, size = 'medium', showAvatar = true, onProfileClick, hideSearchIcon = false, picOnly = false }: Props = $props();
 
   onMount(async () => {
     // Set immediate fallback user
@@ -82,7 +83,7 @@
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div class="inline-flex items-center {config.gap}">
+<div class="inline-flex items-center {picOnly ? '' : config.gap}">
   {#if showAvatar}
     {#if user?.image}
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -107,24 +108,26 @@
     {/if}
   {/if}
   
-  <span 
-    class="text-gray-600 font-[600] {config.textSize} cursor-pointer hover:text-gray-800 transition-colors" 
-    title={user?.npub}
-    onclick={handleProfileClick}
-  >
-    {user?.shortName || pubkey}
-  </span>
-  
-  <!-- Search icon for article search (except in comments and NewSearch Silberengel) -->
-  {#if createChild && !hideSearchIcon}
-    <button
-      class="ml-1 p-1 rounded hover:bg-gray-100 transition-colors"
-      title="Search articles by this user"
-      onclick={handleSearchClick}
+  {#if !picOnly}
+    <span 
+      class="text-gray-600 font-[600] {config.textSize} cursor-pointer hover:text-gray-800 transition-colors" 
+      title={user?.npub}
+      onclick={handleProfileClick}
     >
-      <svg class="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-      </svg>
-    </button>
+      {user?.shortName || pubkey}
+    </span>
+    
+    <!-- Search icon for article search (except in comments and NewSearch Silberengel) -->
+    {#if createChild && !hideSearchIcon}
+      <button
+        class="ml-1 p-1 rounded hover:bg-gray-100 transition-colors"
+        title="Search articles by this user"
+        onclick={handleSearchClick}
+      >
+        <svg class="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+        </svg>
+      </button>
+    {/if}
   {/if}
 </div>

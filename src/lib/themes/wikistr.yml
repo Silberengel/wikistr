@@ -17,6 +17,8 @@ relays:
     - wss://nostr.land
     - wss://aggr.nostr.land
     - wss://nostr.sovbit.host
+    - wss://bevo.nostr1.com
+    - wss://freelay.sovbit.host
 showBibleLinks: false
 searchHelpText: |
   Search for articles by title, content, or author. Use "author:pubkey" to find articles by a specific author.
