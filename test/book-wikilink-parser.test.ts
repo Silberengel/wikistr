@@ -183,5 +183,51 @@ describe('BookWikilinkParser', () => {
       expect(result?.references[0].section).toEqual(['4', '5', '6', '7', '8', '9']);
     });
   });
+
+  describe('Range search and ordering', () => {
+    it('should handle range like romans 3:4-6', () => {
+      const result = parseBookWikilink('[[book::romans 3:4-6]]');
+      expect(result).not.toBeNull();
+      expect(result?.references[0].title).toBe('romans');
+      expect(result?.references[0].chapter).toBe('3');
+      expect(result?.references[0].section).toEqual(['4', '5', '6']);
+    });
+
+    it('should expand ranges correctly for search', () => {
+      const result = parseBookWikilink('[[book::bible | romans 3:4-6]]');
+      expect(result).not.toBeNull();
+      const tags = bookReferenceToTags(result!.references[0]);
+      
+      // Should have individual section tags: s:4, s:5, s:6
+      const sectionTags = tags.filter(([tag]) => tag === 's');
+      expect(sectionTags.length).toBe(3);
+      expect(sectionTags.map(([, v]) => v)).toEqual(['4', '5', '6']);
+    });
+
+    it('should handle single section', () => {
+      const result = parseBookWikilink('[[book::romans 3:4]]');
+      expect(result).not.toBeNull();
+      expect(result?.references[0].section).toEqual(['4']);
+    });
+
+    it('should handle non-contiguous sections', () => {
+      const result = parseBookWikilink('[[book::romans 3:4,6,8]]');
+      expect(result).not.toBeNull();
+      expect(result?.references[0].section).toEqual(['4', '6', '8']);
+    });
+
+    it('should handle mixed ranges and individual sections', () => {
+      const result = parseBookWikilink('[[book::romans 3:4-6,8,10-12]]');
+      expect(result).not.toBeNull();
+      const sections = result?.references[0].section || [];
+      expect(sections).toContain('4');
+      expect(sections).toContain('5');
+      expect(sections).toContain('6');
+      expect(sections).toContain('8');
+      expect(sections).toContain('10');
+      expect(sections).toContain('11');
+      expect(sections).toContain('12');
+    });
+  });
 });
 

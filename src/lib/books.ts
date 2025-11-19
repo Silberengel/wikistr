@@ -663,25 +663,42 @@ export function generateBookSearchQuery(references: BookReference[], bookType: s
 
 /**
  * Check if an event is a book event (based on generic book tags)
+ * Supports both old format (type/book/chapter/verse/version) and NKBIP-08 format (C/T/c/s/v)
  */
 export function isBookEvent(event: BookEvent, bookType?: string): boolean {
-  // Check for generic book tags
+  // Check for NKBIP-08 format tags (C/T/c/s/v)
+  const collectionTag = event.tags.find(([tag]) => tag === 'C');
+  const titleTag = event.tags.find(([tag]) => tag === 'T');
+  const chapterTagNKBIP = event.tags.find(([tag]) => tag === 'c');
+  const sectionTag = event.tags.find(([tag]) => tag === 's');
+  const versionTagNKBIP = event.tags.find(([tag]) => tag === 'v');
+  
+  // Check for old format tags (type/book/chapter/verse/version)
   const typeTag = event.tags.find(([tag]) => tag === 'type');
   const bookTag = event.tags.find(([tag]) => tag === 'book');
   const chapterTag = event.tags.find(([tag]) => tag === 'chapter');
+  const verseTag = event.tags.find(([tag]) => tag === 'verse');
   const versionTag = event.tags.find(([tag]) => tag === 'version');
   
-  // If bookType is specified, check if type matches
-  if (bookType && typeTag && typeTag[1] !== bookType) {
-    return false;
+  // If bookType is specified, check if collection/type matches
+  if (bookType) {
+    if (collectionTag && collectionTag[1] !== bookType) {
+      return false;
+    }
+    if (typeTag && typeTag[1] !== bookType) {
+      return false;
+    }
   }
   
-  // It's a book event if it has the type tag OR has generic book tags
-  return !!typeTag || !!bookTag || !!chapterTag || !!versionTag;
+  // It's a book event if it has NKBIP-08 tags OR old format tags
+  return !!(collectionTag || titleTag || chapterTagNKBIP || sectionTag || versionTagNKBIP) ||
+         !!(typeTag || bookTag || chapterTag || verseTag || versionTag);
 }
 
 /**
  * Extract book metadata from event tags
+ * Supports both old format (type/book/chapter/verse/version) and NKBIP-08 format (C/T/c/s/v)
+ * Returns metadata in a normalized format for backward compatibility
  */
 export function extractBookMetadata(event: BookEvent): {
   type?: string;
@@ -692,23 +709,82 @@ export function extractBookMetadata(event: BookEvent): {
 } {
   const metadata: any = {};
   
-  for (const [tag, value] of event.tags) {
-    switch (tag) {
-      case 'type':
-        metadata.type = value;
-        break;
-      case 'book':
-        metadata.book = value;
-        break;
-      case 'chapter':
-        metadata.chapter = value;
-        break;
-      case 'verse':
-        metadata.verse = value;
-        break;
-      case 'version':
-        metadata.version = value;
-        break;
+  // First, check for NKBIP-08 format tags
+  const collectionTag = event.tags.find(([tag]) => tag === 'C');
+  const titleTag = event.tags.find(([tag]) => tag === 'T');
+  const chapterTagNKBIP = event.tags.find(([tag]) => tag === 'c');
+  const sectionTags = event.tags.filter(([tag]) => tag === 's').map(([, value]) => value);
+  const versionTags = event.tags.filter(([tag]) => tag === 'v').map(([, value]) => value);
+  
+  if (collectionTag) {
+    metadata.type = collectionTag[1];
+  }
+  if (titleTag) {
+    // Convert normalized title back to display format if possible
+    // For now, just use the normalized value - can be enhanced later
+    metadata.book = titleTag[1];
+  }
+  if (chapterTagNKBIP) {
+    metadata.chapter = chapterTagNKBIP[1];
+  }
+  if (sectionTags.length > 0) {
+    // Handle multiple sections
+    if (sectionTags.length === 1) {
+      // Single section: just use it
+      metadata.verse = sectionTags[0];
+    } else {
+      // Multiple sections: try to detect if it's a continuous range
+      const sortedSections = sectionTags.map(s => parseInt(s, 10)).filter(n => !isNaN(n)).sort((a, b) => a - b);
+      if (sortedSections.length === sectionTags.length) {
+        // All sections are numeric - check if they form a continuous range
+        const isContinuous = sortedSections.every((val, idx) => 
+          idx === 0 || val === sortedSections[idx - 1] + 1
+        );
+        if (isContinuous) {
+          // It's a range: "16-18" format
+          metadata.verse = `${sortedSections[0]}-${sortedSections[sortedSections.length - 1]}`;
+        } else {
+          // Not continuous: join with commas "16,18,20"
+          metadata.verse = sectionTags.join(',');
+        }
+      } else {
+        // Some non-numeric sections: just join with commas
+        metadata.verse = sectionTags.join(',');
+      }
+    }
+  }
+  if (versionTags.length > 0) {
+    // Handle multiple versions
+    if (versionTags.length === 1) {
+      // Single version: just use it
+      metadata.version = versionTags[0];
+    } else {
+      // Multiple versions: join with space (e.g., "kjv niv")
+      // This preserves all version information for display/search
+      metadata.version = versionTags.join(' ');
+    }
+  }
+  
+  // Fall back to old format tags if NKBIP-08 tags not found
+  if (!collectionTag && !titleTag) {
+    for (const [tag, value] of event.tags) {
+      switch (tag) {
+        case 'type':
+          metadata.type = value;
+          break;
+        case 'book':
+          metadata.book = value;
+          break;
+        case 'chapter':
+          metadata.chapter = value;
+          break;
+        case 'verse':
+          metadata.verse = value;
+          break;
+        case 'version':
+          metadata.version = value;
+          break;
+      }
     }
   }
   
@@ -771,7 +847,56 @@ export function generateBookTitle(metadata: { type?: string; book?: string; chap
 }
 
 /**
+ * Expand a verse string into individual section numbers
+ * Handles ranges (e.g., "16-18" -> ["16", "17", "18"]) and comma-separated lists
+ */
+function expandVerseToSections(verse: string): string[] {
+  const sections: string[] = [];
+  const parts = verse.split(',').map(p => p.trim());
+  
+  for (const part of parts) {
+    if (part.includes('-')) {
+      // It's a range
+      const [start, end] = part.split('-').map(s => parseInt(s.trim(), 10));
+      if (!isNaN(start) && !isNaN(end) && start <= end) {
+        for (let i = start; i <= end; i++) {
+          sections.push(i.toString());
+        }
+      } else {
+        // Invalid range, just add as-is
+        sections.push(part);
+      }
+    } else {
+      // Single section
+      sections.push(part);
+    }
+  }
+  
+  return sections;
+}
+
+/**
+ * Extract all section numbers from an event (from NKBIP-08 s tags or old verse tag)
+ */
+function extractEventSections(event: BookEvent): string[] {
+  // Check for NKBIP-08 format first
+  const sectionTags = event.tags.filter(([tag]) => tag === 's').map(([, value]) => value);
+  if (sectionTags.length > 0) {
+    return sectionTags;
+  }
+  
+  // Fall back to old format
+  const verseTag = event.tags.find(([tag]) => tag === 'verse');
+  if (verseTag && verseTag[1]) {
+    return expandVerseToSections(verseTag[1]);
+  }
+  
+  return [];
+}
+
+/**
  * Check if a book event matches a search query
+ * For section ranges, matches if the event contains ANY section in the range
  */
 export function matchesBookQuery(event: BookEvent, query: string | { references: BookReference[], version?: string }, bookType: string): boolean {
   if (!isBookEvent(event, bookType)) {
@@ -793,25 +918,50 @@ export function matchesBookQuery(event: BookEvent, query: string | { references:
   // Handle query object case
   // If a specific version is requested, check if this event matches that version
   if (query.version && metadata.version) {
-    if (metadata.version.toLowerCase() !== query.version.toLowerCase()) {
-      return false; // Version doesn't match
+    // Handle multiple versions (space-separated)
+    const queryVersions = query.version.toLowerCase().split(/\s+/);
+    const eventVersions = metadata.version.toLowerCase().split(/\s+/);
+    const hasMatchingVersion = queryVersions.some(qv => eventVersions.includes(qv));
+    if (!hasMatchingVersion) {
+      return false; // No version matches
     }
   }
   
+  // Extract sections from the event
+  const eventSections = extractEventSections(event);
+  
   // Check if any of the references match
   for (const ref of query.references) {
-    if (metadata.book && ref.book.toLowerCase() === metadata.book.toLowerCase()) {
-      if (ref.chapter && metadata.chapter && ref.chapter.toString() === metadata.chapter) {
-        if (ref.verse && metadata.verse) {
-          // Check if verses match (this is a simplified check)
-          return metadata.verse.includes(ref.verse) || ref.verse.includes(metadata.verse);
-        }
-        return true; // Chapter matches
-      }
-      if (!ref.chapter) {
-        return true; // Just book matches
-      }
+    // Check book match
+    if (!metadata.book || ref.book.toLowerCase() !== metadata.book.toLowerCase()) {
+      continue;
     }
+    
+    // Check chapter match
+    if (ref.chapter) {
+      if (!metadata.chapter || ref.chapter.toString() !== metadata.chapter) {
+        continue;
+      }
+    } else {
+      // No chapter in query, but event has chapter - still match (book-level match)
+    }
+    
+    // Check section/verse match
+    if (ref.verse) {
+      // Expand the query verse into individual sections
+      const querySections = expandVerseToSections(ref.verse);
+      
+      // Check if ANY query section matches ANY event section
+      const hasMatchingSection = querySections.some(qs => eventSections.includes(qs));
+      if (!hasMatchingSection) {
+        continue; // No section matches, try next reference
+      }
+    } else if (ref.chapter && eventSections.length > 0) {
+      // Query has chapter but no verse, event has sections - still match (chapter-level match)
+    }
+    
+    // All checks passed for this reference
+    return true;
   }
   
   return false;
