@@ -281,14 +281,14 @@
           
           // Create a query for each batch
           for (const batch of batches) {
-            queries.push(
-              relayService.queryEvents(
-                userPubkey,
-                'wiki-read',
+          queries.push(
+            relayService.queryEvents(
+              userPubkey,
+              'wiki-read',
                 [{ kinds: [reactionKind], '#e': batch, limit: 200 }],
-                { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
-              )
-            );
+              { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+            )
+          );
           }
         }
       }

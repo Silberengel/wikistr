@@ -150,7 +150,7 @@ describe('Bible Integration Tests with Real Test Files', () => {
       expect(kjvMeta).toBeDefined();
       expect(nivMeta).toBeDefined();
       expect(esvMeta).toBeDefined();
-      
+
       // Versions should be different (may be normalized)
       expect(kjvMeta.version).toBeDefined();
       expect(nivMeta.version).toBeDefined();

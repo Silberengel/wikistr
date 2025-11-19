@@ -254,10 +254,10 @@
         if (!foundAny && !cachedMatches.length) {
           tried = true;
         }
-      }).catch(error => {
-        console.error('Search error:', error);
+        }).catch(error => {
+          console.error('Search error:', error);
         tried = true;
-      });
+        });
       
       // Ensure tried is set after timeout
       timeoutPromise.then(() => {

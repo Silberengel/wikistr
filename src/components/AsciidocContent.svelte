@@ -31,6 +31,7 @@
 
   let authorPreferredWikiAuthors = $state<string[]>([]);
   let htmlContent = $state<string>('');
+  let isLoading = $state(false);
   let contentDiv: HTMLElement;
   let userCache = $state<Map<string, any>>(new Map());
   
@@ -576,21 +577,21 @@
           const lang = currentLang ? currentLang[1] : null;
           
           try {
-            if (lang && lang !== 'undefined' && lang !== 'none') {
+          if (lang && lang !== 'undefined' && lang !== 'none') {
               // Check if the language is registered in highlight.js
               const language = hljs.getLanguage(lang);
               if (language) {
                 // Language is registered, highlight with it
-                hljs.highlightElement(element);
+            hljs.highlightElement(element);
               } else {
                 // Language not registered, remove the language class and try auto-detect
                 // This prevents the warning about missing language module
                 element.className = element.className.replace(/language-\w+/g, '');
                 hljs.highlightElement(element);
               }
-            } else {
-              // No language class, try to auto-detect
-              hljs.highlightElement(element);
+          } else {
+            // No language class, try to auto-detect
+            hljs.highlightElement(element);
             }
           } catch (error) {
             // Silently ignore highlighting errors for unknown languages
@@ -601,7 +602,110 @@
           addLineNumbers(element);
         }
       });
+      
+      // Add copy and word-wrap buttons to all code blocks
+      addCodeBlockButtons();
     }
+  }
+  
+  // Add copy and word-wrap buttons to code blocks
+  function addCodeBlockButtons() {
+    if (!contentDiv) return;
+    
+    contentDiv.querySelectorAll('pre').forEach((preElement) => {
+      // Skip if buttons already added
+      if (preElement.querySelector('.code-block-controls')) return;
+      
+      const codeElement = preElement.querySelector('code');
+      if (!codeElement) return;
+      
+      // Create wrapper div with relative positioning
+      const wrapper = document.createElement('div');
+      wrapper.className = 'relative code-block-wrapper';
+      wrapper.style.position = 'relative';
+      
+      // Create controls container
+      const controls = document.createElement('div');
+      controls.className = 'code-block-controls';
+      controls.style.cssText = 'position: absolute; top: 8px; right: 8px; display: flex; gap: 8px; z-index: 10;';
+      
+      // Word-wrap button
+      const wrapButton = document.createElement('button');
+      wrapButton.className = 'code-wrap-btn';
+      wrapButton.style.cssText = 'padding: 6px; border-radius: 4px; background: transparent; border: none; cursor: pointer; color: var(--text-secondary); transition: background-color 0.2s;';
+      wrapButton.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
+        </svg>
+      `;
+      wrapButton.title = 'Toggle word wrap';
+      
+      let wordWrapEnabled = true; // ON by default
+      preElement.style.whiteSpace = 'pre-wrap'; // Set default
+      
+      wrapButton.addEventListener('mouseenter', () => {
+        wrapButton.style.backgroundColor = 'rgba(0, 0, 0, 0.05)';
+      });
+      wrapButton.addEventListener('mouseleave', () => {
+        wrapButton.style.backgroundColor = 'transparent';
+      });
+      
+      wrapButton.addEventListener('click', () => {
+        wordWrapEnabled = !wordWrapEnabled;
+        if (wordWrapEnabled) {
+          preElement.style.whiteSpace = 'pre-wrap';
+          preElement.style.overflowX = 'visible';
+        } else {
+          preElement.style.whiteSpace = 'pre';
+          preElement.style.overflowX = 'auto';
+        }
+      });
+      
+      // Copy button
+      const copyButton = document.createElement('button');
+      copyButton.className = 'code-copy-btn';
+      copyButton.style.cssText = 'padding: 6px; border-radius: 4px; background: transparent; border: none; cursor: pointer; color: var(--text-secondary); transition: background-color 0.2s;';
+      copyButton.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+        </svg>
+      `;
+      copyButton.title = 'Copy code';
+      
+      copyButton.addEventListener('mouseenter', () => {
+        copyButton.style.backgroundColor = 'rgba(0, 0, 0, 0.05)';
+      });
+      copyButton.addEventListener('mouseleave', () => {
+        copyButton.style.backgroundColor = 'transparent';
+      });
+      
+      copyButton.addEventListener('click', async () => {
+        const codeText = codeElement.textContent || '';
+        try {
+          await navigator.clipboard.writeText(codeText);
+          // Show checkmark temporarily
+          const originalHTML = copyButton.innerHTML;
+          copyButton.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px; color: var(--accent);">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+            </svg>
+          `;
+          setTimeout(() => {
+            copyButton.innerHTML = originalHTML;
+          }, 2000);
+        } catch (e) {
+          console.error('Failed to copy code:', e);
+        }
+      });
+      
+      controls.appendChild(wrapButton);
+      controls.appendChild(copyButton);
+      wrapper.appendChild(controls);
+      
+      // Wrap the pre element
+      preElement.parentNode?.insertBefore(wrapper, preElement);
+      wrapper.appendChild(preElement);
+    });
   }
 
   // Add line numbers to code blocks
@@ -662,6 +766,252 @@
     }
   }
 
+  // Render a publication index (kind 30040) by fetching and rendering referenced events
+  async function renderPublicationIndex(indexEvent: NostrEvent) {
+    isLoading = true;
+    // Get all a-tags from the index event
+    const aTags = indexEvent.tags.filter(tag => tag[0] === 'a');
+    
+    if (aTags.length === 0) {
+      htmlContent = '<div class="publication-index"><p>Publication Index (no references found)</p></div>';
+      isLoading = false;
+      return;
+    }
+
+    // Fetch all referenced events
+    const referencedEvents: NostrEvent[] = [];
+    const { contentCache } = await import('$lib/contentCache');
+    
+    for (const aTag of aTags) {
+      const aTagValue = aTag[1]; // Format: "kind:pubkey:dtag"
+      const eventId = aTag[3]; // Optional event ID for version tracking
+      
+      let referencedEvent: NostrEvent | null = null;
+      
+      // Try to get from cache first
+      if (eventId) {
+        const cached = contentCache.getEvent('wiki', eventId);
+        if (cached) {
+          referencedEvent = cached.event;
+        }
+      }
+      
+      // If not in cache, try to fetch by a-tag or event ID
+      if (!referencedEvent) {
+        try {
+          // Parse a-tag: "kind:pubkey:dtag"
+          const [kindStr, pubkey, dtag] = aTagValue.split(':');
+          const kind = parseInt(kindStr, 10);
+          
+          // Try cache first by a-tag
+          const cachedEvents = contentCache.getEvents('wiki');
+          const cached = cachedEvents.find(c => {
+            if (c.event.kind !== kind || c.event.pubkey !== pubkey) return false;
+            const eventDTag = c.event.tags.find(t => t[0] === 'd')?.[1];
+            return eventDTag === dtag;
+          });
+          
+          if (cached) {
+            referencedEvent = cached.event;
+          } else {
+            // Fetch from relays
+            const result = await relayService.queryEvents(
+              'anonymous',
+              'wiki-read',
+              [
+                {
+                  authors: [pubkey],
+                  '#d': [dtag],
+                  kinds: [kind],
+                  limit: 1
+                }
+              ],
+              {
+                excludeUserContent: false,
+                currentUserPubkey: undefined
+              }
+            );
+            
+            if (result.events.length > 0) {
+              referencedEvent = result.events[0];
+              // Cache it
+              await contentCache.storeEvents('wiki', [{
+                event: referencedEvent,
+                relays: result.relays
+              }]);
+            }
+          }
+        } catch (error) {
+          console.warn('Failed to fetch referenced event:', aTagValue, error);
+        }
+      }
+      
+      if (referencedEvent) {
+        referencedEvents.push(referencedEvent);
+      }
+    }
+    
+    if (referencedEvents.length === 0) {
+      htmlContent = '<div class="publication-index"><p>Loading publication content...</p></div>';
+      isLoading = false;
+      return;
+    }
+    
+    // Build AsciiDoc content from referenced events
+    let asciidocContent = '';
+    
+    for (const refEvent of referencedEvents) {
+      // Get title from event
+      const title = refEvent.tags.find(t => t[0] === 'title')?.[1] || 'Untitled';
+      
+      // Handle nested 30040 indices recursively
+      if (refEvent.kind === 30040) {
+        // For nested indices, render as a section with nested content
+        asciidocContent += `\n== ${title}\n\n`;
+        // Recursively render nested index (we'll fetch and render inline)
+        const nestedContent = await renderNestedPublicationIndex(refEvent);
+        asciidocContent += nestedContent;
+      } else {
+        // Regular content event (30041, 30818, etc.)
+        asciidocContent += `\n== ${title}\n\n`;
+        
+        // Get content and preprocess
+        const rawContent = refEvent.content;
+        const processedContent = preprocessContentForAsciidoc(rawContent);
+        
+        // Detect if Markdown
+        const isMarkdown = refEvent.kind === 30817 || detectMarkdownContent(processedContent);
+        const finalContent = isMarkdown 
+          ? convertMarkdownToAsciiDoc(processedContent)
+          : processedContent;
+        
+        asciidocContent += finalContent + '\n\n';
+      }
+    }
+    
+    // Render the combined AsciiDoc content
+    const asciiDoc = asciidoctor();
+    const doc = asciiDoc.load(asciidocContent, {
+      safe: 'safe',
+      backend: 'html5',
+      doctype: 'book',
+      attributes: {
+        'source-highlighter': 'none',
+        'toc': 'left',
+        'toclevels': 3
+      }
+    });
+    
+    // Convert to HTML
+    let renderedHtml = doc.convert();
+    
+    // Remove any max-width constraints from AsciiDoc-generated HTML
+    renderedHtml = renderedHtml.replace(/max-width:\s*[^;]+;?/gi, '');
+    renderedHtml = renderedHtml.replace(/style="([^"]*max-width[^"]*)"/gi, (match, styles) => {
+      const cleaned = styles.replace(/max-width:\s*[^;]+;?/gi, '').trim();
+      return cleaned ? `style="${cleaned}"` : '';
+    });
+    
+    // Post-process the HTML (handle Nostr links, etc.)
+    renderedHtml = await processNostrLinksEnhanced(renderedHtml);
+    
+    htmlContent = renderedHtml;
+    
+    // Mount bookstr components after a delay
+    setTimeout(() => {
+      mountBookstrComponents();
+    }, 100);
+    
+    isLoading = false;
+  }
+  
+  // Helper function to render nested publication indices
+  async function renderNestedPublicationIndex(indexEvent: NostrEvent): Promise<string> {
+    const aTags = indexEvent.tags.filter(tag => tag[0] === 'a');
+    const { contentCache } = await import('$lib/contentCache');
+    let nestedContent = '';
+    
+    for (const aTag of aTags) {
+      const aTagValue = aTag[1];
+      const eventId = aTag[3];
+      
+      let referencedEvent: NostrEvent | null = null;
+      
+      if (eventId) {
+        const cached = contentCache.getEvent('wiki', eventId);
+        if (cached) {
+          referencedEvent = cached.event;
+        }
+      }
+      
+      if (!referencedEvent) {
+        try {
+          const [kindStr, pubkey, dtag] = aTagValue.split(':');
+          const kind = parseInt(kindStr, 10);
+          
+          const cachedEvents = contentCache.getEvents('wiki');
+          const cached = cachedEvents.find(c => {
+            if (c.event.kind !== kind || c.event.pubkey !== pubkey) return false;
+            const eventDTag = c.event.tags.find(t => t[0] === 'd')?.[1];
+            return eventDTag === dtag;
+          });
+          
+          if (cached) {
+            referencedEvent = cached.event;
+          } else {
+            const result = await relayService.queryEvents(
+              'anonymous',
+              'wiki-read',
+              [
+                {
+                  authors: [pubkey],
+                  '#d': [dtag],
+                  kinds: [kind],
+                  limit: 1
+                }
+              ],
+              {
+                excludeUserContent: false,
+                currentUserPubkey: undefined
+              }
+            );
+            
+            if (result.events.length > 0) {
+              referencedEvent = result.events[0];
+              await contentCache.storeEvents('wiki', [{
+                event: referencedEvent,
+                relays: result.relays
+              }]);
+            }
+          }
+        } catch (error) {
+          console.warn('Failed to fetch nested event:', aTagValue, error);
+        }
+      }
+      
+      if (referencedEvent) {
+        const title = referencedEvent.tags.find(t => t[0] === 'title')?.[1] || 'Untitled';
+        
+        if (referencedEvent.kind === 30040) {
+          nestedContent += `\n=== ${title}\n\n`;
+          const deeperNested = await renderNestedPublicationIndex(referencedEvent);
+          nestedContent += deeperNested;
+        } else {
+          nestedContent += `\n=== ${title}\n\n`;
+          const rawContent = referencedEvent.content;
+          const processedContent = preprocessContentForAsciidoc(rawContent);
+          const isMarkdown = referencedEvent.kind === 30817 || detectMarkdownContent(processedContent);
+          const finalContent = isMarkdown 
+            ? convertMarkdownToAsciiDoc(processedContent)
+            : processedContent;
+          nestedContent += finalContent + '\n\n';
+        }
+      }
+    }
+    
+    return nestedContent;
+  }
+
   onMount(async () => {
     // Load preferred authors
     loadWikiAuthors(event.pubkey).then((ps) => {
@@ -673,10 +1023,9 @@
     bookstrPassages = [];
 
     // Handle different event kinds
-    // 30040: Publication Index (no content, display metadata only)
+    // 30040: Publication Index - fetch and render referenced events
     if (event.kind === 30040) {
-      // For index events, we'll display metadata/tags
-      htmlContent = '<div class="publication-index"><p>Publication Index (no content)</p></div>';
+      await renderPublicationIndex(event);
       return;
     }
 
@@ -705,7 +1054,6 @@
       doctype: 'book',
       attributes: {
         'source-highlighter': 'none',
-        'sectnums': '',
         'toc': 'left',
         'toclevels': 3
       }
@@ -713,6 +1061,13 @@
 
     // Convert to HTML and postprocess (async)
     let html = doc.convert();
+    
+    // Remove any max-width constraints from AsciiDoc-generated HTML
+    html = html.replace(/max-width:\s*[^;]+;?/gi, '');
+    html = html.replace(/style="([^"]*max-width[^"]*)"/gi, (match, styles) => {
+      const cleaned = styles.replace(/max-width:\s*[^;]+;?/gi, '').trim();
+      return cleaned ? `style="${cleaned}"` : '';
+    });
     
     html = await postprocessHtml(html);
     
@@ -828,7 +1183,7 @@
   
   // Track clicked links to prevent duplicate card creation
   const clickedLinks = new Set<string>();
-  
+
   // Handle clicks on links to create child cards
   async function handleLinkClick(clickEvent: MouseEvent) {
     const target = clickEvent.target as HTMLElement;
@@ -1039,12 +1394,20 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <div 
   bind:this={contentDiv}
-  class="prose prose-sm max-w-none"
+  class="prose prose-sm max-w-none w-full"
+  style="max-width: 100% !important; width: 100% !important;"
   onclick={handleLinkClick}
   role="document"
   tabindex="-1"
 >
-  {#if htmlContent}
+  {#if isLoading}
+    <div class="flex items-center justify-center py-12">
+      <div class="flex flex-col items-center space-y-4">
+        <div class="spinner" style="width: 48px; height: 48px; border: 4px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+        <p class="text-lg" style="color: var(--text-secondary);">Loading content...</p>
+      </div>
+    </div>
+  {:else if htmlContent}
     {@html htmlContent}
   {/if}
 </div>

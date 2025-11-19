@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
   import { npubEncode } from '@nostr/tools/nip19';
 
   import { goto } from '$app/navigation';
@@ -22,13 +23,28 @@
 
   let { card }: Props = $props();
 
-  // Expand state for diff cards
+  // Expand state for all cards (desktop only)
   let expanded = $state(false);
+  let isDesktop = $state(false);
+
+  // Check if we're on desktop (width >= 1024px)
+  function checkDesktop() {
+    isDesktop = window.innerWidth >= 1024;
+  }
 
   function toggleExpand() {
     expanded = !expanded;
-    console.log('🔄 CardElement toggle expand:', expanded);
   }
+
+  // Check desktop on mount and resize
+  onMount(() => {
+    checkDesktop();
+    window.addEventListener('resize', checkDesktop);
+  });
+  
+  onDestroy(() => {
+    window.removeEventListener('resize', checkDesktop);
+  });
 
   function close() {
     if (card.type === 'editor' && card.data.previous) replaceSelf(card.data.previous);
@@ -132,18 +148,21 @@
   id={`wikicard-${card.id}`}
   class="
   overflow-y-auto
-  {card.type === 'diff' ? 'overflow-x-visible' : 'overflow-x-hidden'}
+  {expanded && isDesktop ? 'overflow-x-visible' : card.type === 'diff' ? 'overflow-x-visible' : 'overflow-x-hidden'}
   mx-2 mt-2
-  {card.type === 'diff' ? 'min-w-[395px] lg:min-w-[32rem]' : 'min-w-[395px] max-w-[395px] lg:min-w-[32rem] lg:max-w-[32rem]'}
+  {expanded && isDesktop ? 'min-w-[395px] lg:min-w-[32rem]' : card.type === 'diff' ? 'min-w-[395px] lg:min-w-[32rem]' : 'min-w-[395px] max-w-[395px] lg:min-w-[32rem] lg:max-w-[32rem]'}
   rounded-lg border-8
   h-[calc(100vh_-_32px)]
+  min-h-[calc(100vh_-_32px)]
   p-4
-  scrollbar-thin"
-  style="background-color: var(--bg-primary); border-color: var(--border); {card.type === 'diff' && expanded ? 'min-width: 1500px !important; width: 1500px !important; max-width: none !important; flex: 0 0 1500px !important;' : card.type === 'diff' && !expanded ? 'min-width: 32rem !important; width: 32rem !important; max-width: 32rem !important; flex: 0 0 32rem !important;' : ''}"
+  scrollbar-thin
+  flex
+  flex-col"
+  style="background-color: var(--bg-primary); border-color: var(--border); {expanded && isDesktop ? 'min-width: 1500px !important; width: 1500px !important; max-width: none !important; flex: 0 0 1500px !important;' : !expanded && isDesktop ? 'min-width: 32rem !important; width: 32rem !important; max-width: 32rem !important; flex: 0 0 32rem !important;' : ''}"
   ondblclick={scrollIntoViewIfNecessary}
 >
   {#if card.type !== 'welcome' && card.type !== 'new'}
-    <div class="flex" class:justify-between={card.back} class:justify-end={!card.back}>
+    <div class="flex" class:justify-between={card.back || isDesktop} class:justify-end={!card.back && !isDesktop}>
       {#if card.back}
         <button aria-label="back" onclick={back} class="transition-colors hover:opacity-70">
           <svg
@@ -156,6 +175,40 @@
               d="M94.861,156.507c2.929,2.928,7.678,2.927,10.606,0c2.93-2.93,2.93-7.678-0.001-10.608l-28.82-28.819l83.457-0.008 c4.142-0.001,7.499-3.358,7.499-7.502c-0.001-4.142-3.358-7.498-7.5-7.498l-83.46,0.008l28.827-28.825 c2.929-2.929,2.929-7.679,0-10.607c-1.465-1.464-3.384-2.197-5.304-2.197c-1.919,0-3.838,0.733-5.303,2.196l-41.629,41.628 c-1.407,1.406-2.197,3.313-2.197,5.303c0.001,1.99,0.791,3.896,2.198,5.305L94.861,156.507z"
             ></path>
           </svg>
+        </button>
+      {/if}
+      {#if isDesktop}
+        <button
+          onclick={toggleExpand}
+          class="inline-flex items-center p-2 text-sm font-medium rounded-md transition-colors mr-2"
+          style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
+          onmouseover={(e) => {
+            if (e.target) {
+              (e.target as HTMLButtonElement).style.opacity = '0.8';
+            }
+          }}
+          onmouseout={(e) => {
+            if (e.target) {
+              (e.target as HTMLButtonElement).style.opacity = '1';
+            }
+          }}
+          title={expanded ? 'Collapse' : 'Expand'}
+        >
+          {#if expanded}
+            <!-- Collapse icon (compress) -->
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 14h6v6"/>
+              <path d="M20 10h-6V4"/>
+              <path d="M14 10l7-7"/>
+              <path d="M3 21l7-7"/>
+            </svg>
+          {:else}
+            <!-- Expand icon (maximize) -->
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3"/>
+              <path d="M21 8H8l5-5"/>
+            </svg>
+          {/if}
         </button>
       {/if}
       <button aria-label="close" onclick={close} class="transition-colors hover:opacity-70">
@@ -171,27 +224,29 @@
       </button>
     </div>
   {/if}
-  <article class="font-sans mx-auto p-2 {card.type === 'diff' ? '' : 'lg:max-w-4xl'}">
-    {#if card.type === 'article'}
-      <Article {createChild} {replaceSelf} {back} {card} />
-    {:else if card.type === 'new'}
-      <NewSearch {replaceNewCard} />
-    {:else if card.type === 'find'}
-      <SearchResults {createChild} {replaceSelf} {card} />
-    {:else if card.type === 'welcome'}
-      <Welcome {createChild} />
-    {:else if card.type === 'relay'}
-      <Relay {createChild} {replaceSelf} {card} />
-    {:else if card.type === 'user'}
-      <User {createChild} {card} />
-    {:else if card.type === 'settings'}
-      <Settings />
-    {:else if card.type === 'editor'}
-      <Editor {replaceSelf} {card} />
-    {:else if card.type === 'book'}
-      <Book {createChild} {replaceSelf} {card} />
-    {:else if card.type === 'diff'}
-      <Diff {card} {expanded} {toggleExpand} />
-    {/if}
+  <article class="font-sans p-2 flex-1 {expanded && isDesktop ? 'w-full max-w-none' : card.type === 'diff' ? '' : 'mx-auto lg:max-w-4xl'}" style="{expanded && isDesktop ? 'max-width: 100% !important; width: 100% !important; margin-left: 0 !important; margin-right: 0 !important;' : ''}">
+    {#key `${card.id}-${expanded}-${isDesktop}`}
+      {#if card.type === 'article'}
+        <Article {createChild} {replaceSelf} {back} {card} />
+      {:else if card.type === 'new'}
+        <NewSearch {replaceNewCard} />
+      {:else if card.type === 'find'}
+        <SearchResults {createChild} {replaceSelf} {card} />
+      {:else if card.type === 'welcome'}
+        <Welcome {createChild} />
+      {:else if card.type === 'relay'}
+        <Relay {createChild} {replaceSelf} {card} />
+      {:else if card.type === 'user'}
+        <User {createChild} {card} />
+      {:else if card.type === 'settings'}
+        <Settings />
+      {:else if card.type === 'editor'}
+        <Editor {replaceSelf} {card} />
+      {:else if card.type === 'book'}
+        <Book {createChild} {replaceSelf} {card} />
+      {:else if card.type === 'diff'}
+        <Diff {card} {expanded} {toggleExpand} />
+      {/if}
+    {/key}
   </article>
 </div>
