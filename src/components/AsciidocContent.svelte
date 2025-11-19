@@ -575,12 +575,26 @@
           const currentLang = element.className.match(/language-(\w+)/);
           const lang = currentLang ? currentLang[1] : null;
           
-          if (lang && lang !== 'undefined' && lang !== 'none') {
-            // Has valid language class
-            hljs.highlightElement(element);
-          } else {
-            // No language class, try to auto-detect
-            hljs.highlightElement(element);
+          try {
+            if (lang && lang !== 'undefined' && lang !== 'none') {
+              // Check if the language is registered in highlight.js
+              const language = hljs.getLanguage(lang);
+              if (language) {
+                // Language is registered, highlight with it
+                hljs.highlightElement(element);
+              } else {
+                // Language not registered, remove the language class and try auto-detect
+                // This prevents the warning about missing language module
+                element.className = element.className.replace(/language-\w+/g, '');
+                hljs.highlightElement(element);
+              }
+            } else {
+              // No language class, try to auto-detect
+              hljs.highlightElement(element);
+            }
+          } catch (error) {
+            // Silently ignore highlighting errors for unknown languages
+            // The code will still be displayed, just without syntax highlighting
           }
           
           // Add line numbers after highlighting

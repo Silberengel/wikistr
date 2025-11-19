@@ -5,7 +5,8 @@
 
   import type { ArticleCard, Card, UserCard } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next } from '$lib/utils';
-  import { wikiKind } from '$lib/nostr';
+  // Support all wiki kinds: 30818 (AsciiDoc), 30817 (Markdown), 30040 (Index), 30041 (Content)
+  const wikiKinds = [30818, 30817, 30040, 30041];
   import ArticleListItem from '$components/ArticleListItem.svelte';
   import UserLabel from '$components/UserLabel.svelte';
   import { relayService } from '$lib/relayService';
@@ -57,11 +58,10 @@
         tried = true;
       } else {
         // Use relayService directly if no cache
-        console.log(`User: No cached events, loading from relays for user ${card.data.slice(0, 8)}...`);
         const result = await relayService.queryEvents(
           card.data,
           'wiki-read',
-          [{ kinds: [wikiKind], authors: [card.data], limit: 50 }],
+          [{ kinds: wikiKinds, authors: [card.data], limit: 50 }],
           {
             excludeUserContent: false,
             currentUserPubkey: $account?.pubkey

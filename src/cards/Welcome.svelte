@@ -124,11 +124,12 @@
     try {
       const userPubkey = $account?.pubkey || 'anonymous';
       
-      // Update wiki cache
+      // Update wiki cache - include all wiki kinds: 30818, 30817, 30040, 30041
+      const wikiKinds = [30818, 30817, 30040, 30041];
       const wikiResult = await relayService.queryEvents(
         userPubkey,
         'wiki-read',
-        [{ kinds: [wikiKind], limit: 100 }],
+        [{ kinds: wikiKinds, limit: 100 }],
         { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
       );
       
@@ -237,10 +238,12 @@
       
       // Always update wiki cache to ensure it's populated
       
+      // Update wiki cache - include all wiki kinds: 30818, 30817, 30040, 30041
+      const wikiKinds = [30818, 30817, 30040, 30041];
       const wikiResult = await relayService.queryEvents(
         userPubkey,
         'wiki-read',
-        [{ kinds: [wikiKind], limit: 100 }],
+        [{ kinds: wikiKinds, limit: 100 }],
         { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
       );
       
@@ -268,8 +271,8 @@
         
         if (articleIds.length > 0) {
           // Batch article IDs to avoid "too many tags" relay errors
-          // Most relays limit tag arrays to ~20-50 items
-          const BATCH_SIZE = 20;
+          // Most relays limit tag arrays to ~10-20 items, use conservative size
+          const BATCH_SIZE = 10;
           const batches: string[][] = [];
           
           for (let i = 0; i < articleIds.length; i += BATCH_SIZE) {

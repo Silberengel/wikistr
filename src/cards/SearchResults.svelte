@@ -7,7 +7,9 @@
   import { loadRelayList } from '@nostr/gadgets/lists';
   import { normalizeIdentifier } from '@nostr/tools/nip54';
 
-  import { wot, wikiKind, userWikiRelays } from '$lib/nostr';
+  import { wot, userWikiRelays } from '$lib/nostr';
+  // Support all wiki kinds: 30818 (AsciiDoc), 30817 (Markdown), 30040 (Index), 30041 (Content)
+  const wikiKinds = [30818, 30817, 30040, 30041];
   import type { ArticleCard, SearchCard, Card } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next, unique } from '$lib/utils';
   import { getThemeConfig } from '$lib/themes';
@@ -196,14 +198,12 @@
         }
         relaysToQuery = [...preferredRelays, ...allWikiRelays.filter(r => !preferredRelays.has(r))];
       }
-      
-      console.log(`🔍 Searching ${relaysToQuery.length} relays for: "${query}"`);
 
       // Support all wiki event kinds: 30818 (AsciiDoc), 30817 (Markdown), 30040 (Index), 30041 (Content)
       const normalizedId = normalizeIdentifier(query);
       const searchQueries = [
         // 1. Exact match by d-tag for all wiki kinds
-        { kinds: [30818, 30817, 30040, 30041], '#d': [normalizedId], limit: 25 }
+        { kinds: wikiKinds, '#d': [normalizedId], limit: 25 }
       ];
 
       // Search using relay service (it handles relay selection and batching)
@@ -377,7 +377,7 @@
         relayService.queryEvents(
           $account.pubkey,
           'wiki-read',
-          [{ kinds: [wikiKind], '#d': [normalizeIdentifier(query)], limit: 25 }],
+          [{ kinds: wikiKinds, '#d': [normalizeIdentifier(query)], limit: 25 }],
           {
             excludeUserContent: true,
             currentUserPubkey: $account.pubkey
@@ -402,7 +402,7 @@
     if ($account) {
       const searchQueries = [
         // 1. full-text search (most compatible)
-        { kinds: [wikiKind], search: query, limit: 30 }
+        { kinds: wikiKinds, search: query, limit: 30 }
       ];
 
       // Search all queries using relay service

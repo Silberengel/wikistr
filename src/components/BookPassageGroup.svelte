@@ -246,8 +246,8 @@
           // If no range events found, search for individual sections
           if (foundEvents.length === 0 && ref.section && ref.section.length > 0) {
             // Batch sections to avoid "too many tags" relay errors
-            // Most relays limit tag arrays to ~20-50 items
-            const SECTION_BATCH_SIZE = 20;
+            // Most relays limit tag arrays to ~10-20 items, use conservative size
+            const SECTION_BATCH_SIZE = 10;
             const sectionBatches: string[][] = [];
             
             for (let i = 0; i < ref.section.length; i += SECTION_BATCH_SIZE) {

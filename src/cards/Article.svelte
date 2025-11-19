@@ -195,11 +195,13 @@
     }
 
     // INSTANT: Check cache synchronously first
+    // Support all wiki kinds: 30818 (AsciiDoc), 30817 (Markdown), 30040 (Index), 30041 (Content)
+    const wikiKinds = [30818, 30817, 30040, 30041];
     const cachedEvents = contentCache.getEvents('wiki');
     const cachedArticle = cachedEvents.find(cached => 
       cached.event.pubkey === pubkey && 
       getTagOr(cached.event, 'd') === dTag && 
-      cached.event.kind === wikiKind
+      wikiKinds.includes(cached.event.kind)
     );
     
     if (cachedArticle) {
@@ -216,7 +218,7 @@
               {
                 authors: [pubkey],
                 '#d': [dTag],
-                kinds: [wikiKind]
+                kinds: wikiKinds
               }
             ],
             {
@@ -227,7 +229,7 @@
 
           // Find the most recent article (highest created_at)
           const articleEvent = result.events
-            .filter(evt => evt.pubkey === pubkey && getTagOr(evt, 'd') === dTag && evt.kind === wikiKind)
+            .filter(evt => evt.pubkey === pubkey && getTagOr(evt, 'd') === dTag && wikiKinds.includes(evt.kind))
             .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
 
           if (articleEvent) {
