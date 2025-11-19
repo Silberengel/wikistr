@@ -15,24 +15,24 @@
       "Cambridge"
     ],
     [
-      "type",
+      "C",
       "bible"
     ],
     [
-      "book",
-      "Exodus"
+      "T",
+      "exodus"
     ],
     [
-      "chapter",
+      "c",
       "3"
     ],
     [
-      "verse",
+      "s",
       "16"
     ],
     [
-      "version",
-      "King James Version"
+      "v",
+      "kjv"
     ]
   ],
   "kind": 30041,

@@ -3,24 +3,24 @@
   "content": "The LORD is my shepherd; I shall not want. (Psalm 23:1 KJV)",
   "tags": [
     [
-      "type",
+      "C",
       "bible"
     ],
     [
-      "book",
-      "Psalms"
+      "T",
+      "psalms"
     ],
     [
-      "chapter",
+      "c",
       "23"
     ],
     [
-      "verse",
+      "s",
       "1"
     ],
     [
-      "version",
-      "King James Version"
+      "v",
+      "kjv"
     ],
     [
       "t",

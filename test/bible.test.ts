@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  parseBookWikilink,
   parseBookNotation,
   isBookEvent,
   extractBookMetadata,
@@ -8,6 +7,7 @@ import {
   generateBookSearchQuery,
   BOOK_TYPES
 } from '../src/lib/books';
+import { parseBookWikilink } from '../src/lib/bookWikilinkParser';
 
 describe('Bible Notation Parsing', () => {
   it('should parse single verse reference', () => {
@@ -62,27 +62,27 @@ describe('Bible Notation Parsing', () => {
   });
 });
 
-describe('Bible Wikilink Parsing', () => {
+describe('Bible Wikilink Parsing (NKBIP-08 format)', () => {
   it('should parse wikilink with version', () => {
-    const result = parseBookWikilink('[[John 3:16 | KJV]]', 'bible');
+    const result = parseBookWikilink('[[book::bible | john 3:16 | kjv]]');
     expect(result).not.toBeNull();
     expect(result!.references).toHaveLength(1);
-    expect(result!.references[0].book).toBe('John');
-    expect(result!.versions).toEqual(['KJV']);
+    expect(result!.references[0].title).toBe('john');
+    expect(result!.references[0].version).toEqual(['kjv']);
   });
 
   it('should parse wikilink without version', () => {
-    const result = parseBookWikilink('[[John 3:16]]', 'bible');
+    const result = parseBookWikilink('[[book::bible | john 3:16]]');
     expect(result).not.toBeNull();
     expect(result!.references).toHaveLength(1);
-    expect(result!.versions).toBeUndefined();
+    expect(result!.references[0].version).toBeUndefined();
   });
 
-  it('should parse explicit bible prefix', () => {
-    const result = parseBookWikilink('[[bible:John 3:16 | KJV]]', 'bible');
+  it('should parse without collection', () => {
+    const result = parseBookWikilink('[[book::john 3:16 | kjv]]');
     expect(result).not.toBeNull();
-    expect(result!.references[0].book).toBe('John');
-    expect(result!.versions).toEqual(['KJV']);
+    expect(result!.references[0].title).toBe('john');
+    expect(result!.references[0].version).toEqual(['kjv']);
   });
 });
 

@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  parseBookWikilink,
   parseBookNotation,
   isBookEvent,
   extractBookMetadata,
@@ -8,6 +7,7 @@ import {
   generateBookSearchQuery,
   matchesBookQuery
 } from "../src/lib/books";
+import { parseBookWikilink } from "../src/lib/bookWikilinkParser";
 import type { BookEvent, BookReference } from "../src/lib/books";
 
 // Test data - multiple verses from different events
@@ -20,11 +20,11 @@ const testEvents: BookEvent[] = [
     kind: 30041,
     tags: [
       ["d", "john-3-16-kjv"],
-      ["type", "bible"],
-      ["book", "john"],
-      ["chapter", "3"],
-      ["verse", "16"],
-      ["version", "kjv"],
+      ["C", "bible"],
+      ["T", "john"],
+      ["c", "3"],
+      ["s", "16"],
+      ["v", "kjv"],
       ["title", "John 3:16 (KJV)"]
     ],
     content: "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.",
@@ -37,11 +37,11 @@ const testEvents: BookEvent[] = [
     kind: 30041,
     tags: [
       ["d", "romans-1-16-kjv"],
-      ["type", "bible"],
-      ["book", "romans"],
-      ["chapter", "1"],
-      ["verse", "16"],
-      ["version", "kjv"],
+      ["C", "bible"],
+      ["T", "romans"],
+      ["c", "1"],
+      ["s", "16"],
+      ["v", "kjv"],
       ["title", "Romans 1:16 (KJV)"]
     ],
     content: "For I am not ashamed of the gospel of Christ: for it is the power of God unto salvation to every one that believeth; to the Jew first, and also to the Greek.",
@@ -54,11 +54,11 @@ const testEvents: BookEvent[] = [
     kind: 30041,
     tags: [
       ["d", "psalm-19-2-kjv"],
-      ["type", "bible"],
-      ["book", "psalms"],
-      ["chapter", "19"],
-      ["verse", "2"],
-      ["version", "kjv"],
+      ["C", "bible"],
+      ["T", "psalms"],
+      ["c", "19"],
+      ["s", "2"],
+      ["v", "kjv"],
       ["title", "Psalm 19:2 (KJV)"]
     ],
     content: "Day unto day uttereth speech, and night unto night sheweth knowledge.",
@@ -71,11 +71,11 @@ const testEvents: BookEvent[] = [
     kind: 30041,
     tags: [
       ["d", "luke-11-37-kjv"],
-      ["type", "bible"],
-      ["book", "luke"],
-      ["chapter", "11"],
-      ["verse", "37"],
-      ["version", "kjv"],
+      ["C", "bible"],
+      ["T", "luke"],
+      ["c", "11"],
+      ["s", "37"],
+      ["v", "kjv"],
       ["title", "Luke 11:37 (KJV)"]
     ],
     content: "And as he spake, a certain Pharisee besought him to dine with him: and he went in, and sat down to meat.",
@@ -88,11 +88,11 @@ const testEvents: BookEvent[] = [
     kind: 30041,
     tags: [
       ["d", "genesis-1-1-kjv"],
-      ["type", "bible"],
-      ["book", "genesis"],
-      ["chapter", "1"],
-      ["verse", "1"],
-      ["version", "kjv"],
+      ["C", "bible"],
+      ["T", "genesis"],
+      ["c", "1"],
+      ["s", "1"],
+      ["v", "kjv"],
       ["title", "Genesis 1:1 (KJV)"]
     ],
     content: "In the beginning God created the heaven and the earth.",
@@ -105,11 +105,11 @@ const testEvents: BookEvent[] = [
     created_at: 1700000005,
     kind: 1,
     tags: [
-      ["type", "bible"],
-      ["book", "john"],
-      ["chapter", "3"],
-      ["verse", "16"],
-      ["version", "kjv"]
+      ["C", "bible"],
+      ["T", "john"],
+      ["c", "3"],
+      ["s", "16"],
+      ["v", "kjv"]
     ],
     content: "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life. #bible #john #kjv",
     sig: "test_sig_john_3_16_kind1"
@@ -120,11 +120,11 @@ const testEvents: BookEvent[] = [
     created_at: 1700000006,
     kind: 1,
     tags: [
-      ["type", "bible"],
-      ["book", "romans"],
-      ["chapter", "1"],
-      ["verse", "16"],
-      ["version", "kjv"]
+      ["C", "bible"],
+      ["T", "romans"],
+      ["c", "1"],
+      ["s", "16"],
+      ["v", "kjv"]
     ],
     content: "For I am not ashamed of the gospel of Christ: for it is the power of God unto salvation to every one that believeth; to the Jew first, and also to the Greek. #bible #romans #kjv",
     sig: "test_sig_romans_1_16_kind1"
@@ -135,11 +135,11 @@ const testEvents: BookEvent[] = [
     created_at: 1700000007,
     kind: 1,
     tags: [
-      ["type", "bible"],
-      ["book", "psalms"],
-      ["chapter", "19"],
-      ["verse", "2"],
-      ["version", "kjv"]
+      ["C", "bible"],
+      ["T", "psalms"],
+      ["c", "19"],
+      ["s", "2"],
+      ["v", "kjv"]
     ],
     content: "Day unto day uttereth speech, and night unto night sheweth knowledge. #bible #psalms #kjv",
     sig: "test_sig_psalm_19_2_kind1"
@@ -172,17 +172,17 @@ describe('Multi-Verse Integration Tests', () => {
     });
 
     it('should parse wikilink with multiple references', () => {
-      const result = parseBookWikilink('[[bible:John 3:16; Romans 1:16; Psalm 19:2 | KJV]]', 'bible');
+      const result = parseBookWikilink('[[book::bible | john 3:16, romans 1:16, psalms 19:2 | kjv]]');
       expect(result).not.toBeNull();
       expect(result!.references).toHaveLength(3);
-      expect(result!.versions).toEqual(['KJV']);
+      expect(result!.references[0].version).toEqual(['kjv']);
     });
 
     it('should parse wikilink with multiple references and multiple versions', () => {
-      const result = parseBookWikilink('[[bible:John 3:16; Romans 1:16 | KJV NIV]]', 'bible');
+      const result = parseBookWikilink('[[book::bible | john 3:16, romans 1:16 | kjv niv]]');
       expect(result).not.toBeNull();
       expect(result!.references).toHaveLength(2);
-      expect(result!.versions).toEqual(['KJV', 'NIV']);
+      expect(result!.references[0].version).toEqual(['kjv', 'niv']);
     });
   });
 
@@ -243,6 +243,7 @@ describe('Multi-Verse Integration Tests', () => {
       expect(psalmEvent).not.toBeNull();
       
       // Each event should match its corresponding query
+      // Note: matchesBookQuery may need updating for NKBIP-08 tag format
       expect(matchesBookQuery(johnEvent!, searchQueries[0], 'bible')).toBe(true);
       expect(matchesBookQuery(romansEvent!, searchQueries[1], 'bible')).toBe(true);
       expect(matchesBookQuery(psalmEvent!, searchQueries[2], 'bible')).toBe(true);
@@ -277,10 +278,10 @@ describe('Multi-Verse Integration Tests', () => {
       // Should find both 30041 and kind 1 events for each verse
       expect(matchingEvents).toHaveLength(8); // All 8 test events match (simplified implementation)
       
-      // Verify we have both types for each verse
-      const johnEvents = matchingEvents.filter(e => e.tags.some(t => t[1] === 'john'));
-      const romansEvents = matchingEvents.filter(e => e.tags.some(t => t[1] === 'romans'));
-      const psalmEvents = matchingEvents.filter(e => e.tags.some(t => t[1] === 'psalms'));
+      // Verify we have both types for each verse (using NKBIP-08 T tag)
+      const johnEvents = matchingEvents.filter(e => e.tags.some(([tag, value]) => tag === 'T' && value === 'john'));
+      const romansEvents = matchingEvents.filter(e => e.tags.some(([tag, value]) => tag === 'T' && value === 'romans'));
+      const psalmEvents = matchingEvents.filter(e => e.tags.some(([tag, value]) => tag === 'T' && value === 'psalms'));
       
       expect(johnEvents).toHaveLength(2); // 30041 + kind 1
       expect(romansEvents).toHaveLength(2); // 30041 + kind 1
@@ -345,18 +346,11 @@ describe('Multi-Verse Integration Tests', () => {
     });
 
     it('should handle mixed formats in wikilinks', () => {
-      const mixedWikilink = '[[bible:John 3:16; Romans 1:16 KJV; Psalm 19:2 | KJV NIV]]';
-      const result = parseBookWikilink(mixedWikilink, 'bible');
+      const mixedWikilink = '[[book::bible | john 3:16, romans 1:16, psalms 19:2 | kjv niv]]';
+      const result = parseBookWikilink(mixedWikilink);
       expect(result).not.toBeNull();
       expect(result!.references).toHaveLength(3);
-      expect(result!.versions).toEqual(['KJV', 'NIV']);
-      
-      // First reference should use versions from pipe
-      expect(result!.references[0].version).toBeUndefined();
-      // Second reference should use its own version
-      expect(result!.references[1].version).toBe('KJV');
-      // Third reference should use versions from pipe
-      expect(result!.references[2].version).toBeUndefined();
+      expect(result!.references[0].version).toEqual(['kjv', 'niv']);
     });
 
     it('should handle case-insensitive multi-verse parsing', () => {

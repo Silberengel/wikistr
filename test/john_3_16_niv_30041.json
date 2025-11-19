@@ -15,24 +15,24 @@
       "Bible Publisher"
     ],
     [
-      "type",
+      "C",
       "bible"
     ],
     [
-      "book",
-      "John"
+      "T",
+      "john"
     ],
     [
-      "chapter",
+      "c",
       "3"
     ],
     [
-      "verse",
+      "s",
       "16"
     ],
     [
-      "version",
-      "New International Version"
+      "v",
+      "niv"
     ]
   ],
   "kind": 30041,

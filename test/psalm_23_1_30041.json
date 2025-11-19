@@ -15,24 +15,24 @@
       "Cambridge"
     ],
     [
-      "type",
+      "C",
       "bible"
     ],
     [
-      "book",
-      "Psalms"
+      "T",
+      "psalms"
     ],
     [
-      "chapter",
+      "c",
       "23"
     ],
     [
-      "verse",
+      "s",
       "1"
     ],
     [
-      "version",
-      "King James Version"
+      "v",
+      "kjv"
     ]
   ],
   "kind": 30041,

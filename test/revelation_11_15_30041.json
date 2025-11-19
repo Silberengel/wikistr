@@ -15,24 +15,24 @@
       "Challoner"
     ],
     [
-      "type",
+      "C",
       "bible"
     ],
     [
-      "book",
-      "Revelation"
+      "T",
+      "revelation"
     ],
     [
-      "chapter",
+      "c",
       "11"
     ],
     [
-      "verse",
+      "s",
       "15"
     ],
     [
-      "version",
-      "Douay-Rheims Bible"
+      "v",
+      "drb"
     ]
 
   ],

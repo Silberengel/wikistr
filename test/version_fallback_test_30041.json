@@ -15,24 +15,24 @@
       "ESV Publisher"
     ],
     [
-      "type",
+      "C",
       "bible"
     ],
     [
-      "book",
-      "John"
+      "T",
+      "john"
     ],
     [
-      "chapter",
+      "c",
       "3"
     ],
     [
-      "verse",
+      "s",
       "16"
     ],
     [
-      "version",
-      "English Standard Version"
+      "v",
+      "esv"
     ]
   ],
   "kind": 30041,

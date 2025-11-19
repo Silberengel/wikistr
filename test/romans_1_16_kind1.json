@@ -4,11 +4,11 @@
   "created_at": 1700000004,
   "kind": 1,
   "tags": [
-    ["type", "bible"],
-    ["book", "romans"],
-    ["chapter", "1"],
-    ["verse", "16"],
-    ["version", "kjv"]
+    ["C", "bible"],
+    ["T", "romans"],
+    ["c", "1"],
+    ["s", "16"],
+    ["v", "kjv"]
   ],
   "content": "For I am not ashamed of the gospel of Christ: for it is the power of God unto salvation to every one that believeth; to the Jew first, and also to the Greek. #bible #romans #kjv",
   "sig": "test_sig_romans_1_16_kind1"

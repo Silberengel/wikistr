@@ -4,11 +4,11 @@
   "created_at": 1700000005,
   "kind": 1,
   "tags": [
-    ["type", "bible"],
-    ["book", "psalms"],
-    ["chapter", "19"],
-    ["verse", "2"],
-    ["version", "kjv"]
+    ["C", "bible"],
+    ["T", "psalms"],
+    ["c", "19"],
+    ["s", "2"],
+    ["v", "kjv"]
   ],
   "content": "Day unto day uttereth speech, and night unto night sheweth knowledge. #bible #psalms #kjv",
   "sig": "test_sig_psalm_19_2_kind1"

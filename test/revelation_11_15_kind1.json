@@ -3,24 +3,24 @@
   "content": "And the seventh angel sounded the trumpet: and there were great voices in heaven, saying: The kingdom of this world is become our Lord's and his Christ's, and he shall reign for ever and ever. Amen. (Revelation 11:15 DRB)",
   "tags": [
     [
-      "type",
+      "C",
       "bible"
     ],
     [
-      "book",
-      "Revelation"
+      "T",
+      "revelation"
     ],
     [
-      "chapter",
+      "c",
       "11"
     ],
     [
-      "verse",
+      "s",
       "15"
     ],
     [
-      "version",
-      "Douay-Rheims Bible"
+      "v",
+      "drb"
     ],
     [
       "t",

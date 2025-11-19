@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseBookNotation,
-  parseBookWikilink,
   generateBookSearchQuery
 } from "../src/lib/books";
+import { parseBookWikilink } from "../src/lib/bookWikilinkParser";
 
 describe('Multiple Bible References', () => {
   describe('parseBookNotation with multiple references', () => {
@@ -56,30 +56,28 @@ describe('Multiple Bible References', () => {
     });
   });
 
-  describe('parseBookWikilink with multiple references', () => {
+  describe('parseBookWikilink with multiple references (NKBIP-08 format)', () => {
     it('should parse multiple references in wikilink', () => {
-      const result = parseBookWikilink('[[Romans 1:16-25; Psalm 19:2-3 | KJV]]', 'bible');
+      const result = parseBookWikilink('[[book::bible | romans 1:16-25, psalms 19:2-3 | kjv]]');
       expect(result).not.toBeNull();
       expect(result!.references).toHaveLength(2);
-      expect(result!.versions).toEqual(['KJV']);
-      expect(result!.references[0].book).toBe('Romans');
-      expect(result!.references[1].book).toBe('Psalms');
+      expect(result!.references[0].version).toEqual(['kjv']);
+      expect(result!.references[0].title).toBe('romans');
+      expect(result!.references[1].title).toBe('psalms');
     });
 
     it('should parse version comparison in wikilink', () => {
-      const result = parseBookWikilink('[[Romans 1:16-25 KJV; Romans 1:16-25 DRB]]', 'bible');
+      const result = parseBookWikilink('[[book::bible | romans 1:16-25 | kjv, romans 1:16-25 | drb]]');
       expect(result).not.toBeNull();
       expect(result!.references).toHaveLength(2);
-      expect(result!.versions).toBeUndefined();
-      expect(result!.references[0].book).toBe('Romans');
-      expect(result!.references[1].book).toBe('Romans');
+      expect(result!.references[0].title).toBe('romans');
+      expect(result!.references[1].title).toBe('romans');
     });
 
     it('should parse daily reading format in wikilink', () => {
-      const result = parseBookWikilink('[[Romans 1:16-25; Psalm 19:2-3; Luke 11:37-41]]', 'bible');
+      const result = parseBookWikilink('[[book::bible | romans 1:16-25, psalms 19:2-3, luke 11:37-41]]');
       expect(result).not.toBeNull();
       expect(result!.references).toHaveLength(3);
-      expect(result!.versions).toBeUndefined();
     });
   });
 
@@ -147,20 +145,20 @@ describe('Multiple Bible References', () => {
     });
   });
 
-  describe('Multiple versions with pipe', () => {
+  describe('Multiple versions with pipe (NKBIP-08 format)', () => {
     it('should parse multiple versions after pipe', () => {
-      const result = parseBookWikilink('[[John 3:16 | KJV DRB]]', 'bible');
+      const result = parseBookWikilink('[[book::bible | john 3:16 | kjv drb]]');
       expect(result).not.toBeNull();
       expect(result!.references).toHaveLength(1);
-      expect(result!.references[0].book).toBe('John');
-      expect(result!.versions).toEqual(['KJV', 'DRB']);
+      expect(result!.references[0].title).toBe('john');
+      expect(result!.references[0].version).toEqual(['kjv', 'drb']);
     });
 
     it('should parse multiple versions with multiple references', () => {
-      const result = parseBookWikilink('[[Romans 1:16-25; Psalm 19:2-3 | KJV DRB]]', 'bible');
+      const result = parseBookWikilink('[[book::bible | romans 1:16-25, psalms 19:2-3 | kjv drb]]');
       expect(result).not.toBeNull();
       expect(result!.references).toHaveLength(2);
-      expect(result!.versions).toEqual(['KJV', 'DRB']);
+      expect(result!.references[0].version).toEqual(['kjv', 'drb']);
     });
 
     it('should generate multiple search queries for multiple versions', () => {
