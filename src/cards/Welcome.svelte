@@ -55,28 +55,46 @@
   });
 
   /**
-   * Build feed from cache - just show last 100 events, no filtering
+   * Build feed from cache - filter out non-wiki events
    */
   function buildFeedFromCache(): void {
-    console.log(`🏗️ Building feed from cache`);
-    
     const allCachedEvents = contentCache.getEvents('wiki');
+    
+    // Only include actual wiki article kinds
+    const wikiKinds = [30818, 30817, 30040, 30041];
+    
+    // Valid d-tag pattern: only alphanumeric and hyphens (no spaces, underscores, or special symbols)
+    const validDTagPattern = /^[a-zA-Z0-9-]+$/;
     
     // Deduplicate replaceable events by a-tag, keeping only the newest
     const deduplicated = new Map<string, Event>();
     
     for (const cached of allCachedEvents) {
       const event = cached.event;
+      
+      // Only process wiki article kinds
+      if (!wikiKinds.includes(event.kind)) {
+        continue;
+      }
+      
       const isReplaceable = event.kind === 30818 || event.kind === 30817 || event.kind === 30041 || event.kind === 1111;
       
       if (isReplaceable) {
         const dTag = event.tags.find(([t]) => t === 'd')?.[1];
         if (dTag) {
+          // Skip events with invalid d-tags (contains spaces, special symbols, etc.)
+          if (!validDTagPattern.test(dTag)) {
+            continue;
+          }
+          
           const aTag = `${event.kind}:${event.pubkey}:${dTag}`;
           const existing = deduplicated.get(aTag);
           if (!existing || (event.created_at || 0) > (existing.created_at || 0)) {
             deduplicated.set(aTag, event);
           }
+          continue;
+        } else {
+          // Skip replaceable events without d-tags
           continue;
         }
       }
@@ -94,8 +112,6 @@
       .slice(0, 100);
     
     currentRelays = contentCache.getAllRelays();
-    
-    console.log(`✅ Feed: ${results.length} articles from ${currentRelays.length} relays (deduplicated)`);
   }
 
 
@@ -106,13 +122,9 @@
    */
   async function updateAllCaches(): Promise<void> {
     try {
-      console.log('🔄 Updating ALL caches on mount...');
-      
       const userPubkey = $account?.pubkey || 'anonymous';
-      console.log(`🔄 Using pubkey: ${userPubkey}`);
       
       // Update wiki cache
-      console.log('🔄 Updating wiki cache...');
       const wikiResult = await relayService.queryEvents(
         userPubkey,
         'wiki-read',
@@ -120,15 +132,11 @@
         { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
       );
       
-      console.log(`📚 Wiki query returned ${wikiResult.events.length} events from ${wikiResult.relays.length} relays`);
-      
       if (wikiResult.events.length > 0) {
         await contentCache.storeEvents('wiki', wikiResult.events.map(event => ({ event, relays: wikiResult.relays })));
-        console.log(`✅ Cached ${wikiResult.events.length} wiki events`);
       }
       
       // Update reactions cache
-      console.log('🔄 Updating reactions cache...');
       const reactionsResult = await relayService.queryEvents(
         userPubkey,
         'wiki-read',
@@ -138,11 +146,9 @@
       
       if (reactionsResult.events.length > 0) {
         await contentCache.storeEvents('reactions', reactionsResult.events.map(event => ({ event, relays: reactionsResult.relays })));
-        console.log(`✅ Cached ${reactionsResult.events.length} reactions`);
       }
       
       // Update deletes cache
-      console.log('🔄 Updating deletes cache...');
       const deletesResult = await relayService.queryEvents(
         userPubkey,
         'wiki-read',
@@ -152,11 +158,9 @@
       
       if (deletesResult.events.length > 0) {
         await contentCache.storeEvents('deletes', deletesResult.events.map(event => ({ event, relays: deletesResult.relays })));
-        console.log(`✅ Cached ${deletesResult.events.length} deletes`);
       }
       
       // Update kind1 cache
-      console.log('🔄 Updating kind1 cache...');
       const kind1Result = await relayService.queryEvents(
         userPubkey,
         'wiki-read',
@@ -166,11 +170,9 @@
       
       if (kind1Result.events.length > 0) {
         await contentCache.storeEvents('kind1', kind1Result.events.map(event => ({ event, relays: kind1Result.relays })));
-        console.log(`✅ Cached ${kind1Result.events.length} kind1 events`);
       }
       
       // Update kind1111 cache
-      console.log('🔄 Updating kind1111 cache...');
       const kind1111Result = await relayService.queryEvents(
         userPubkey,
         'wiki-read',
@@ -180,11 +182,9 @@
       
       if (kind1111Result.events.length > 0) {
         await contentCache.storeEvents('kind1111', kind1111Result.events.map(event => ({ event, relays: kind1111Result.relays })));
-        console.log(`✅ Cached ${kind1111Result.events.length} kind1111 events`);
       }
       
       // Update kind30041 cache
-      console.log('🔄 Updating kind30041 cache...');
       const kind30041Result = await relayService.queryEvents(
         userPubkey,
         'wiki-read',
@@ -194,11 +194,9 @@
       
       if (kind30041Result.events.length > 0) {
         await contentCache.storeEvents('kind30041', kind30041Result.events.map(event => ({ event, relays: kind30041Result.relays })));
-        console.log(`✅ Cached ${kind30041Result.events.length} kind30041 events`);
       }
       
       // Update metadata cache
-      console.log('🔄 Updating metadata cache...');
       const authors = [...new Set(wikiResult.events.map(event => event.pubkey))];
       if (authors.length > 0) {
         const metadataResult = await relayService.queryEvents(
@@ -210,12 +208,10 @@
         
         if (metadataResult.events.length > 0) {
           await contentCache.storeEvents('metadata', metadataResult.events.map(event => ({ event, relays: metadataResult.relays })));
-          console.log(`✅ Cached ${metadataResult.events.length} metadata events`);
         }
       }
       
       // Update bookConfigs cache
-      console.log('🔄 Updating bookConfigs cache...');
       const bookConfigsResult = await relayService.queryEvents(
         userPubkey,
         'wiki-read',
@@ -225,10 +221,7 @@
       
       if (bookConfigsResult.events.length > 0) {
         await contentCache.storeEvents('bookConfigs', bookConfigsResult.events.map(event => ({ event, relays: bookConfigsResult.relays })));
-        console.log(`✅ Cached ${bookConfigsResult.events.length} bookConfigs`);
       }
-      
-      console.log('✅ ALL caches updated on mount');
       
     } catch (error) {
       console.error('❌ Failed to update all caches on mount:', error);
@@ -240,13 +233,9 @@
    */
   async function backgroundCacheUpdate(): Promise<void> {
     try {
-      console.log('🔄 Background cache update starting...');
-      
       const userPubkey = $account?.pubkey || 'anonymous';
-      console.log(`🔄 Using pubkey: ${userPubkey}`);
       
       // Always update wiki cache to ensure it's populated
-      console.log('🔄 Force updating wiki cache...');
       
       const wikiResult = await relayService.queryEvents(
         userPubkey,
@@ -255,17 +244,12 @@
         { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
       );
       
-      console.log(`📚 Wiki query returned ${wikiResult.events.length} events from ${wikiResult.relays.length} relays`);
-      
       // Store wiki events in cache
       if (wikiResult.events.length > 0) {
         await contentCache.storeEvents('wiki', wikiResult.events.map(event => ({ event, relays: wikiResult.relays })));
-        console.log(`✅ Cached ${wikiResult.events.length} wiki events to IndexedDB`);
         
         // Rebuild feed with new data
         buildFeedFromCache();
-      } else {
-        console.log('⚠️ No wiki events found from relays');
       }
       
       // Check other caches for updates
@@ -323,11 +307,8 @@
       }
       
       if (queries.length === 0) {
-        console.log('📦 All caches are fresh');
         return;
       }
-      
-      console.log(`🔄 Updating ${queries.length} stale caches...`);
       
       const results = await Promise.all(queries);
       
@@ -352,8 +333,6 @@
       
       await Promise.all(storePromises);
       
-      console.log(`✅ Background cache update completed`);
-      
     } catch (error) {
       console.error('❌ Background cache update failed:', error);
     }
@@ -365,12 +344,10 @@
   async function doLogin() {
     try {
       if (!(window as any).nostr) {
-        console.log('Nostr extension not found');
         return;
       }
       
       const pubkey = await (window as any).nostr.getPublicKey();
-      console.log('Login successful:', pubkey);
       setAccount(pubkey);
     } catch (error) {
       console.error('Login failed:', error);
@@ -431,10 +408,8 @@
       (async () => {
         try {
           await contentCache.initialize();
-          console.log('✅ Cache initialized');
           
           // Force update ALL caches immediately on mount
-          console.log('🔄 Force updating all caches on mount...');
           await updateAllCaches();
           
           buildFeedFromCache();

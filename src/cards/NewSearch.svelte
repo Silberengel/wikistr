@@ -51,8 +51,6 @@ import UserBadge from '$components/UserBadge.svelte';
     try {
       const userPubkey = $account?.pubkey || 'anonymous';
       
-      console.log('🔍 Loading relay info for user:', userPubkey);
-      
       // Get theme relays directly from theme configuration
       const themeWikiRelays = theme.relays?.wiki || [];
       const themeSocialRelays = theme.relays?.social || [];
@@ -66,14 +64,6 @@ import UserBadge from '$components/UserBadge.svelte';
       const userOnlyRelays = allUserRelays.filter(relay => 
         !themeWikiRelays.includes(relay) && !themeSocialRelays.includes(relay)
       );
-      
-      console.log('🔍 Relay loading debug:');
-      console.log('  User pubkey:', userPubkey);
-      console.log('  Theme wiki relays:', themeWikiRelays);
-      console.log('  Theme social relays:', themeSocialRelays);
-      console.log('  All wiki relays:', allWikiRelays);
-      console.log('  All social relays:', allSocialRelays);
-      console.log('  User-only relays:', userOnlyRelays);
       
       // Combine theme relays + user-only relays
       const allRelays = new Set([...themeWikiRelays, ...themeSocialRelays, ...userOnlyRelays]);
@@ -90,12 +80,6 @@ import UserBadge from '$components/UserBadge.svelte';
           hasSocial: isThemeSocial || allSocialRelays.includes(relay), // Show social capability if in social relays
           isUserRelay: isUserRelay
         };
-      });
-      
-      console.log('🔍 Final relay display:');
-      console.log('  Total relays to display:', themeRelays.length);
-      themeRelays.forEach((relay, index) => {
-        console.log(`  ${index + 1}. ${relay.url} (wiki: ${relay.hasWiki}, social: ${relay.hasSocial}, user: ${relay.isUserRelay})`);
       });
       
       relaysLoaded = true;

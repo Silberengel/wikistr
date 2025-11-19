@@ -203,11 +203,9 @@
     );
     
     if (cachedArticle) {
-      console.log('Article: Found cached content for', dTag, '- INSTANT LOAD');
       event = cachedArticle.event;
       seenOn = cachedArticle.relays;
     } else {
-      console.log('Article: No cached content, loading from relays for', dTag);
       // Only hit relays if not in cache
       (async () => {
         try {
@@ -239,7 +237,6 @@
             // Store the article in cache for future use
             const eventsToStore = createEventsToStore(articleEvent, result.relays);
             await contentCache.storeEvents('wiki', eventsToStore);
-            console.log('Article: Cached content for', dTag);
           }
         } catch (error) {
           console.error('Failed to load article:', error);
@@ -257,7 +254,6 @@
     );
     
     if (cachedAuthorEvent) {
-      console.log('Article: Found cached author metadata for', pubkey.slice(0, 8) + '...', '- INSTANT LOAD');
       try {
         const content = JSON.parse(cachedAuthorEvent.event.content);
         author = createAuthorFromContent(content);
@@ -265,7 +261,6 @@
         console.warn('Article: Failed to parse cached author metadata:', e);
       }
     } else {
-      console.log('Article: No cached author metadata, loading from relays for', pubkey.slice(0, 8) + '...');
       // Only hit relays if not in cache
       (async () => {
         try {
@@ -286,7 +281,6 @@
             // Store the author metadata in cache for future use
             const eventsToStore = createEventsToStore(event, result.relays);
             await contentCache.storeEvents('metadata', eventsToStore);
-            console.log('Article: Cached author metadata for', pubkey.slice(0, 8) + '...');
           } catch (e) {
             console.warn('Article: Failed to parse author metadata:', e);
             author = createFallbackAuthor();
@@ -329,8 +323,6 @@
       if (now - lastLoadTime > 1000) {
         lastLoadTime = now;
         lastEventId = event.id;
-        console.log('Effect triggered - account state:', $account ? 'logged in' : 'anonymous', $account?.pubkey);
-        console.log('Loading reactions for article:', event.id);
         loadReactions();
       }
     }
@@ -341,8 +333,6 @@
     const userReactions = new Map<string, NostrEvent>();
     
     for (const reaction of reactions) {
-      console.log('Processing reaction:', reaction.content, 'from:', reaction.pubkey);
-      
       const existing = userReactions.get(reaction.pubkey);
       if (!existing || reaction.created_at > existing.created_at) {
         userReactions.set(reaction.pubkey, reaction);
@@ -377,10 +367,6 @@
         likeStatus = 'none';
       }
     }
-    
-    console.log('[snapshot] Final vote counts:', { likes, dislikes });
-    console.log('Final vote counts:', $state.snapshot(voteCounts));
-    console.log('User reaction:', userReaction?.id, 'Status:', likeStatus);
   }
 
   async function loadReactions() {
@@ -395,9 +381,6 @@
     userReaction = null;
     likeStatus = 'none';
 
-    console.log('Loading reactions for article:', articleEvent.id);
-    console.log('Account state in loadReactions:', $account ? 'logged in' : 'anonymous', $account?.pubkey);
-
     try {
       // First, try to get reactions from cache and display them immediately
       const cachedReactions = await contentCache.getEvents('reactions');
@@ -406,7 +389,6 @@
       );
       
       if (articleReactions.length > 0) {
-        console.log(`📦 Using ${articleReactions.length} cached reactions for article: ${articleEvent.id}`);
         const result = {
           events: articleReactions.map(cached => cached.event),
           relays: [...new Set(articleReactions.flatMap(cached => cached.relays))]
@@ -418,7 +400,6 @@
       }
       
       // Only query relays if no cached reactions found
-      console.log('🔄 No cached reactions, loading from relays for article:', articleEvent.id);
       const freshResult = await relayService.queryEvents(
         $account?.pubkey || 'anonymous',
         'social-read',
@@ -440,11 +421,7 @@
         await contentCache.storeEvents('reactions', 
           freshResult.events.map(event => ({ event, relays: freshResult.relays }))
         );
-        console.log('Reactions: Cached', freshResult.events.length, 'reactions for article:', articleEvent.id);
       }
-      
-      console.log('Loaded fresh reactions from relays:', freshResult.events.length, 'for article:', articleEvent.id);
-      console.log('Using relays:', freshResult.relays);
       
       // Process fresh reactions
       processReactions(freshResult.events);

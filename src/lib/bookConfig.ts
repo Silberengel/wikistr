@@ -45,8 +45,6 @@ export const bookAbbreviations = derived(
  */
 export async function initializeBookConfigurations() {
   try {
-    console.log('Initializing book configurations...');
-    
     // Start with built-in book types
     allBookTypes.set({ ...BOOK_TYPES });
     
@@ -57,11 +55,8 @@ export async function initializeBookConfigurations() {
     const unsubscribe = customBookTypes.subscribe((customTypes) => {
       if (Object.keys(customTypes).length > 0) {
         allBookTypes.update(current => ({ ...current, ...customTypes }));
-        console.log(`Added ${Object.keys(customTypes).length} custom book types`);
       }
     });
-    
-    console.log('Book configurations initialized successfully');
     return unsubscribe;
   } catch (error) {
     console.error('Failed to initialize book configurations:', error);
@@ -74,9 +69,7 @@ export async function initializeBookConfigurations() {
  */
 export async function refreshBookConfigurations() {
   try {
-    console.log('Refreshing book configurations...');
     await loadAndStoreBookConfigurations();
-    console.log('Book configurations refreshed');
   } catch (error) {
     console.error('Failed to refresh book configurations:', error);
   }

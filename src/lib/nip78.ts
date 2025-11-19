@@ -174,7 +174,6 @@ export async function loadBookConfigurations(): Promise<BookConfiguration[]> {
   try {
     // Get the current user's pubkey
     const currentUserPubkey = localStorage.getItem('account') || 'anonymous';
-    console.log(`🔍 Loading book configs for user: ${currentUserPubkey}`);
     
     // Try multiple relay sets to find book configurations with specific tags
     const results = await Promise.allSettled([
@@ -232,17 +231,6 @@ export async function loadBookConfigurations(): Promise<BookConfiguration[]> {
       }
     });
 
-    console.log(`🔍 Book config search: Found ${allEvents.length} events from ${new Set(allRelays).size} relays`);
-    console.log('Relays used:', [...new Set(allRelays)]);
-    
-    // Debug: log all events found (updated)
-    console.log('All events found:', allEvents.map(e => ({ 
-      id: e.id, 
-      kind: e.kind, 
-      pubkey: e.pubkey?.slice(0, 16) + '...',
-      content: e.content?.slice(0, 100) + '...',
-      tags: e.tags
-    })));
     
     // Debug: specifically look for kind 30078 events
     const kind30078Events = allEvents.filter(e => e.kind === 30078);
@@ -318,7 +306,6 @@ export async function loadAndStoreBookConfigurations() {
     });
     customBookTypes.set(bookTypes);
     
-    console.log(`Loaded ${configs.length} custom book configurations`);
   } catch (error) {
     console.error('Failed to load book configurations:', error);
   }

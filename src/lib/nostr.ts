@@ -154,14 +154,11 @@ export const account = readable<NostrUser | null>(null, (set) => {
       
       const data = await Promise.race([loadPromise, timeoutPromise]);
       if (data && data.pubkey !== '0000000000000000000000000000000000000000000000000000000000000000') {
-        console.log('Loading account from localStorage:', data.pubkey);
         set(data);
       } else {
-        console.log('No valid account found in localStorage');
         // Clear invalid dummy account from localStorage
         if (data && data.pubkey === '0000000000000000000000000000000000000000000000000000000000000000') {
           await idbkv.del('wikistr:loggedin');
-          console.log('Cleared dummy account from localStorage');
         }
       }
     } catch (error) {

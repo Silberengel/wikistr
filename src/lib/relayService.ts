@@ -14,6 +14,7 @@ export interface QueryResult<T> {
 export interface RelayServiceOptions {
   excludeUserContent?: boolean;
   currentUserPubkey?: string;
+  customRelays?: string[];
 }
 
 /**
@@ -140,14 +141,10 @@ class RelayService {
     if (this.initialized) return;
     
     try {
-      console.log('🔧 Initializing RelayService...');
-      
       // Initialize with basic theme configuration
       const theme = getThemeConfig();
-      console.log('🎨 Theme loaded:', theme.name);
       
       this.initialized = true;
-      console.log('✅ RelayService initialized successfully');
     } catch (error) {
       console.error('❌ Failed to initialize RelayService:', error);
       throw error;
@@ -443,7 +440,8 @@ class RelayService {
     
     // Use the queue system to throttle requests
     return this.queueRequest(async () => {
-      let relays = await this.getRelaysForOperation(userPubkey, type);
+      // Use customRelays if provided, otherwise get relays for operation
+      let relays = options.customRelays || await this.getRelaysForOperation(userPubkey, type);
       
       // Extra safety filter for undefined/null relays
       relays = relays.filter(url => url && 

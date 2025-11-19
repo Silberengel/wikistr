@@ -2,7 +2,6 @@
   import { onMount } from 'svelte';
   import debounce from 'debounce';
   import type { NostrEvent } from '@nostr/tools/pure';
-  import { pool } from '@nostr/gadgets/global';
 
   import type { ArticleCard, Card } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next, urlWithoutScheme } from '$lib/utils';
@@ -40,48 +39,35 @@
     // Always query the specific relay directly (no cache for relay-specific views)
     const relayUrl = relayCard.data;
     
-    if ($account) {
-      try {
-        console.log(`Relay: Querying ONLY relay ${relayUrl} directly`);
+    try {
+      // Use relayService to query the specific relay with proper filter formatting
+      // Create a custom relay service instance that only uses this one relay
+      const result = await relayService.queryEvents(
+        $account?.pubkey || 'anonymous',
+        'wiki-read',
+        [{ kinds: [wikiKind], limit: 25 }],
+        {
+          excludeUserContent: false,
+          currentUserPubkey: $account?.pubkey,
+          // Override relays to only use this specific relay
+          customRelays: [relayUrl]
+        }
+      );
+      
+      // Process events and add to results
+      for (const event of result.events) {
+        // Filter out user's own content if requested
+        if ($account && event.pubkey === $account.pubkey) {
+          continue;
+        }
         
-        // Query only the specific relay, not all relays
-        const filters = [{ kinds: [wikiKind], limit: 25 }];
-        const events: NostrEvent[] = [];
-        let subscriptionClosed = false;
-        
-        const subscription = pool.subscribeMany([relayUrl], filters, {
-          onevent: (event: any) => {
-            if (subscriptionClosed) return;
-            
-            // Filter out user's own content if requested
-            if (event.pubkey === $account.pubkey) {
-              return;
-            }
-            
-            events.push(event);
-            if (addUniqueTaggedReplaceable(results, event)) update();
-          },
-          oneose: () => {
-            if (subscriptionClosed) return;
-            subscriptionClosed = true;
-            subscription.close();
-            tried = true;
-          }
-        });
-        
-        // Timeout after 8 seconds
-        setTimeout(() => {
-          if (!subscriptionClosed) {
-            subscriptionClosed = true;
-            subscription.close();
-            tried = true;
-          }
-        }, 8000);
-        
-      } catch (err) {
-        console.warn('Failed to load relay articles:', err);
-        tried = true;
+        if (addUniqueTaggedReplaceable(results, event)) update();
       }
+      
+      tried = true;
+    } catch (err) {
+      console.warn('Failed to load relay articles:', err);
+      tried = true;
     }
   });
 

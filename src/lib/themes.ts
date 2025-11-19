@@ -38,8 +38,6 @@ const availableThemes = Object.keys(themeModules)
   .map(path => path.replace('./themes/', '').replace('.yml', ''))
   .sort();
 
-// Log discovered themes
-console.log(`🎨 Wikistr themes discovered: ${availableThemes.join(', ')}`);
 
 // Theme configurations mapping
 const themeConfigs: Record<string, string> = {};

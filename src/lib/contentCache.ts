@@ -349,4 +349,3 @@ contentCache.initialize().catch(console.error);
 // setInterval(() => {
 //   contentCache.cleanup().catch(console.error);
 // }, 5 * 60 * 1000);
-console.log('⚠️ Content cache cleanup disabled to prevent doom loops');

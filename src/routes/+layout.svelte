@@ -54,8 +54,6 @@
     if (initialized) return;
     
     try {
-      console.log('🚀 Initializing layout...');
-      
       // Set up event listeners
       setupEventListeners();
       
@@ -63,12 +61,9 @@
       setupErrorHandlers();
       
       // Initialize book configurations
-      console.log('📚 Initializing book configurations...');
       await initializeBookConfigurations();
-      console.log('✅ Book configurations initialized');
       
       initialized = true;
-      console.log('✅ Layout initialized successfully');
       
     } catch (error) {
       console.error('❌ Failed to initialize layout:', error);
@@ -279,7 +274,6 @@
       root.style.setProperty('--syntax-json-literal', '#fb7185'); // Bright pink for JSON literals
     }
     
-    console.log('🎨 CSS variables updated for mode:', currentMode);
   });
 </script>
 
