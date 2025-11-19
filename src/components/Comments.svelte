@@ -54,92 +54,18 @@
   let selectedUserPubkey = $state('');
   let selectedUserBech32 = $state('');
 
-  interface ThreadedComment {
-    comment: NostrEvent;
-    replies: ThreadedComment[];
-    isDeeplyNested?: boolean;
-    originalParentId?: string;
+  // Sort comments by creation time (oldest to newest) - no threading
+  const sortedComments = $derived([...comments].sort((a, b) => (a.created_at || 0) - (b.created_at || 0)));
+  
+  // Helper to get parent comment for a reply (following NIP-22)
+  function getParentComment(comment: NostrEvent): NostrEvent | null {
+    // NIP-22: lowercase 'e' tag for parent event id
+    const parentETag = comment.tags.find(([k]) => k === 'e');
+    if (parentETag && parentETag[1]) {
+      return comments.find(c => c.id === parentETag[1]) || null;
+    }
+    return null;
   }
-
-  function organizeCommentsIntoThreads(comments: NostrEvent[]): ThreadedComment[] {
-    const commentMap = new Map<string, ThreadedComment>();
-    const topLevelComments: ThreadedComment[] = [];
-
-    // First pass: create threaded comment objects
-    comments.forEach(comment => {
-      commentMap.set(comment.id, {
-        comment,
-        replies: []
-      });
-    });
-
-    // Helper function to calculate the depth of a comment
-    function calculateDepth(comment: NostrEvent, visited = new Set<string>()): number {
-      if (visited.has(comment.id)) return 0; // Prevent infinite loops
-      visited.add(comment.id);
-      
-      const parentETag = comment.tags.find(([k]: string[]) => k === 'e');
-      const parentKTag = comment.tags.find(([k]: string[]) => k === 'k');
-      
-      if (parentETag && parentKTag && parentKTag[1] === '1111') {
-        // This is a reply to another comment
-        const parentId = parentETag[1];
-        const parentComment = comments.find(c => c.id === parentId);
-        if (parentComment) {
-          return 1 + calculateDepth(parentComment, visited);
-        }
-      }
-      
-      return 1; // Root level
-    }
-
-    // Second pass: organize into hierarchy with 3-level limit
-    comments.forEach(comment => {
-      const threadedComment = commentMap.get(comment.id)!;
-      const depth = calculateDepth(comment);
-      
-      // Check if this is a reply to another comment
-      const parentETag = comment.tags.find(([k]: string[]) => k === 'e');
-      const parentKTag = comment.tags.find(([k]: string[]) => k === 'k');
-      
-      if (parentETag && parentKTag && parentKTag[1] === '1111') {
-        // This is a reply to another comment
-        const parentId = parentETag[1];
-        const parent = commentMap.get(parentId);
-        
-        if (parent && depth <= 3) {
-          // Normal hierarchy for levels 1-3
-          parent.replies.push(threadedComment);
-        } else {
-          // Level 4+ or parent not found, treat as top-level but mark as deeply nested
-          threadedComment.isDeeplyNested = true;
-          threadedComment.originalParentId = parentId;
-          topLevelComments.push(threadedComment);
-        }
-      } else {
-        // This is a top-level comment
-        topLevelComments.push(threadedComment);
-      }
-    });
-
-    // Sort top-level comments and their replies by creation time (oldest to newest)
-    function sortThreadedComments(threaded: ThreadedComment[]): ThreadedComment[] {
-      return threaded.sort((a, b) => (a.comment.created_at || 0) - (b.comment.created_at || 0));
-    }
-
-    function sortReplies(threaded: ThreadedComment): ThreadedComment {
-      if (threaded.replies.length > 0) {
-        threaded.replies = sortThreadedComments(threaded.replies);
-        threaded.replies = threaded.replies.map(sortReplies);
-      }
-      return threaded;
-    }
-
-    const sortedTopLevel = sortThreadedComments(topLevelComments);
-    return sortedTopLevel.map(sortReplies);
-  }
-
-  const threadedComments = $derived(organizeCommentsIntoThreads(comments));
 
   function startReply(commentId: string) {
     replyingTo = commentId;
@@ -154,12 +80,18 @@
     isSubmitting = true;
     
     try {
+      // NIP-22: Uppercase tags for root scope
       const commentEventTemplate = {
         kind: 1111,
         content: commentText.trim(),
         tags: [
-          ['A', articleCoordinate, 'article'],
-          ['K', event.kind.toString()]
+          ['A', articleCoordinate], // Root scope: event address
+          ['K', event.kind.toString()], // Root kind
+          ['P', event.pubkey], // Root author pubkey
+          // For top-level comments, parent tags are same as root
+          ['a', articleCoordinate], // Parent scope (same as root for top-level)
+          ['k', event.kind.toString()], // Parent kind (same as root for top-level)
+          ['p', event.pubkey] // Parent author (same as root for top-level)
         ],
         created_at: Math.floor(Date.now() / 1000)
       };
@@ -304,14 +236,19 @@
     isSubmitting = true;
     
     try {
+      // NIP-22: Uppercase for root, lowercase for parent
       const commentEventTemplate = {
         kind: 1111,
         content: replyText.trim(),
         tags: [
-          ['A', articleCoordinate, 'article'],
-          ['e', parentComment.id, 'reply'],
-          ['K', event.kind.toString()],
-          ['p', parentComment.pubkey]
+          // Root scope (the article)
+          ['A', articleCoordinate], // Root event address
+          ['K', event.kind.toString()], // Root kind
+          ['P', event.pubkey], // Root author pubkey
+          // Parent scope (the comment being replied to)
+          ['e', parentComment.id], // Parent event id (lowercase)
+          ['k', '1111'], // Parent kind (lowercase) - always 1111 for replies to comments
+          ['p', parentComment.pubkey] // Parent author pubkey (lowercase)
         ],
         created_at: Math.floor(Date.now() / 1000)
       };
@@ -403,9 +340,10 @@
 
   function processComments(commentEvents: NostrEvent[]) {
     // Client-side filtering for our specific wiki article
+    // NIP-22: Use uppercase 'A' for root scope
     const filteredComments = commentEvents.filter(commentEvent => {
-      const aTag = commentEvent.tags.find(([k]) => k === 'A');
-      const kTag = commentEvent.tags.find(([k]) => k === 'K');
+      const aTag = commentEvent.tags.find(([k]) => k === 'A'); // Root scope
+      const kTag = commentEvent.tags.find(([k]) => k === 'K'); // Root kind
       
       // Check if this comment references our wiki article
       return aTag && aTag[1] === articleCoordinate && 
@@ -426,6 +364,7 @@
         const allCachedComments = await contentCache.getEvents('kind1111');
         
         // Filter cached comments to only show replies to the current article
+        // NIP-22: Use uppercase 'A' for root scope
         const cachedComments = allCachedComments.filter(cached => 
           cached.event.tags.some(tag => tag[0] === 'A' && tag[1] === articleCoordinate)
         );
@@ -449,7 +388,7 @@
         [
           {
             kinds: [1111],
-            '#a': [articleCoordinate], // Only get replies to the current article (use lowercase #a)
+            '#A': [articleCoordinate], // NIP-22: Use uppercase #A for root scope
             limit: 200
           }
         ],
@@ -520,9 +459,9 @@
     <p class="text-center py-8" style="color: var(--text-secondary);">No comments yet. Be the first to comment!</p>
   {:else}
     <div class="space-y-4">
-      {#each threadedComments as threadedComment (threadedComment.comment.id)}
-        {@const comment = threadedComment.comment}
-        <!-- Top-level comment -->
+      {#each sortedComments as comment (comment.id)}
+        {@const parentComment = getParentComment(comment)}
+        <!-- Comment (flat list, no threading) -->
         <div class="py-2 px-4 rounded-lg border" style="background-color: var(--bg-primary); border-color: var(--border);">
           <div class="flex items-center mb-1">
             <div class="flex items-center space-x-3 flex-1 min-w-0">
@@ -568,34 +507,26 @@
             </div>
           </div>
           
-          <!-- Show blurb if this is a reply -->
-          {#if comment.tags.find(([k]) => k === 'e')}
-            {@const parentETag = comment.tags.find(([k]) => k === 'e')}
-            {#if parentETag}
-              {@const parentComment = comments.find(c => c.id === parentETag[1])}
-              {#if parentComment}
-                {#if threadedComment.isDeeplyNested}
-                  <ReplyToBlurb pubkey={parentComment.pubkey} content={parentComment.content} variant="deeply-nested" />
-                {:else}
-                  <ReplyToBlurb pubkey={parentComment.pubkey} content={parentComment.content} variant="inline" />
-                {/if}
-              {/if}
-            {/if}
+          <!-- Show quote bubble if this is a reply -->
+          {#if parentComment}
+            <div class="mb-3">
+              <ReplyToBlurb pubkey={parentComment.pubkey} content={parentComment.content} />
+            </div>
           {/if}
 
           <div class="leading-relaxed mb-4" style="color: var(--text-primary);">
             <AsciidocContent event={comment} createChild={() => {}} />
           </div>
 
-          <!-- Reply Form for top-level comment -->
+          <!-- Reply Form -->
           {#if replyingTo === comment.id && $account}
-            <div class="mt-4 border-l-4 border-espresso-400 pl-4 py-3">
+            <div class="mt-4 border-l-4 pl-4 py-3" style="border-color: var(--accent);">
               <!-- Blurb showing parent comment -->
               <ReplyToBlurb pubkey={comment.pubkey} content={comment.content} />
               <textarea
                 bind:value={replyText}
                 placeholder="Write a reply..."
-                class="w-full p-3 border rounded-lg text-sm resize-none"
+                class="w-full p-3 border rounded-lg text-sm resize-none mt-3"
                 style="font-family: {theme.typography.fontFamily};"
                 rows="3"
                 disabled={isSubmitting}
@@ -618,168 +549,6 @@
                   {isSubmitting ? 'Submitting...' : 'Reply'}
                 </button>
               </div>
-            </div>
-          {/if}
-
-          <!-- Level 2 replies -->
-          {#if threadedComment.replies.length > 0}
-            <div class="mt-6 ml-4 border-l-2 border-espresso-400 pl-4 space-y-3">
-              {#each threadedComment.replies as replyThread (replyThread.comment.id)}
-                {@const reply = replyThread.comment}
-                <div class="py-1 px-3 rounded-lg border" style="background-color: var(--bg-secondary); border-color: var(--border);">
-                  <div class="flex items-center mb-1">
-                    <div class="flex items-center space-x-3 flex-1 min-w-0">
-                      <UserBadge pubkey={reply.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" hideSearchIcon={false} />
-                      <span class="text-xs whitespace-nowrap" style="color: var(--text-secondary);">
-                        {formatRelativeTime(reply.created_at)}
-                      </span>
-                    </div>
-                    
-                    <div class="flex items-center space-x-2 flex-shrink-0 ml-2">
-                      <button
-                        onclick={() => copyCommentNevent(reply.id)}
-                        class="p-2 rounded-lg transition-all duration-200"
-                        style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
-                        title="Copy nevent"
-                      >
-                        {#if copiedNevent.has(reply.id)}
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                          </svg>
-                        {:else}
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                          </svg>
-                        {/if}
-                      </button>
-                      {#if copiedNeventMessage.has(reply.id)}
-                        <span class="text-xs font-medium animate-fade-in" style="color: var(--accent);">Nevent copied!</span>
-                      {/if}
-                      {#if $account}
-                        <button
-                          onclick={() => startReply(reply.id)}
-                          class="p-2 rounded-lg transition-all duration-200"
-                          style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
-                          disabled={isSubmitting}
-                          title="Reply"
-                        >
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
-                          </svg>
-                        </button>
-                      {/if}
-                    </div>
-                  </div>
-                  
-                  
-                <!-- Show blurb if this is a reply -->
-                {#if reply.tags.find(([k]) => k === 'e')}
-                  {@const parentETag = reply.tags.find(([k]) => k === 'e')}
-                  {#if parentETag}
-                    {@const parentComment = comments.find(c => c.id === parentETag[1])}
-                    {#if parentComment}
-                      <ReplyToBlurb pubkey={parentComment.pubkey} content={parentComment.content} variant="compact" />
-                    {/if}
-                  {/if}
-                {/if}
-
-                <div class="leading-relaxed mb-3" style="color: var(--text-primary);">
-                  <AsciidocContent event={reply} createChild={() => {}} />
-                </div>
-
-              <!-- Reply Form for level 2 -->
-              {#if replyingTo === reply.id && $account}
-                <div class="mt-3 border-l-4 border-espresso-400 pl-4 py-3">
-                  <!-- Blurb showing parent comment -->
-                  <ReplyToBlurb pubkey={reply.pubkey} content={reply.content} />
-                  <textarea
-                        bind:value={replyText}
-                        placeholder="Write a reply..."
-                        class="w-full p-3 border rounded-lg text-sm resize-none"
-                style="font-family: {theme.typography.fontFamily};"
-                        rows="3"
-                        disabled={isSubmitting}
-                      ></textarea>
-                      <div class="mt-3 flex justify-end space-x-3">
-                        <button
-                          onclick={cancelReply}
-                          class="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
-                  style="color: var(--text-secondary); background-color: var(--bg-secondary); border: 1px solid var(--border);"
-                          disabled={isSubmitting}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onclick={() => submitReply(reply)}
-                          disabled={!replyText.trim() || isSubmitting}
-                          class="px-4 py-2 text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
-                          style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
-                        >
-                          {isSubmitting ? 'Submitting...' : 'Reply'}
-                        </button>
-                      </div>
-                    </div>
-                  {/if}
-
-                  <!-- Level 3 replies -->
-                  {#if replyThread.replies.length > 0}
-                    <div class="mt-5 ml-4 border-l-2 border-brown-400 pl-4 space-y-2">
-                      {#each replyThread.replies as nestedReplyThread (nestedReplyThread.comment.id)}
-                        {@const nestedReply = nestedReplyThread.comment}
-                        <div class="py-1 px-3 rounded border" style="background-color: var(--bg-tertiary); border-color: var(--border);">
-                          <div class="flex items-center mb-1">
-                            <div class="flex items-center space-x-3 flex-1 min-w-0">
-                              <UserBadge pubkey={nestedReply.pubkey} {createChild} onProfileClick={handleProfileClick} size="tiny" hideSearchIcon={false} />
-                              <span class="text-xs whitespace-nowrap" style="color: var(--text-secondary);">
-                                {formatRelativeTime(nestedReply.created_at)}
-                              </span>
-                            </div>
-                            
-                            <div class="flex items-center space-x-2 flex-shrink-0 ml-2">
-                              <button
-                                onclick={() => copyCommentNevent(nestedReply.id)}
-                                class="p-2 rounded-lg transition-all duration-200"
-                                style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
-                                title="Copy nevent"
-                              >
-                                {#if copiedNevent.has(nestedReply.id)}
-                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                  </svg>
-                                {:else}
-                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                                  </svg>
-                                {/if}
-                              </button>
-                              {#if copiedNeventMessage.has(nestedReply.id)}
-                                <span class="text-xs font-medium animate-fade-in" style="color: var(--accent);">Nevent copied!</span>
-                              {/if}
-                            </div>
-                          </div>
-                          
-                          <!-- Show blurb if this is a reply -->
-                          {#if nestedReply.tags.find(([k]) => k === 'e')}
-                            {@const parentETag = nestedReply.tags.find(([k]) => k === 'e')}
-                            {#if parentETag}
-                              {@const parentComment = comments.find(c => c.id === parentETag[1])}
-                              {#if parentComment}
-                                <ReplyToBlurb pubkey={parentComment.pubkey} content={parentComment.content} variant="inline" />
-                              {/if}
-                            {/if}
-                          {/if}
-                          
-                          <div class="leading-relaxed mb-2" style="color: var(--text-primary);">
-                            <AsciidocContent event={nestedReply} createChild={() => {}} />
-                          </div>
-
-
-                        </div>
-                      {/each}
-                    </div>
-                  {/if}
-                </div>
-              {/each}
             </div>
           {/if}
         </div>

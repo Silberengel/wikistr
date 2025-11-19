@@ -61,7 +61,7 @@
     const allCachedEvents = contentCache.getEvents('wiki');
     
     // Only include actual wiki article kinds
-    const wikiKinds = [30818, 30817, 30040, 30041];
+    const wikiKinds = [30818, 30817, 30040, 30041, 30023];
     
     // Valid d-tag pattern: only alphanumeric and hyphens (no spaces, underscores, or special symbols)
     const validDTagPattern = /^[a-zA-Z0-9-]+$/;
@@ -77,7 +77,7 @@
         continue;
       }
       
-      const isReplaceable = event.kind === 30818 || event.kind === 30817 || event.kind === 30041 || event.kind === 1111;
+      const isReplaceable = event.kind === 30818 || event.kind === 30817 || event.kind === 30023 || event.kind === 30041 || event.kind === 1111;
       
       if (isReplaceable) {
         const dTag = event.tags.find(([t]) => t === 'd')?.[1];
@@ -125,7 +125,7 @@
       const userPubkey = $account?.pubkey || 'anonymous';
       
       // Update wiki cache - include all wiki kinds: 30818, 30817, 30040, 30041
-      const wikiKinds = [30818, 30817, 30040, 30041];
+      const wikiKinds = [30818, 30817, 30040, 30041, 30023];
       const wikiResult = await relayService.queryEvents(
         userPubkey,
         'wiki-read',
@@ -239,7 +239,7 @@
       // Always update wiki cache to ensure it's populated
       
       // Update wiki cache - include all wiki kinds: 30818, 30817, 30040, 30041
-      const wikiKinds = [30818, 30817, 30040, 30041];
+      const wikiKinds = [30818, 30817, 30040, 30041, 30023];
       const wikiResult = await relayService.queryEvents(
         userPubkey,
         'wiki-read',

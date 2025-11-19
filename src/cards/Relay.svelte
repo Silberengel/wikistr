@@ -6,7 +6,7 @@
   import type { ArticleCard, Card } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next, urlWithoutScheme } from '$lib/utils';
   // Support all wiki kinds: 30818 (AsciiDoc), 30817 (Markdown), 30040 (Index), 30041 (Content)
-  const wikiKinds = [30818, 30817, 30040, 30041];
+  const wikiKinds = [30818, 30817, 30040, 30041, 30023];
   import ArticleListItem from '$components/ArticleListItem.svelte';
   import { account } from '$lib/nostr';
   import { relayService } from '$lib/relayService';

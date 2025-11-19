@@ -25,9 +25,11 @@
     createChild: (card: Card) => void;
     replaceSelf: (card: Card) => void;
     back: () => void;
+    expanded?: boolean;
+    isDesktop?: boolean;
   }
 
-  let { card, createChild, replaceSelf, back }: Props = $props();
+  let { card, createChild, replaceSelf, back, expanded = false, isDesktop = false }: Props = $props();
   let event = $state<NostrEvent | null>(null);
   let isLoading = $state(true);
   let nOthers = $state<number | undefined>(undefined);
@@ -93,8 +95,8 @@
   function getEventEmoji(event: NostrEvent | null): string {
     if (!event) return '';
     
-    // Check for wiki articles (30818 and 30817)
-    if (event.kind === 30818 || event.kind === 30817) {
+    // Check for wiki articles (30818, 30817, and 30023)
+    if (event.kind === 30818 || event.kind === 30817 || event.kind === 30023) {
       return '📝';
     }
     
@@ -225,12 +227,13 @@
     if (articleCard.actualEvent) {
       event = articleCard.actualEvent;
       seenOn = articleCard.relayHints || [];
+      isLoading = false; // Set immediately for cached events
       return;
     }
 
     // INSTANT: Check cache synchronously first
-    // Support all wiki kinds: 30818 (AsciiDoc), 30817 (Markdown), 30040 (Index), 30041 (Content)
-    const wikiKinds = [30818, 30817, 30040, 30041];
+    // Support all wiki kinds: 30818 (AsciiDoc), 30817 (Markdown), 30040 (Index), 30041 (Content), 30023 (Long-form)
+    const wikiKinds = [30818, 30817, 30040, 30041, 30023];
     const cachedEvents = contentCache.getEvents('wiki');
     const cachedArticle = cachedEvents.find(cached => 
       cached.event.pubkey === pubkey && 
@@ -241,7 +244,8 @@
     if (cachedArticle) {
       event = cachedArticle.event;
       seenOn = cachedArticle.relays;
-      isLoading = false;
+      isLoading = false; // Set immediately - no async delay
+      return; // Exit early - no need to query relays
     } else {
       // Only hit relays if not in cache
       (async () => {
@@ -597,10 +601,46 @@
       </button>
     </div>
   {:else}
-    <div class="flex items-center">
+    <!-- Header Card: Image, Author, Summary (on its own line) -->
+    {#if event.tags.find(([k]) => k === 'image')?.[1] || event.tags.find(([k]) => k === 'author')?.[1] || summary}
+      <div class="mb-6 p-6 rounded-lg border" style="background-color: var(--bg-secondary); border-color: var(--border);">
+        <div class={expanded && isDesktop ? 'flex items-start gap-4' : 'flex flex-col'}>
+          {#if event.tags.find(([k]) => k === 'image')?.[1]}
+            {@const imageUrl = event.tags.find(([k]) => k === 'image')?.[1]}
+            <div class={expanded && isDesktop ? 'flex-shrink-0' : 'mb-4'}>
+              <img 
+                src={imageUrl} 
+                alt={title || dTag}
+                class="rounded-lg object-cover"
+                style="width: 300px; height: auto;"
+                onerror={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            </div>
+          {/if}
+          <div class="flex-1">
+            {#if event.tags.find(([k]) => k === 'author')?.[1]}
+              {@const authorTag = event.tags.find(([k]) => k === 'author')?.[1]}
+              <div class="mb-3">
+                <p class="text-sm font-semibold mb-1" style="color: var(--text-secondary);">Author</p>
+                <p class="text-lg" style="color: var(--text-primary);">{authorTag}</p>
+              </div>
+            {/if}
+            {#if summary}
+              <div>
+                <p class="text-sm font-semibold mb-1" style="color: var(--text-secondary);">Summary</p>
+                <p class="text-base leading-relaxed" style="color: var(--text-primary);">{summary}</p>
+              </div>
+            {/if}
+          </div>
+        </div>
+      </div>
+    {/if}
+    
+    <!-- Title with voting on the left -->
+    <div class="flex items-start gap-3 mb-4">
       <!-- Unified voting interface -->
       <div
-        class="flex flex-col items-center space-y-2 mr-3"
+        class="flex flex-col items-center space-y-2 flex-shrink-0"
         class:hidden={$account?.pubkey === event.pubkey}
       >
         <!-- Like button -->
@@ -666,8 +706,8 @@
         </div>
       </div>
       
-      <div class="ml-2 mb-4">
-        <div class="mt-2 font-bold text-4xl mb-4">
+      <div class="flex-1">
+        <div class="font-bold text-4xl mb-4">
           {#if getEventEmoji(event)}
             <span class="event-emoji">{getEventEmoji(event)}</span>
           {/if}
@@ -681,7 +721,9 @@
             </span>
           {/if}
         </div>
-        <div>
+      </div>
+    </div>
+    <div>
           <a class="cursor-pointer underline transition-colors" style="color: var(--accent);" onclick={edit}>
             {#if event?.pubkey === $account?.pubkey}
               Edit
@@ -717,8 +759,6 @@
               <span class="text-xs font-medium ml-2 animate-fade-in" style="color: var(--accent);">Nevent copied!</span>
             {/if}
           {/if}
-        </div>
-      </div>
     </div>
 
     <!-- Content -->

@@ -447,48 +447,159 @@
     // Convert links: [text](url) -> link:text[text]
     asciidoc = asciidoc.replace(/\[([^\]]+)\]\(([^)]+)\)/g, 'link:$2[$1]');
     
-    // Convert tables: | col1 | col2 | -> [cols="1,1"]
-    asciidoc = asciidoc.replace(/^(\|[^|\n]*(?:\|[^|\n]*)*\|)\s*(?:\n\s*\|[^|\n]*(?:\|[^|\n]*)*\|)*\s*$/gm, (match) => {
-      const rows = match.trim().split('\n').filter(row => row.trim());
-      if (rows.length === 0) return match;
+    // Convert tables: | col1 | col2 | -> [cols="2,1,1,3"]
+    // Match multi-line tables with proper markdown table format
+    // Process line by line to find table blocks
+    const lines = asciidoc.split('\n');
+    const result: string[] = [];
+    let inTable = false;
+    let tableLines: string[] = [];
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const isTableRow = /^\s*\|[^|]*\|/.test(line);
       
-      // Check if this is a proper markdown table (has header separator)
-      const hasHeaderSeparator = rows.some(row => {
-        const cells = row.trim().split('|').filter(cell => cell.trim());
-        return cells.every(cell => /^-+$/.test(cell.trim()));
-      });
-      
-      if (!hasHeaderSeparator) return match; // Not a proper table, skip
-      
-      const firstRow = rows[0];
-      const colCount = (firstRow.match(/\|/g) || []).length - 1;
-      
-      let asciidocTable = `[cols="${'1,'.repeat(colCount).slice(0, -1)}"]\n|===\n`;
-      
-      rows.forEach((row, index) => {
-        const cells = row.trim().split('|').filter(cell => cell.trim());
-        // Skip separator rows (rows with only dashes)
-        if (cells.every(cell => /^-+$/.test(cell.trim()))) {
-          return;
+      if (isTableRow) {
+        if (!inTable) {
+          inTable = true;
+          tableLines = [];
+        }
+        tableLines.push(line);
+      } else {
+        // Process accumulated table if we were in one
+        if (inTable && tableLines.length >= 2) {
+          // Find separator row
+          let separatorIndex = -1;
+          for (let j = 0; j < tableLines.length; j++) {
+            const cells = tableLines[j].split('|').map(c => c.trim()).filter(c => c.length > 0);
+            if (cells.length > 0 && cells.every(cell => /^-+$/.test(cell))) {
+              separatorIndex = j;
+              break;
+            }
+          }
+          
+          if (separatorIndex !== -1) {
+            // Valid table - convert it
+            const firstRow = tableLines[0];
+            const colCount = (firstRow.match(/\|/g) || []).length - 1;
+            
+            if (colCount >= 2) {
+              // Use flexible column widths
+              let colSpec = '';
+              if (colCount === 4) {
+                colSpec = '2*,1*,1*,3*'; // Name, Kind, d-tag, Tags
+              } else if (colCount === 3) {
+                colSpec = '2*,1*,2*';
+              } else if (colCount === 2) {
+                colSpec = '1*,2*';
+              } else {
+                colSpec = '1*,'.repeat(colCount).slice(0, -1);
+              }
+              
+              let asciidocTable = `[cols="${colSpec}",options="header"]\n|===\n`;
+              
+              tableLines.forEach((row, index) => {
+                // Skip separator rows
+                const cells = row.split('|').map(c => c.trim()).filter(c => c.length > 0);
+                if (cells.length > 0 && cells.every(cell => /^-+$/.test(cell))) {
+                  return;
+                }
+                
+                // Parse cells properly
+                const allCells = row.split('|');
+                const parsedCells = allCells.slice(1, -1).map(c => c.trim());
+                
+                // Build the row
+                let rowContent = '';
+                parsedCells.forEach(cell => {
+                  if (index < separatorIndex) {
+                    rowContent += `|*${cell}*`;
+                  } else {
+                    rowContent += `|${cell}`;
+                  }
+                });
+                asciidocTable += rowContent + '\n';
+              });
+              
+              asciidocTable += '|===';
+              result.push(asciidocTable);
+            } else {
+              // Invalid table, keep original
+              result.push(...tableLines);
+            }
+          } else {
+            // No separator, keep original
+            result.push(...tableLines);
+          }
+          
+          inTable = false;
+          tableLines = [];
         }
         
-        // Build the row with all cells on one line
-        let rowContent = '';
-        cells.forEach(cell => {
-          const trimmedCell = cell.trim();
-          // For header row (first row after separator), make it bold
-          if (index === 0) {
-            rowContent += `|*${trimmedCell}*`;
-          } else {
-            rowContent += `|${trimmedCell}`;
-          }
-        });
-        asciidocTable += rowContent + '\n';
-      });
+        result.push(line);
+      }
+    }
+    
+    // Handle table at end of document
+    if (inTable && tableLines.length >= 2) {
+      let separatorIndex = -1;
+      for (let j = 0; j < tableLines.length; j++) {
+        const cells = tableLines[j].split('|').map(c => c.trim()).filter(c => c.length > 0);
+        if (cells.length > 0 && cells.every(cell => /^-+$/.test(cell))) {
+          separatorIndex = j;
+          break;
+        }
+      }
       
-      asciidocTable += '|===';
-      return asciidocTable;
-    });
+      if (separatorIndex !== -1) {
+        const firstRow = tableLines[0];
+        const colCount = (firstRow.match(/\|/g) || []).length - 1;
+        
+        if (colCount >= 2) {
+          let colSpec = '';
+          if (colCount === 4) {
+            colSpec = '2*,1*,1*,3*';
+          } else if (colCount === 3) {
+            colSpec = '2*,1*,2*';
+          } else if (colCount === 2) {
+            colSpec = '1*,2*';
+          } else {
+            colSpec = '1*,'.repeat(colCount).slice(0, -1);
+          }
+          
+          let asciidocTable = `[cols="${colSpec}",options="header"]\n|===\n`;
+          
+          tableLines.forEach((row, index) => {
+            const cells = row.split('|').map(c => c.trim()).filter(c => c.length > 0);
+            if (cells.length > 0 && cells.every(cell => /^-+$/.test(cell))) {
+              return;
+            }
+            
+            const allCells = row.split('|');
+            const parsedCells = allCells.slice(1, -1).map(c => c.trim());
+            
+            let rowContent = '';
+            parsedCells.forEach(cell => {
+              if (index < separatorIndex) {
+                rowContent += `|*${cell}*`;
+              } else {
+                rowContent += `|${cell}`;
+              }
+            });
+            asciidocTable += rowContent + '\n';
+          });
+          
+          asciidocTable += '|===';
+          result.push(asciidocTable);
+        } else {
+          result.push(...tableLines);
+        }
+      } else {
+        result.push(...tableLines);
+      }
+    }
+    
+    asciidoc = result.join('\n');
     
     return asciidoc;
   }
@@ -538,6 +649,21 @@
     
     // Process standalone nostr: links that might not be in HTML yet
     processed = await processNostrLinksEnhanced(processed);
+    
+    // Make external links open in a new tab
+    // Match all <a> tags with href attributes that are external (http:// or https://)
+    processed = processed.replace(/<a([^>]*href=["'](https?:\/\/[^"']+)["'][^>]*)>/gi, (match, attrs, href) => {
+      // Skip if already has target attribute
+      if (attrs.includes('target=')) {
+        return match;
+      }
+      // Skip nostr: links (they're handled separately)
+      if (href.startsWith('nostr:') || href.startsWith('#nostr-')) {
+        return match;
+      }
+      // Add target="_blank" and rel="noopener noreferrer" for external links
+      return `<a${attrs} target="_blank" rel="noopener noreferrer">`;
+    });
     
     // Process LaTeX expressions in inline code elements
     processed = processed.replace(/<code>([^<]+)<\/code>/g, (match, codeContent) => {
@@ -928,7 +1054,7 @@
         const processedContent = preprocessContentForAsciidoc(rawContent);
         
         // Detect if Markdown
-        const isMarkdown = refEvent.kind === 30817 || detectMarkdownContent(processedContent);
+        const isMarkdown = refEvent.kind === 30817 || refEvent.kind === 30023 || detectMarkdownContent(processedContent);
         const finalContent = isMarkdown 
           ? convertMarkdownToAsciiDoc(processedContent)
           : processedContent;
@@ -946,7 +1072,7 @@
       attributes: {
         'source-highlighter': 'none',
         'toc': 'left',
-        'toclevels': 3
+        'toclevels': 1  // Only show first level initially
       }
     });
     
@@ -965,9 +1091,10 @@
     
     htmlContent = renderedHtml;
     
-    // Mount bookstr components after a delay
+    // Mount bookstr components and setup TOC after a delay
     setTimeout(() => {
       mountBookstrComponents();
+      setupCollapsibleTOC();
     }, 100);
     
     isLoading = false;
@@ -1048,7 +1175,7 @@
           nestedContent += `\n=== ${title}\n\n`;
           const rawContent = referencedEvent.content;
           const processedContent = preprocessContentForAsciidoc(rawContent);
-          const isMarkdown = referencedEvent.kind === 30817 || detectMarkdownContent(processedContent);
+          const isMarkdown = referencedEvent.kind === 30817 || referencedEvent.kind === 30023 || detectMarkdownContent(processedContent);
           const finalContent = isMarkdown 
             ? convertMarkdownToAsciiDoc(processedContent)
             : processedContent;
@@ -1085,8 +1212,8 @@
     const content = preprocessContentForAsciidoc(rawContent);
     
     // Detect if content is primarily Markdown vs AsciiDoc
-    // 30817 events are Markdown, 30818 and 30041 are AsciiDoc
-    const isMarkdown = event.kind === 30817 || detectMarkdownContent(content);
+    // 30817 and 30023 events are Markdown, 30818 and 30041 are AsciiDoc
+    const isMarkdown = event.kind === 30817 || event.kind === 30023 || detectMarkdownContent(content);
     
     let processedContent = content;
     if (isMarkdown) {
@@ -1103,7 +1230,7 @@
       attributes: {
         'source-highlighter': 'none',
         'toc': 'left',
-        'toclevels': 3
+        'toclevels': 1  // Only show first level initially
       }
     });
 
@@ -1153,6 +1280,7 @@
       applySyntaxHighlighting();
       renderLatexExpressions();
       mountBookstrComponents();
+      setupCollapsibleTOC();
     }, 100);
   });
 
@@ -1166,6 +1294,95 @@
     mountedBookstrComponents.clear();
   });
 
+  // Setup collapsible TOC with button
+  function setupCollapsibleTOC() {
+    if (!contentDiv) return;
+    
+    const toc = contentDiv.querySelector('#toc');
+    if (!toc) return;
+    
+    // Check if already set up
+    if (toc.hasAttribute('data-toc-setup')) return;
+    toc.setAttribute('data-toc-setup', 'true');
+    
+    // Hide TOC initially
+    (toc as HTMLElement).style.display = 'none';
+    
+    // Create toggle button
+    const button = document.createElement('button');
+    button.textContent = 'Table Of Contents';
+    button.className = 'toc-toggle-button';
+    button.style.cssText = `
+      margin-bottom: 1rem;
+      padding: 0.5rem 1rem;
+      background-color: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 0.375rem;
+      color: var(--text-primary);
+      cursor: pointer;
+      font-size: 0.875rem;
+      transition: background-color 0.2s;
+    `;
+    button.onmouseover = () => {
+      button.style.backgroundColor = 'var(--bg-tertiary)';
+    };
+    button.onmouseout = () => {
+      button.style.backgroundColor = 'var(--bg-secondary)';
+    };
+    
+    let isExpanded = false;
+    button.onclick = () => {
+      isExpanded = !isExpanded;
+      (toc as HTMLElement).style.display = isExpanded ? 'block' : 'none';
+      button.textContent = isExpanded ? 'Hide Table Of Contents' : 'Table Of Contents';
+    };
+    
+    // Insert button before TOC
+    toc.parentNode?.insertBefore(button, toc);
+    
+    // Hide nested TOC levels initially (toc2, toc3, etc.)
+    const nestedTocs = contentDiv.querySelectorAll('.toc2, .toc3, .toc4, .toc5, .toc6');
+    nestedTocs.forEach((nested) => {
+      (nested as HTMLElement).style.display = 'none';
+    });
+    
+    // Make first-level items clickable to expand their children
+    const firstLevelItems = toc.querySelectorAll('.toc > ul > li');
+    firstLevelItems.forEach((item) => {
+      const link = item.querySelector('a');
+      if (!link) return;
+      
+      const originalOnClick = link.onclick;
+      link.onclick = (e) => {
+        // Check if this item has children
+        const nestedUl = item.querySelector('ul');
+        if (nestedUl) {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          const isHidden = (nestedUl as HTMLElement).style.display === 'none' || 
+                          !(nestedUl as HTMLElement).style.display;
+          
+          if (isHidden) {
+            // Show all nested levels for this branch
+            const allNested = item.querySelectorAll('ul');
+            allNested.forEach((ul) => {
+              (ul as HTMLElement).style.display = 'block';
+            });
+          } else {
+            // Hide all nested levels for this branch
+            const allNested = item.querySelectorAll('ul');
+            allNested.forEach((ul) => {
+              (ul as HTMLElement).style.display = 'none';
+            });
+          }
+        } else if (originalOnClick) {
+          originalOnClick.call(link, e);
+        }
+      };
+    });
+  }
+  
   // Mount BookPassageGroup components at marker locations
   function mountBookstrComponents() {
     if (!contentDiv) {
@@ -1575,9 +1792,36 @@
   }
 
   /* Override table styling for markdown-converted tables */
+  /* Table container should be constrained to panel width */
+  :global(.prose table),
   :global(table) {
     border-collapse: collapse;
     border: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    display: block !important;
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+    margin: 0 !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Table content (tbody/thead) can expand beyond container */
+  :global(.prose table tbody),
+  :global(.prose table thead),
+  :global(.prose table tfoot),
+  :global(table tbody),
+  :global(table thead),
+  :global(table tfoot) {
+    display: table !important;
+    width: 100% !important;
+    min-width: max-content !important;
+  }
+  
+  /* Table rows maintain table layout */
+  :global(.prose table tr),
+  :global(table tr) {
+    display: table-row !important;
   }
 
   :global(table th),
@@ -1586,6 +1830,7 @@
     border: none !important;
     border-bottom: 1px solid var(--border) !important;
     background: transparent !important;
+    white-space: nowrap !important;
   }
 
   :global(table th) {
@@ -1597,5 +1842,28 @@
 
   :global(table tr:last-child td) {
     border-bottom: none !important;
+  }
+  
+  /* Scrollbar styling for tables - appears directly under the table */
+  :global(.prose table)::-webkit-scrollbar,
+  :global(table)::-webkit-scrollbar {
+    height: 8px;
+  }
+  
+  :global(.prose table)::-webkit-scrollbar-track,
+  :global(table)::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+    border-radius: 4px;
+  }
+  
+  :global(.prose table)::-webkit-scrollbar-thumb,
+  :global(table)::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
+  }
+  
+  :global(.prose table)::-webkit-scrollbar-thumb:hover,
+  :global(table)::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
   }
 </style>

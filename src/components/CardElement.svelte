@@ -207,7 +207,7 @@
   ondblclick={scrollIntoViewIfNecessary}
 >
   {#if card.type !== 'welcome' && card.type !== 'new'}
-    <div class="flex" class:justify-between={card.back || isDesktop} class:justify-end={!card.back && !isDesktop}>
+    <div class="flex justify-between items-center">
       {#if card.back}
         <button aria-label="back" onclick={back} class="transition-colors hover:opacity-70">
           <svg
@@ -221,68 +221,72 @@
             ></path>
           </svg>
         </button>
+      {:else}
+        <div></div>
       {/if}
-      {#if isDesktop}
-        <button
-          onclick={toggleExpand}
-          onfocus={(e) => {
-            if (e.target) {
-              (e.target as HTMLButtonElement).style.opacity = '0.8';
-            }
-          }}
-          onblur={(e) => {
-            if (e.target) {
-              (e.target as HTMLButtonElement).style.opacity = '1';
-            }
-          }}
-          onmouseover={(e) => {
-            if (e.target) {
-              (e.target as HTMLButtonElement).style.opacity = '0.8';
-            }
-          }}
-          onmouseout={(e) => {
-            if (e.target) {
-              (e.target as HTMLButtonElement).style.opacity = '1';
-            }
-          }}
-          class="inline-flex items-center p-2 text-sm font-medium rounded-md transition-colors mr-2"
-          style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
-          title={expanded ? 'Collapse' : 'Expand'}
-        >
-          {#if expanded}
-            <!-- Collapse icon (compress) -->
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 14h6v6"/>
-              <path d="M20 10h-6V4"/>
-              <path d="M14 10l7-7"/>
-              <path d="M3 21l7-7"/>
-            </svg>
-          {:else}
-            <!-- Expand icon (maximize) -->
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M8 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3"/>
-              <path d="M21 8H8l5-5"/>
-            </svg>
-          {/if}
+      <div class="flex items-center gap-2">
+        {#if isDesktop}
+          <button
+            onclick={toggleExpand}
+            onfocus={(e) => {
+              if (e.target) {
+                (e.target as HTMLButtonElement).style.opacity = '0.8';
+              }
+            }}
+            onblur={(e) => {
+              if (e.target) {
+                (e.target as HTMLButtonElement).style.opacity = '1';
+              }
+            }}
+            onmouseover={(e) => {
+              if (e.target) {
+                (e.target as HTMLButtonElement).style.opacity = '0.8';
+              }
+            }}
+            onmouseout={(e) => {
+              if (e.target) {
+                (e.target as HTMLButtonElement).style.opacity = '1';
+              }
+            }}
+            class="inline-flex items-center p-2 text-sm font-medium rounded-md transition-colors"
+            style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
+            title={expanded ? 'Collapse' : 'Expand'}
+          >
+            {#if expanded}
+              <!-- Collapse icon (compress) -->
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 14h6v6"/>
+                <path d="M20 10h-6V4"/>
+                <path d="M14 10l7-7"/>
+                <path d="M3 21l7-7"/>
+              </svg>
+            {:else}
+              <!-- Expand icon (maximize) -->
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M8 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3"/>
+                <path d="M21 8H8l5-5"/>
+              </svg>
+            {/if}
+          </button>
+        {/if}
+        <button aria-label="close" onclick={close} class="transition-colors hover:opacity-70">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            class="w-6 h-6"
+            style="stroke: var(--text-secondary);"
+            viewBox="0 0 24 24"
+            stroke-width="1.5"
+            ><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg
+          >
         </button>
-      {/if}
-      <button aria-label="close" onclick={close} class="transition-colors hover:opacity-70">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          class="w-6 h-6"
-          style="stroke: var(--text-secondary);"
-          viewBox="0 0 24 24"
-          stroke-width="1.5"
-          ><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg
-        >
-      </button>
+      </div>
     </div>
   {/if}
   <article class="font-sans p-2 flex-1 {expanded && isDesktop ? 'w-full max-w-none' : card.type === 'diff' ? '' : 'w-full max-w-full'}" style="{expanded && isDesktop ? 'max-width: 100% !important; width: 100% !important; margin-left: 0 !important; margin-right: 0 !important; overflow-x: visible !important;' : 'max-width: 100% !important; width: 100% !important; box-sizing: border-box !important;'}">
     {#key `${card.id}-${expanded}-${isDesktop}`}
       {#if card.type === 'article'}
-        <Article {createChild} {replaceSelf} {back} {card} />
+        <Article {createChild} {replaceSelf} {back} {card} {expanded} {isDesktop} />
       {:else if card.type === 'new'}
         <NewSearch {replaceNewCard} />
       {:else if card.type === 'find'}

@@ -19,8 +19,8 @@
 
   // Get emoji for event type
   function getEventEmoji(event: NostrEvent): string {
-    // Check for wiki articles (30818 and 30817)
-    if (event.kind === 30818 || event.kind === 30817) {
+    // Check for wiki articles (30818, 30817, and 30023)
+    if (event.kind === 30818 || event.kind === 30817 || event.kind === 30023) {
       return '📝';
     }
     
