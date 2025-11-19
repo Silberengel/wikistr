@@ -23,6 +23,7 @@
     type BookEvent,
     BOOK_TYPES
   } from '$lib/books';
+  import { parseBookWikilink as parseBookWikilinkNKBIP08, type ParsedBookReference } from '$lib/bookWikilinkParser';
   import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import { cards } from '$lib/state';
@@ -50,7 +51,39 @@
 
   onMount(() => {
     query = bookCard.data;
-    parsedQuery = parseBookWikilink(query, bookCard.bookType);
+    // Check if query is in new NKBIP-08 format (with or without brackets)
+    let queryToParse = query;
+    if (query.startsWith('book::')) {
+      // Search bar format: book::... (no brackets)
+      queryToParse = `[[${query}]]`; // Add brackets for parser
+    } else if (query.match(/^\[\[book::/)) {
+      // Wikilink format: [[book::...]] (already has brackets)
+      queryToParse = query;
+    }
+    
+    if (queryToParse.match(/^\[\[book::/)) {
+      // New NKBIP-08 format: parse with NKBIP-08 parser
+      const parsed = parseBookWikilinkNKBIP08(queryToParse);
+      if (parsed && parsed.references.length > 0) {
+        // Convert NKBIP-08 format to legacy format for compatibility
+        const references: BookReference[] = parsed.references.map(ref => ({
+          book: ref.title,
+          chapter: ref.chapter,
+          verse: ref.section ? (ref.section.length === 1 ? ref.section[0] : ref.section.join(',')) : undefined
+        }));
+        parsedQuery = {
+          references,
+          versions: parsed.references[0]?.version
+        };
+        // Extract bookType from first reference if available
+        if (parsed.references[0]?.collection) {
+          bookCard.bookType = parsed.references[0].collection;
+        }
+      }
+    } else {
+      // Legacy format: use old parser
+      parsedQuery = parseBookWikilink(query, bookCard.bookType);
+    }
   });
 
   onMount(() => {

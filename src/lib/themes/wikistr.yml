@@ -10,8 +10,10 @@ relays:
   wiki:
     - wss://thecitadel.nostr1.com
     - wss://relay.wikifreedia.xyz
+    - wss://orly-relay.imwald.eu
   social:
     - wss://theforest.nostr1.com
+    - wss://orly-relay.imwald.eu
     - wss://nostr.wine
     - wss://nostr21.com
     - wss://nostr.land
@@ -23,20 +25,27 @@ showBibleLinks: false
 searchHelpText: |
   Search for articles by title, content, or author. Use "author:pubkey" to find articles by a specific author.
 
-  **Book Search Examples:**
-  • book:bible:John 3:16
-  • book:quran:Al-Fatiha:1-7  
-  • book:catechism:CCC 1
-  • book:torah:Genesis 1:1
+  **Bookstr Macro (NKBIP-08):**
+  Use `[[book::...]]` to embed book passages inline in articles:
+  • `[[book::bible | john 3:16]]` - Single verse
+  • `[[book::bible | romans 3:16-18]]` - Verse range
+  • `[[book::bible | john 3:16 | kjv]]` - With version
+  • `[[book::bible | john 3:16 | kjv drb]]` - Multiple versions
+  • `[[book::bible | romans 3:16-18, psalms 23:1 | kjv]]` - Multiple references with global version
+  • `[[book::quran | al-fatiha 1-7]]` - Quran search
+  • `[[book::catechism | ccc 1]]` - Catechism search
+  • `[[book::torah | genesis 1:1]]` - Torah search
+
+  You can also use `book::` prefix (without brackets) in the search bar to search for book passages. The macro can be used in wikilinks within article content.
 
   **Adding New Book Types:**
   Publish a NIP-78 event with app="Wikistr" and type="book-config" to add new book types. The system will automatically load and make them available for searching.
 
   **Compare content with diff:**
   • diff::article1 | article2
-  • diff::book:bible:John 3:16 KJV | NIV
+  • diff::[[book::bible | john 3:16 | kjv]] | [[book::bible | john 3:16 | niv]]
   • diff::article1; article2; article3
-  • diff::book:bible:John 3:16 KJV | ESV
+  • diff::[[book::bible | john 3:16 | kjv]] | [[book::bible | john 3:16 | esv]]
 
   Use diff:: prefix to compare wiki articles, book versions, or any content. Supports pipe '|' and semicolon ';' separation.
 typography:

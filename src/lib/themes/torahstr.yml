@@ -22,14 +22,17 @@ showBibleLinks: false
 searchHelpText: |
   Search for articles by title, content, or author. Use "author:pubkey" to find articles by a specific author.
 
-  **Torah Search Examples:**
-  • Genesis 1:1 (full book name)
-  • Gen 1:1 (abbreviated)
-  • genesis1:1 (no spaces, case insensitive)
-  • Genesis 1:1-5 (verse ranges)
-  • Genesis 1:1, 3, 5 (multiple verses)
-  • Genesis 1:1 KJV (with version)
-  • Genesis 1:1; Exodus 3:14 (multiple references)
+  **Bookstr Macro (NKBIP-08):**
+  Use `[[book::...]]` to embed Torah passages inline in articles:
+  • `[[book::torah | genesis 1:1]]` - Single verse
+  • `[[book::torah | genesis 1:1-5]]` - Verse range
+  • `[[book::torah | genesis 1:1, 3, 5]]` - Multiple verses
+  • `[[book::torah | genesis 1:1 | kjv]]` - With version
+  • `[[book::torah | genesis 1:1 | kjv drb]]` - Multiple versions
+  • `[[book::torah | genesis 1:1-5, exodus 3:14 | kjv]]` - Multiple references with global version
+  • `[[book::genesis 1:1]]` - Without collection (defaults to torah)
+
+  You can also use `book::` prefix (without brackets) in the search bar to search for Torah passages. The macro can be used in wikilinks within article content.
 
   **Common Torah Abbreviations:**
   • Gen, Exod, Lev, Num, Deut (Pentateuch - Five Books of Moses)
@@ -44,9 +47,9 @@ searchHelpText: |
 
   **Compare content with diff:**
   • diff::article1 | article2
-  • diff::book:torah:Genesis 1:1 KJV | ASV
+  • diff::[[book::torah | genesis 1:1 | kjv]] | [[book::torah | genesis 1:1 | asv]]
   • diff::article1; article2; article3
-  • diff::book:torah:Genesis 1:1 KJV | YLT
+  • diff::[[book::torah | genesis 1:1 | kjv]] | [[book::torah | genesis 1:1 | ylt]]
 
   Use diff:: prefix to compare wiki articles, Torah versions, or any content. Supports pipe '|' and semicolon ';' separation.
 typography:

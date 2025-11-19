@@ -78,7 +78,24 @@
         type: 'editor',
         data: { title: ditem.substring(5), summary: '', content: '' }
       } as EditorCard;
+    } else if (ditem.startsWith('book::')) {
+      // New NKBIP-08 format: book::... (for search bar, no brackets needed)
+      const bookQuery = ditem.substring(6); // Remove "book::" prefix (6 characters)
+      return { 
+        id: next(), 
+        type: 'book', 
+        data: bookQuery
+      } as BookCard;
+    } else if (ditem.match(/^\[\[book::/)) {
+      // NKBIP-08 format with brackets: [[book::...]] (for wikilinks in content)
+      const bookQuery = ditem.replace(/^\[\[book::|\]\]$/g, '');
+      return { 
+        id: next(), 
+        type: 'book', 
+        data: bookQuery
+      } as BookCard;
     } else if (ditem.startsWith('book:')) {
+      // Legacy format: book:bible:John 3:16 (kept for backward compatibility)
       const bookQuery = ditem.substring(5);
       const parts = bookQuery.split(':');
       if (parts.length >= 2) {

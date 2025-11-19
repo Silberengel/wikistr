@@ -18,13 +18,17 @@ showBibleLinks: false
 searchHelpText: |
   Search for articles by title, content, or author. Use "author:pubkey" to find articles by a specific author.
 
-  **Quran Search Examples:**
-  • Al-Fatiha 1 (Surah and verse)
-  • Al-Fatiha (entire Surah)
-  • Al-Fatiha 1-7 (verse range)
-  • Al-Fatiha 1,3,5 (multiple verses)
-  • Al-Fatiha 1-7 | SAHIH (with translation)
-  • Al-Fatiha 1-7 | SAHIH PICKTHALL (multiple translations)
+  **Bookstr Macro (NKBIP-08):**
+  Use `[[book::...]]` to embed Quran passages inline in articles:
+  • `[[book::quran | al-fatiha 1]]` - Single verse
+  • `[[book::quran | al-fatiha 1-7]]` - Verse range
+  • `[[book::quran | al-fatiha 1, 3, 5]]` - Multiple verses
+  • `[[book::quran | al-fatiha 1-7 | sahih]]` - With translation
+  • `[[book::quran | al-fatiha 1-7 | sahih pickthall]]` - Multiple translations
+  • `[[book::quran | al-fatiha 1-7, al-baqarah 1-5 | sahih]]` - Multiple references with global translation
+  • `[[book::al-fatiha 1-7]]` - Without collection (defaults to quran)
+
+  You can also use `book::` prefix (without brackets) in the search bar to search for Quran passages. The macro can be used in wikilinks within article content.
 
   **Common Surah Names:**
   • Al-Fatiha, Al-Baqarah, Aal-e-Imran, An-Nisa, Al-Maidah (First 5)
@@ -43,9 +47,9 @@ searchHelpText: |
 
   **Compare content with diff:**
   • diff::article1 | article2
-  • diff::book:quran:Al-Fatiha 1-7 | PICKTHALL
+  • diff::[[book::quran | al-fatiha 1-7 | pickthall]] | [[book::quran | al-fatiha 1-7 | shakir]]
   • diff::article1; article2; article3
-  • diff::book:quran:Al-Fatiha 1-7 | SHAKIR
+  • diff::[[book::quran | al-fatiha 1-7 | pickthall]] | [[book::quran | al-fatiha 1-7 | shakir]]
 
   Use diff:: prefix to compare wiki articles, Quran translations, or any content. Supports pipe '|' and semicolon ';' separation.
 typography:
