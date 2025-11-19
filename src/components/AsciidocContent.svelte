@@ -880,13 +880,17 @@
     // Skip if already has line numbers
     if (preElement.querySelector('.line-numbers-table')) return;
     
-    // Get the code content
-    const codeContent = codeElement.innerHTML;
+    // Get the code content and trim only trailing newlines (keep empty lines in the middle)
+    let codeContent = codeElement.innerHTML;
+    // Remove only trailing newlines at the very end, but keep all other lines including empty ones
+    codeContent = codeContent.replace(/\n+$/, '');
     const lines = codeContent.split('\n');
     const lineCount = lines.length;
     
-    // Generate line numbers
-    const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1).join('\n');
+    // Generate line numbers - one number per line, including empty lines
+    let lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1).join('\n');
+    // Remove any trailing newlines
+    lineNumbers = lineNumbers.replace(/\n+$/, '');
     
     // Create table structure for line numbers
     const tableHTML = `

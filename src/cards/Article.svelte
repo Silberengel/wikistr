@@ -834,7 +834,7 @@
               {/if}
             </button>
           </div>
-          <div class="prose whitespace-pre-wrap">{event.content}</div>
+      <div class="prose whitespace-pre-wrap">{event.content}</div>
         </div>
       {/if}
     {:else if view === 'formatted'}

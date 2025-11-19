@@ -229,11 +229,9 @@
 
   /* Code Blocks - NO INTERNAL BORDERS */
   pre {
-    @apply px-4 rounded-md;
-    margin-top: 1rem !important;
-    margin-bottom: 0.5rem !important;
-    padding-top: 8px !important;
-    padding-bottom: 8px !important;
+    @apply px-4 rounded-md my-4;
+    padding-top: 24px !important;
+    padding-bottom: 24px !important;
     background-color: var(--code-block-bg);
     color: var(--code-block-text);
     border: 0.5px solid var(--code-block-border);
@@ -303,35 +301,6 @@
     overflow: visible !important;
     max-width: 100% !important;
   }
-
-  /* Code block control buttons - ensure good contrast */
-  .code-wrap-btn,
-  .code-copy-btn {
-    color: var(--text-primary) !important;
-    background-color: var(--bg-secondary) !important;
-    border: 1px solid var(--border) !important;
-    opacity: 0.8 !important;
-  }
-
-  .code-wrap-btn:hover,
-  .code-copy-btn:hover {
-    opacity: 1 !important;
-    background-color: var(--bg-secondary) !important;
-    border-color: var(--accent) !important;
-    color: var(--accent) !important;
-  }
-
-  .code-wrap-btn:active,
-  .code-copy-btn:active {
-    opacity: 1 !important;
-    background-color: var(--accent) !important;
-    color: var(--bg-primary) !important;
-  }
-
-  .code-wrap-btn svg,
-  .code-copy-btn svg {
-    stroke: currentColor !important;
-  }
   
   /* Style event type emojis - smaller and monochrome */
   .event-emoji {
@@ -370,11 +339,9 @@
 
   /* Prose-specific code blocks */
   .prose pre {
-    @apply rounded-md;
-    margin-top: 1rem !important;
-    margin-bottom: 0.5rem !important;
-    padding-top: 8px !important;
-    padding-bottom: 8px !important;
+    @apply rounded-md my-4;
+    padding-top: 16px !important;
+    padding-bottom: 16px !important;
     padding-left: 16px !important;
     padding-right: 16px !important;
     background-color: var(--code-block-bg);
@@ -406,10 +373,6 @@
     /* stylelint-disable-next-line at-rule-no-unknown */
     @apply w-full border-collapse;
     border-spacing: 0;
-    max-width: 100% !important;
-    table-layout: fixed !important;
-    word-wrap: break-word !important;
-    overflow-wrap: break-word !important;
   }
 
   th, td {
@@ -418,10 +381,6 @@
     border-color: var(--border);
     background-color: var(--bg-primary);
     color: var(--text-primary);
-    white-space: normal !important;
-    word-wrap: break-word !important;
-    overflow-wrap: break-word !important;
-    word-break: break-word !important;
   }
 
   th {
@@ -681,9 +640,7 @@
   }
 
   .markdown pre {
-    @apply px-4 py-2 rounded-md overflow-x-auto;
-    margin-top: 1rem !important;
-    margin-bottom: 0.5rem !important;
+    @apply p-4 rounded-md overflow-x-auto my-4;
     background-color: var(--code-block-bg);
     color: var(--code-block-text);
     border: 0.5px solid var(--code-block-border);
@@ -959,7 +916,7 @@
     outline: none !important;
     box-shadow: none !important;
     margin: 0 !important;
-    padding: 0 8px 0 0 !important;
+    padding: 0 12px 0 0 !important;
     text-align: right !important;
     user-select: none !important;
     opacity: 0.6 !important;
@@ -974,7 +931,7 @@
     box-shadow: none !important;
     background: none !important;
     margin: 0 !important;
-    padding: 0 !important;
+    padding: 0 0 0 0 !important;
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
     font-size: 1.05em !important;
     line-height: 1.2 !important;
@@ -986,6 +943,29 @@
 
   .code-content * {
     font-size: inherit !important;
+  }
+
+  /* Code block buttons - ensure visibility in both light and dark mode */
+  .code-wrap-btn,
+  .code-copy-btn {
+    color: var(--text-primary) !important;
+    background-color: var(--bg-secondary) !important;
+    border: 1px solid var(--border) !important;
+    opacity: 0.9 !important;
+  }
+
+  .code-wrap-btn:hover,
+  .code-copy-btn:hover {
+    opacity: 1 !important;
+    color: var(--accent) !important;
+    border-color: var(--accent) !important;
+  }
+
+  .code-wrap-btn:active,
+  .code-copy-btn:active {
+    background-color: var(--accent) !important;
+    color: var(--bg-primary) !important;
+    border-color: var(--accent) !important;
   }
 
   /* LaTeX Styling */
@@ -1093,178 +1073,21 @@
     text-decoration: underline !important;
   }
 
-  /* AsciiDoc Admonitions - Eye-catching design */
-  .admonitionblock {
-    background-color: var(--bg-secondary) !important;
-    border-left: 8px solid var(--accent) !important;
-    border-top: none !important;
-    border-right: none !important;
-    border-bottom: none !important;
-    color: var(--text-primary) !important;
-    padding: 1.5rem 1.5rem 1.5rem 1.25rem !important;
-    margin: 2rem 0 !important;
-    max-width: 100% !important;
-    width: 100% !important;
-    box-sizing: border-box !important;
-    overflow: visible !important;
-    display: block !important;
-    border-radius: 6px !important;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15) !important;
-  }
-
-  /* IMPORTANT admonitions - extra prominence */
-  .admonitionblock.important {
-    border-left: 8px solid var(--accent) !important;
-    background-color: var(--bg-secondary) !important;
-  }
-
-  /* Override table structure inside admonitions */
-  .admonitionblock table {
-    display: block !important;
-    width: 100% !important;
-    border: none !important;
-    border-collapse: collapse !important;
-  }
-
-  .admonitionblock tbody {
-    display: block !important;
-    width: 100% !important;
-  }
-
-  .admonitionblock tr {
-    display: flex !important;
-    flex-direction: row !important;
-    width: 100% !important;
-    align-items: flex-start !important;
-  }
-
-  .admonitionblock td {
-    display: block !important;
-    border: none !important;
-    padding: 0 !important;
-    background: transparent !important;
-  }
-
-  .admonitionblock td.icon {
-    flex-shrink: 0 !important;
-    margin-right: 1rem !important;
-    display: flex !important;
-    align-items: center !important;
-    gap: 0.5rem !important;
-  }
-
-  .admonitionblock td.icon i {
-    font-size: 1.5rem !important;
-    color: var(--accent) !important;
-    flex-shrink: 0 !important;
-  }
-
-  .admonitionblock td.icon .title {
-    writing-mode: horizontal-tb !important;
-    text-orientation: mixed !important;
-    transform: none !important;
-    display: inline !important;
-    white-space: normal !important;
-    font-weight: 700 !important;
-    font-size: 1.1rem !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.05em !important;
-    color: var(--accent) !important;
-    margin: 0 !important;
-  }
-
-  .admonitionblock td.content {
-    flex: 1 !important;
-    display: block !important;
-    padding-top: 0 !important;
-  }
-
+  /* AsciiDoc Admonitions */
+  .admonitionblock,
   .admonitionblock .content {
-    background-color: transparent !important;
-    border: none !important;
+    background-color: var(--bg-secondary) !important;
+    border: 1px solid var(--border) !important;
     color: var(--text-primary) !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    overflow: visible !important;
-    word-wrap: break-word !important;
-    overflow-wrap: break-word !important;
-  }
-
-  /* Make ALL first-level children in content prominent - catch any structure */
-  .admonitionblock td.content > *:first-child,
-  .admonitionblock .content > *:first-child {
-    font-weight: 700 !important;
-    font-size: 1.3rem !important;
-    color: var(--accent) !important;
-    margin-top: 0 !important;
-    margin-bottom: 0.75rem !important;
-    text-transform: none !important;
-    letter-spacing: 0.02em !important;
-    line-height: 1.4 !important;
-    display: block !important;
-  }
-
-  /* Make first paragraph prominent */
-  .admonitionblock td.content > p:first-child,
-  .admonitionblock td.content > p:first-of-type,
-  .admonitionblock .content > p:first-child,
-  .admonitionblock .content > p:first-of-type {
-    font-weight: 700 !important;
-    font-size: 1.3rem !important;
-    color: var(--accent) !important;
-    margin-top: 0 !important;
-    margin-bottom: 0.75rem !important;
-    text-transform: none !important;
-    letter-spacing: 0.02em !important;
-    line-height: 1.4 !important;
-  }
-
-  /* Make first div prominent */
-  .admonitionblock td.content > div:first-child,
-  .admonitionblock .content > div:first-child {
-    font-weight: 700 !important;
-    font-size: 1.3rem !important;
-    color: var(--accent) !important;
-    margin-top: 0 !important;
-    margin-bottom: 0.75rem !important;
-  }
-
-  /* Make strong text in first element even more prominent */
-  .admonitionblock td.content > *:first-child strong,
-  .admonitionblock .content > *:first-child strong {
-    font-weight: 700 !important;
-    font-size: 1.3rem !important;
-    color: var(--accent) !important;
-  }
-
-  /* Ensure icon and title are on the same line */
-  .admonitionblock tr {
-    gap: 0.5rem !important;
-  }
-
-  /* Style the icon container to show icon + title together */
-  .admonitionblock td.icon {
-    flex-direction: row !important;
-    align-items: center !important;
   }
 
   .admonitionblock .icon {
     color: var(--accent) !important;
-    font-size: 1.5rem !important;
   }
 
   .admonitionblock .title {
-    color: var(--accent) !important;
-    font-weight: 700 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.05em !important;
-    font-size: 1.2rem !important;
-    margin-bottom: 0.5rem !important;
-    display: block !important;
+    color: var(--text-primary) !important;
   }
-
 
   /* AsciiDoc Sidebar */
   .sidebarblock {
@@ -1326,8 +1149,6 @@
     line-height: 1.2 !important;
     white-space: pre-wrap !important;
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
-    padding-top: 8px !important;
-    padding-bottom: 8px !important;
   }
 
   /* AsciiDoc Literal Blocks */
@@ -1346,8 +1167,6 @@
     line-height: 1.2 !important;
     white-space: pre-wrap !important;
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
-    padding-top: 8px !important;
-    padding-bottom: 8px !important;
   }
 
   /* AsciiDoc Source Blocks */
@@ -1366,8 +1185,6 @@
     line-height: 1.2 !important;
     white-space: pre-wrap !important;
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
-    padding-top: 8px !important;
-    padding-bottom: 8px !important;
   }
 
   /* AsciiDoc Callouts */
@@ -1409,48 +1226,27 @@
   .tableblock {
     background-color: var(--bg-secondary) !important;
     border: 1px solid var(--border) !important;
-    max-width: 100% !important;
-    width: 100% !important;
-    box-sizing: border-box !important;
-    overflow: visible !important;
   }
 
   .tableblock .title {
     color: var(--text-primary) !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    display: block !important;
-    box-sizing: border-box !important;
   }
 
   .tableblock table {
     background-color: var(--bg-primary) !important;
     color: var(--text-primary) !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    table-layout: fixed !important;
-    word-wrap: break-word !important;
-    overflow-wrap: break-word !important;
   }
 
   .tableblock th {
     background-color: var(--bg-secondary) !important;
     color: var(--text-primary) !important;
     border: 1px solid var(--border) !important;
-    white-space: normal !important;
-    word-wrap: break-word !important;
-    overflow-wrap: break-word !important;
-    word-break: break-word !important;
   }
 
   .tableblock td {
     background-color: var(--bg-primary) !important;
     color: var(--text-primary) !important;
     border: 1px solid var(--border) !important;
-    white-space: normal !important;
-    word-wrap: break-word !important;
-    overflow-wrap: break-word !important;
-    word-break: break-word !important;
   }
 
   /* AsciiDoc Open Blocks */
