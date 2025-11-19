@@ -17,6 +17,35 @@
 
   let { openArticle, event, toggleArticleSelection, selected = false }: Props = $props();
 
+  // Get emoji for event type
+  function getEventEmoji(event: NostrEvent): string {
+    // Check for wiki articles (30818 and 30817)
+    if (event.kind === 30818 || event.kind === 30817) {
+      return '📝';
+    }
+    
+    // Check for publication events (30040 and 30041)
+    if (event.kind === 30040 || event.kind === 30041) {
+      // Check if it's a bible event - look for "bible" in C tag or type tag
+      const cTag = event.tags.find(([k]) => k === 'C' || k === 'c');
+      const typeTag = event.tags.find(([k]) => k === 'type');
+      const collectionTag = event.tags.find(([k]) => k === 'collection');
+      
+      const isBible = 
+        (cTag && cTag[1]?.toLowerCase() === 'bible') ||
+        (typeTag && typeTag[1]?.toLowerCase() === 'bible') ||
+        (collectionTag && collectionTag[1]?.toLowerCase() === 'bible');
+      
+      if (isBible) {
+        return '✝️';
+      } else {
+        return '📖';
+      }
+    }
+    
+    return '';
+  }
+
   let plainText = $derived(
     event.content
       .slice(0, 210)
@@ -53,6 +82,9 @@
     </div>
   {/if}
   <h1>
+    {#if getEventEmoji(event)}
+      <span class="event-emoji">{getEventEmoji(event)}</span>
+    {/if}
     {event.tags.find((e) => e[0] == 'title')?.[0] && event.tags.find((e) => e[0] == 'title')?.[1]
       ? event.tags.find((e) => e[0] == 'title')?.[1]
       : event.tags.find((e) => e[0] == 'd')?.[1]}

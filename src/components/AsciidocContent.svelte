@@ -610,19 +610,35 @@
   
   // Add copy and word-wrap buttons to code blocks
   function addCodeBlockButtons() {
-    if (!contentDiv) return;
+    if (!contentDiv) {
+      console.log('addCodeBlockButtons: contentDiv is null');
+      return;
+    }
     
-    contentDiv.querySelectorAll('pre').forEach((preElement) => {
+    const preElements = contentDiv.querySelectorAll('pre');
+    console.log(`addCodeBlockButtons: Found ${preElements.length} pre elements`);
+    
+    preElements.forEach((preElement, index) => {
       // Skip if buttons already added
-      if (preElement.querySelector('.code-block-controls')) return;
+      if (preElement.querySelector('.code-block-controls')) {
+        console.log(`addCodeBlockButtons: Skipping pre[${index}] - buttons already added`);
+        return;
+      }
       
       const codeElement = preElement.querySelector('code');
-      if (!codeElement) return;
+      if (!codeElement) {
+        console.log(`addCodeBlockButtons: Skipping pre[${index}] - no code element found`);
+        return;
+      }
+      
+      console.log(`addCodeBlockButtons: Processing pre[${index}]`);
       
       // Create wrapper div with relative positioning
       const wrapper = document.createElement('div');
       wrapper.className = 'relative code-block-wrapper';
       wrapper.style.position = 'relative';
+      wrapper.style.width = '100%';
+      wrapper.style.overflow = 'visible';
       
       // Create controls container
       const controls = document.createElement('div');
@@ -641,7 +657,9 @@
       wrapButton.title = 'Toggle word wrap';
       
       let wordWrapEnabled = true; // ON by default
-      preElement.style.whiteSpace = 'pre-wrap'; // Set default
+      // Set default - use data attribute for reliable CSS control
+      preElement.setAttribute('data-word-wrap', 'enabled');
+      console.log(`addCodeBlockButtons: Set initial data-word-wrap="enabled" on pre[${index}]`);
       
       wrapButton.addEventListener('mouseenter', () => {
         wrapButton.style.backgroundColor = 'rgba(0, 0, 0, 0.05)';
@@ -650,16 +668,28 @@
         wrapButton.style.backgroundColor = 'transparent';
       });
       
-      wrapButton.addEventListener('click', () => {
+      wrapButton.addEventListener('click', (e) => {
+        console.log('Word-wrap button clicked!', e);
+        e.preventDefault();
+        e.stopPropagation();
         wordWrapEnabled = !wordWrapEnabled;
+        console.log(`Word-wrap state changed to: ${wordWrapEnabled}`);
+        // Use data attribute to trigger CSS rules
         if (wordWrapEnabled) {
-          preElement.style.whiteSpace = 'pre-wrap';
-          preElement.style.overflowX = 'visible';
+          preElement.setAttribute('data-word-wrap', 'enabled');
+          console.log('Set data-word-wrap="enabled"');
         } else {
-          preElement.style.whiteSpace = 'pre';
-          preElement.style.overflowX = 'auto';
+          preElement.setAttribute('data-word-wrap', 'disabled');
+          console.log('Set data-word-wrap="disabled"');
         }
+        console.log('Pre element attributes:', Array.from(preElement.attributes).map(a => `${a.name}="${a.value}"`).join(', '));
+        console.log('Computed white-space:', window.getComputedStyle(preElement).whiteSpace);
+        console.log('Computed overflow-x:', window.getComputedStyle(preElement).overflowX);
+        // Force a reflow to ensure the change takes effect
+        void preElement.offsetWidth;
       });
+      
+      console.log(`addCodeBlockButtons: Added word-wrap button to pre[${index}]`);
       
       // Copy button
       const copyButton = document.createElement('button');
@@ -680,7 +710,25 @@
       });
       
       copyButton.addEventListener('click', async () => {
-        const codeText = codeElement.textContent || '';
+        // Extract code text, excluding line numbers if present
+        let codeText = '';
+        
+        // Check if line numbers table exists
+        const lineNumbersTable = preElement.querySelector('.line-numbers-table');
+        if (lineNumbersTable) {
+          // Extract only the code content from the table
+          const codeContentCell = lineNumbersTable.querySelector('.code-content');
+          if (codeContentCell) {
+            codeText = codeContentCell.textContent || '';
+          } else {
+            // Fallback: try to get text from code element
+            codeText = codeElement.textContent || '';
+          }
+        } else {
+          // No line numbers, just get the code text directly
+          codeText = codeElement.textContent || '';
+        }
+        
         try {
           await navigator.clipboard.writeText(codeText);
           // Show checkmark temporarily

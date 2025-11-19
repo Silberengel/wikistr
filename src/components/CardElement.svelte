@@ -24,6 +24,8 @@
   let { card }: Props = $props();
 
   // Expand state for all cards (desktop only)
+  // Persist expanded state per card in sessionStorage
+  const expandedKey = `card-expanded-${card.id}`;
   let expanded = $state(false);
   let isDesktop = $state(false);
 
@@ -34,12 +36,55 @@
 
   function toggleExpand() {
     expanded = !expanded;
+    // Persist expanded state
+    if (isDesktop) {
+      try {
+        if (expanded) {
+          sessionStorage.setItem(expandedKey, 'true');
+        } else {
+          sessionStorage.removeItem(expandedKey);
+        }
+      } catch (e) {
+        // Ignore storage errors
+      }
+    }
+    // Scroll card into view when expanded to ensure it's visible
+    if (expanded) {
+      setTimeout(() => {
+        const cardElement = document.getElementById(`wikicard-${card.id}`);
+        if (cardElement) {
+          cardElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+        }
+      }, 100);
+    }
   }
 
   // Check desktop on mount and resize
   onMount(() => {
     checkDesktop();
     window.addEventListener('resize', checkDesktop);
+    
+    // Restore expanded state from sessionStorage after checking desktop
+    // Use a small delay to ensure isDesktop is set
+    setTimeout(() => {
+      if (isDesktop) {
+        try {
+          const savedExpanded = sessionStorage.getItem(expandedKey);
+          if (savedExpanded === 'true') {
+            expanded = true;
+            // Scroll into view after restoring expanded state
+            setTimeout(() => {
+              const cardElement = document.getElementById(`wikicard-${card.id}`);
+              if (cardElement) {
+                cardElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+              }
+            }, 200);
+          }
+        } catch (e) {
+          // Ignore storage errors
+        }
+      }
+    }, 0);
   });
   
   onDestroy(() => {
@@ -146,9 +191,9 @@
 <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 <div
   id={`wikicard-${card.id}`}
-  class="
+  class="wikicard
   overflow-y-auto
-  {expanded && isDesktop ? 'overflow-x-visible' : card.type === 'diff' ? 'overflow-x-visible' : 'overflow-x-hidden'}
+  {expanded && isDesktop ? 'overflow-x-visible card-expanded' : card.type === 'diff' ? 'overflow-x-visible' : 'overflow-x-hidden'}
   mx-2 mt-2
   {expanded && isDesktop ? 'min-w-[395px] lg:min-w-[32rem]' : card.type === 'diff' ? 'min-w-[395px] lg:min-w-[32rem]' : 'min-w-[395px] max-w-[395px] lg:min-w-[32rem] lg:max-w-[32rem]'}
   rounded-lg border-8
@@ -158,7 +203,7 @@
   scrollbar-thin
   flex
   flex-col"
-  style="background-color: var(--bg-primary); border-color: var(--border); {expanded && isDesktop ? 'min-width: 1500px !important; width: 1500px !important; max-width: none !important; flex: 0 0 1500px !important;' : !expanded && isDesktop ? 'min-width: 32rem !important; width: 32rem !important; max-width: 32rem !important; flex: 0 0 32rem !important;' : ''}"
+  style="background-color: var(--bg-primary); border-color: var(--border); {expanded && isDesktop ? 'min-width: 64rem !important; width: 64rem !important; max-width: 64rem !important; flex: 0 0 64rem !important; overflow-x: visible !important;' : !expanded && isDesktop ? 'min-width: 32rem !important; width: 32rem !important; max-width: 32rem !important; flex: 0 0 32rem !important;' : ''}"
   ondblclick={scrollIntoViewIfNecessary}
 >
   {#if card.type !== 'welcome' && card.type !== 'new'}
@@ -180,8 +225,16 @@
       {#if isDesktop}
         <button
           onclick={toggleExpand}
-          class="inline-flex items-center p-2 text-sm font-medium rounded-md transition-colors mr-2"
-          style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
+          onfocus={(e) => {
+            if (e.target) {
+              (e.target as HTMLButtonElement).style.opacity = '0.8';
+            }
+          }}
+          onblur={(e) => {
+            if (e.target) {
+              (e.target as HTMLButtonElement).style.opacity = '1';
+            }
+          }}
           onmouseover={(e) => {
             if (e.target) {
               (e.target as HTMLButtonElement).style.opacity = '0.8';
@@ -192,6 +245,8 @@
               (e.target as HTMLButtonElement).style.opacity = '1';
             }
           }}
+          class="inline-flex items-center p-2 text-sm font-medium rounded-md transition-colors mr-2"
+          style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
           title={expanded ? 'Collapse' : 'Expand'}
         >
           {#if expanded}
@@ -224,7 +279,7 @@
       </button>
     </div>
   {/if}
-  <article class="font-sans p-2 flex-1 {expanded && isDesktop ? 'w-full max-w-none' : card.type === 'diff' ? '' : 'mx-auto lg:max-w-4xl'}" style="{expanded && isDesktop ? 'max-width: 100% !important; width: 100% !important; margin-left: 0 !important; margin-right: 0 !important;' : ''}">
+  <article class="font-sans p-2 flex-1 {expanded && isDesktop ? 'w-full max-w-none' : card.type === 'diff' ? '' : 'w-full max-w-full'}" style="{expanded && isDesktop ? 'max-width: 100% !important; width: 100% !important; margin-left: 0 !important; margin-right: 0 !important; overflow-x: visible !important;' : 'max-width: 100% !important; width: 100% !important; box-sizing: border-box !important;'}">
     {#key `${card.id}-${expanded}-${isDesktop}`}
       {#if card.type === 'article'}
         <Article {createChild} {replaceSelf} {back} {card} />

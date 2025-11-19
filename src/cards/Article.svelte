@@ -89,6 +89,37 @@
 
   let title = $derived(event?.tags?.find?.(([k]) => k === 'title')?.[1] || dTag);
   
+  // Get emoji for event type
+  function getEventEmoji(event: NostrEvent | null): string {
+    if (!event) return '';
+    
+    // Check for wiki articles (30818 and 30817)
+    if (event.kind === 30818 || event.kind === 30817) {
+      return '📝';
+    }
+    
+    // Check for publication events (30040 and 30041)
+    if (event.kind === 30040 || event.kind === 30041) {
+      // Check if it's a bible event - look for "bible" in C tag or type tag
+      const cTag = event.tags.find(([k]) => k === 'C' || k === 'c');
+      const typeTag = event.tags.find(([k]) => k === 'type');
+      const collectionTag = event.tags.find(([k]) => k === 'collection');
+      
+      const isBible = 
+        (cTag && cTag[1]?.toLowerCase() === 'bible') ||
+        (typeTag && typeTag[1]?.toLowerCase() === 'bible') ||
+        (collectionTag && collectionTag[1]?.toLowerCase() === 'bible');
+      
+      if (isBible) {
+        return '✝️';
+      } else {
+        return '📖';
+      }
+    }
+    
+    return '';
+  }
+  
   // Get the currently selected relay URL from the cards array
   const selectedRelayUrl = $derived.by(() => {
     const relayCard = $cards.find(card => card.type === 'relay');
@@ -636,7 +667,12 @@
       </div>
       
       <div class="ml-2 mb-4">
-        <div class="mt-2 font-bold text-4xl mb-4">{title || dTag}</div>
+        <div class="mt-2 font-bold text-4xl mb-4">
+          {#if getEventEmoji(event)}
+            <span class="event-emoji">{getEventEmoji(event)}</span>
+          {/if}
+          {title || dTag}
+        </div>
         <div class="flex items-center space-x-3 mb-4">
           <UserBadge pubkey={event.pubkey} {createChild} onProfileClick={handleProfileClick} size="small" hideSearchIcon={false} />
           {#if event.created_at}

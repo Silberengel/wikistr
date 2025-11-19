@@ -229,19 +229,99 @@
 
   /* Code Blocks - NO INTERNAL BORDERS */
   pre {
-    @apply px-4 rounded-md overflow-x-auto my-4;
+    @apply px-4 rounded-md my-4;
     padding-top: 24px !important;
     padding-bottom: 24px !important;
     background-color: var(--code-block-bg);
     color: var(--code-block-text);
     border: 0.5px solid var(--code-block-border);
     line-height: 1.2 !important;
-    white-space: pre !important;
+    white-space: pre-wrap;
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
+    box-sizing: border-box !important;
+    /* overflow-x will be controlled by data-word-wrap attribute */
+  }
+  
+  /* Default word-wrap state - can be overridden by JavaScript */
+  /* Use data attribute for more reliable control */
+  pre[data-word-wrap="enabled"],
+  .prose pre[data-word-wrap="enabled"] {
+    white-space: pre-wrap !important;
+    overflow-x: visible !important;
+    overflow-wrap: break-word !important;
+    word-wrap: break-word !important;
+  }
+  
+  pre[data-word-wrap="disabled"],
+  .prose pre[data-word-wrap="disabled"] {
+    white-space: pre !important;
+    overflow-x: scroll !important;
+    overflow-y: visible !important;
+    overflow-wrap: normal !important;
+    word-wrap: normal !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  
+  /* Make the code content inside expand, not the pre container */
+  pre[data-word-wrap="disabled"] code,
+  .prose pre[data-word-wrap="disabled"] code {
+    display: inline-block !important;
+    min-width: max-content !important;
+    width: max-content !important;
+  }
+  
+  /* Ensure horizontal scrollbar is visible and styled */
+  pre[data-word-wrap="disabled"]::-webkit-scrollbar,
+  .prose pre[data-word-wrap="disabled"]::-webkit-scrollbar {
+    height: 8px !important;
+    display: block !important;
+  }
+  
+  pre[data-word-wrap="disabled"]::-webkit-scrollbar-track,
+  .prose pre[data-word-wrap="disabled"]::-webkit-scrollbar-track {
+    background: var(--code-block-bg) !important;
+    border-radius: 4px !important;
+  }
+  
+  pre[data-word-wrap="disabled"]::-webkit-scrollbar-thumb,
+  .prose pre[data-word-wrap="disabled"]::-webkit-scrollbar-thumb {
+    background: var(--border) !important;
+    border-radius: 4px !important;
+  }
+  
+  pre[data-word-wrap="disabled"]::-webkit-scrollbar-thumb:hover,
+  .prose pre[data-word-wrap="disabled"]::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary) !important;
+  }
+  
+  /* Ensure wrapper doesn't constrain pre elements */
+  .code-block-wrapper {
+    width: 100% !important;
+    overflow: visible !important;
+    max-width: 100% !important;
+  }
+  
+  /* Style event type emojis - smaller and monochrome */
+  .event-emoji {
+    display: inline-block;
+    font-size: 0.75em;
+    line-height: 1;
+    vertical-align: middle;
+    margin-right: 0.5em;
+    opacity: 0.7;
+    filter: grayscale(100%) contrast(0.8);
+    transition: opacity 0.2s, filter 0.2s;
+  }
+  
+  .event-emoji:hover {
+    opacity: 1;
+    filter: grayscale(80%) contrast(1);
   }
 
   /* Code block content - NO INTERNAL BORDERS */
   pre code {
+    font-size: 1.05em;
     background: transparent;
     border: none;
     padding: 0;
@@ -259,7 +339,7 @@
 
   /* Prose-specific code blocks */
   .prose pre {
-    @apply rounded-md overflow-x-auto my-4;
+    @apply rounded-md my-4;
     padding-top: 16px !important;
     padding-bottom: 16px !important;
     padding-left: 16px !important;
@@ -268,8 +348,9 @@
     color: var(--code-block-text);
     border: 0.5px solid var(--code-block-border);
     line-height: 1.2 !important;
-    white-space: pre !important;
+    white-space: pre-wrap;
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
+    /* overflow-x will be controlled by data-word-wrap attribute */
   }
 
   .prose pre code {
@@ -564,7 +645,7 @@
     color: var(--code-block-text);
     border: 0.5px solid var(--code-block-border);
     line-height: 1.2 !important;
-    white-space: pre !important;
+    white-space: pre-wrap !important;
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
   }
 
@@ -634,7 +715,7 @@
     color: var(--code-block-text) !important;
     border: 0.5px solid var(--code-block-border) !important;
     line-height: 1.2 !important;
-    white-space: pre !important;
+    white-space: pre-wrap !important;
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
   }
 
@@ -826,6 +907,9 @@
   }
 
   .line-numbers {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
+    font-size: 1.05em !important;
+    line-height: 1.2 !important;
     color: var(--text-muted) !important;
     background: none !important;
     border: none !important;
@@ -836,9 +920,7 @@
     text-align: right !important;
     user-select: none !important;
     opacity: 0.6 !important;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
-    line-height: 1.2 !important;
-    white-space: pre !important;
+    white-space: pre-wrap !important;
     vertical-align: top !important;
     width: 1% !important;
   }
@@ -851,9 +933,9 @@
     margin: 0 !important;
     padding: 0 !important;
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
-    font-size: 1em !important;
+    font-size: 1.05em !important;
     line-height: 1.2 !important;
-    white-space: pre !important;
+    white-space: pre-wrap !important;
     vertical-align: top !important;
     width: 99% !important;
     color: var(--code-block-text) !important;
@@ -903,6 +985,37 @@
   /* Override Tailwind Typography max-width */
   .prose.max-w-none {
     max-width: 100% !important;
+  }
+  
+  /* Ensure code blocks can expand fully ONLY in expanded cards */
+  .card-expanded pre,
+  .card-expanded pre code,
+  .card-expanded pre .code-content,
+  .card-expanded pre .line-numbers-table,
+  .card-expanded .prose pre,
+  .card-expanded .prose pre code,
+  .card-expanded .prose pre .code-content,
+  .card-expanded .prose pre .line-numbers-table {
+    max-width: 100% !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  
+  /* Ensure all AsciiDoc elements can expand ONLY in expanded cards */
+  .card-expanded .prose *,
+  .card-expanded .prose pre *,
+  .card-expanded .prose code *,
+  .card-expanded .prose table,
+  .card-expanded .prose table * {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  
+  /* Ensure article element expands in expanded cards */
+  .card-expanded article {
+    max-width: 100% !important;
+    width: 100% !important;
+    overflow-x: visible !important;
   }
 
   /* AsciiDoc Table of Contents Styling */
@@ -1011,7 +1124,7 @@
     background-color: var(--code-block-bg) !important;
     color: var(--code-block-text) !important;
     line-height: 1.2 !important;
-    white-space: pre !important;
+    white-space: pre-wrap !important;
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
   }
 
@@ -1029,7 +1142,7 @@
     background-color: var(--code-block-bg) !important;
     color: var(--code-block-text) !important;
     line-height: 1.2 !important;
-    white-space: pre !important;
+    white-space: pre-wrap !important;
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
   }
 
@@ -1047,7 +1160,7 @@
     background-color: var(--code-block-bg) !important;
     color: var(--code-block-text) !important;
     line-height: 1.2 !important;
-    white-space: pre !important;
+    white-space: pre-wrap !important;
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace !important;
   }
 
