@@ -18,6 +18,7 @@
   import EmbeddedEvent from './EmbeddedEvent.svelte';
   import BookSearch from './BookSearch.svelte';
   import { parseBookWikilink } from '$lib/books';
+  import BookPassageGroup from './BookPassageGroup.svelte';
 
   interface Props {
     event: NostrEvent;
@@ -39,6 +40,7 @@
   let embeddedEvents = $state<Array<{id: string, bech32: string, type: 'nevent' | 'note' | 'naddr'}>>([]);
   let bookSearchResults = $state<Array<{id: string, query: string, results: any[], bookType?: string}>>([]);
   let readInsteadData = $state<Array<{id: string, naddr: string, pubkey: string, identifier: string, displayName: string}>>([]);
+  let bookstrPassages = $state<Array<{id: string, content: string}>>([]);
 
   // Global functions for dynamically generated HTML
   function handleProfileAvatarClick(pubkey: string) {
@@ -132,6 +134,7 @@
       applySyntaxHighlighting();
     }
   });
+
 
   // Decode Nostr NIP-19 bech32 strings
   function decodeNostrLink(bech32: string): { type: string; data: any } | null {
@@ -649,14 +652,35 @@
       authorPreferredWikiAuthors = ps.items;
     });
 
-    // Clear previous read instead data
+    // Clear previous read instead data and bookstr passages
     readInsteadData = [];
+    bookstrPassages = [];
 
-    // Process the content with AsciiDoc
+    // Handle different event kinds
+    // 30040: Publication Index (no content, display metadata only)
+    if (event.kind === 30040) {
+      // For index events, we'll display metadata/tags
+      htmlContent = '<div class="publication-index"><p>Publication Index (no content)</p></div>';
+      return;
+    }
+
+    // 30817: Markdown content, 30818: AsciiDoc content, 30041: AsciiDoc content
     const content = preprocessContentForAsciidoc(event.content);
     
+    // Extract bookstr placeholders before processing
+    const bookstrPlaceholderRegex = /<div class="bookstr-placeholder" data-bookstr-id="([^"]+)" data-bookstr-content="([^"]+)"><\/div>/g;
+    const bookstrMatches: Array<{id: string, content: string}> = [];
+    let match;
+    while ((match = bookstrPlaceholderRegex.exec(content)) !== null) {
+      bookstrPassages.push({
+        id: match[1],
+        content: decodeURIComponent(match[2].replace(/&quot;/g, '"'))
+      });
+    }
+    
     // Detect if content is primarily Markdown vs AsciiDoc
-    const isMarkdown = detectMarkdownContent(content);
+    // 30817 events are Markdown, 30818 and 30041 are AsciiDoc
+    const isMarkdown = event.kind === 30817 || detectMarkdownContent(content);
     
     let processedContent = content;
     if (isMarkdown) {
@@ -681,6 +705,13 @@
     // Convert to HTML and postprocess (async)
     let html = doc.convert();
     html = await postprocessHtml(html);
+    
+    // Remove bookstr placeholders from HTML (they'll be rendered as components below)
+    for (const passage of bookstrPassages) {
+      const placeholderRegex = new RegExp(`<div class="bookstr-placeholder" data-bookstr-id="${passage.id}"[^>]*></div>`, 'g');
+      html = html.replace(placeholderRegex, '');
+    }
+    
     htmlContent = html;
     
     // Apply syntax highlighting and LaTeX rendering after the HTML is rendered
@@ -891,7 +922,19 @@
   onclick={handleLinkClick}
   role="document"
   tabindex="-1"
->{@html htmlContent}</div>
+>
+  {#if htmlContent}
+    {@html htmlContent}
+  {/if}
+</div>
+
+<!-- Bookstr Passage Groups (rendered inline like quotes) -->
+{#each bookstrPassages as passage (passage.id)}
+  <BookPassageGroup 
+    bookstrContent={passage.content}
+    {createChild}
+  />
+{/each}
 
 <!-- Embedded Events -->
 {#each embeddedEvents as embeddedEvent (embeddedEvent.id)}

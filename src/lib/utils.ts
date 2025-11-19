@@ -253,11 +253,31 @@ export function deduplicateRelays(relays: string[]): string[] {
 export function preprocessContentForAsciidoc(content: string): string {
   if (!content) return '';
   
-  // Basic preprocessing for AsciiDoc
-  return content
+  let processed = content
     .replace(/\n{3,}/g, '\n\n') // Normalize multiple newlines
     .replace(/\r\n/g, '\n') // Normalize line endings
     .trim();
+  
+  // Convert bookstr wikilinks [[book::...]] to HTML placeholder divs
+  // These will be processed later to render inline book passages
+  processed = processed.replace(/\[\[book::([^\]]+)\]\]/g, (match, content) => {
+    // Create a unique ID for this bookstr link
+    const id = `bookstr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // Store the original content in a data attribute
+    return `<div class="bookstr-placeholder" data-bookstr-id="${id}" data-bookstr-content="${content.replace(/"/g, '&quot;')}"></div>`;
+  });
+  
+  // Convert regular wikilinks [[identifier]] to AsciiDoc link format
+  // This handles the case where wikilinks aren't being rendered
+  // Pattern: [[identifier]] -> link:wikilink:identifier[identifier]
+  // We need to be careful not to match bookstr links [[book::...]]
+  processed = processed.replace(/\[\[(?!book::)([^\]]+)\]\]/g, (match, identifier) => {
+    // Escape any special AsciiDoc characters in the identifier for the URL
+    const escaped = identifier.replace(/[<>]/g, '');
+    return `link:wikilink:${escaped}[${identifier}]`;
+  });
+  
+  return processed;
 }
 
 /**
