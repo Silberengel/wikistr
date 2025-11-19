@@ -62,15 +62,40 @@
     
     const allCachedEvents = contentCache.getEvents('wiki');
     
-    // Just get the last 100 events, no filtering
-    results = allCachedEvents
-      .map(cached => cached.event)
+    // Deduplicate replaceable events by a-tag, keeping only the newest
+    const deduplicated = new Map<string, Event>();
+    
+    for (const cached of allCachedEvents) {
+      const event = cached.event;
+      const isReplaceable = event.kind === 30818 || event.kind === 30817 || event.kind === 30041 || event.kind === 1111;
+      
+      if (isReplaceable) {
+        const dTag = event.tags.find(([t]) => t === 'd')?.[1];
+        if (dTag) {
+          const aTag = `${event.kind}:${event.pubkey}:${dTag}`;
+          const existing = deduplicated.get(aTag);
+          if (!existing || (event.created_at || 0) > (existing.created_at || 0)) {
+            deduplicated.set(aTag, event);
+          }
+          continue;
+        }
+      }
+      
+      // For non-replaceable events, use event.id
+      const existing = deduplicated.get(event.id);
+      if (!existing) {
+        deduplicated.set(event.id, event);
+      }
+    }
+    
+    // Sort by created_at (newest first) and take top 100
+    results = Array.from(deduplicated.values())
       .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
       .slice(0, 100);
     
     currentRelays = contentCache.getAllRelays();
     
-    console.log(`✅ Feed: ${results.length} articles from ${currentRelays.length} relays`);
+    console.log(`✅ Feed: ${results.length} articles from ${currentRelays.length} relays (deduplicated)`);
   }
 
 
@@ -258,14 +283,26 @@
         const articleIds = wikiEvents.map(cached => cached.event.id);
         
         if (articleIds.length > 0) {
-          queries.push(
-            relayService.queryEvents(
-              userPubkey,
-              'wiki-read',
-              [{ kinds: [reactionKind], '#e': articleIds, limit: 200 }],
-              { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
-            )
-          );
+          // Batch article IDs to avoid "too many tags" relay errors
+          // Most relays limit tag arrays to ~20-50 items
+          const BATCH_SIZE = 20;
+          const batches: string[][] = [];
+          
+          for (let i = 0; i < articleIds.length; i += BATCH_SIZE) {
+            batches.push(articleIds.slice(i, i + BATCH_SIZE));
+          }
+          
+          // Create a query for each batch
+          for (const batch of batches) {
+            queries.push(
+              relayService.queryEvents(
+                userPubkey,
+                'wiki-read',
+                [{ kinds: [reactionKind], '#e': batch, limit: 200 }],
+                { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+              )
+            );
+          }
         }
       }
       

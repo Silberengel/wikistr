@@ -454,7 +454,7 @@
         [
           {
             kinds: [1111],
-            '#A': [articleCoordinate], // Only get replies to the current article
+            '#a': [articleCoordinate], // Only get replies to the current article (use lowercase #a)
             limit: 200
           }
         ],

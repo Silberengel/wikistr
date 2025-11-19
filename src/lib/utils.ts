@@ -59,7 +59,37 @@ export function getParentCard(element: HTMLElement): HTMLElement | null {
 export function addUniqueTaggedReplaceable(events: any[], newEvent: any): boolean {
   if (!newEvent || !newEvent.id) return false;
   
-  // Check if event already exists
+  // For replaceable events (wiki, kind30041, etc.), deduplicate by a-tag and keep newest
+  const isReplaceable = newEvent.kind === 30818 || newEvent.kind === 30817 || newEvent.kind === 30041 || newEvent.kind === 1111;
+  
+  if (isReplaceable) {
+    const dTag = newEvent.tags?.find(([t]: any[]) => t === 'd')?.[1];
+    if (dTag) {
+      const aTag = `${newEvent.kind}:${newEvent.pubkey}:${dTag}`;
+      
+      // Find existing event with same a-tag
+      const existingIndex = events.findIndex((evt: any) => {
+        const evtDTag = evt.tags?.find(([t]: any[]) => t === 'd')?.[1];
+        if (!evtDTag) return false;
+        const evtATag = `${evt.kind}:${evt.pubkey}:${evtDTag}`;
+        return evtATag === aTag;
+      });
+      
+      if (existingIndex !== -1) {
+        const existing = events[existingIndex];
+        // Keep only the newest version
+        if (newEvent.created_at > existing.created_at) {
+          events[existingIndex] = newEvent;
+          return true;
+        } else {
+          // Older version, don't add
+          return false;
+        }
+      }
+    }
+  }
+  
+  // Check if event already exists by ID
   const exists = events.some(evt => evt.id === newEvent.id);
   if (exists) return false;
   
@@ -267,14 +297,31 @@ export function preprocessContentForAsciidoc(content: string): string {
     return `<div class="bookstr-placeholder" data-bookstr-id="${id}" data-bookstr-content="${content.replace(/"/g, '&quot;')}"></div>`;
   });
   
-  // Convert regular wikilinks [[identifier]] to AsciiDoc link format
+  // Convert regular wikilinks [[identifier]] or [[identifier | display text]] to AsciiDoc link format
   // This handles the case where wikilinks aren't being rendered
-  // Pattern: [[identifier]] -> link:wikilink:identifier[identifier]
+  // Patterns:
+  //   [[identifier]] -> link:wikilink:identifier[identifier]
+  //   [[identifier | display text]] -> link:wikilink:identifier[display text]
   // We need to be careful not to match bookstr links [[book::...]]
-  processed = processed.replace(/\[\[(?!book::)([^\]]+)\]\]/g, (match, identifier) => {
+  processed = processed.replace(/\[\[(?!book::)([^\]]+)\]\]/g, (match, content) => {
+    // Check if there's a pipe separator for display text
+    const pipeIndex = content.indexOf(' | ');
+    let identifier: string;
+    let displayText: string;
+    
+    if (pipeIndex !== -1) {
+      // Has display text: [[identifier | display text]]
+      identifier = content.substring(0, pipeIndex).trim();
+      displayText = content.substring(pipeIndex + 3).trim(); // +3 to skip " | "
+    } else {
+      // No display text: [[identifier]]
+      identifier = content.trim();
+      displayText = identifier;
+    }
+    
     // Escape any special AsciiDoc characters in the identifier for the URL
     const escaped = identifier.replace(/[<>]/g, '');
-    return `link:wikilink:${escaped}[${identifier}]`;
+    return `link:wikilink:${escaped}[${displayText}]`;
   });
   
   return processed;

@@ -154,62 +154,73 @@
           
           // If no range events found, search for individual sections
           if (foundEvents.length === 0 && ref.section && ref.section.length > 0) {
-            const baseTags = bookReferenceToTags(versionSpecificRef);
-            const baseFilters: any = {
-              kinds: [30041],
-              limit: 50
-            };
+            // Batch sections to avoid "too many tags" relay errors
+            // Most relays limit tag arrays to ~20-50 items
+            const SECTION_BATCH_SIZE = 20;
+            const sectionBatches: string[][] = [];
             
-            // Add all non-section tags
-            for (const [tag, value] of baseTags) {
-              if (tag === 'C') {
-                baseFilters['#C'] = baseFilters['#C'] || [];
-                baseFilters['#C'].push(value);
-              } else if (tag === 'T') {
-                baseFilters['#T'] = baseFilters['#T'] || [];
-                baseFilters['#T'].push(value);
-              } else if (tag === 'c') {
-                baseFilters['#c'] = baseFilters['#c'] || [];
-                baseFilters['#c'].push(value);
-              } else if (tag === 'v') {
-                baseFilters['#v'] = baseFilters['#v'] || [];
-                baseFilters['#v'].push(value);
-              }
+            for (let i = 0; i < ref.section.length; i += SECTION_BATCH_SIZE) {
+              sectionBatches.push(ref.section.slice(i, i + SECTION_BATCH_SIZE));
             }
             
-            // Add all section values to search for
-            if (ref.section.length > 0) {
-              baseFilters['#s'] = ref.section;
-            }
-            
-            const result = await relayService.queryEvents(
-              'anonymous',
-              'wiki-read',
-              [baseFilters],
-              {
-                excludeUserContent: false,
-                currentUserPubkey: undefined
-              }
-            );
-            
-            // Collect events with their section values
-            const eventMap = new Map<string, { event: NostrEvent; sectionValue?: string }>();
-            
-            for (const event of result.events) {
-              const eventSections = event.tags.filter(([t]) => t === 's').map(([, v]) => v);
+            // Query each batch separately
+            for (const sectionBatch of sectionBatches) {
+              const baseTags = bookReferenceToTags(versionSpecificRef);
+              const baseFilters: any = {
+                kinds: [30041],
+                limit: 50
+              };
               
-              // Find matching sections
-              for (const querySection of ref.section) {
-                if (eventSections.includes(querySection)) {
-                  // Use event ID as key to avoid duplicates
-                  if (!eventMap.has(event.id)) {
-                    eventMap.set(event.id, { event, sectionValue: querySection });
+              // Add all non-section tags
+              for (const [tag, value] of baseTags) {
+                if (tag === 'C') {
+                  baseFilters['#C'] = baseFilters['#C'] || [];
+                  baseFilters['#C'].push(value);
+                } else if (tag === 'T') {
+                  baseFilters['#T'] = baseFilters['#T'] || [];
+                  baseFilters['#T'].push(value);
+                } else if (tag === 'c') {
+                  baseFilters['#c'] = baseFilters['#c'] || [];
+                  baseFilters['#c'].push(value);
+                } else if (tag === 'v') {
+                  baseFilters['#v'] = baseFilters['#v'] || [];
+                  baseFilters['#v'].push(value);
+                }
+              }
+              
+              // Add section batch to search for
+              baseFilters['#s'] = sectionBatch;
+              
+              const result = await relayService.queryEvents(
+                'anonymous',
+                'wiki-read',
+                [baseFilters],
+                {
+                  excludeUserContent: false,
+                  currentUserPubkey: undefined
+                }
+              );
+              
+              // Collect events from this batch
+              const eventMap = new Map<string, { event: NostrEvent; sectionValue?: string }>();
+              
+              for (const event of result.events) {
+                const eventSections = event.tags.filter(([t]) => t === 's').map(([, v]) => v);
+                
+                // Find matching sections
+                for (const querySection of sectionBatch) {
+                  if (eventSections.includes(querySection)) {
+                    // Use event ID as key to avoid duplicates
+                    if (!eventMap.has(event.id)) {
+                      eventMap.set(event.id, { event, sectionValue: querySection });
+                    }
                   }
                 }
               }
+              
+              // Add found events from this batch
+              foundEvents.push(...Array.from(eventMap.values()));
             }
-            
-            foundEvents = Array.from(eventMap.values());
             
             // If sections are numeric, sort by section value numerically
             if (allNumeric) {
@@ -225,7 +236,7 @@
                 limit: 1
               };
               
-              const baseTagsForIndex = baseTags.filter(([tag]) => tag !== 's' && tag !== 'v');
+              const baseTagsForIndex = bookReferenceToTags(versionSpecificRef).filter(([tag]) => tag !== 's' && tag !== 'v');
               for (const [tag, value] of baseTagsForIndex) {
                 if (tag === 'C') {
                   indexFilters['#C'] = indexFilters['#C'] || [];
@@ -253,7 +264,6 @@
                 if (indexResult.events.length > 0) {
                   const indexEvent = indexResult.events[0];
                   // Parse index event to get section order
-                  // Index events can have 'e' tags (event IDs) or 'a' tags (kind:pubkey:identifier) pointing to content events
                   const orderedEventIds: string[] = [];
                   const orderedATags: string[] = [];
                   
@@ -270,10 +280,7 @@
                   }
                   
                   // Sort found events by their position in the index
-                  // a-tags are the default in indexes, e-tags are less common
                   foundEvents.sort((a, b) => {
-                    // Try to match by 'a' tag first (kind:pubkey:identifier) - this is the default
-                    // For 30041 events, construct a tag as "30041:pubkey:d-tag"
                     const aDTag = a.event.tags.find(([t]) => t === 'd')?.[1] || '';
                     const aATag = aDTag ? `${a.event.kind}:${a.event.pubkey}:${aDTag}` : '';
                     const aIndexByATag = aATag ? orderedATags.indexOf(aATag) : -1;
@@ -282,15 +289,12 @@
                     const bATag = bDTag ? `${b.event.kind}:${b.event.pubkey}:${bDTag}` : '';
                     const bIndexByATag = bATag ? orderedATags.indexOf(bATag) : -1;
                     
-                    // Fall back to event ID matching (from 'e' tags) if 'a' tag not found
                     const aIndexById = aIndexByATag === -1 ? orderedEventIds.indexOf(a.event.id) : -1;
                     const bIndexById = bIndexByATag === -1 ? orderedEventIds.indexOf(b.event.id) : -1;
                     
-                    // Use whichever index is found (prefer 'a' tag index as it's the default)
                     const aIndex = aIndexByATag !== -1 ? aIndexByATag : (aIndexById !== -1 ? orderedATags.length + aIndexById : -1);
                     const bIndex = bIndexByATag !== -1 ? bIndexByATag : (bIndexById !== -1 ? orderedATags.length + bIndexById : -1);
                     
-                    // If not in index, put at end
                     if (aIndex === -1 && bIndex === -1) return 0;
                     if (aIndex === -1) return 1;
                     if (bIndex === -1) return -1;
@@ -301,6 +305,48 @@
               } catch (e) {
                 console.warn('Failed to fetch index event for ordering:', e);
               }
+            }
+          }
+          
+          // If we still have no events and no sections, try a general search
+          if (foundEvents.length === 0 && (!ref.section || ref.section.length === 0)) {
+            // This is a fallback for queries without sections (e.g., just book/chapter)
+            const baseTags = bookReferenceToTags(versionSpecificRef);
+            const baseFilters: any = {
+              kinds: [30041],
+              limit: 50
+            };
+            
+            // Add all non-section tags
+            for (const [tag, value] of baseTags) {
+              if (tag === 'C') {
+                baseFilters['#C'] = baseFilters['#C'] || [];
+                baseFilters['#C'].push(value);
+              } else if (tag === 'T') {
+                baseFilters['#T'] = baseFilters['#T'] || [];
+                baseFilters['#T'].push(value);
+              } else if (tag === 'c') {
+                baseFilters['#c'] = baseFilters['#c'] || [];
+                baseFilters['#c'].push(value);
+              } else if (tag === 'v') {
+                baseFilters['#v'] = baseFilters['#v'] || [];
+                baseFilters['#v'].push(value);
+              }
+            }
+            
+            const result = await relayService.queryEvents(
+              'anonymous',
+              'wiki-read',
+              [baseFilters],
+              {
+                excludeUserContent: false,
+                currentUserPubkey: undefined
+              }
+            );
+            
+            // Collect events
+            for (const event of result.events) {
+              foundEvents.push({ event });
             }
           }
           

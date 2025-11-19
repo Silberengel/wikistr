@@ -1,0 +1,23 @@
+{
+  "created_at": 1737031200,
+  "content": "= Test Article with DRB Bible Wikilinks\n\nThis article contains several bookstr macro wikilinks using the Douay-Rheims Bible (DRB) version.\n\n== Introduction\n\nThe following passages are referenced using the NKBIP-08 bookstr macro format:\n\n== Single Verse Reference\n\nCheck out [[book::bible | john 3:16 | drb]] for the famous verse.\n\n== Verse Range Reference\n\nSee [[book::bible | romans 3:16-18 | drb]] for a range of verses.\n\n== Multiple Versions\n\nCompare [[book::bible | john 3:16 | drb kjv]] to see both versions side by side.\n\n== Multiple References\n\nHere are multiple passages: [[book::bible | romans 1:16-17, psalms 23:1 | drb]].\n\n== Without Collection\n\nYou can also use [[book::john 3:16 | drb]] without specifying the collection.\n\n== Conclusion\n\nAll these wikilinks should render as inline book passage cards with Bible Gateway links.",
+  "tags": [
+    [
+      "d",
+      "test-article-drb-wikilinks"
+    ],
+    [
+      "title",
+      "Test Article with DRB Bible Wikilinks"
+    ],
+    [
+      "summary",
+      "An article testing bookstr macro with DRB Bible references"
+    ]
+  ],
+  "kind": 30818,
+  "pubkey": "573634b648634cbad10f2451776089ea21090d9407f715e83c577b4611ae6edc",
+  "id": "test-article-30818-drb-wikilinks-event-id",
+  "sig": "test-signature-for-30818-event-with-drb-bible-wikilinks"
+}
+

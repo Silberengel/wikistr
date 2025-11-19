@@ -164,6 +164,7 @@ class ContentCacheManager {
 
   /**
    * Store events in cache
+   * For replaceable events (wiki, kind30041, etc.), deduplicate by a-tag (kind:pubkey:d-tag) and keep only the newest
    */
   async storeEvents(
     contentType: keyof ContentCache,
@@ -172,16 +173,50 @@ class ContentCacheManager {
     try {
       const now = Date.now();
       
+      // For replaceable event types, we need to deduplicate by a-tag and keep newest
+      const isReplaceable = contentType === 'wiki' || contentType === 'kind30041' || contentType === 'kind1111';
+      
       // Merge new events with existing cache, preventing duplicates
       events.forEach(({ event, relays }) => {
-        const existing = this.cache[contentType].get(event.id);
+        let cacheKey = event.id;
+        
+        // For replaceable events, use a-tag (kind:pubkey:d-tag) as the key
+        if (isReplaceable) {
+          const dTag = event.tags.find(([t]) => t === 'd')?.[1];
+          if (dTag) {
+            const aTag = `${event.kind}:${event.pubkey}:${dTag}`;
+            cacheKey = aTag;
+            
+            // Check if we already have a version of this replaceable event
+            const existing = this.cache[contentType].get(cacheKey);
+            if (existing) {
+              // Keep only the newest version (by created_at)
+              if (event.created_at > existing.event.created_at) {
+                // Newer version - replace it
+                this.cache[contentType].set(cacheKey, {
+                  event,
+                  relays,
+                  cachedAt: now
+                });
+              } else {
+                // Older version - just merge relays if needed
+                existing.relays = [...new Set([...existing.relays, ...relays])];
+                existing.cachedAt = now;
+              }
+              return;
+            }
+          }
+        }
+        
+        // For non-replaceable events or events without d-tag, use event.id
+        const existing = this.cache[contentType].get(cacheKey);
         if (existing) {
           // Merge relays and update timestamp
           existing.relays = [...new Set([...existing.relays, ...relays])];
           existing.cachedAt = now;
         } else {
           // Store new event
-          this.cache[contentType].set(event.id, {
+          this.cache[contentType].set(cacheKey, {
             event,
             relays,
             cachedAt: now
@@ -200,10 +235,27 @@ class ContentCacheManager {
   }
 
   /**
-   * Get specific event by ID
+   * Get specific event by ID or a-tag
+   * For replaceable events, can search by a-tag (kind:pubkey:d-tag) or event.id
    */
   getEvent(contentType: keyof ContentCache, eventId: string): CachedEvent | undefined {
-    return this.cache[contentType].get(eventId);
+    // First try direct lookup
+    const direct = this.cache[contentType].get(eventId);
+    if (direct) return direct;
+    
+    // For replaceable events, also try searching by event.id if eventId looks like an a-tag
+    const isReplaceable = contentType === 'wiki' || contentType === 'kind30041' || contentType === 'kind1111';
+    if (isReplaceable && eventId.includes(':')) {
+      // Might be an a-tag, try direct lookup (already tried above)
+      // Or might be an event.id, search all entries
+      for (const cached of this.cache[contentType].values()) {
+        if (cached.event.id === eventId) {
+          return cached;
+        }
+      }
+    }
+    
+    return undefined;
   }
 
   /**

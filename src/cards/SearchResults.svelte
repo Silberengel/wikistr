@@ -93,6 +93,34 @@
     }, 1500);
 
     const update = debounce(() => {
+      // Deduplicate replaceable events by a-tag, keeping only the newest
+      const deduplicated = new Map<string, NostrEvent>();
+      
+      for (const event of results) {
+        const isReplaceable = event.kind === 30818 || event.kind === 30817 || event.kind === 30041 || event.kind === 1111;
+        
+        if (isReplaceable) {
+          const dTag = event.tags.find(([t]) => t === 'd')?.[1];
+          if (dTag) {
+            const aTag = `${event.kind}:${event.pubkey}:${dTag}`;
+            const existing = deduplicated.get(aTag);
+            if (!existing || event.created_at > existing.created_at) {
+              deduplicated.set(aTag, event);
+            }
+            continue;
+          }
+        }
+        
+        // For non-replaceable events, use event.id
+        const existing = deduplicated.get(event.id);
+        if (!existing) {
+          deduplicated.set(event.id, event);
+        }
+      }
+      
+      // Convert back to array and sort
+      results = Array.from(deduplicated.values());
+      
       // Multi-tier sorting: WOT authors > search tier > wotness
       let normalizedIdentifier = normalizeIdentifier(query);
       results = results.sort((a, b) => {
@@ -187,6 +215,34 @@
     }
 
     const update = debounce(() => {
+      // Deduplicate replaceable events by a-tag, keeping only the newest
+      const deduplicated = new Map<string, NostrEvent>();
+      
+      for (const event of results) {
+        const isReplaceable = event.kind === 30818 || event.kind === 30817 || event.kind === 30041 || event.kind === 1111;
+        
+        if (isReplaceable) {
+          const dTag = event.tags.find(([t]) => t === 'd')?.[1];
+          if (dTag) {
+            const aTag = `${event.kind}:${event.pubkey}:${dTag}`;
+            const existing = deduplicated.get(aTag);
+            if (!existing || event.created_at > existing.created_at) {
+              deduplicated.set(aTag, event);
+            }
+            continue;
+          }
+        }
+        
+        // For non-replaceable events, use event.id
+        const existing = deduplicated.get(event.id);
+        if (!existing) {
+          deduplicated.set(event.id, event);
+        }
+      }
+      
+      // Convert back to array
+      results = Array.from(deduplicated.values());
+      
       // Multi-tier sorting: WOT authors > search tier > wotness
       let normalizedIdentifier = normalizeIdentifier(query);
       results = results.sort((a, b) => {

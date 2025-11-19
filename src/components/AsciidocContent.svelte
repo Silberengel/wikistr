@@ -664,19 +664,22 @@
       return;
     }
 
-    // 30817: Markdown content, 30818: AsciiDoc content, 30041: AsciiDoc content
-    const content = preprocessContentForAsciidoc(event.content);
-    
-    // Extract bookstr placeholders before processing
-    const bookstrPlaceholderRegex = /<div class="bookstr-placeholder" data-bookstr-id="([^"]+)" data-bookstr-content="([^"]+)"><\/div>/g;
-    const bookstrMatches: Array<{id: string, content: string}> = [];
-    let match;
-    while ((match = bookstrPlaceholderRegex.exec(content)) !== null) {
+    // Extract bookstr wikilinks from raw content BEFORE preprocessing
+    // This ensures we capture them before AsciiDoc processes them
+    const rawContent = event.content;
+    const bookstrWikilinkRegex = /\[\[book::([^\]]+)\]\]/g;
+    let bookstrMatch;
+    while ((bookstrMatch = bookstrWikilinkRegex.exec(rawContent)) !== null) {
+      const bookstrContent = bookstrMatch[1];
+      const id = `bookstr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       bookstrPassages.push({
-        id: match[1],
-        content: decodeURIComponent(match[2].replace(/&quot;/g, '"'))
+        id,
+        content: bookstrContent
       });
     }
+    
+    // 30817: Markdown content, 30818: AsciiDoc content, 30041: AsciiDoc content
+    const content = preprocessContentForAsciidoc(event.content);
     
     // Detect if content is primarily Markdown vs AsciiDoc
     // 30817 events are Markdown, 30818 and 30041 are AsciiDoc
@@ -706,11 +709,9 @@
     let html = doc.convert();
     html = await postprocessHtml(html);
     
-    // Remove bookstr placeholders from HTML (they'll be rendered as components below)
-    for (const passage of bookstrPassages) {
-      const placeholderRegex = new RegExp(`<div class="bookstr-placeholder" data-bookstr-id="${passage.id}"[^>]*></div>`, 'g');
-      html = html.replace(placeholderRegex, '');
-    }
+    // Remove any bookstr placeholders that might have been created during preprocessing
+    // They'll be rendered as components below, so remove them from HTML
+    html = html.replace(/<div class="bookstr-placeholder"[^>]*><\/div>/g, '');
     
     htmlContent = html;
     
@@ -721,6 +722,9 @@
     }, 0);
   });
 
+  // Track clicked links to prevent duplicate card creation
+  const clickedLinks = new Set<string>();
+  
   // Handle clicks on links to create child cards
   async function handleLinkClick(clickEvent: MouseEvent) {
     const target = clickEvent.target as HTMLElement;
@@ -730,9 +734,22 @@
       const href = target.getAttribute('href');
       if (href?.startsWith('wikilink:')) {
         clickEvent.preventDefault();
+        clickEvent.stopPropagation();
+        
         const identifier = href.replace('wikilink:', '');
+        const linkKey = `wikilink:${identifier}`;
+        
+        // Prevent duplicate card creation
+        if (clickedLinks.has(linkKey)) {
+          return;
+        }
+        clickedLinks.add(linkKey);
+        
+        // Clear after a delay to allow re-clicking if needed
+        setTimeout(() => clickedLinks.delete(linkKey), 1000);
+        
         createChild({
-          id: Math.random(),
+          id: next(),
           type: 'find',
           data: identifier,
           preferredAuthors: [event.pubkey, ...authorPreferredWikiAuthors]
