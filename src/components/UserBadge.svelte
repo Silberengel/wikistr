@@ -21,7 +21,6 @@
   onMount(async () => {
     // Don't try to load user data if pubkey is invalid
     if (!pubkey || pubkey === 'anonymous' || pubkey === 'undefined' || pubkey === 'null') {
-      console.log('UserBadge: Skipping user load for invalid pubkey:', pubkey);
       return;
     }
 
@@ -52,7 +51,6 @@
             metadata: content,
             lastUpdated: Date.now()
           };
-          console.log('UserBadge: Found cached metadata for', pubkey.slice(0, 8) + '...');
           return; // Exit early since we found cached data
         } catch (e) {
           console.warn('UserBadge: Failed to parse cached user metadata:', e);
@@ -60,7 +58,6 @@
       }
       
       // If user not found in cache, try to load metadata
-      console.log('UserBadge: No cached metadata found, loading for', pubkey.slice(0, 8) + '...');
       
       const { relayService } = await import('$lib/relayService');
       const metadataResult = await relayService.queryEvents(
@@ -89,12 +86,9 @@
             relays: metadataResult.relays
           }];
           await contentCache.storeEvents('metadata', eventsToStore);
-          console.log('UserBadge: Loaded and cached metadata for', pubkey.slice(0, 8) + '...');
         } catch (e) {
           console.warn('UserBadge: Failed to parse user metadata:', e);
         }
-      } else {
-        console.log('UserBadge: No metadata found for', pubkey.slice(0, 8) + '...');
       }
       
     } catch (e) {

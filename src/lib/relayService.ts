@@ -67,7 +67,6 @@ class RelayService {
     
     // Check if we already have an identical request in progress
     if (this.requestDeduplication.has(deduplicationKey)) {
-      console.log(`🔄 Deduplicating request ${subscriptionId} (identical to existing request)`);
       return this.requestDeduplication.get(deduplicationKey)!;
     }
     
@@ -81,7 +80,6 @@ class RelayService {
       const queuedRequest = async () => {
         try {
           this.activeSubscriptions.add(subscriptionId);
-          console.log(`🚀 Starting subscription ${subscriptionId} (${this.activeSubscriptions.size}/${this.maxConcurrentSubscriptions} active)`);
           const result = await requestFn();
           resolve(result);
         } catch (error) {
@@ -89,14 +87,12 @@ class RelayService {
         } finally {
           this.activeSubscriptions.delete(subscriptionId);
           this.requestDeduplication.delete(deduplicationKey);
-          console.log(`✅ Completed subscription ${subscriptionId} (${this.activeSubscriptions.size}/${this.maxConcurrentSubscriptions} active)`);
           // Process next item in queue with a small delay
           setTimeout(() => this.processQueue(), 500);
         }
       };
       
       this.requestQueue.push(queuedRequest);
-      console.log(`📝 Queued subscription ${subscriptionId} (queue size: ${this.requestQueue.length}/${this.maxQueueSize})`);
       
       // Clean up old deduplication entries periodically
       if (Math.random() < 0.1) { // 10% chance to clean up
@@ -222,7 +218,6 @@ class RelayService {
       // Cache the result
       this.relayCache.set(cacheKey, relays);
       
-      console.log(`🌐 Loaded ${relays.length} relays for ${type}`);
       return relays;
       
     } catch (error) {
@@ -244,11 +239,8 @@ class RelayService {
       // Check cache first
       const cached = this.userRelayCache.get(userPubkey);
       if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
-        console.log('📋 Using cached user relay list for:', userPubkey);
         return cached.relays;
       }
-      
-      console.log('🔍 Loading user relay list for:', userPubkey);
       
       // Only load relays for the logged-in user, not for other users
       const { get } = await import('idb-keyval');
@@ -257,7 +249,6 @@ class RelayService {
       const currentUserPubkey = loggedInData ? loggedInData.pubkey : null;
       
       if (userPubkey !== currentUserPubkey) {
-        console.log('⏭️ Skipping relay list for non-logged-in user');
         // Cache empty result to prevent repeated queries
         this.userRelayCache.set(userPubkey, {
           relays: [],
@@ -289,10 +280,6 @@ class RelayService {
           .filter(tag => tag[0] === 'r')
           .map(tag => tag[1])
           .filter(relay => relay && relay.startsWith('wss://'));
-        
-        console.log('📡 Found user relays:', relays);
-      } else {
-        console.log('📭 No user relay list found');
       }
       
       // Cache the result
@@ -326,11 +313,8 @@ class RelayService {
       // Check cache first
       const cached = this.userInboxCache.get(userPubkey);
       if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
-        console.log('📋 Using cached user inbox relays for:', userPubkey);
         return cached.relays;
       }
-      
-      console.log('📥 Loading user inbox relays for:', userPubkey);
       
       // Only load for the logged-in user
       const { get } = await import('idb-keyval');
@@ -338,7 +322,6 @@ class RelayService {
       const currentUserPubkey = loggedInData ? loggedInData.pubkey : null;
       
       if (userPubkey !== currentUserPubkey) {
-        console.log('⏭️ Skipping inbox relays for non-logged-in user');
         return [];
       }
       
@@ -348,8 +331,6 @@ class RelayService {
         // Filter for read-only relays (no write permission)
         return relay && !relay.includes('write') && !relay.includes('wss://');
       });
-      
-      console.log('📥 Found inbox relays:', inboxRelays);
       
       // Cache the result
       this.userInboxCache.set(userPubkey, {
@@ -375,11 +356,8 @@ class RelayService {
       // Check cache first
       const cached = this.userOutboxCache.get(userPubkey);
       if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
-        console.log('📋 Using cached user outbox relays for:', userPubkey);
         return cached.relays;
       }
-      
-      console.log('📤 Loading user outbox relays for:', userPubkey);
       
       // Only load for the logged-in user
       const { get } = await import('idb-keyval');
@@ -387,7 +365,6 @@ class RelayService {
       const currentUserPubkey = loggedInData ? loggedInData.pubkey : null;
       
       if (userPubkey !== currentUserPubkey) {
-        console.log('⏭️ Skipping outbox relays for non-logged-in user');
         return [];
       }
       
@@ -397,8 +374,6 @@ class RelayService {
         // Filter for write-only relays (with write permission)
         return relay && (relay.includes('write') || relay.startsWith('wss://'));
       });
-      
-      console.log('📤 Found outbox relays:', outboxRelays);
       
       // Cache the result
       this.userOutboxCache.set(userPubkey, {

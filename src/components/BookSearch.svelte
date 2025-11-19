@@ -164,13 +164,11 @@
         );
         
         if (filteredBooks.length > 0) {
-          console.log(`📦 Using ${filteredBooks.length} cached book events for ${bookType}`);
           result = {
             events: filteredBooks.map(cached => cached.event),
             relays: [...new Set(filteredBooks.flatMap(cached => cached.relays))]
           };
         } else {
-          console.log('🔄 No cached book events found, querying relays...');
           result = await relayService.queryEvents(
             'anonymous',
             'social-read',
@@ -206,13 +204,11 @@
       );
       
       if (searchFilteredBooks.length > 0) {
-        console.log(`📦 Using ${searchFilteredBooks.length} cached book events for search: ${query}`);
         searchResult = {
           events: searchFilteredBooks.map(cached => cached.event),
           relays: [...new Set(searchFilteredBooks.flatMap(cached => cached.relays))]
         };
       } else {
-        console.log('🔄 No cached search results found, querying relays...');
         searchResult = await relayService.queryEvents(
           'anonymous',
           'social-read',

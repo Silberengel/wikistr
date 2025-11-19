@@ -78,8 +78,6 @@ class ContentCacheManager {
     if (this.loaded) return;
 
     try {
-      console.log('🔄 Loading content cache from IndexedDB...');
-      
       // Load all content types in parallel
       const [
         wikiData,
@@ -112,17 +110,6 @@ class ContentCacheManager {
       this.cache.bookConfigs = new Map(bookConfigsData || []);
 
       this.loaded = true;
-
-      const totalEvents = Object.values(this.cache).reduce((sum, map) => sum + map.size, 0);
-      console.log(`📦 Loaded ${totalEvents} cached events from IndexedDB`);
-      console.log(`  📰 Wiki: ${this.cache.wiki.size}`);
-      console.log(`  ❤️  Reactions: ${this.cache.reactions.size}`);
-      console.log(`  🗑️  Deletes: ${this.cache.deletes.size}`);
-      console.log(`  💬 Kind 1: ${this.cache.kind1.size}`);
-      console.log(`  💭 Kind 1111: ${this.cache.kind1111.size}`);
-      console.log(`  📖 Kind 30041: ${this.cache.kind30041.size}`);
-      console.log(`  👤 Metadata: ${this.cache.metadata.size}`);
-      console.log(`  📚 Book configs: ${this.cache.bookConfigs.size}`);
 
     } catch (error) {
       console.error('❌ Failed to load content cache:', error);
@@ -227,7 +214,6 @@ class ContentCacheManager {
       // Persist to IndexedDB
       await idbkv.set(CACHE_KEYS[contentType], Array.from(this.cache[contentType].entries()), store);
 
-      console.log(`💾 Cached ${events.length} ${contentType} events to IndexedDB`);
 
     } catch (error) {
       console.error(`❌ Failed to cache ${contentType} events:`, error);

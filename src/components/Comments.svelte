@@ -336,7 +336,6 @@
           publishStatus.attempts.forEach((_, index) => {
             publishStatus.attempts[index] = { status: 'success' };
           });
-          console.log('✅ Comment published successfully to', result.publishedTo.length, 'relays');
         } else {
           publishStatus.attempts.forEach((_, index) => {
             publishStatus.attempts[index] = { 
@@ -344,7 +343,6 @@
               message: `Failed to publish to any relay. Issues: ${result.failedRelays.join(', ')}` 
             };
           });
-          console.warn('⚠️ Comment publishing had issues:', result.failedRelays);
         }
       } catch (error) {
         publishStatus.attempts.forEach((_, index) => {
@@ -415,7 +413,6 @@
     });
 
     comments = filteredComments;
-    console.log('Processed comments:', filteredComments.length);
   }
 
   async function fetchComments(forceRefresh = false) {
@@ -434,7 +431,6 @@
         );
         
         if (cachedComments.length > 0) {
-          console.log(`📦 Using ${cachedComments.length} cached comments for article ${event.id}`);
           result = {
             events: cachedComments.map(cached => cached.event),
             relays: [...new Set(cachedComments.flatMap(cached => cached.relays))]
@@ -447,7 +443,6 @@
       }
       
       // Only query relays if no cached comments found
-      console.log('🔄 No cached comments, loading from relays...');
       const freshResult = await relayService.queryEvents(
         $account?.pubkey || 'anonymous',
         'social-read',
@@ -469,10 +464,7 @@
         await contentCache.storeEvents('kind1111', 
           freshResult.events.map(event => ({ event, relays: freshResult.relays }))
         );
-        console.log('Comments: Cached', freshResult.events.length, 'comments');
       }
-      
-      console.log('Loaded fresh comments from relays:', freshResult.events.length);
       
       // Process fresh comments
       processComments(freshResult.events);

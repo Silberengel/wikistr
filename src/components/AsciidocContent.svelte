@@ -19,7 +19,7 @@
   import BookSearch from './BookSearch.svelte';
   import { parseBookWikilink } from '$lib/books';
   import BookPassageGroup from './BookPassageGroup.svelte';
-  import { mount } from 'svelte';
+  import { mount, unmount } from 'svelte';
 
   interface Props {
     event: NostrEvent;
@@ -669,20 +669,9 @@
     // Let bookstr wikilinks pass through processing - we'll find and replace them in the final HTML
     const rawContent = event.content;
     
-    // Check if raw content has book wikilinks
-    const rawBookMatches = rawContent.match(/\[\[book::([^\]]+)\]\]/g);
-    console.log(`AsciidocContent: Raw content has ${rawBookMatches?.length || 0} book wikilinks:`, rawBookMatches);
-    if (rawBookMatches) {
-      console.log(`AsciidocContent: First 200 chars of raw content:`, rawContent.substring(0, 200));
-    }
-    
     // 30817: Markdown content, 30818: AsciiDoc content, 30041: AsciiDoc content
     // Preprocess content (bookstr wikilinks will be converted to placeholder divs)
     const content = preprocessContentForAsciidoc(rawContent);
-    
-    // Check if placeholders were created
-    const placeholderCount = (content.match(/bookstr-placeholder/g) || []).length;
-    console.log(`AsciidocContent: After preprocessing, found ${placeholderCount} bookstr-placeholder divs in content`);
     
     // Detect if content is primarily Markdown vs AsciiDoc
     // 30817 events are Markdown, 30818 and 30041 are AsciiDoc
@@ -711,24 +700,18 @@
     // Convert to HTML and postprocess (async)
     let html = doc.convert();
     
-    // Check what AsciiDoc did to the placeholders
-    const placeholderInHtml = (html.match(/bookstr-placeholder/g) || []).length;
-    console.log(`AsciidocContent: After AsciiDoc conversion, found ${placeholderInHtml} bookstr-placeholder mentions in HTML`);
-    
     html = await postprocessHtml(html);
     
     // Find bookstr placeholder divs that were created by preprocessContentForAsciidoc
     // They might be escaped, so check both escaped and unescaped versions
     const placeholderRegex = /<div class="bookstr-placeholder"[^>]*data-bookstr-id="([^"]+)"[^>]*data-bookstr-content="([^"]+)"[^>]*><\/div>/g;
     let match;
-    let foundCount = 0;
     while ((match = placeholderRegex.exec(html)) !== null) {
       const [, id, content] = match;
       bookstrPassages.push({
         id,
         content: content.replace(/&quot;/g, '"')
       });
-      foundCount++;
     }
     
     // Also check for HTML-escaped versions
@@ -739,10 +722,8 @@
         id,
         content: content.replace(/&quot;/g, '"')
       });
-      foundCount++;
     }
     
-    console.log(`AsciidocContent: Found ${foundCount} bookstr placeholders in HTML, ${bookstrPassages.length} total passages`);
     
     // Replace placeholders with markers that we can find in the DOM
     html = html.replace(/<div class="bookstr-placeholder"[^>]*data-bookstr-id="([^"]+)"[^>]*><\/div>/g, 
@@ -754,7 +735,6 @@
     setTimeout(() => {
       applySyntaxHighlighting();
       renderLatexExpressions();
-      console.log(`AsciidocContent: Calling mountBookstrComponents with ${bookstrPassages.length} passages`);
       mountBookstrComponents();
     }, 100);
   });
@@ -762,8 +742,8 @@
   // Cleanup mounted components on destroy
   onDestroy(() => {
     mountedBookstrComponents.forEach((instance) => {
-      if (instance && typeof (instance as any).$destroy === 'function') {
-        (instance as any).$destroy();
+      if (instance) {
+        unmount(instance);
       }
     });
     mountedBookstrComponents.clear();
@@ -771,22 +751,17 @@
 
   // Mount BookPassageGroup components at marker locations
   function mountBookstrComponents() {
-    console.log('mountBookstrComponents: Starting, contentDiv:', !!contentDiv, 'passages:', bookstrPassages.length);
     if (!contentDiv) {
-      console.warn('mountBookstrComponents: contentDiv not available');
       return;
     }
     
     // Find all bookstr markers in the rendered HTML
     const markers = contentDiv.querySelectorAll('[data-bookstr-id]');
-    console.log(`mountBookstrComponents: Found ${markers.length} markers in DOM`);
     
     if (markers.length === 0 && bookstrPassages.length > 0) {
-      console.warn('mountBookstrComponents: No markers found but passages exist. HTML might not be rendered yet.');
       // Try again after a delay
       setTimeout(() => {
         const retryMarkers = contentDiv.querySelectorAll('[data-bookstr-id]');
-        console.log(`mountBookstrComponents retry: Found ${retryMarkers.length} markers`);
         if (retryMarkers.length > 0) {
           mountBookstrComponents();
         }
@@ -798,24 +773,19 @@
       const markerElement = marker as HTMLElement;
       const bookstrId = markerElement.getAttribute('data-bookstr-id');
       if (!bookstrId) {
-        console.warn('mountBookstrComponents: Marker without data-bookstr-id');
         return;
       }
       
       // Find the corresponding passage data
       const passage = bookstrPassages.find(p => p.id === bookstrId);
       if (!passage) {
-        console.warn(`mountBookstrComponents: No passage found for id ${bookstrId}`);
         return;
       }
       
       // Skip if already mounted
       if (mountedBookstrComponents.has(bookstrId)) {
-        console.log(`mountBookstrComponents: Already mounted ${bookstrId}`);
         return;
       }
-      
-      console.log(`mountBookstrComponents: Mounting component for ${bookstrId} with content: ${passage.content}`);
       
       // Create a container to replace the marker
       const container = document.createElement('div');
@@ -836,7 +806,6 @@
         
         // Store the instance for cleanup
         mountedBookstrComponents.set(bookstrId, instance);
-        console.log(`mountBookstrComponents: Successfully mounted ${bookstrId}`);
       } catch (error) {
         console.error(`mountBookstrComponents: Error mounting ${bookstrId}:`, error);
       }
