@@ -6,7 +6,7 @@ set -e
 # Configuration
 DOCKER_REGISTRY="silberengel"
 IMAGE_NAME="wikistr"
-VERSION="v3.0"
+VERSION="v4.0"
 LATEST_TAG="latest"
 
 # Colors for output
