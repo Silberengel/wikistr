@@ -65,7 +65,7 @@
         // Convert NKBIP-08 format to legacy format for compatibility
         const references: BookReference[] = parsed.references.map(ref => ({
           book: ref.title,
-          chapter: ref.chapter,
+          chapter: ref.chapter ? parseInt(ref.chapter, 10) : undefined,
           verse: ref.section ? (ref.section.length === 1 ? ref.section[0] : ref.section.join(',')) : undefined
         }));
         parsedQuery = {

@@ -42,7 +42,7 @@ function cardFromPathPart(pathPart: string): { type: string; data: any; bookType
   } else if (ditem.startsWith('diff:')) {
     return { type: 'diff', data: ditem.substring(5) };
   } else {
-    return { type: 'find', data: pathPart, preferredAuthors: [] };
+    return { type: 'find', data: pathPart };
   }
 }
 
