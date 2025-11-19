@@ -316,14 +316,22 @@ export function preprocessContentForAsciidoc(content: string): string {
     return placeholder;
   });
   
-  // Convert bookstr wikilinks [[book::...]] to HTML placeholder divs
-  // These will be processed later to render inline book passages
+  // Convert bookstr wikilinks [[book::...]] to HTML placeholder divs wrapped in AsciiDoc inline passthrough
+  // Inline passthrough pass:[...] allows raw HTML to pass through AsciiDoc processing
   // Only process outside of code blocks
+  const bookstrMatches = processed.match(/\[\[book::([^\]]+)\]\]/g);
+  if (bookstrMatches) {
+    console.log(`preprocessContentForAsciidoc: Found ${bookstrMatches.length} bookstr wikilinks:`, bookstrMatches);
+  }
   processed = processed.replace(/\[\[book::([^\]]+)\]\]/g, (match, content) => {
     // Create a unique ID for this bookstr link
     const id = `bookstr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     // Store the original content in a data attribute
-    return `<div class="bookstr-placeholder" data-bookstr-id="${id}" data-bookstr-content="${content.replace(/"/g, '&quot;')}"></div>`;
+    // Use AsciiDoc inline passthrough syntax to preserve HTML
+    const htmlDiv = `<div class="bookstr-placeholder" data-bookstr-id="${id}" data-bookstr-content="${content.replace(/"/g, '&quot;')}"></div>`;
+    const placeholder = `pass:[${htmlDiv}]`;
+    console.log(`preprocessContentForAsciidoc: Replacing ${match} with inline passthrough`);
+    return placeholder;
   });
   
   // Convert regular wikilinks [[identifier]] or [[identifier | display text]] to AsciiDoc link format

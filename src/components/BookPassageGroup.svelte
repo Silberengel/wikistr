@@ -2,7 +2,7 @@
   import type { NostrEvent } from '@nostr/tools/pure';
   import { onMount } from 'svelte';
   import { relayService } from '$lib/relayService';
-  import { parseBookWikilink, bookReferenceToTags, type ParsedBookReference } from '$lib/bookWikilinkParser';
+  import { parseBookWikilink, bookReferenceToTags, type ParsedBookReference, type ParsedBookWikilink } from '$lib/bookWikilinkParser';
   import type { Card } from '$lib/types';
 
   interface Props {
@@ -15,19 +15,53 @@
   let passages = $state<Array<{ event: NostrEvent; reference: ParsedBookReference; sectionValue?: string; version?: string }>>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
+  let parsedReference = $state<ParsedBookWikilink | null>(null);
 
   /**
-   * Generate Bible Gateway URL for a specific passage card
-   * Each card gets its own URL based on its specific version and section
+   * Format a reference for Bible Gateway search
+   * Examples:
+   * - "romans 3:16,17,18" for multiple verses
+   * - "romans 3:16-18" for a range
+   * - "1 Macc 1:2,4" for multiple verses in a book with number
    */
-  function generateBibleGatewayUrl(
-    collection: string | undefined,
-    title: string,
-    chapter: string | undefined,
-    sectionValue: string | undefined,
-    version: string | undefined
+  function formatReferenceForBibleGateway(ref: ParsedBookReference): string {
+    let formatted = capitalizeWords(ref.title);
+    
+    if (ref.chapter) {
+      formatted += ` ${ref.chapter}`;
+      if (ref.section && ref.section.length > 0) {
+        // Check if sections form a range (consecutive numbers)
+        if (ref.section.length > 1 && ref.section.every((s: string) => /^\d+$/.test(s))) {
+          const nums = ref.section.map((s: string) => parseInt(s, 10)).sort((a, b) => a - b);
+          const isConsecutive = nums.every((n, i) => i === 0 || n === nums[i - 1] + 1);
+          
+          if (isConsecutive) {
+            // Format as range: "16-18"
+            formatted += `:${nums[0]}-${nums[nums.length - 1]}`;
+          } else {
+            // Format as comma-separated: "16,17,18"
+            formatted += `:${ref.section.join(',')}`;
+          }
+        } else {
+          // Non-numeric or mixed: use comma-separated
+          formatted += `:${ref.section.join(',')}`;
+        }
+      }
+    }
+    
+    return formatted;
+  }
+
+  /**
+   * Generate Bible Gateway URL for all references in a wikilink
+   * One URL with all references and all versions (semicolon-separated)
+   */
+  function generateBibleGatewayUrlForWikilink(
+    parsed: ParsedBookWikilink
   ): string | null {
-    if (collection !== 'bible') return null;
+    // Only generate URLs for Bible passages
+    const hasBible = parsed.references.some(ref => ref.collection === 'bible' || !ref.collection);
+    if (!hasBible) return null;
 
     // Map version codes (e.g., "drb" -> "DRA" for Bible Gateway)
     const versionMap: Record<string, string> = {
@@ -42,24 +76,79 @@
       'web': 'WEB'
     };
 
-    // Use the specific version for this card, or default to KJV
-    const bgVersion = version 
-      ? (versionMap[version.toLowerCase()] || version.toUpperCase())
-      : 'KJV';
-
-    // Format: book chapter:verse (using the specific section for this card)
-    let search = title;
-    if (chapter) {
-      search += ` ${chapter}`;
-      if (sectionValue) {
-        // Use the specific section value for this card
-        search += `:${sectionValue}`;
+    // Collect all unique versions from all references
+    const allVersions = new Set<string>();
+    for (const ref of parsed.references) {
+      if (ref.version && ref.version.length > 0) {
+        for (const v of ref.version) {
+          allVersions.add(v.toLowerCase());
+        }
       }
     }
 
-    // URL encode the search query
+    // Map versions to Bible Gateway codes, default to DRA if none specified
+    const bgVersions: string[] = [];
+    if (allVersions.size > 0) {
+      for (const v of allVersions) {
+        const bgVersion = versionMap[v] || v.toUpperCase();
+        bgVersions.push(bgVersion);
+      }
+    } else {
+      // Default to DRA if no version specified
+      bgVersions.push('DRA');
+    }
+
+    // Format all Bible references
+    const bibleRefs = parsed.references
+      .filter((ref: ParsedBookReference) => ref.collection === 'bible' || !ref.collection)
+      .map((ref: ParsedBookReference) => formatReferenceForBibleGateway(ref));
+    
+    if (bibleRefs.length === 0) return null;
+
+    // Join multiple references with ", "
+    const search = bibleRefs.join(', ');
     const encodedSearch = encodeURIComponent(search);
-    return `https://www.biblegateway.com/passage/?search=${encodedSearch}&version=${bgVersion}`;
+    
+    // Join versions with semicolons: DRA;NIV;KJV
+    const versionParam = bgVersions.join(';');
+    
+    return `https://www.biblegateway.com/passage/?search=${encodedSearch}&version=${versionParam}`;
+  }
+
+  /**
+   * Format a book reference as human-readable text
+   */
+  function formatReference(reference: ParsedBookReference): string {
+    let formatted = reference.title;
+    
+    if (reference.chapter) {
+      formatted += ` ${reference.chapter}`;
+      if (reference.section && reference.section.length > 0) {
+        formatted += `:${reference.section.join(',')}`;
+      }
+    }
+    
+    if (reference.version && reference.version.length > 0) {
+      formatted += ` (${reference.version.join(', ')})`;
+    }
+    
+    return formatted;
+  }
+
+  /**
+   * Capitalize first letter of each word for display
+   */
+  function capitalizeWords(text: string): string {
+    return text.split(' ').map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    ).join(' ');
+  }
+
+  // Parse immediately for fallback display
+  const fullWikilink = `[[book::${bookstrContent}]]`;
+  const initialParsed = parseBookWikilink(fullWikilink);
+  if (initialParsed && initialParsed.references.length > 0) {
+    parsedReference = initialParsed;
   }
 
   onMount(() => {
@@ -67,9 +156,8 @@
     // Use requestIdleCallback if available, otherwise use a small delay
     const loadPassages = async () => {
       try {
-        // Parse the bookstr wikilink
-        const fullWikilink = `[[book::${bookstrContent}]]`;
-        const parsed = parseBookWikilink(fullWikilink);
+        // Use already parsed reference
+        const parsed = parsedReference;
         
         if (!parsed || parsed.references.length === 0) {
           error = 'Failed to parse bookstr wikilink';
@@ -387,58 +475,121 @@
   });
 </script>
 
-{#if loading}
-  <div class="book-passage-loading" style="padding: 1rem; text-align: center; color: var(--text-secondary);">
-    Loading passages...
-  </div>
+{#if loading || passages.length === 0}
+  <!-- Fallback card: show while loading or if no passages found -->
+  {#if parsedReference}
+    {@const bgUrl = generateBibleGatewayUrlForWikilink(parsedReference)}
+    <div class="book-passage-fallback" style="margin: 1.5rem 0; border-left: 4px solid var(--accent); padding: 1.25rem; background-color: var(--bg-secondary); border-radius: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); position: relative;">
+      <!-- Bible Gateway link (top-right) - one link for entire wikilink with all references and versions -->
+      {#if bgUrl}
+        <a 
+          href={bgUrl} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          class="bible-gateway-link"
+          style="position: absolute; top: 0.75rem; right: 0.75rem; text-decoration: none; color: var(--accent); font-size: 1.25rem; transition: opacity 0.2s;"
+          title="View on Bible Gateway"
+        >
+          🔗
+        </a>
+      {/if}
+
+      <!-- All references -->
+      {#each parsedReference.references as ref (ref.title + (ref.chapter || '') + (ref.section?.join(',') || ''))}
+        <div class="book-passage-fallback-item" style="margin-bottom: 0.75rem; padding: 0.75rem; background-color: var(--bg-primary); border-radius: 0.375rem;">
+          <!-- Passage reference (human-readable) -->
+          <div class="passage-reference" style="font-weight: 600; font-size: 1rem; color: var(--text-primary); line-height: 1.4;">
+            {capitalizeWords(ref.title)}
+            {#if ref.chapter}
+              {ref.chapter}
+              {#if ref.section && ref.section.length > 0}
+                :{ref.section.length === 1 ? ref.section[0] : `${ref.section[0]}-${ref.section[ref.section.length - 1]}`}
+              {/if}
+            {/if}
+            {#if ref.version && ref.version.length > 0}
+              <span style="font-weight: 400; color: var(--text-secondary); font-size: 0.9em; margin-left: 0.5rem;">
+                ({ref.version.map((v: string) => v.toUpperCase()).join(', ')})
+              </span>
+            {/if}
+          </div>
+        </div>
+      {/each}
+
+      <!-- Loading or not found message -->
+      <div class="passage-status" style="color: var(--text-secondary); font-style: italic; font-size: 0.95rem; margin-top: 0.5rem;">
+        {#if loading}
+          <span style="display: inline-block; animation: pulse 2s ease-in-out infinite;">Loading passage...</span>
+        {:else}
+          Passage not found on Nostr relays
+        {/if}
+      </div>
+    </div>
+  {:else}
+    <div class="book-passage-loading" style="padding: 1rem; text-align: center; color: var(--text-secondary);">
+      Loading passages...
+    </div>
+  {/if}
 {:else if error}
   <div class="book-passage-error" style="padding: 1rem; border: 1px solid var(--border); border-radius: 0.5rem; background-color: var(--bg-secondary); color: var(--text-error);">
     {error}
   </div>
 {:else if passages.length > 0}
-  <div class="book-passage-group" style="margin: 1.5rem 0; border-left: 4px solid var(--accent); padding-left: 1rem; padding-right: 1rem;">
-    {#each passages as { event, reference, sectionValue, version } (event.id)}
-      <div class="book-passage-item" style="margin-bottom: 1rem; padding: 1rem; background-color: var(--bg-secondary); border-radius: 0.5rem; position: relative;">
-        <!-- Bible Gateway link icon (top-right) - unique for each card -->
-        {#if reference.collection === 'bible'}
-          {@const bgUrl = generateBibleGatewayUrl(reference.collection, reference.title, reference.chapter, sectionValue, version)}
-          {#if bgUrl}
-            <a 
-              href={bgUrl} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              class="bible-gateway-link"
-              style="position: absolute; top: 0.5rem; right: 0.5rem; text-decoration: none; color: var(--accent); font-size: 1.25rem;"
-              title="View on Bible Gateway"
-            >
-              🔗
-            </a>
-          {/if}
-        {/if}
+  {@const passagesByVersion = (() => {
+    const grouped = new Map<string | undefined, Array<{ event: NostrEvent; reference: ParsedBookReference; sectionValue?: string; version?: string }>>();
+    for (const passage of passages) {
+      const versionKey = passage.version || undefined; // undefined means default DRA
+      if (!grouped.has(versionKey)) {
+        grouped.set(versionKey, []);
+      }
+      grouped.get(versionKey)!.push(passage);
+    }
+    return grouped;
+  })()}
+  {@const bgUrl = parsedReference ? generateBibleGatewayUrlForWikilink(parsedReference) : null}
+  <div class="book-passage-group" style="margin: 1.5rem 0; border-left: 4px solid var(--accent); padding: 1.25rem; background-color: var(--bg-secondary); border-radius: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); position: relative;">
+    <!-- Bible Gateway link (top-right) - one link for entire wikilink with all references and versions -->
+    {#if bgUrl}
+      <a 
+        href={bgUrl} 
+        target="_blank" 
+        rel="noopener noreferrer"
+        class="bible-gateway-link"
+        style="position: absolute; top: 0.75rem; right: 0.75rem; text-decoration: none; color: var(--accent); font-size: 1.25rem; transition: opacity 0.2s;"
+        title="View on Bible Gateway"
+      >
+        🔗
+      </a>
+    {/if}
 
-        <!-- Passage title/reference -->
-        <div class="passage-reference" style="font-weight: bold; margin-bottom: 0.5rem; color: var(--text-primary);">
-          {reference.title}
-          {#if reference.chapter}
-            {reference.chapter}
-            {#if sectionValue}
-              :{sectionValue}
-            {:else if reference.section && reference.section.length > 0}
-              :{reference.section.join(',')}
-            {/if}
-          {/if}
-          {#if version}
-            ({version})
-          {:else if reference.version && reference.version.length > 0}
-            ({reference.version.join(', ')})
-          {/if}
-        </div>
-
-        <!-- Passage content -->
-        <div class="passage-content" style="font-style: italic; color: var(--text-primary);">
-          {event.content}
-        </div>
+    <!-- All passages grouped by version -->
+    {#each Array.from(passagesByVersion.entries()) as [version, versionPassages], i}
+      <!-- Version header -->
+      <div class="version-header" style="font-weight: 600; font-size: 1rem; margin-bottom: 1rem; margin-top: {i === 0 ? '0' : '1.5rem'}; color: var(--text-secondary); text-transform: uppercase;">
+        {version ? version : 'DRA'}
       </div>
+
+      <!-- All passages for this version -->
+      {#each versionPassages as { event, reference, sectionValue } (event.id)}
+        <div class="book-passage-item" style="margin-bottom: 1rem; padding: 1rem; background-color: var(--bg-primary); border-radius: 0.375rem;">
+          <!-- Passage title/reference -->
+          <div class="passage-reference" style="font-weight: bold; margin-bottom: 0.5rem; color: var(--text-primary);">
+            {reference.title}
+            {#if reference.chapter}
+              {reference.chapter}
+              {#if sectionValue}
+                :{sectionValue}
+              {:else if reference.section && reference.section.length > 0}
+                :{reference.section.join(',')}
+              {/if}
+            {/if}
+          </div>
+
+          <!-- Passage content -->
+          <div class="passage-content" style="font-style: italic; color: var(--text-primary);">
+            {event.content}
+          </div>
+        </div>
+      {/each}
     {/each}
   </div>
 {/if}
@@ -450,6 +601,15 @@
   
   .bible-gateway-link:hover {
     opacity: 0.7;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
   }
 </style>
 
