@@ -150,53 +150,125 @@
     }, 500);
 
     try {
+      // Check cache first for instant results
+      const { contentCache } = await import('$lib/contentCache');
+      const cachedEvents = contentCache.getEvents('wiki');
+      const normalizedQuery = normalizeIdentifier(query);
+      
+      // Filter cached events by d-tag (exact match)
+      const cachedMatches = cachedEvents.filter(cached => {
+        const dTag = cached.event.tags.find(([t]) => t === 'd')?.[1];
+        return dTag && normalizeIdentifier(dTag) === normalizedQuery;
+      });
+      
+      if (cachedMatches.length > 0) {
+        console.log(`✅ Found ${cachedMatches.length} cached matches for: "${query}"`);
+        cachedMatches.forEach(cached => {
+          cached.relays.forEach(relay => {
+            if (!seenCache[cached.event.id]) seenCache[cached.event.id] = [];
+            if (seenCache[cached.event.id].indexOf(relay) === -1) {
+              seenCache[cached.event.id].push(relay);
+            }
+          });
+          
+          // Check if this is an exact match from preferred authors
+          if (searchCard.preferredAuthors?.includes(cached.event.pubkey)) {
+            openArticle(cached.event, undefined, true);
+          }
+          
+          if (addUniqueTaggedReplaceable(results, cached.event)) update();
+        });
+        tried = true;
+      }
+      
       // Get all available relays from relayService
       const userPubkey = $account?.pubkey || 'anonymous';
       const allWikiRelays = await relayService.getRelaysForOperation(userPubkey, 'wiki-read');
-      const allSocialRelays = await relayService.getRelaysForOperation(userPubkey, 'social-read');
-      // Combine all relays (metadata relays are already universal via relayService)
-      const allRelays = [...new Set([...allWikiRelays, ...allSocialRelays])];
       
-      console.log(`🔍 Searching all ${allRelays.length} available relays for: "${query}"`);
+      // If we have preferred authors, prioritize their relays
+      let relaysToQuery = allWikiRelays;
+      if (searchCard.preferredAuthors && searchCard.preferredAuthors.length > 0) {
+        // Query preferred authors' relays first, then all relays
+        const preferredRelays = new Set<string>();
+        for (const author of searchCard.preferredAuthors) {
+          const authorRelays = await relayService.getRelaysForOperation(author, 'wiki-read');
+          authorRelays.forEach(r => preferredRelays.add(r));
+        }
+        relaysToQuery = [...preferredRelays, ...allWikiRelays.filter(r => !preferredRelays.has(r))];
+      }
+      
+      console.log(`🔍 Searching ${relaysToQuery.length} relays for: "${query}"`);
 
-      // Multi-tier search: exact match, then full-text (avoiding problematic tag filters)
+      // Support all wiki event kinds: 30818 (AsciiDoc), 30817 (Markdown), 30040 (Index), 30041 (Content)
+      const normalizedId = normalizeIdentifier(query);
       const searchQueries = [
-        // 1. Exact match
-        { kinds: [wikiKind], '#d': [normalizeIdentifier(query)], limit: 25 },
-        // 2. Full-text search (most compatible)
-        { kinds: [wikiKind], search: query, limit: 50 }
+        // 1. Exact match by d-tag for all wiki kinds
+        { kinds: [30818, 30817, 30040, 30041], '#d': [normalizedId], limit: 25 }
       ];
 
-      // Search all queries using relay service with all relays
-      searchQueries.forEach((searchQuery) => {
+      // Search using relay service (it handles relay selection and batching)
+      const searchPromises = searchQueries.map(searchQuery => 
         relayService.queryEvents(
           userPubkey,
           'wiki-read',
           [searchQuery],
           {
-            excludeUserContent: true,
+            excludeUserContent: false,
             currentUserPubkey: $account?.pubkey
           }
-        ).then(result => {
+        )
+      );
+      
+      // Wait for all searches with timeout
+      const timeoutPromise = new Promise<void>((resolve) => {
+        setTimeout(() => {
+          tried = true;
+          resolve();
+        }, 3000); // 3 second timeout
+      });
+      
+      Promise.all(searchPromises).then(searchResults => {
+        let foundAny = false;
+        searchResults.forEach(result => {
           result.events.forEach(evt => {
+            foundAny = true;
             tried = true;
+            
+            // Track relay sources
+            result.relays.forEach(relay => {
+              if (!seenCache[evt.id]) seenCache[evt.id] = [];
+              if (seenCache[evt.id].indexOf(relay) === -1) {
+                seenCache[evt.id].push(relay);
+              }
+            });
 
             // Check if this is an exact match from preferred authors
             if (searchCard.preferredAuthors?.includes(evt.pubkey)) {
-              // we found an exact match that fits the list of preferred authors
-              // jump straight into it
               openArticle(evt, undefined, true);
             }
 
             if (addUniqueTaggedReplaceable(results, evt)) update();
           });
-        }).catch(error => {
-          console.error('Search error:', error);
         });
+        
+        if (!foundAny && !cachedMatches.length) {
+          tried = true;
+        }
+      }).catch(error => {
+        console.error('Search error:', error);
+        tried = true;
+      });
+      
+      // Ensure tried is set after timeout
+      timeoutPromise.then(() => {
+        if (results.length === 0 && cachedMatches.length === 0) {
+          tried = true;
+        }
       });
 
     } catch (error) {
-      console.error('Failed to perform search with all relays:', error);
+      console.error('Failed to perform search:', error);
+      tried = true;
     }
   }
 

@@ -62,17 +62,20 @@
     return `https://www.biblegateway.com/passage/?search=${encodedSearch}&version=${bgVersion}`;
   }
 
-  onMount(async () => {
-    try {
-      // Parse the bookstr wikilink
-      const fullWikilink = `[[book::${bookstrContent}]]`;
-      const parsed = parseBookWikilink(fullWikilink);
-      
-      if (!parsed || parsed.references.length === 0) {
-        error = 'Failed to parse bookstr wikilink';
-        loading = false;
-        return;
-      }
+  onMount(() => {
+    // Load passages in the background to avoid blocking the main content
+    // Use requestIdleCallback if available, otherwise use a small delay
+    const loadPassages = async () => {
+      try {
+        // Parse the bookstr wikilink
+        const fullWikilink = `[[book::${bookstrContent}]]`;
+        const parsed = parseBookWikilink(fullWikilink);
+        
+        if (!parsed || parsed.references.length === 0) {
+          error = 'Failed to parse bookstr wikilink';
+          loading = false;
+          return;
+        }
 
       // Fetch events for each reference
       // When multiple versions are specified, we need to fetch and group by version
@@ -365,12 +368,21 @@
         }
       }
 
-      passages = fetchedPassages;
-    } catch (e) {
-      error = `Failed to fetch book passages: ${e}`;
-      console.error('BookPassageGroup error:', e);
-    } finally {
-      loading = false;
+        passages = fetchedPassages;
+      } catch (e) {
+        error = `Failed to fetch book passages: ${e}`;
+        console.error('BookPassageGroup error:', e);
+      } finally {
+        loading = false;
+      }
+    };
+    
+    // Use requestIdleCallback for background loading, with fallback
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(loadPassages, { timeout: 2000 });
+    } else {
+      // Fallback: use setTimeout with a small delay to allow main content to render first
+      setTimeout(loadPassages, 100);
     }
   });
 </script>

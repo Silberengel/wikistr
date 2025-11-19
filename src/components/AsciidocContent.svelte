@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { NostrEvent } from '@nostr/tools/pure';
   import asciidoctor from '@asciidoctor/core';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { loadWikiAuthors } from '@nostr/gadgets/lists';
   import type { Card } from '$lib/types';
   import { preprocessContentForAsciidoc } from '$lib/utils';
@@ -19,6 +19,7 @@
   import BookSearch from './BookSearch.svelte';
   import { parseBookWikilink } from '$lib/books';
   import BookPassageGroup from './BookPassageGroup.svelte';
+  import { mount } from 'svelte';
 
   interface Props {
     event: NostrEvent;
@@ -41,6 +42,7 @@
   let bookSearchResults = $state<Array<{id: string, query: string, results: any[], bookType?: string}>>([]);
   let readInsteadData = $state<Array<{id: string, naddr: string, pubkey: string, identifier: string, displayName: string}>>([]);
   let bookstrPassages = $state<Array<{id: string, content: string}>>([]);
+  let mountedBookstrComponents = new Map<string, any>();
 
   // Global functions for dynamically generated HTML
   function handleProfileAvatarClick(pubkey: string) {
@@ -666,20 +668,72 @@
 
     // Extract bookstr wikilinks from raw content BEFORE preprocessing
     // This ensures we capture them before AsciiDoc processes them
+    // But we need to skip code blocks and inline code
     const rawContent = event.content;
+    
+    // Protect code blocks and inline code first
+    const codePlaceholders: string[] = [];
+    let placeholderIndex = 0;
+    let protectedContent = rawContent;
+    
+    // Protect code blocks (---- blocks)
+    protectedContent = protectedContent.replace(/^----\n([\s\S]*?)\n----$/gm, (match) => {
+      const placeholder = `__CODE_BLOCK_${placeholderIndex}__`;
+      codePlaceholders[placeholderIndex] = match;
+      placeholderIndex++;
+      return placeholder;
+    });
+    
+    // Protect inline code with backticks
+    protectedContent = protectedContent.replace(/`([^`]+)`/g, (match) => {
+      const placeholder = `__INLINE_CODE_${placeholderIndex}__`;
+      codePlaceholders[placeholderIndex] = match;
+      placeholderIndex++;
+      return placeholder;
+    });
+    
+    // Protect [source] code blocks
+    protectedContent = protectedContent.replace(/^\[source[^\]]*\]\n----\n([\s\S]*?)\n----$/gm, (match) => {
+      const placeholder = `__SOURCE_BLOCK_${placeholderIndex}__`;
+      codePlaceholders[placeholderIndex] = match;
+      placeholderIndex++;
+      return placeholder;
+    });
+    
+    // Extract bookstr wikilinks from protected content (outside code blocks)
+    // and remove them from content so they don't get processed as HTML
     const bookstrWikilinkRegex = /\[\[book::([^\]]+)\]\]/g;
-    let bookstrMatch;
-    while ((bookstrMatch = bookstrWikilinkRegex.exec(rawContent)) !== null) {
-      const bookstrContent = bookstrMatch[1];
+    const bookstrPlaceholders: string[] = [];
+    let bookstrPlaceholderIndex = 0;
+    let contentForPreprocessing = protectedContent;
+    
+    // Extract and replace with HTML markers that will be replaced with components
+    contentForPreprocessing = contentForPreprocessing.replace(/\[\[book::([^\]]+)\]\]/g, (match, bookstrContent) => {
       const id = `bookstr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       bookstrPassages.push({
         id,
         content: bookstrContent
       });
-    }
+      // Use an HTML marker that will survive AsciiDoc processing
+      const placeholder = `<div data-bookstr-id="${id}" class="bookstr-marker"></div>`;
+      bookstrPlaceholders[bookstrPlaceholderIndex] = match;
+      bookstrPlaceholderIndex++;
+      return placeholder;
+    });
+    
+    // Restore code blocks before preprocessing
+    codePlaceholders.forEach((code, index) => {
+      const placeholder = contentForPreprocessing.includes(`__CODE_BLOCK_${index}__`) 
+        ? `__CODE_BLOCK_${index}__`
+        : contentForPreprocessing.includes(`__INLINE_CODE_${index}__`)
+        ? `__INLINE_CODE_${index}__`
+        : `__SOURCE_BLOCK_${index}__`;
+      contentForPreprocessing = contentForPreprocessing.replace(placeholder, code);
+    });
     
     // 30817: Markdown content, 30818: AsciiDoc content, 30041: AsciiDoc content
-    const content = preprocessContentForAsciidoc(event.content);
+    // Preprocess content (bookstr wikilinks are already removed, so they won't be converted to HTML)
+    const content = preprocessContentForAsciidoc(contentForPreprocessing);
     
     // Detect if content is primarily Markdown vs AsciiDoc
     // 30817 events are Markdown, 30818 and 30041 are AsciiDoc
@@ -710,18 +764,69 @@
     html = await postprocessHtml(html);
     
     // Remove any bookstr placeholders that might have been created during preprocessing
-    // They'll be rendered as components below, so remove them from HTML
     html = html.replace(/<div class="bookstr-placeholder"[^>]*><\/div>/g, '');
     
+    // Keep the bookstr markers - they'll be replaced with components in an effect
     htmlContent = html;
     
     // Apply syntax highlighting and LaTeX rendering after the HTML is rendered
     setTimeout(() => {
       applySyntaxHighlighting();
       renderLatexExpressions();
+      mountBookstrComponents();
     }, 0);
   });
 
+  // Cleanup mounted components on destroy
+  onDestroy(() => {
+    mountedBookstrComponents.forEach((instance) => {
+      if (instance && typeof (instance as any).$destroy === 'function') {
+        (instance as any).$destroy();
+      }
+    });
+    mountedBookstrComponents.clear();
+  });
+
+  // Mount BookPassageGroup components at marker locations
+  function mountBookstrComponents() {
+    if (!contentDiv) return;
+    
+    // Find all bookstr markers in the rendered HTML
+    const markers = contentDiv.querySelectorAll('[data-bookstr-id]');
+    
+    markers.forEach((marker) => {
+      const markerElement = marker as HTMLElement;
+      const bookstrId = markerElement.getAttribute('data-bookstr-id');
+      if (!bookstrId) return;
+      
+      // Find the corresponding passage data
+      const passage = bookstrPassages.find(p => p.id === bookstrId);
+      if (!passage) return;
+      
+      // Skip if already mounted
+      if (mountedBookstrComponents.has(bookstrId)) return;
+      
+      // Create a container to replace the marker
+      const container = document.createElement('div');
+      container.className = 'bookstr-component-container';
+      
+      // Replace marker with container
+      markerElement.parentNode?.replaceChild(container, markerElement);
+      
+      // Mount the BookPassageGroup component
+      const instance = mount(BookPassageGroup, {
+        target: container,
+        props: {
+          bookstrContent: passage.content,
+          createChild: createChild
+        }
+      });
+      
+      // Store the instance for cleanup
+      mountedBookstrComponents.set(bookstrId, instance);
+    });
+  }
+  
   // Track clicked links to prevent duplicate card creation
   const clickedLinks = new Set<string>();
   
@@ -945,13 +1050,7 @@
   {/if}
 </div>
 
-<!-- Bookstr Passage Groups (rendered inline like quotes) -->
-{#each bookstrPassages as passage (passage.id)}
-  <BookPassageGroup 
-    bookstrContent={passage.content}
-    {createChild}
-  />
-{/each}
+<!-- Bookstr Passage Groups are now mounted inline at marker locations -->
 
 <!-- Embedded Events -->
 {#each embeddedEvents as embeddedEvent (embeddedEvent.id)}

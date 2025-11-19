@@ -288,8 +288,37 @@ export function preprocessContentForAsciidoc(content: string): string {
     .replace(/\r\n/g, '\n') // Normalize line endings
     .trim();
   
+  // Protect code blocks and inline code from wikilink processing
+  const codePlaceholders: string[] = [];
+  let placeholderIndex = 0;
+  
+  // Protect code blocks (---- blocks)
+  processed = processed.replace(/^----\n([\s\S]*?)\n----$/gm, (match) => {
+    const placeholder = `__CODE_BLOCK_${placeholderIndex}__`;
+    codePlaceholders[placeholderIndex] = match;
+    placeholderIndex++;
+    return placeholder;
+  });
+  
+  // Protect inline code with backticks (single backtick)
+  processed = processed.replace(/`([^`]+)`/g, (match) => {
+    const placeholder = `__INLINE_CODE_${placeholderIndex}__`;
+    codePlaceholders[placeholderIndex] = match;
+    placeholderIndex++;
+    return placeholder;
+  });
+  
+  // Protect [source] code blocks
+  processed = processed.replace(/^\[source[^\]]*\]\n----\n([\s\S]*?)\n----$/gm, (match) => {
+    const placeholder = `__SOURCE_BLOCK_${placeholderIndex}__`;
+    codePlaceholders[placeholderIndex] = match;
+    placeholderIndex++;
+    return placeholder;
+  });
+  
   // Convert bookstr wikilinks [[book::...]] to HTML placeholder divs
   // These will be processed later to render inline book passages
+  // Only process outside of code blocks
   processed = processed.replace(/\[\[book::([^\]]+)\]\]/g, (match, content) => {
     // Create a unique ID for this bookstr link
     const id = `bookstr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -322,6 +351,16 @@ export function preprocessContentForAsciidoc(content: string): string {
     // Escape any special AsciiDoc characters in the identifier for the URL
     const escaped = identifier.replace(/[<>]/g, '');
     return `link:wikilink:${escaped}[${displayText}]`;
+  });
+  
+  // Restore protected code blocks and inline code
+  codePlaceholders.forEach((code, index) => {
+    const placeholder = processed.includes(`__CODE_BLOCK_${index}__`) 
+      ? `__CODE_BLOCK_${index}__`
+      : processed.includes(`__INLINE_CODE_${index}__`)
+      ? `__INLINE_CODE_${index}__`
+      : `__SOURCE_BLOCK_${index}__`;
+    processed = processed.replace(placeholder, code);
   });
   
   return processed;
