@@ -169,37 +169,57 @@ function parseSingleBookReference(
   content = content.trim();
   if (!content) return null;
   
-  // First, check if there's a version pipe (after chapter/section)
-  // Pattern: "... | version" where ... contains a colon (chapter:section)
   let mainContent = content;
   let versions = currentVersions || [];
+  let collection = currentCollection;
   
-  // Check for version pipe (must come after chapter/section, not collection)
-  const versionPipeMatch = content.match(/^(.+?)\s+\|\s+(.+)$/);
-  if (versionPipeMatch) {
-    const beforePipe = versionPipeMatch[1];
-    const afterPipe = versionPipeMatch[2];
+  // Split by pipes to analyze structure
+  const pipeParts = content.split(/\s+\|\s+/);
+  
+  if (pipeParts.length === 1) {
+    // No pipes, just parse normally
+    mainContent = content;
+  } else if (pipeParts.length === 2) {
+    // Single pipe: could be "collection | title" or "title chapter | version"
+    const beforePipe = pipeParts[0].trim();
+    const afterPipe = pipeParts[1].trim();
     
-    // If beforePipe contains a colon, it's chapter:section | version
-    // Otherwise, check if it's collection | title
-    if (beforePipe.includes(':')) {
-      // This is chapter:section | version
+    // Check if beforePipe has a chapter number (pattern: word(s) followed by number)
+    const hasChapter = beforePipe.match(/\s+\d+(\s|$|:)/) || beforePipe.match(/^[a-zA-Z0-9_-]+\s+\d+/);
+    
+    if (hasChapter) {
+      // This is "title chapter | version" or "title chapter:section | version"
       mainContent = beforePipe;
       versions = afterPipe.split(/\s+/).map(v => normalizeNip54(v.trim())).filter(v => v);
     } else {
-      // Check if this is collection | title (single pipe after identifier)
-      // Pattern: "identifier | title" where identifier has no spaces before the pipe
-      const collectionMatch = beforePipe.match(/^([a-zA-Z0-9_-]+)\s*$/);
+      // Check if beforePipe is a simple identifier (collection)
+      const collectionMatch = beforePipe.match(/^([a-zA-Z0-9_-]+)$/);
       if (collectionMatch) {
-        // This is collection | title
-        const collection = normalizeNip54(collectionMatch[1]);
+        // This is "collection | title"
+        collection = normalizeNip54(collectionMatch[1]);
         mainContent = afterPipe;
-        return parseSingleBookReference(mainContent, collection, versions);
       } else {
-        // Might be title | version, but this is ambiguous per spec
-        // Only allow if there's a chapter before the pipe
-        mainContent = content; // Keep original, parse normally
+        // Ambiguous - treat as no pipe, parse normally
+        mainContent = content;
       }
+    }
+  } else {
+    // Multiple pipes: "collection | title | version" or "collection | title chapter | version"
+    const firstPart = pipeParts[0].trim();
+    const lastPart = pipeParts[pipeParts.length - 1].trim();
+    const middleParts = pipeParts.slice(1, -1).join(' | ');
+    
+    // Last part is versions (split by spaces for multiple versions)
+    versions = lastPart.split(/\s+/).map(v => normalizeNip54(v.trim())).filter(v => v);
+    
+    // First part might be collection
+    const collectionMatch = firstPart.match(/^([a-zA-Z0-9_-]+)$/);
+    if (collectionMatch && !firstPart.match(/\s/)) {
+      collection = normalizeNip54(collectionMatch[1]);
+      mainContent = middleParts || pipeParts[1].trim();
+    } else {
+      // No collection, first part is part of title
+      mainContent = pipeParts.slice(0, -1).join(' | ');
     }
   }
   
@@ -210,16 +230,20 @@ function parseSingleBookReference(
   let title: string;
   let chapter: string | undefined;
   let sections: string[] | undefined;
-  let collection = currentCollection;
+  
+  // Use collection from pipe parsing, or keep currentCollection if not set
+  if (!collection) {
+    collection = currentCollection;
+  }
   
   if (chapterSectionMatch) {
     const titlePart = chapterSectionMatch[1].trim();
     const chapterPart = chapterSectionMatch[2];
     const sectionPart = chapterSectionMatch[3];
     
-    // Check if titlePart contains a collection separator
+    // Check if titlePart contains a collection separator (only if we don't already have a collection)
     const titleCollectionMatch = titlePart.match(/^([a-zA-Z0-9_-]+)\s+\|\s+(.+)$/);
-    if (titleCollectionMatch) {
+    if (titleCollectionMatch && !collection) {
       collection = normalizeNip54(titleCollectionMatch[1]);
       title = recognizeBookName(titleCollectionMatch[2].trim());
     } else {
@@ -242,7 +266,7 @@ function parseSingleBookReference(
   } else {
     // Just title (or collection | title)
     const titleCollectionMatch = mainContent.match(/^([a-zA-Z0-9_-]+)\s+\|\s+(.+)$/);
-    if (titleCollectionMatch) {
+    if (titleCollectionMatch && !collection) {
       collection = normalizeNip54(titleCollectionMatch[1]);
       title = recognizeBookName(titleCollectionMatch[2].trim());
     } else {
@@ -270,15 +294,69 @@ export function parseBookWikilink(wikilink: string): ParsedBookWikilink | null {
   
   const references: ParsedBookReference[] = [];
   
+  // Check for global version at the end: "ref1, ref2 | global-version"
+  // Pattern: if there's a pipe at the end (not part of a reference), it's a global version
+  let globalVersions: string[] | undefined;
+  let contentWithoutGlobalVersion = content;
+  
+  // Find the last pipe that's not inside quotes
+  let lastPipeIndex = -1;
+  let inQuotes = false;
+  for (let i = content.length - 1; i >= 0; i--) {
+    const char = content[i];
+    if (char === '"' || char === "'") {
+      inQuotes = !inQuotes;
+    } else if (char === '|' && !inQuotes) {
+      lastPipeIndex = i;
+      break;
+    }
+  }
+  
+  // If we found a pipe, check if it's a global version (after the last comma+space)
+  // Exception: if the part before the pipe doesn't have chapter:section, it might be a title continuation
+  if (lastPipeIndex >= 0) {
+    const beforePipe = content.substring(0, lastPipeIndex).trim();
+    const afterPipe = content.substring(lastPipeIndex + 1).trim();
+    
+    // Check if afterPipe looks like a version
+    // Versions can contain numbers (e.g., "YLT98", "WEB"), but should not have chapter:section patterns
+    // Exclude patterns that look like chapter:section (e.g., "3:16", "1:2-4")
+    const looksLikeVersion = /^[a-zA-Z0-9_-]+(\s+[a-zA-Z0-9_-]+)*$/.test(afterPipe) && 
+                             !afterPipe.match(/:\d+/) && // No :number patterns (chapter:section)
+                             !afterPipe.match(/\d+\s*:\s*\d+/) && // No number:number patterns
+                             !afterPipe.match(/^\d+\s*:/); // No leading number: pattern
+    
+    if (looksLikeVersion) {
+      // Check if the part before the pipe has a chapter:section pattern
+      // If it doesn't, the part after the pipe might be a title continuation, not a global version
+      const hasChapterSection = beforePipe.match(/:\d+/) || // Has :number pattern
+                                 beforePipe.match(/\d+\s*:/) || // Has number: pattern
+                                 beforePipe.match(/\s+\d+(\s|$)/); // Has space+number (chapter)
+      
+      // Also check if there's a comma+space before the pipe (indicating multiple references)
+      // If there's no comma+space, it's likely a single reference with version, not a global version
+      const hasCommaSpace = beforePipe.match(/,\s+[^,]+$/);
+      
+      // Only treat as global version if:
+      // 1. The part before pipe has chapter:section pattern (complete reference), OR
+      // 2. There's a comma+space before the pipe (multiple references)
+      if (hasChapterSection || hasCommaSpace) {
+        // This is a global version - extract it
+        globalVersions = afterPipe.split(/\s+/).map(v => normalizeNip54(v.trim())).filter(v => v);
+        contentWithoutGlobalVersion = beforePipe;
+      }
+    }
+  }
+  
   // Handle multiple book references (comma + space indicates new book)
   // Pattern: "book1 ref1, book2 ref2" where comma+space = new book
   const bookRefs: string[] = [];
   let currentRef = '';
-  let inQuotes = false;
+  inQuotes = false;
   
-  for (let i = 0; i < content.length; i++) {
-    const char = content[i];
-    const nextChar = content[i + 1];
+  for (let i = 0; i < contentWithoutGlobalVersion.length; i++) {
+    const char = contentWithoutGlobalVersion[i];
+    const nextChar = contentWithoutGlobalVersion[i + 1];
     
     if (char === '"' || char === "'") {
       inQuotes = !inQuotes;
@@ -301,12 +379,12 @@ export function parseBookWikilink(wikilink: string): ParsedBookWikilink | null {
   
   // If no comma+space found, treat entire content as single reference
   if (bookRefs.length === 0) {
-    bookRefs.push(content);
+    bookRefs.push(contentWithoutGlobalVersion);
   }
   
   // Parse each book reference
   let currentCollection: string | undefined;
-  let currentVersions: string[] | undefined;
+  let currentVersions: string[] | undefined = globalVersions;
   
   for (const ref of bookRefs) {
     const parsed = parseSingleBookReference(ref, currentCollection, currentVersions);
@@ -314,7 +392,14 @@ export function parseBookWikilink(wikilink: string): ParsedBookWikilink | null {
       references.push(parsed);
       // Update current collection/versions for next reference if not specified
       if (parsed.collection) currentCollection = parsed.collection;
-      if (parsed.version) currentVersions = parsed.version;
+      // If this reference has its own version, use it; otherwise keep global version
+      if (parsed.version && parsed.version.length > 0) {
+        currentVersions = parsed.version;
+      } else if (globalVersions) {
+        // Apply global version to this reference
+        parsed.version = globalVersions;
+        currentVersions = globalVersions;
+      }
     }
   }
   

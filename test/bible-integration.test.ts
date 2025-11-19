@@ -56,7 +56,8 @@ describe('Bible Integration Tests with Real Test Files', () => {
       const event = loadTestEvent('revelation_11_15_30041.json');
       expect(isBookEvent(event, 'bible')).toBe(true);
       const metadata = extractBookMetadata(event);
-      expect(metadata.version).toBe('Douay-Rheims Bible');
+      // NKBIP-08 format uses normalized values
+      expect(metadata.version).toBe('drb');
     });
   });
 
@@ -82,7 +83,8 @@ describe('Bible Integration Tests with Real Test Files', () => {
       const event = loadTestEvent('psalm_23_1_kind1.json');
       expect(isBookEvent(event, 'bible')).toBe(true);
       const metadata = extractBookMetadata(event);
-      expect(metadata.book).toBe('Psalms');
+      // NKBIP-08 format uses normalized values
+      expect(metadata.book).toBe('psalms');
       expect(metadata.chapter).toBe('23');
       expect(metadata.verse).toBe('1');
     });

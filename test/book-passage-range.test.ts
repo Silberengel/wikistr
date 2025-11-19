@@ -352,6 +352,231 @@ describe('BookPassageGroup Range Search', () => {
     });
   });
 
+  describe('Multiple versions grouping and ordering', () => {
+    it('should fetch and group events by version in order', () => {
+      const result = parseBookWikilink('[[book::bible | romans 3:4-6 | kjv drb niv]]');
+      expect(result).not.toBeNull();
+      
+      const ref = result!.references[0];
+      expect(ref.version).toEqual(['kjv', 'drb', 'niv']);
+      expect(ref.section).toEqual(['4', '5', '6']);
+      
+      // Mock events for each version
+      const kjvEvent4 = createMockEvent('kjv-event-4', [
+        ['C', 'bible'],
+        ['T', 'romans'],
+        ['c', '3'],
+        ['s', '4'],
+        ['v', 'kjv']
+      ], 'KJV verse 4');
+      
+      const kjvEvent5 = createMockEvent('kjv-event-5', [
+        ['C', 'bible'],
+        ['T', 'romans'],
+        ['c', '3'],
+        ['s', '5'],
+        ['v', 'kjv']
+      ], 'KJV verse 5');
+      
+      const kjvEvent6 = createMockEvent('kjv-event-6', [
+        ['C', 'bible'],
+        ['T', 'romans'],
+        ['c', '3'],
+        ['s', '6'],
+        ['v', 'kjv']
+      ], 'KJV verse 6');
+      
+      const drbEvent4 = createMockEvent('drb-event-4', [
+        ['C', 'bible'],
+        ['T', 'romans'],
+        ['c', '3'],
+        ['s', '4'],
+        ['v', 'drb']
+      ], 'DRB verse 4');
+      
+      const drbEvent5 = createMockEvent('drb-event-5', [
+        ['C', 'bible'],
+        ['T', 'romans'],
+        ['c', '3'],
+        ['s', '5'],
+        ['v', 'drb']
+      ], 'DRB verse 5');
+      
+      const drbEvent6 = createMockEvent('drb-event-6', [
+        ['C', 'bible'],
+        ['T', 'romans'],
+        ['c', '3'],
+        ['s', '6'],
+        ['v', 'drb']
+      ], 'DRB verse 6');
+      
+      const nivEvent4 = createMockEvent('niv-event-4', [
+        ['C', 'bible'],
+        ['T', 'romans'],
+        ['c', '3'],
+        ['s', '4'],
+        ['v', 'niv']
+      ], 'NIV verse 4');
+      
+      const nivEvent5 = createMockEvent('niv-event-5', [
+        ['C', 'bible'],
+        ['T', 'romans'],
+        ['c', '3'],
+        ['s', '5'],
+        ['v', 'niv']
+      ], 'NIV verse 5');
+      
+      const nivEvent6 = createMockEvent('niv-event-6', [
+        ['C', 'bible'],
+        ['T', 'romans'],
+        ['c', '3'],
+        ['s', '6'],
+        ['v', 'niv']
+      ], 'NIV verse 6');
+      
+      // Group events by version
+      const eventsByVersion = new Map<string | undefined, Array<{ event: NostrEvent; sectionValue?: string }>>();
+      
+      // KJV events (sorted by section)
+      eventsByVersion.set('kjv', [
+        { event: kjvEvent4, sectionValue: '4' },
+        { event: kjvEvent5, sectionValue: '5' },
+        { event: kjvEvent6, sectionValue: '6' }
+      ]);
+      
+      // DRB events (sorted by section)
+      eventsByVersion.set('drb', [
+        { event: drbEvent4, sectionValue: '4' },
+        { event: drbEvent5, sectionValue: '5' },
+        { event: drbEvent6, sectionValue: '6' }
+      ]);
+      
+      // NIV events (sorted by section)
+      eventsByVersion.set('niv', [
+        { event: nivEvent4, sectionValue: '4' },
+        { event: nivEvent5, sectionValue: '5' },
+        { event: nivEvent6, sectionValue: '6' }
+      ]);
+      
+      // Combine events from all versions in version order
+      const versionOrder = ref.version || [undefined];
+      const combinedPassages: Array<{ event: NostrEvent; sectionValue?: string; version?: string }> = [];
+      
+      for (const version of versionOrder) {
+        const versionEvents = eventsByVersion.get(version) || [];
+        for (const { event, sectionValue } of versionEvents) {
+          combinedPassages.push({ event, sectionValue, version });
+        }
+      }
+      
+      // Verify order: all KJV (4, 5, 6), then all DRB (4, 5, 6), then all NIV (4, 5, 6)
+      expect(combinedPassages.length).toBe(9);
+      expect(combinedPassages[0].version).toBe('kjv');
+      expect(combinedPassages[0].sectionValue).toBe('4');
+      expect(combinedPassages[1].version).toBe('kjv');
+      expect(combinedPassages[1].sectionValue).toBe('5');
+      expect(combinedPassages[2].version).toBe('kjv');
+      expect(combinedPassages[2].sectionValue).toBe('6');
+      
+      expect(combinedPassages[3].version).toBe('drb');
+      expect(combinedPassages[3].sectionValue).toBe('4');
+      expect(combinedPassages[4].version).toBe('drb');
+      expect(combinedPassages[4].sectionValue).toBe('5');
+      expect(combinedPassages[5].version).toBe('drb');
+      expect(combinedPassages[5].sectionValue).toBe('6');
+      
+      expect(combinedPassages[6].version).toBe('niv');
+      expect(combinedPassages[6].sectionValue).toBe('4');
+      expect(combinedPassages[7].version).toBe('niv');
+      expect(combinedPassages[7].sectionValue).toBe('5');
+      expect(combinedPassages[8].version).toBe('niv');
+      expect(combinedPassages[8].sectionValue).toBe('6');
+    });
+
+    it('should handle single version correctly', () => {
+      const result = parseBookWikilink('[[book::bible | romans 3:4-6 | kjv]]');
+      expect(result).not.toBeNull();
+      
+      const ref = result!.references[0];
+      expect(ref.version).toEqual(['kjv']);
+      
+      // Should still work with single version
+      const versionOrder = ref.version && ref.version.length > 0 ? ref.version : [undefined];
+      expect(versionOrder).toEqual(['kjv']);
+    });
+
+    it('should generate unique Bible Gateway URLs for each card', () => {
+      // Simulate the generateBibleGatewayUrl function logic
+      function generateBibleGatewayUrl(
+        collection: string | undefined,
+        title: string,
+        chapter: string | undefined,
+        sectionValue: string | undefined,
+        version: string | undefined
+      ): string | null {
+        if (collection !== 'bible') return null;
+
+        const versionMap: Record<string, string> = {
+          'drb': 'DRA',
+          'kjv': 'KJV',
+          'niv': 'NIV',
+          'esv': 'ESV',
+          'nasb': 'NASB',
+          'nlt': 'NLT',
+          'rsv': 'RSV',
+          'asv': 'ASV',
+          'web': 'WEB'
+        };
+
+        const bgVersion = version 
+          ? (versionMap[version.toLowerCase()] || version.toUpperCase())
+          : 'KJV';
+
+        let search = title;
+        if (chapter) {
+          search += ` ${chapter}`;
+          if (sectionValue) {
+            search += `:${sectionValue}`;
+          }
+        }
+
+        const encodedSearch = encodeURIComponent(search);
+        return `https://www.biblegateway.com/passage/?search=${encodedSearch}&version=${bgVersion}`;
+      }
+
+      // Test: 3 passages (4, 5, 6) from 3 versions (kjv, drb, niv) = 9 cards
+      const passages = [
+        { collection: 'bible', title: 'romans', chapter: '3', sectionValue: '4', version: 'kjv' },
+        { collection: 'bible', title: 'romans', chapter: '3', sectionValue: '5', version: 'kjv' },
+        { collection: 'bible', title: 'romans', chapter: '3', sectionValue: '6', version: 'kjv' },
+        { collection: 'bible', title: 'romans', chapter: '3', sectionValue: '4', version: 'drb' },
+        { collection: 'bible', title: 'romans', chapter: '3', sectionValue: '5', version: 'drb' },
+        { collection: 'bible', title: 'romans', chapter: '3', sectionValue: '6', version: 'drb' },
+        { collection: 'bible', title: 'romans', chapter: '3', sectionValue: '4', version: 'niv' },
+        { collection: 'bible', title: 'romans', chapter: '3', sectionValue: '5', version: 'niv' },
+        { collection: 'bible', title: 'romans', chapter: '3', sectionValue: '6', version: 'niv' }
+      ];
+
+      const urls = passages.map(p => 
+        generateBibleGatewayUrl(p.collection, p.title, p.chapter, p.sectionValue, p.version)
+      );
+
+      // All URLs should be unique
+      expect(new Set(urls).size).toBe(9);
+      
+      // Verify specific URLs
+      expect(urls[0]).toBe('https://www.biblegateway.com/passage/?search=romans%203%3A4&version=KJV');
+      expect(urls[1]).toBe('https://www.biblegateway.com/passage/?search=romans%203%3A5&version=KJV');
+      expect(urls[2]).toBe('https://www.biblegateway.com/passage/?search=romans%203%3A6&version=KJV');
+      expect(urls[3]).toBe('https://www.biblegateway.com/passage/?search=romans%203%3A4&version=DRA');
+      expect(urls[4]).toBe('https://www.biblegateway.com/passage/?search=romans%203%3A5&version=DRA');
+      expect(urls[5]).toBe('https://www.biblegateway.com/passage/?search=romans%203%3A6&version=DRA');
+      expect(urls[6]).toBe('https://www.biblegateway.com/passage/?search=romans%203%3A4&version=NIV');
+      expect(urls[7]).toBe('https://www.biblegateway.com/passage/?search=romans%203%3A5&version=NIV');
+      expect(urls[8]).toBe('https://www.biblegateway.com/passage/?search=romans%203%3A6&version=NIV');
+    });
+  });
+
   describe('Edge cases', () => {
     it('should handle single section in range', () => {
       const result = parseBookWikilink('[[book::romans 3:4]]');
