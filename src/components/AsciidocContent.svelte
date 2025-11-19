@@ -774,7 +774,7 @@
       // Word-wrap button
       const wrapButton = document.createElement('button');
       wrapButton.className = 'code-wrap-btn';
-      wrapButton.style.cssText = 'padding: 6px; border-radius: 4px; background: transparent; border: none; cursor: pointer; color: var(--text-secondary); transition: background-color 0.2s;';
+      wrapButton.style.cssText = 'padding: 6px; border-radius: 4px; cursor: pointer; transition: all 0.2s;';
       wrapButton.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;">
           <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
@@ -787,12 +787,7 @@
       preElement.setAttribute('data-word-wrap', 'enabled');
       console.log(`addCodeBlockButtons: Set initial data-word-wrap="enabled" on pre[${index}]`);
       
-      wrapButton.addEventListener('mouseenter', () => {
-        wrapButton.style.backgroundColor = 'rgba(0, 0, 0, 0.05)';
-      });
-      wrapButton.addEventListener('mouseleave', () => {
-        wrapButton.style.backgroundColor = 'transparent';
-      });
+      // Hover styles are now handled by CSS
       
       wrapButton.addEventListener('click', (e) => {
         console.log('Word-wrap button clicked!', e);
@@ -820,7 +815,7 @@
       // Copy button
       const copyButton = document.createElement('button');
       copyButton.className = 'code-copy-btn';
-      copyButton.style.cssText = 'padding: 6px; border-radius: 4px; background: transparent; border: none; cursor: pointer; color: var(--text-secondary); transition: background-color 0.2s;';
+      copyButton.style.cssText = 'padding: 6px; border-radius: 4px; cursor: pointer; transition: all 0.2s;';
       copyButton.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;">
           <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
@@ -828,12 +823,7 @@
       `;
       copyButton.title = 'Copy code';
       
-      copyButton.addEventListener('mouseenter', () => {
-        copyButton.style.backgroundColor = 'rgba(0, 0, 0, 0.05)';
-      });
-      copyButton.addEventListener('mouseleave', () => {
-        copyButton.style.backgroundColor = 'transparent';
-      });
+      // Hover styles are now handled by CSS
       
       copyButton.addEventListener('click', async () => {
         // Extract code text, excluding line numbers if present
@@ -1072,7 +1062,8 @@
       attributes: {
         'source-highlighter': 'none',
         'toc': 'left',
-        'toclevels': 1  // Only show first level initially
+        'toclevels': 1,  // Only show first level initially
+        'icons': 'font'   // Enable font-based icons for admonitions
       }
     });
     
@@ -1230,7 +1221,8 @@
       attributes: {
         'source-highlighter': 'none',
         'toc': 'left',
-        'toclevels': 1  // Only show first level initially
+        'toclevels': 1,  // Only show first level initially
+        'icons': 'font'   // Enable font-based icons for admonitions
       }
     });
 
@@ -1281,6 +1273,7 @@
       renderLatexExpressions();
       mountBookstrComponents();
       setupCollapsibleTOC();
+      styleAdmonitionContent();
     }, 100);
   });
 
@@ -1295,6 +1288,45 @@
   });
 
   // Setup collapsible TOC with button
+  // Style admonition content to make first line prominent
+  function styleAdmonitionContent() {
+    if (!contentDiv) return;
+    
+    const admonitions = contentDiv.querySelectorAll('.admonitionblock');
+    admonitions.forEach((admonition) => {
+      const contentCell = admonition.querySelector('td.content') || admonition.querySelector('.content');
+      if (!contentCell) return;
+      
+      // Find the first text node or element
+      let firstElement: Element | null = null;
+      for (let i = 0; i < contentCell.childNodes.length; i++) {
+        const node = contentCell.childNodes[i];
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          firstElement = node as Element;
+          break;
+        } else if (node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) {
+          // Wrap text node in a span
+          const span = document.createElement('span');
+          span.className = 'admonition-first-line';
+          span.textContent = node.textContent;
+          node.replaceWith(span);
+          firstElement = span;
+          break;
+        }
+      }
+      
+      // If we found a first element, style it
+      if (firstElement) {
+        (firstElement as HTMLElement).style.fontWeight = '700';
+        (firstElement as HTMLElement).style.fontSize = '1.3rem';
+        (firstElement as HTMLElement).style.color = 'var(--accent)';
+        (firstElement as HTMLElement).style.marginBottom = '0.75rem';
+        (firstElement as HTMLElement).style.display = 'block';
+        (firstElement as HTMLElement).style.lineHeight = '1.4';
+      }
+    });
+  }
+
   function setupCollapsibleTOC() {
     if (!contentDiv) return;
     
@@ -1799,23 +1831,23 @@
     border: none !important;
     width: 100% !important;
     max-width: 100% !important;
-    display: block !important;
-    overflow-x: auto !important;
+    display: table !important;
+    table-layout: fixed !important;
+    overflow-x: visible !important;
     overflow-y: visible !important;
     margin: 0 !important;
-    -webkit-overflow-scrolling: touch;
+    box-sizing: border-box !important;
   }
   
-  /* Table content (tbody/thead) can expand beyond container */
+  /* Table content (tbody/thead) should fit within container */
   :global(.prose table tbody),
   :global(.prose table thead),
   :global(.prose table tfoot),
   :global(table tbody),
   :global(table thead),
   :global(table tfoot) {
-    display: table !important;
+    display: table-row-group !important;
     width: 100% !important;
-    min-width: max-content !important;
   }
   
   /* Table rows maintain table layout */
@@ -1830,7 +1862,10 @@
     border: none !important;
     border-bottom: 1px solid var(--border) !important;
     background: transparent !important;
-    white-space: nowrap !important;
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
   }
 
   :global(table th) {
