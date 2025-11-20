@@ -666,33 +666,26 @@ export function generateBookSearchQuery(references: BookReference[], bookType: s
  * Supports both old format (type/book/chapter/verse/version) and NKBIP-08 format (C/T/c/s/v)
  */
 export function isBookEvent(event: BookEvent, bookType?: string): boolean {
-  // Check for NKBIP-08 format tags (C/T/c/s/v)
+  // Only use NKBIP-08 format tags (single-letter: C/T/c/s/v)
   const collectionTag = event.tags.find(([tag]) => tag === 'C');
   const titleTag = event.tags.find(([tag]) => tag === 'T');
   const chapterTagNKBIP = event.tags.find(([tag]) => tag === 'c');
   const sectionTag = event.tags.find(([tag]) => tag === 's');
   const versionTagNKBIP = event.tags.find(([tag]) => tag === 'v');
   
-  // Check for old format tags (type/book/chapter/verse/version)
-  const typeTag = event.tags.find(([tag]) => tag === 'type');
-  const bookTag = event.tags.find(([tag]) => tag === 'book');
-  const chapterTag = event.tags.find(([tag]) => tag === 'chapter');
-  const verseTag = event.tags.find(([tag]) => tag === 'verse');
-  const versionTag = event.tags.find(([tag]) => tag === 'version');
-  
-  // If bookType is specified, check if collection/type matches
+  // If bookType is specified, check if collection matches
   if (bookType) {
     if (collectionTag && collectionTag[1] !== bookType) {
       return false;
     }
-    if (typeTag && typeTag[1] !== bookType) {
+    // If no collection tag but bookType specified, only match if collection tag exists
+    if (!collectionTag) {
       return false;
     }
   }
   
-  // It's a book event if it has NKBIP-08 tags OR old format tags
-  return !!(collectionTag || titleTag || chapterTagNKBIP || sectionTag || versionTagNKBIP) ||
-         !!(typeTag || bookTag || chapterTag || verseTag || versionTag);
+  // It's a book event if it has NKBIP-08 single-letter tags (C/T/c/s/v)
+  return !!(collectionTag || titleTag || chapterTagNKBIP || sectionTag || versionTagNKBIP);
 }
 
 /**
