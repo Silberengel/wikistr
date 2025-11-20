@@ -11,6 +11,7 @@
   import { account, reactionKind, wikiKind, signer } from '$lib/nostr';
   import { formatRelativeTime, getA, getTagOr, next } from '$lib/utils';
   import { contentCache } from '$lib/contentCache';
+  import { getThemeConfig } from '$lib/themes';
   import type { ArticleCard, SearchCard, Card } from '$lib/types';
   import UserBadge from '$components/UserBadge.svelte';
   import ArticleContent from '$components/ArticleContent.svelte';
@@ -30,6 +31,10 @@
   }
 
   let { card, createChild, replaceSelf, back, expanded = false, isDesktop = false }: Props = $props();
+  
+  // Theme configuration
+  const theme = getThemeConfig();
+  
   let event = $state<NostrEvent | null>(null);
   let isLoading = $state(true);
   let nOthers = $state<number | undefined>(undefined);
@@ -708,10 +713,7 @@
       </div>
       
       <div class="flex-1">
-        <div class="font-bold text-4xl mb-4">
-          {#if getEventEmoji(event)}
-            <span class="event-emoji">{getEventEmoji(event)}</span>
-          {/if}
+        <div class="font-bold text-4xl mb-4" style="font-family: {theme.typography.fontFamilyHeading};">
           {title || dTag}
         </div>
         <div class="flex items-center space-x-3 mb-4">

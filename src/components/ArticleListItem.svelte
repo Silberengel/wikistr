@@ -81,7 +81,7 @@
       />
     </div>
   {/if}
-  <h1>
+  <h1 class="text-xl font-bold" style="font-family: {theme.typography.fontFamilyHeading};">
     {#if getEventEmoji(event)}
       <span class="event-emoji">{getEventEmoji(event)}</span>
     {/if}
