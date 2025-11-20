@@ -10,7 +10,7 @@
   import { wot, userWikiRelays } from '$lib/nostr';
   // Support all wiki kinds: 30818 (AsciiDoc), 30817 (Markdown), 30040 (Index), 30041 (Content)
   const wikiKinds = [30818, 30817, 30040, 30041, 30023];
-  import type { ArticleCard, SearchCard, Card } from '$lib/types';
+  import type { ArticleCard, SearchCard, Card, BookCard } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next, unique } from '$lib/utils';
   import { getThemeConfig } from '$lib/themes';
   import ArticleListItem from '$components/ArticleListItem.svelte';
@@ -581,6 +581,19 @@
 
     editable = false;
     query = query.replace(/[\r\n]/g, '').replace(/[^\w .:-]/g, '-');
+    
+    // Check if this is a book:: query - if so, route to BookCard instead
+    if (query.startsWith('book::')) {
+      const bookQuery = query.substring(6); // Remove "book::" prefix
+      const bookCard: Card = {
+        id: next(),
+        type: 'book',
+        data: bookQuery
+      };
+      replaceSelf(bookCard);
+      return;
+    }
+    
     if (query !== searchCard.data) {
       // replace browser url and history
       let index = $cards.findIndex((t) => t.id === card.id);

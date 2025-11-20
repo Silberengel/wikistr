@@ -25,9 +25,10 @@
     event: NostrEvent;
     createChild: (card: Card) => void;
     replaceSelf?: (card: Card) => void;
+    relayHints?: string[];
   }
 
-  let { event, createChild, replaceSelf }: Props = $props();
+  let { event, createChild, replaceSelf, relayHints = [] }: Props = $props();
 
   let authorPreferredWikiAuthors = $state<string[]>([]);
   let htmlContent = $state<string>('');
@@ -1645,7 +1646,8 @@
           target: container,
           props: {
             bookstrContent: passage.content,
-            createChild: createChild
+            createChild: createChild,
+            relayHints: relayHints
           }
         });
         
@@ -1683,12 +1685,22 @@
         // Clear after a delay to allow re-clicking if needed
         setTimeout(() => clickedLinks.delete(linkKey), 1000);
         
-        createChild({
-          id: next(),
-          type: 'find',
-          data: identifier,
-          preferredAuthors: [event.pubkey, ...authorPreferredWikiAuthors]
-        } as any);
+        // Check if this is a book:: wikilink - route to BookCard instead
+        if (identifier.startsWith('book::')) {
+          const bookQuery = identifier.substring(6); // Remove "book::" prefix
+          createChild({
+            id: next(),
+            type: 'book',
+            data: bookQuery
+          } as any);
+        } else {
+          createChild({
+            id: next(),
+            type: 'find',
+            data: identifier,
+            preferredAuthors: [event.pubkey, ...authorPreferredWikiAuthors]
+          } as any);
+        }
       } else if (href?.startsWith('book:')) {
         clickEvent.preventDefault();
         const bookQuery = href.replace('book:', '');
@@ -1897,6 +1909,7 @@
     type={embeddedEvent.type}
     onClose={() => removeEmbeddedEvent(embeddedEvent.id)}
     {createChild}
+    relayHints={relayHints}
   />
 {/each}
 

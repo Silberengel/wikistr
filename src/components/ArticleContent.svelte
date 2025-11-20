@@ -10,9 +10,10 @@
     event: NostrEvent;
     createChild: (card: Card) => void;
     replaceSelf: (card: Card) => void;
+    relayHints?: string[];
   }
 
-  let { event, createChild, replaceSelf }: Props = $props();
+  let { event, createChild, replaceSelf, relayHints = [] }: Props = $props();
 
   let authorPreferredWikiAuthors = $state<string[]>([]);
 
@@ -23,4 +24,4 @@
   });
 </script>
 
-<AsciidocContent {event} {createChild} {replaceSelf} />
+<AsciidocContent {event} {createChild} {replaceSelf} {relayHints} />

@@ -3,14 +3,16 @@
   import { onMount } from 'svelte';
   import { relayService } from '$lib/relayService';
   import { parseBookWikilink, bookReferenceToTags, type ParsedBookReference, type ParsedBookWikilink } from '$lib/bookWikilinkParser';
-  import type { Card } from '$lib/types';
+  import type { Card, BookCard, ArticleCard } from '$lib/types';
+  import { next, getTagOr } from '$lib/utils';
 
   interface Props {
     bookstrContent: string;
     createChild?: (card: Card) => void;
+    relayHints?: string[];
   }
 
-  let { bookstrContent, createChild = () => {} }: Props = $props();
+  let { bookstrContent, createChild = () => {}, relayHints = [] }: Props = $props();
 
   let passages = $state<Array<{ event: NostrEvent; reference: ParsedBookReference; sectionValue?: string; version?: string }>>([]);
   let loading = $state(true);
@@ -165,6 +167,67 @@
           return;
         }
 
+        // Check cache first for instant results
+        const { contentCache } = await import('$lib/contentCache');
+        const cachedEvents = contentCache.getEvents('wiki');
+        const bookKinds = [30040, 30041]; // Book event kinds
+        
+        // Helper function to check if an event matches a book reference
+        const eventMatchesRef = (event: NostrEvent, ref: ParsedBookReference, version?: string): { matches: boolean; sectionValue?: string } => {
+          // Check kind
+          if (!bookKinds.includes(event.kind)) return { matches: false };
+          
+          // Get tags
+          const cTag = event.tags.find(([t]) => t === 'C')?.[1]?.toLowerCase();
+          const tTag = event.tags.find(([t]) => t === 'T')?.[1];
+          const chapterTag = event.tags.find(([t]) => t === 'c')?.[1];
+          const sectionTags = event.tags.filter(([t]) => t === 's').map(([, v]) => v);
+          const vTag = event.tags.find(([t]) => t === 'v')?.[1]?.toLowerCase();
+          
+          // Check collection (C tag)
+          if (ref.collection && cTag !== ref.collection.toLowerCase()) {
+            return { matches: false };
+          }
+          
+          // Check book name (T tag) - normalize for comparison
+          if (ref.title) {
+            const normalizedRefTitle = ref.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+            const normalizedEventTitle = (tTag || '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+            if (normalizedEventTitle !== normalizedRefTitle) {
+              return { matches: false };
+            }
+          }
+          
+          // Check chapter (c tag)
+          if (ref.chapter && chapterTag !== ref.chapter.toString()) {
+            return { matches: false };
+          }
+          
+          // Check version (v tag)
+          if (version && vTag !== version.toLowerCase()) {
+            return { matches: false };
+          }
+          
+          // Check sections (s tags)
+          if (ref.section && ref.section.length > 0) {
+            const matchingSection = ref.section.find(s => sectionTags.includes(s));
+            if (matchingSection) {
+              return { matches: true, sectionValue: matchingSection };
+            }
+            // Also check for range tags (e.g., "3-16")
+            const rangeMatch = ref.section.find(s => {
+              const range = sectionTags.find(st => st.includes('-') && st.startsWith(s.split('-')[0]));
+              return range !== undefined;
+            });
+            if (rangeMatch) {
+              return { matches: true, sectionValue: rangeMatch };
+            }
+            return { matches: false };
+          }
+          
+          return { matches: true };
+        };
+
       // Fetch events for each reference
       // When multiple versions are specified, we need to fetch and group by version
       const fetchedPassages: Array<{ event: NostrEvent; reference: ParsedBookReference; sectionValue?: string; version?: string }> = [];
@@ -177,12 +240,28 @@
         const eventsByVersion = new Map<string | undefined, Array<{ event: NostrEvent; sectionValue?: string }>>();
         
         for (const version of versionsToFetch) {
+          // Check cache first
+          let foundEvents: Array<{ event: NostrEvent; sectionValue?: string }> = [];
+          
+          for (const cached of cachedEvents) {
+            if (bookKinds.includes(cached.event.kind)) {
+              const match = eventMatchesRef(cached.event, ref, version);
+              if (match.matches) {
+                foundEvents.push({ event: cached.event, sectionValue: match.sectionValue });
+              }
+            }
+          }
+          
+          if (foundEvents.length > 0) {
+            console.log(`BookPassageGroup: Found ${foundEvents.length} cached events for "${ref.title}"`);
+            eventsByVersion.set(version, foundEvents);
+            continue; // Skip relay query if we found cached events
+          }
+          
           // Check if we have a range of sections (e.g., ["4", "5", "6"] from "4-6")
           const hasRange = ref.section && ref.section.length > 1;
           const allNumeric = ref.section && ref.section.every(s => /^\d+$/.test(s));
           
-          let foundEvents: Array<{ event: NostrEvent; sectionValue?: string }> = [];
-
           // Create a version-specific reference for this fetch
           const versionSpecificRef: ParsedBookReference = {
             ...ref,
@@ -230,7 +309,8 @@
               [rangeFilters],
               {
                 excludeUserContent: false,
-                currentUserPubkey: undefined
+                currentUserPubkey: undefined,
+                customRelays: relayHints.length > 0 ? relayHints : undefined
               }
             );
             
@@ -288,7 +368,8 @@
                 [baseFilters],
                 {
                   excludeUserContent: false,
-                  currentUserPubkey: undefined
+                  currentUserPubkey: undefined,
+                  customRelays: relayHints.length > 0 ? relayHints : undefined
                 }
               );
               
@@ -348,7 +429,8 @@
                   [indexFilters],
                   {
                     excludeUserContent: false,
-                    currentUserPubkey: undefined
+                    currentUserPubkey: undefined,
+                    customRelays: relayHints.length > 0 ? relayHints : undefined
                   }
                 );
                 
@@ -473,13 +555,56 @@
       setTimeout(loadPassages, 100);
     }
   });
+  
+  function handleClick() {
+    // Create a BookCard with the original query to allow searching/filtering
+    const bookCard: BookCard = {
+      id: next(),
+      type: 'book',
+      data: bookstrContent
+    };
+    createChild(bookCard);
+  }
+  
+  function openEvent(event: NostrEvent, ev?: MouseEvent) {
+    if (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+    // Create an ArticleCard to display the book event in a new panel
+    const dTag = getTagOr(event, 'd');
+    const articleCard: ArticleCard = {
+      id: next(),
+      type: 'article',
+      data: [dTag || '', event.pubkey],
+      relayHints: [],
+      actualEvent: {
+        id: event.id,
+        pubkey: event.pubkey,
+        created_at: event.created_at,
+        kind: event.kind,
+        tags: event.tags.map(tag => [...tag]),
+        content: event.content,
+        sig: event.sig
+      }
+    };
+    createChild(articleCard);
+  }
 </script>
 
 {#if loading || passages.length === 0}
   <!-- Fallback card: show while loading or if no passages found -->
   {#if parsedReference}
     {@const bgUrl = generateBibleGatewayUrlForWikilink(parsedReference)}
-    <div class="book-passage-fallback" style="margin: 1.5rem 0; border-left: 4px solid var(--accent); padding: 1.25rem; background-color: var(--bg-secondary); border-radius: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); position: relative;">
+    <div 
+      class="book-passage-fallback" 
+      style="margin: 1.5rem 0; border-left: 4px solid var(--accent); padding: 1.25rem; background-color: var(--bg-secondary); border-radius: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); position: relative; cursor: pointer;"
+      onclick={handleClick}
+      role="button"
+      tabindex="0"
+      onkeydown={(e) => e.key === 'Enter' && handleClick()}
+      title="Click to search for this book passage"
+    >
       <!-- Bible Gateway link (top-right) - one link for entire wikilink with all references and versions -->
       {#if bgUrl}
         <a 
@@ -546,7 +671,15 @@
     return grouped;
   })()}
   {@const bgUrl = parsedReference ? generateBibleGatewayUrlForWikilink(parsedReference) : null}
-  <div class="book-passage-group" style="margin: 1.5rem 0; border-left: 4px solid var(--accent); padding: 1.25rem; background-color: var(--bg-secondary); border-radius: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); position: relative;">
+  <div 
+    class="book-passage-group" 
+    style="margin: 1.5rem 0; border-left: 4px solid var(--accent); padding: 1.25rem; background-color: var(--bg-secondary); border-radius: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); position: relative; cursor: pointer;"
+    onclick={handleClick}
+    role="button"
+    tabindex="0"
+    onkeydown={(e) => e.key === 'Enter' && handleClick()}
+    title="Click to search for this book passage"
+  >
     <!-- Bible Gateway link (top-right) - one link for entire wikilink with all references and versions -->
     {#if bgUrl}
       <a 
@@ -571,8 +704,16 @@
       <!-- All passages for this version -->
       {#each versionPassages as { event, reference, sectionValue } (event.id)}
         <div class="book-passage-item" style="margin-bottom: 1rem; padding: 1rem; background-color: var(--bg-primary); border-radius: 0.375rem;">
-          <!-- Passage title/reference -->
-          <div class="passage-reference" style="font-weight: bold; margin-bottom: 0.5rem; color: var(--text-primary);">
+          <!-- Passage title/reference - clickable to open event -->
+          <div 
+            class="passage-reference" 
+            style="font-weight: bold; margin-bottom: 0.5rem; color: var(--accent); cursor: pointer; text-decoration: underline;"
+            onclick={(e) => openEvent(event, e)}
+            role="button"
+            tabindex="0"
+            onkeydown={(e) => e.key === 'Enter' && openEvent(event, e)}
+            title="Click to open this passage in a new panel"
+          >
             {reference.title}
             {#if reference.chapter}
               {reference.chapter}

@@ -58,16 +58,42 @@
       }
       
       // If user not found in cache, try to load metadata
+      // Add a small random delay to stagger requests and avoid queue overflow
+      const delay = Math.random() * 200; // 0-200ms random delay
+      await new Promise(resolve => setTimeout(resolve, delay));
       
       const { relayService } = await import('$lib/relayService');
-      const metadataResult = await relayService.queryEvents(
-        'anonymous',
-        'metadata-read',
-        [{ kinds: [0], authors: [pubkey], limit: 1 }],
-        { excludeUserContent: false, currentUserPubkey: undefined }
-      );
       
-      if (metadataResult.events.length > 0) {
+      // Retry logic for queue full errors
+      let retries = 3;
+      let metadataResult: { events: any[]; relays: string[] } | null = null;
+      while (retries > 0) {
+        try {
+          metadataResult = await relayService.queryEvents(
+            'anonymous',
+            'metadata-read',
+            [{ kinds: [0], authors: [pubkey], limit: 1 }],
+            { excludeUserContent: false, currentUserPubkey: undefined }
+          );
+          break; // Success, exit retry loop
+        } catch (e: any) {
+          if (e.message && e.message.includes('Request queue is full')) {
+            retries--;
+            if (retries > 0) {
+              // Wait a bit longer before retrying
+              await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 500));
+            } else {
+              // Give up after retries - just use fallback user
+              return;
+            }
+          } else {
+            // Not a queue error, throw immediately
+            throw e;
+          }
+        }
+      }
+      
+      if (metadataResult && metadataResult.events.length > 0) {
         const event = metadataResult.events[0];
         try {
           const content = JSON.parse(event.content);

@@ -15,9 +15,10 @@
     type: 'nevent' | 'note' | 'naddr';
     onClose?: () => void;
     createChild?: ((card: any) => void) | undefined;
+    relayHints?: string[];
   }
 
-  let { bech32, type, onClose, createChild }: Props = $props();
+  let { bech32, type, onClose, createChild, relayHints = [] }: Props = $props();
   
   let event = $state<NostrEvent | null>(null);
   let loading = $state(true);
@@ -54,6 +55,8 @@
     try {
       let eventId: string;
       let author: string | null = null;
+      let kind: number | null = null;
+      let identifier: string | null = null;
 
       if (type === 'nevent') {
         const decoded = nip19.decode(bech32);
@@ -76,6 +79,8 @@
           // For naddr, fetch by kind, author, and identifier
           eventId = `${decoded.data.pubkey}-${decoded.data.kind}-${decoded.data.identifier}`;
           author = decoded.data.pubkey;
+          kind = decoded.data.kind;
+          identifier = decoded.data.identifier;
         } else {
           throw new Error('Invalid naddr format');
         }
@@ -83,7 +88,86 @@
         throw new Error(`Unsupported event type: ${type}`);
       }
 
-      // Fetch the event
+      // Check cache first before querying relays
+      const { contentCache } = await import('$lib/contentCache');
+      const cachedEvents = contentCache.getEvents('wiki');
+      let cachedEvent: NostrEvent | null = null;
+      
+      if (type === 'naddr' && author && kind && identifier) {
+        // For naddr, find by pubkey, kind, and d-tag
+        cachedEvent = cachedEvents.find(cached => 
+          cached.event.pubkey === author &&
+          cached.event.kind === kind &&
+          cached.event.tags.some(([tag, value]) => tag === 'd' && value === identifier)
+        )?.event || null;
+      } else if (eventId) {
+        // For nevent and note, find by event ID
+        cachedEvent = cachedEvents.find(cached => cached.event.id === eventId)?.event || null;
+      }
+      
+      if (cachedEvent) {
+        console.log('EmbeddedEvent: Found cached event');
+        event = cachedEvent;
+        pubkey = cachedEvent.pubkey;
+        loading = false;
+        // Load user data
+        try {
+          const { relayService } = await import('$lib/relayService');
+          const result = await relayService.queryEvents(
+            'anonymous',
+            'metadata-read',
+            [{ kinds: [0], authors: [cachedEvent.pubkey], limit: 1 }],
+            { excludeUserContent: false, currentUserPubkey: undefined }
+          );
+          
+          if (result.events.length > 0) {
+            const event = result.events[0];
+            try {
+              const content = JSON.parse(event.content);
+              user = {
+                pubkey: cachedEvent.pubkey,
+                npub: cachedEvent.pubkey,
+                shortName: content.display_name || content.name || cachedEvent.pubkey.slice(0, 8) + '...',
+                image: content.picture || undefined,
+                metadata: content,
+                lastUpdated: Date.now()
+              };
+            } catch (e) {
+              console.warn('EmbeddedEvent: Failed to parse user metadata:', e);
+              user = {
+                pubkey: cachedEvent.pubkey,
+                npub: cachedEvent.pubkey,
+                shortName: cachedEvent.pubkey.slice(0, 8) + '...',
+                image: undefined,
+                metadata: {},
+                lastUpdated: Date.now()
+              };
+            }
+          } else {
+            user = {
+              pubkey: cachedEvent.pubkey,
+              npub: cachedEvent.pubkey,
+              shortName: cachedEvent.pubkey.slice(0, 8) + '...',
+              image: undefined,
+              metadata: {},
+              lastUpdated: Date.now()
+            };
+          }
+        } catch (e) {
+          console.warn('EmbeddedEvent: Failed to load user data:', e);
+          user = {
+            pubkey: cachedEvent.pubkey,
+            npub: cachedEvent.pubkey,
+            shortName: cachedEvent.pubkey.slice(0, 8) + '...',
+            image: undefined,
+            metadata: {},
+            lastUpdated: Date.now()
+          };
+        }
+        return; // Exit early - no need to query relays
+      }
+
+      // Fetch the event from relays if not in cache
       const fetchedEvent = await new Promise<NostrEvent | null>(async (resolve) => {
         let eventData: NostrEvent | null = null;
         // relays are now handled by relayService
@@ -105,7 +189,8 @@
                 }],
                 {
                   excludeUserContent: false,
-                  currentUserPubkey: undefined
+                  currentUserPubkey: undefined,
+                  customRelays: relayHints.length > 0 ? relayHints : undefined
                 }
               );
 
@@ -133,7 +218,8 @@
               [{ ids: [eventId], limit: 1 }],
               {
                 excludeUserContent: false,
-                currentUserPubkey: undefined
+                currentUserPubkey: undefined,
+                customRelays: relayHints.length > 0 ? relayHints : undefined
               }
             );
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { normalizeURL } from '@nostr/tools/utils';
   import { decode } from '@nostr/tools/nip19';
 
@@ -37,6 +37,14 @@
   $effect(() => {
     let nextP = (page.params.path || '').split('/').filter((str) => str !== '');
 
+    // Check if path actually changed to prevent infinite loops
+    if (nextP.length === prevP.length && nextP.every((val, idx) => val === prevP[idx])) {
+      return; // Path hasn't changed, no need to update
+    }
+
+    // Use untrack to read from $cards without making it a reactive dependency
+    const currentCards = untrack(() => $cards);
+    
     let nextCards: Card[] = [];
     for (let n = 0; n < nextP.length; n++) {
       // for all the path parts in the next url we try to find them in the previous
@@ -45,7 +53,7 @@
         if (prevP[p] === nextP[n]) {
           // when we find something that means we will keep the corresponding card
           // but at the new index (which is likely to be the same, but not always)
-          nextCards[n] = $cards[p];
+          nextCards[n] = currentCards[p];
           found = true;
 
           // we also null this, so repeated pathnames cannot be re-found

@@ -91,7 +91,11 @@
     window.removeEventListener('resize', checkDesktop);
   });
 
-  function close() {
+  function close(ev?: MouseEvent) {
+    if (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
     if (card.type === 'editor' && card.data.previous) replaceSelf(card.data.previous);
     else removeSelf();
   }
@@ -269,7 +273,7 @@
             {/if}
           </button>
         {/if}
-        <button aria-label="close" onclick={close} class="transition-colors hover:opacity-70">
+        <button aria-label="close" onclick={(e) => close(e)} class="transition-colors hover:opacity-70">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             fill="none"

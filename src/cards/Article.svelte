@@ -841,7 +841,7 @@
       {/if}
     {:else if view === 'formatted'}
       <div class="prose prose-p:my-0 prose-li:my-0">
-        <ArticleContent {event} {createChild} {replaceSelf} />
+        <ArticleContent {event} {createChild} {replaceSelf} relayHints={seenOn} />
       </div>
     {/if}
 

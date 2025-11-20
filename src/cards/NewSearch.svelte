@@ -5,7 +5,7 @@
   import { relayService } from '$lib/relayService';
   import { account } from '$lib/nostr';
 
-  import type { SearchCard, Card } from '$lib/types';
+  import type { SearchCard, Card, BookCard } from '$lib/types';
   import { normalizeIdentifier } from '@nostr/tools/nip54';
 import ModeToggle from '$components/ModeToggle.svelte';
 import ProfilePopup from '$components/ProfilePopup.svelte';
@@ -36,13 +36,24 @@ import UserBadge from '$components/UserBadge.svelte';
     ev.preventDefault();
 
     if (query) {
-      const newCard: SearchCard = {
-        id: next(),
-        type: 'find',
-        data: normalizeIdentifier(query),
-        preferredAuthors: []
-      };
-      replaceNewCard(newCard);
+      // Check if this is a book:: query - preserve the book:: prefix
+      if (query.startsWith('book::')) {
+        const bookQuery = query.substring(6); // Remove "book::" prefix
+        const newCard: BookCard = {
+          id: next(),
+          type: 'book',
+          data: bookQuery // Don't normalize - preserve the original query format
+        };
+        replaceNewCard(newCard);
+      } else {
+        const newCard: SearchCard = {
+          id: next(),
+          type: 'find',
+          data: normalizeIdentifier(query),
+          preferredAuthors: []
+        };
+        replaceNewCard(newCard);
+      }
       query = '';
     }
   }

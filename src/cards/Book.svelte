@@ -9,7 +9,7 @@
   import { normalizeIdentifier } from '@nostr/tools/nip54';
 
   import { wot, userWikiRelays } from '$lib/nostr';
-  import type { Card, BookCard } from '$lib/types';
+  import type { Card, BookCard, ArticleCard } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next, unique, formatRelativeTime } from '$lib/utils';
   import { relayService } from '$lib/relayService';
   import { 
@@ -116,10 +116,6 @@
     eosed = 0;
     results = [];
 
-    setTimeout(() => {
-      tried = true;
-    }, 1500);
-
     const update = debounce(() => {
       // sort by exact matches first, then by wotness
       results = results.sort((a, b) => {
@@ -127,6 +123,51 @@
       });
       seenCache = seenCache;
     }, 500);
+
+    // Check cache first before making relay queries
+    try {
+      const { contentCache } = await import('$lib/contentCache');
+      const cachedEvents = await contentCache.getEvents('wiki');
+      
+      // Filter cached events for book events (kind 30040 and 30041)
+      const bookCachedEvents = cachedEvents.filter(cached => 
+        cached.event.kind === 30040 || cached.event.kind === 30041
+      );
+      
+      if (bookCachedEvents.length > 0) {
+        console.log(`Book: Found ${bookCachedEvents.length} cached book events, filtering...`);
+        
+        // Filter cached events that match our book query criteria
+        for (const cached of bookCachedEvents) {
+          const evt = cached.event as BookEvent;
+          
+          // Check if this event matches our book criteria
+          if (isBookEvent(evt, bookCard.bookType) && matchesBookQuery(evt, parsedQuery!)) {
+            // Track which relays returned this event
+            cached.relays.forEach(relay => {
+              if (!seenCache[evt.id]) seenCache[evt.id] = [];
+              if (seenCache[evt.id].indexOf(relay) === -1) {
+                seenCache[evt.id].push(relay);
+              }
+            });
+            
+            if (addUniqueTaggedReplaceable(results, evt)) update();
+          }
+        }
+        
+        if (results.length > 0) {
+          console.log(`Book: Found ${results.length} matching events in cache`);
+          tried = true;
+          // Still query relays in background to get fresh results, but show cache immediately
+        }
+      }
+    } catch (error) {
+      console.error('Book: Failed to check cache:', error);
+    }
+
+    setTimeout(() => {
+      tried = true;
+    }, 1500);
 
     const relaysFromPreferredAuthors = unique(
       (await Promise.all(([]).map((pk) => loadRelayList(pk))))
@@ -158,15 +199,56 @@
 
       if (relaysToUseNow.length === 0) return;
 
-      // Search for book events (kind 30041) with book tags
-      const searchQueries = generateBookSearchQuery(parsedQuery!.references, bookCard.bookType || 'bible', parsedQuery!.version, parsedQuery!.versions);
+      // Build relay filters using C, T, c, s, v tags (NKBIP-08 format)
+      // Query both kind 30040 (index) and 30041 (content) events
+      const filters: any[] = [];
       
-      // Use relayService for book search
+      for (const ref of parsedQuery!.references) {
+        const filter: any = {
+          kinds: [30040, 30041],
+          limit: 25
+        };
+        
+        // C tag: collection (e.g., "bible")
+        if (bookCard.bookType) {
+          filter['#C'] = [bookCard.bookType];
+        }
+        
+        // T tag: title/book name (normalized using NIP-54)
+        if (ref.book) {
+          // Normalize book name using NIP-54 rules: lowercase, replace non-alphanumeric with hyphens
+          const normalizedBook = normalizeIdentifier(ref.book);
+          filter['#T'] = [normalizedBook];
+        }
+        
+        // c tag: chapter
+        if (ref.chapter) {
+          filter['#c'] = [ref.chapter.toString()];
+        }
+        
+        // s tag: section/verse
+        if (ref.verse) {
+          // Handle verse ranges and multiple verses
+          const verses = ref.verse.split(/[,\s]+/).filter(v => v.trim());
+          filter['#s'] = verses;
+        }
+        
+        // v tag: version
+        if (parsedQuery!.version) {
+          filter['#v'] = [parsedQuery!.version.toLowerCase()];
+        } else if (parsedQuery!.versions && parsedQuery!.versions.length > 0) {
+          filter['#v'] = parsedQuery!.versions.map(v => v.toLowerCase());
+        }
+        
+        filters.push(filter);
+      }
+      
+      // Use relayService for book search with tag filters
       try {
         const result = await relayService.queryEvents(
           'anonymous',
           'social-read',
-          [{ kinds: [30041], '#type': [bookCard.bookType || 'bible'], limit: 25 }],
+          filters,
           {
             excludeUserContent: false,
             currentUserPubkey: undefined
@@ -184,27 +266,6 @@
         console.error('Failed to search for books:', error);
       }
     });
-
-    // Also search using general search for book-related content
-    try {
-      const searchResult = await relayService.queryEvents(
-        'anonymous',
-        'social-read',
-        [{ kinds: [30041], search: query, limit: 10 }],
-        {
-          excludeUserContent: false,
-          currentUserPubkey: undefined
-        }
-      );
-
-      for (const evt of searchResult.events) {
-        if (isBookEvent(evt as BookEvent, bookCard.bookType) && matchesBookQuery(evt as BookEvent, parsedQuery!)) {
-          if (addUniqueTaggedReplaceable(results, evt)) update();
-        }
-      }
-    } catch (error) {
-      console.error('Failed to search for books:', error);
-    }
 
     function oneose() {
       eosed++;
@@ -234,11 +295,41 @@
     // Create a new query without the version specification
     const fallbackQuery = { references: parsedQuery.references, version: undefined, versions: undefined };
     
-    // Search for all versions of the same book reference
-    const searchQueries = generateBookSearchQuery(fallbackQuery.references, bookCard.bookType || 'bible', fallbackQuery.version, fallbackQuery.versions);
+    // Build relay filters using C, T, c, s tags (without v tag for version)
+    const filters: any[] = [];
     
-    let fallbackEosed = 0;
-    const fallbackSubs: SubCloser[] = [];
+    for (const ref of fallbackQuery.references) {
+      const filter: any = {
+        kinds: [30040, 30041],
+        limit: 25
+      };
+      
+      // C tag: collection (e.g., "bible")
+      if (bookCard.bookType) {
+        filter['#C'] = [bookCard.bookType];
+      }
+      
+      // T tag: title/book name (normalized using NIP-54)
+      if (ref.book) {
+        const normalizedBook = normalizeIdentifier(ref.book);
+        filter['#T'] = [normalizedBook];
+      }
+      
+      // c tag: chapter
+      if (ref.chapter) {
+        filter['#c'] = [ref.chapter.toString()];
+      }
+      
+      // s tag: section/verse
+      if (ref.verse) {
+        const verses = ref.verse.split(/[,\s]+/).filter(v => v.trim());
+        filter['#s'] = verses;
+      }
+      
+      // No v tag - search all versions
+      
+      filters.push(filter);
+    }
     
     const fallbackUpdate = debounce(() => {
       fallbackResults = fallbackResults.sort((a, b) => {
@@ -246,12 +337,12 @@
       });
     }, 500);
 
-    // Use relayService for fallback search
+    // Use relayService for fallback search with tag filters
     try {
       const fallbackResult = await relayService.queryEvents(
         'anonymous',
         'social-read',
-        [{ kinds: [30041], '#type': [bookCard.bookType || 'bible'], limit: 25 }],
+        filters,
         {
           excludeUserContent: false,
           currentUserPubkey: undefined
@@ -304,20 +395,34 @@
   }
 
   function openBookEvent(result: BookEvent, ev?: MouseEvent) {
-    const metadata = extractBookMetadata(result);
-    const title = generateBookTitle(metadata);
+    // Open panels for ALL matching events from the search results
+    // This allows viewing different versions, different sections, etc.
+    const isMiddleClick = ev?.button === 1;
     
-    // Create a book card for the book event
-    const bookEventCard = {
-      id: next(),
-      type: 'book' as const,
-      data: getTagOr(result, 'd') || result.id,
-      bookType: bookCard.bookType,
-      preferredAuthors: [result.pubkey]
-    };
-    
-    if (ev?.button === 1) createChild(bookEventCard);
-    else replaceSelf({ ...bookEventCard, back: card });
+    // Create ArticleCard for each matching result
+    for (let i = 0; i < results.length; i++) {
+      const event = results[i];
+      const dTag = getTagOr(event, 'd') || event.id;
+      const pubkey = event.pubkey;
+      const relayHints = seenCache[event.id] || [];
+      
+      const articleCard: ArticleCard = {
+        id: next(),
+        type: 'article',
+        data: [dTag, pubkey],
+        relayHints: relayHints,
+        actualEvent: event // Pass the actual event so ArticleCard can use it immediately
+      };
+      
+      if (i === 0) {
+        // First event replaces current card or opens as child
+        if (isMiddleClick) createChild(articleCard);
+        else replaceSelf({ ...articleCard, back: card });
+      } else {
+        // Subsequent events always open as children (new panels)
+        createChild(articleCard);
+      }
+    }
   }
 
   function startEditing() {
