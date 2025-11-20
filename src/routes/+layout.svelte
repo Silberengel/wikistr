@@ -35,6 +35,8 @@
   // Initialization state to prevent loops
   let initialized = false;
   let initializationPromise: Promise<void> | null = null;
+  let eventListenersSetup = false;
+  let errorHandlersSetup = false;
 
   /**
    * Initialize layout with error handling and loop prevention
@@ -54,11 +56,17 @@
     if (initialized) return;
     
     try {
-      // Set up event listeners
-      setupEventListeners();
+      // Set up event listeners (only once)
+      if (!eventListenersSetup) {
+        setupEventListeners();
+        eventListenersSetup = true;
+      }
       
-      // Set up error handlers
-      setupErrorHandlers();
+      // Set up error handlers (only once)
+      if (!errorHandlersSetup) {
+        setupErrorHandlers();
+        errorHandlersSetup = true;
+      }
       
       // Initialize book configurations
       await initializeBookConfigurations();

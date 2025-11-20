@@ -8,6 +8,9 @@
   import { next, scrollCardIntoView } from '$lib/utils';
   import type { ArticleCard, Card, EditorCard, RelayCard, SearchCard, UserCard, BookCard, DiffCard } from '$lib/types';
 
+  // Track previous path to avoid infinite loops
+  let prevP: string[] = [];
+
   onMount(() => {
     if ($cards.length !== 0) return;
 
@@ -32,7 +35,6 @@
   });
 
   $effect(() => {
-    let prevP: string[] = [];
     let nextP = (page.params.path || '').split('/').filter((str) => str !== '');
 
     let nextCards: Card[] = [];
