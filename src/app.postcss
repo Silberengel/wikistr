@@ -225,13 +225,31 @@
     border: 0.5px solid var(--code-block-border);
     font-family: var(--font-family-mono);
     font-size: 0.9em;
+    display: inline !important;
+    white-space: pre-wrap !important;
+  }
+  
+  /* Inline code in light mode - light gray background, black text */
+  [data-mode="light"] code:not(pre code),
+  [data-mode="light"] .prose code:not(pre code),
+  [data-mode="light"] .markdown code:not(pre code) {
+    background-color: #e5e7eb !important; /* light-gray */
+    color: #000000 !important; /* black */
+    border-color: #d1d5db !important;
+  }
+  
+  /* Don't add line breaks after inline code */
+  .prose code:not(pre code) {
+    display: inline !important;
   }
 
   /* Code Blocks - NO INTERNAL BORDERS */
   pre {
-    @apply px-4 rounded-md my-4;
+    @apply px-4 rounded-md;
     padding-top: 24px !important;
     padding-bottom: 24px !important;
+    margin-top: 1rem !important;
+    margin-bottom: 1.5rem !important;
     background-color: var(--code-block-bg);
     color: var(--code-block-text);
     border: 0.5px solid var(--code-block-border);
@@ -339,11 +357,13 @@
 
   /* Prose-specific code blocks */
   .prose pre {
-    @apply rounded-md my-4;
+    @apply rounded-md;
     padding-top: 16px !important;
     padding-bottom: 16px !important;
     padding-left: 16px !important;
     padding-right: 16px !important;
+    margin-top: 1rem !important;
+    margin-bottom: 1.5rem !important;
     background-color: var(--code-block-bg);
     color: var(--code-block-text);
     border: 0.5px solid var(--code-block-border);
@@ -517,12 +537,32 @@
     background-color: var(--bg-primary);
     border: 1px solid var(--border);
   }
+  
+  /* Exclude admonition tables from prose table styles */
+  .prose table:not(.admonitionblock table) {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border);
+  }
 
   .prose th, .prose td {
-    padding: 0.75rem;
+    padding: 0.5rem 0.75rem;
     border: 1px solid var(--border);
     text-align: left;
     color: var(--text-primary);
+    font-size: 1.05em !important;
+  }
+  
+  /* Exclude admonition cells from prose td styles */
+  .prose th:not(.admonitionblock th):not(.admonitionblock td),
+  .prose td:not(.admonitionblock td):not(.admonitionblock th) {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border);
+    text-align: left;
+    color: var(--text-primary);
+    font-size: 1.05em !important;
   }
 
   .prose th {
@@ -541,6 +581,8 @@
     height: auto;
     border-radius: 0.5rem;
     border: 1px solid var(--border);
+    margin-top: 1rem !important;
+    margin-bottom: 1.5rem !important;
   }
 
   /* Markdown-specific elements */
@@ -881,10 +923,37 @@
     padding-top: 16px !important;
     padding-bottom: 16px !important;
     padding-left: 16px !important;
-    padding-right: 16px !important;
+    padding-right: 60px !important; /* Extra space for buttons */
   }
 
-  /* Custom line numbers table */
+  /* Remove ALL padding when line numbers are present - table will handle its own padding */
+  /* Use class-based selector for better browser compatibility */
+  pre.has-line-numbers,
+  pre.has-line-numbers code,
+  .prose pre.has-line-numbers,
+  .prose pre.has-line-numbers code,
+  .listingblock pre.has-line-numbers,
+  .sourceblock pre.has-line-numbers,
+  .literalblock pre.has-line-numbers {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+  
+  /* Also support :has() for browsers that support it, as a fallback */
+  pre:has(.line-numbers-table),
+  pre:has(.line-numbers-table) code,
+  .prose pre:has(.line-numbers-table),
+  .prose pre:has(.line-numbers-table) code {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+
+  /* Custom line numbers table - add padding to top, right, bottom only (no left) */
+  /* Also ensure no margin that could create left spacing */
   .line-numbers-table {
     width: 100% !important;
     border-collapse: collapse !important;
@@ -894,7 +963,22 @@
     box-shadow: none !important;
     background: none !important;
     margin: 0 !important;
+    margin-left: 0 !important;
+    padding: 16px 16px 16px 0 !important;
+  }
+  
+  /* Override .prose td padding for line-numbers-table cells */
+  .line-numbers-table td {
     padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    background: none !important;
+  }
+  
+  /* Ensure the first cell (line-numbers) has no left margin/padding */
+  .line-numbers-table td:first-child {
+    padding-left: 0 !important;
+    margin-left: 0 !important;
   }
 
   .line-numbers-table tr {
@@ -916,13 +1000,14 @@
     outline: none !important;
     box-shadow: none !important;
     margin: 0 !important;
-    padding: 0 12px 0 0 !important;
+    padding: 0 20px 0 0 !important;
     text-align: right !important;
     user-select: none !important;
     opacity: 0.6 !important;
-    white-space: pre-wrap !important;
+    white-space: pre !important;
     vertical-align: top !important;
-    width: 1% !important;
+    min-width: 4em !important;
+    width: auto !important;
   }
 
   .code-content {
@@ -937,7 +1022,7 @@
     line-height: 1.2 !important;
     white-space: pre-wrap !important;
     vertical-align: top !important;
-    width: 99% !important;
+    width: auto !important;
     color: var(--code-block-text) !important;
   }
 
@@ -945,13 +1030,54 @@
     font-size: inherit !important;
   }
 
-  /* Code block buttons - ensure visibility in both light and dark mode */
+  /* Code block buttons - compact icon buttons */
   .code-wrap-btn,
   .code-copy-btn {
-    color: var(--text-primary) !important;
+    @apply rounded border focus:outline-none;
     background-color: var(--bg-secondary) !important;
-    border: 1px solid var(--border) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border) !important;
+    transition: all 0.2s ease !important;
     opacity: 0.9 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 24px !important;
+    height: 24px !important;
+    min-width: 24px !important;
+    min-height: 24px !important;
+  }
+  
+  .code-wrap-btn svg,
+  .code-copy-btn svg {
+    width: 16px !important;
+    height: 16px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  
+  /* Code block controls container - on its own row inside the pre element */
+  pre .code-block-controls,
+  .prose pre .code-block-controls {
+    display: flex !important;
+    justify-content: flex-end !important;
+    gap: 8px !important;
+    padding: 8px 16px !important;
+    padding-bottom: 12px !important;
+    margin: 0 !important;
+    margin-bottom: 0 !important;
+  }
+  
+  .code-block-controls button {
+    pointer-events: auto !important;
+  }
+  
+  /* Code content - no extra padding needed since buttons are on their own line */
+  pre code,
+  .prose pre code {
+    padding-right: 0 !important;
   }
 
   .code-wrap-btn:hover,
@@ -1013,15 +1139,34 @@
   /* Ensure code blocks can expand fully ONLY in expanded cards */
   .card-expanded pre,
   .card-expanded pre code,
-  .card-expanded pre .code-content,
-  .card-expanded pre .line-numbers-table,
   .card-expanded .prose pre,
-  .card-expanded .prose pre code,
-  .card-expanded .prose pre .code-content,
+  .card-expanded .prose pre code {
+    max-width: 100% !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Line numbers table should expand but preserve column widths */
+  .card-expanded pre .line-numbers-table,
   .card-expanded .prose pre .line-numbers-table {
     max-width: 100% !important;
     width: 100% !important;
     box-sizing: border-box !important;
+  }
+
+  /* Code content should take remaining space, not force 100% width */
+  .card-expanded pre .code-content,
+  .card-expanded .prose pre .code-content {
+    max-width: none !important;
+    width: auto !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Ensure line numbers maintain proper width in all states */
+  .card-expanded pre .line-numbers,
+  .card-expanded .prose pre .line-numbers {
+    min-width: 4em !important;
+    width: auto !important;
   }
   
   /* Ensure all AsciiDoc elements can expand ONLY in expanded cards */
@@ -1073,19 +1218,96 @@
     text-decoration: underline !important;
   }
 
-  /* AsciiDoc Admonitions */
-  .admonitionblock,
-  .admonitionblock .content {
-    background-color: var(--bg-secondary) !important;
-    border: 1px solid var(--border) !important;
+  /* AsciiDoc Admonitions - Clean blockquote style */
+  .admonitionblock {
+    background-color: var(--bg-secondary);
+    border-left: 4px solid var(--accent);
+    padding: 1rem;
+    margin-top: 1rem !important;
+    margin-bottom: 1.5rem !important;
+    color: var(--text-primary);
+  }
+
+  /* Convert table to block layout */
+  .admonitionblock table {
+    display: table;
+    width: 100%;
+    border: none;
+    background: transparent;
+    border-collapse: collapse;
+  }
+  
+  .admonitionblock tr {
+    display: table-row;
+  }
+  
+  .admonitionblock td {
+    display: table-cell;
+    border: none;
+    background: transparent;
+    padding: 0;
+    vertical-align: top;
+  }
+  
+  /* Hide icon cells - icon should only be in title */
+  .admonitionblock td.icon {
+    display: none !important;
+  }
+  
+  .admonitionblock td.content {
+    padding: 0;
+  }
+  
+  /* Icon styling - white in dark mode, dark in light mode, inline with title (only in title) */
+  .admonitionblock .title .icon,
+  .admonitionblock .title i.icon {
+    color: white !important;
+    display: inline !important;
+    font-size: 1.2em !important;
+    line-height: 1 !important;
+    font-style: normal !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    margin-right: 0.5rem !important;
+  }
+  
+  /* Icon darker in light mode */
+  [data-mode="light"] .admonitionblock .title .icon,
+  [data-mode="light"] .admonitionblock .title i.icon {
+    color: #1f2937 !important; /* dark gray / near black */
+  }
+  
+  /* Title styling - purple, uppercase, with icon inline */
+  .admonitionblock .title,
+  .admonitionblock td.content .title,
+  .admonitionblock .content .title,
+  .admonitionblock td.content > .title {
+    color: var(--accent) !important;
+    display: flex !important;
+    align-items: center !important;
+    font-weight: 600 !important;
+    font-size: 1em !important;
+    margin: 0 !important;
+    margin-bottom: 0.5rem !important;
+    text-transform: uppercase !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+  
+  /* Content text - normal color, NOT purple - override any accidental purple styling */
+  .admonitionblock td.content p,
+  .admonitionblock td.content div:not(.title),
+  .admonitionblock .content p,
+  .admonitionblock td.content .paragraph,
+  .admonitionblock td.content .paragraph p,
+  .admonitionblock td.content > *:not(.title),
+  .admonitionblock td.content > *:not(.title) * {
     color: var(--text-primary) !important;
   }
-
-  .admonitionblock .icon {
-    color: var(--accent) !important;
-  }
-
-  .admonitionblock .title {
+  
+  /* Specifically ensure first line of content is NOT purple */
+  .admonitionblock td.content .admonition-first-line,
+  .admonitionblock .content .admonition-first-line {
     color: var(--text-primary) !important;
   }
 
@@ -1127,6 +1349,8 @@
     background-color: var(--bg-secondary) !important;
     border: 1px solid var(--border) !important;
     color: var(--text-primary) !important;
+    margin-top: 1rem !important;
+    margin-bottom: 1.5rem !important;
   }
 
   .exampleblock .title {
@@ -1137,6 +1361,12 @@
   .listingblock {
     background-color: var(--bg-secondary) !important;
     border: 1px solid var(--border) !important;
+    margin-top: 1rem !important;
+    margin-bottom: 1.5rem !important;
+  }
+
+  .listingblock .content {
+    padding: 0 !important;
   }
 
   .listingblock .title {
@@ -1155,6 +1385,8 @@
   .literalblock {
     background-color: var(--bg-secondary) !important;
     border: 1px solid var(--border) !important;
+    margin-top: 1rem !important;
+    margin-bottom: 1.5rem !important;
   }
 
   .literalblock .title {
@@ -1173,6 +1405,8 @@
   .sourceblock {
     background-color: var(--bg-secondary) !important;
     border: 1px solid var(--border) !important;
+    margin-top: 1rem !important;
+    margin-bottom: 1.5rem !important;
   }
 
   .sourceblock .title {
@@ -1226,10 +1460,19 @@
   .tableblock {
     background-color: var(--bg-secondary) !important;
     border: 1px solid var(--border) !important;
+    margin-top: 1rem !important;
+    margin-bottom: 1.5rem !important;
   }
 
   .tableblock .title {
     color: var(--text-primary) !important;
+    margin-top: 1rem !important;
+  }
+  
+  /* Ensure tableblock tables inside prose also get the font size */
+  .prose .tableblock th,
+  .prose .tableblock td {
+    font-size: 1.05em !important;
   }
 
   .tableblock table {
@@ -1241,12 +1484,16 @@
     background-color: var(--bg-secondary) !important;
     color: var(--text-primary) !important;
     border: 1px solid var(--border) !important;
+    font-size: 1.05em !important;
+    padding: 0.5rem 0.75rem !important;
   }
 
   .tableblock td {
     background-color: var(--bg-primary) !important;
     color: var(--text-primary) !important;
     border: 1px solid var(--border) !important;
+    font-size: 1.05em !important;
+    padding: 0.5rem 0.75rem !important;
   }
 
   /* AsciiDoc Open Blocks */

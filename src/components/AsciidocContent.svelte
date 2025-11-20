@@ -428,6 +428,93 @@
     return processed;
   }
 
+  // Fix admonition icons and titles if missing
+  function fixAdmonitionIconsAndTitles(html: string): string {
+    let processed = html;
+    
+    // Match admonition blocks - AsciiDoc generates them as tables
+    // Try multiple patterns to catch different HTML structures
+    const patterns = [
+      /<table class="admonitionblock\s+(\w+)">([\s\S]*?)<\/table>/g,
+      /<table[^>]*class="[^"]*admonitionblock[^"]*(\w+)[^"]*"[^>]*>([\s\S]*?)<\/table>/g,
+      /<div[^>]*class="[^"]*admonitionblock[^"]*(\w+)[^"]*"[^>]*>([\s\S]*?)<\/div>/g
+    ];
+    
+    // Get the label text mapping
+    const labels: Record<string, string> = {
+      'important': 'IMPORTANT',
+      'note': 'NOTE',
+      'information': 'INFORMATION',
+      'info': 'INFORMATION',
+      'warning': 'WARNING',
+      'caution': 'CAUTION',
+      'tip': 'TIP'
+    };
+    
+    // Get icon character mapping
+    const icons: Record<string, string> = {
+      'important': '⚠',
+      'note': 'ℹ',
+      'information': 'ℹ',
+      'info': 'ℹ',
+      'warning': '⚠',
+      'caution': '⚡',
+      'tip': '💡'
+    };
+    
+    for (const pattern of patterns) {
+      const matches = Array.from(processed.matchAll(pattern));
+      
+      for (const match of matches) {
+        const fullMatch = match[0];
+        let admonitionType = match[1]?.toLowerCase() || 'note';
+        const tableContent = match[2] || '';
+        
+        // Normalize admonition type
+        if (admonitionType === 'info') admonitionType = 'information';
+        
+        // Get label and icon
+        const label = labels[admonitionType] || labels['note'] || 'NOTE';
+        const iconChar = icons[admonitionType] || icons['note'] || 'ℹ';
+        
+        // Check if title exists (icon will be inline in title)
+        const hasTitle = /class="title"/i.test(tableContent);
+        
+        let fixed = fullMatch;
+        let wasModified = false;
+        
+        // Remove any existing icon cells - icon should only be in title
+        fixed = fixed.replace(/<td[^>]*class="icon"[^>]*>[\s\S]*?<\/td>/gi, '');
+        
+        // Always ensure title exists (with icon inline)
+        if (!hasTitle) {
+          // Insert title with icon at the beginning of content cell
+          if (/<td[^>]*class="content"/i.test(fixed)) {
+            fixed = fixed.replace(
+              /(<td[^>]*class="content"[^>]*>)/i,
+              `$1<div class="title"><i class="icon" style="margin-right: 0.5rem; display: inline;">${iconChar}</i>${label}</div>`
+            );
+            wasModified = true;
+          } else {
+            // If no content cell, try to insert at start of table content
+            fixed = fixed.replace(
+              /(<tr[^>]*>[\s\S]*?<td[^>]*>)/i,
+              `$1<div class="title">${label}</div>`
+            );
+            wasModified = true;
+          }
+        }
+        
+        // Replace if we made changes
+        if (wasModified && fixed !== fullMatch) {
+          processed = processed.replace(fullMatch, fixed);
+        }
+      }
+    }
+    
+    return processed;
+  }
+
   // Convert Markdown syntax to AsciiDoc syntax
   function convertMarkdownToAsciiDoc(markdown: string): string {
     let asciidoc = markdown;
@@ -725,7 +812,7 @@
           }
           
           // Add line numbers after highlighting
-          addLineNumbers(element);
+          // addLineNumbers(element); // Disabled - line numbers removed
         }
       });
       
@@ -759,22 +846,18 @@
       
       console.log(`addCodeBlockButtons: Processing pre[${index}]`);
       
-      // Create wrapper div with relative positioning
-      const wrapper = document.createElement('div');
-      wrapper.className = 'relative code-block-wrapper';
-      wrapper.style.position = 'relative';
-      wrapper.style.width = '100%';
-      wrapper.style.overflow = 'visible';
-      
-      // Create controls container
+      // Create controls container - inside the pre element on its own row
       const controls = document.createElement('div');
       controls.className = 'code-block-controls';
-      controls.style.cssText = 'position: absolute; top: 8px; right: 8px; display: flex; gap: 8px; z-index: 10;';
+      controls.style.cssText = 'display: flex; justify-content: flex-end; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--border); margin: 0;';
+      
+      // Insert controls as the first child of the pre element
+      preElement.insertBefore(controls, preElement.firstChild);
       
       // Word-wrap button
       const wrapButton = document.createElement('button');
       wrapButton.className = 'code-wrap-btn';
-      wrapButton.style.cssText = 'padding: 6px; border-radius: 4px; cursor: pointer; transition: all 0.2s;';
+      wrapButton.style.cssText = 'cursor: pointer;';
       wrapButton.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;">
           <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
@@ -815,7 +898,7 @@
       // Copy button
       const copyButton = document.createElement('button');
       copyButton.className = 'code-copy-btn';
-      copyButton.style.cssText = 'padding: 6px; border-radius: 4px; cursor: pointer; transition: all 0.2s;';
+      copyButton.style.cssText = 'cursor: pointer;';
       copyButton.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;">
           <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
@@ -864,11 +947,6 @@
       
       controls.appendChild(wrapButton);
       controls.appendChild(copyButton);
-      wrapper.appendChild(controls);
-      
-      // Wrap the pre element
-      preElement.parentNode?.insertBefore(wrapper, preElement);
-      wrapper.appendChild(preElement);
     });
   }
 
@@ -904,6 +982,9 @@
     
     // Replace the code content with the table
     codeElement.innerHTML = tableHTML;
+    
+    // Add a class to the pre element to indicate it has line numbers
+    preElement.classList.add('has-line-numbers');
   }
 
   // Render LaTeX expressions in inline code
@@ -1081,6 +1162,9 @@
       return cleaned ? `style="${cleaned}"` : '';
     });
     
+    // Ensure admonition icons and titles are present
+    renderedHtml = fixAdmonitionIconsAndTitles(renderedHtml);
+    
     // Post-process the HTML (handle Nostr links, etc.)
     renderedHtml = await processNostrLinksEnhanced(renderedHtml);
     
@@ -1240,6 +1324,9 @@
       return cleaned ? `style="${cleaned}"` : '';
     });
     
+    // Ensure admonition icons and titles are present
+    html = fixAdmonitionIconsAndTitles(html);
+    
     html = await postprocessHtml(html);
     
     // Find bookstr placeholder divs that were created by preprocessContentForAsciidoc
@@ -1292,41 +1379,128 @@
   });
 
   // Setup collapsible TOC with button
-  // Style admonition content to make first line prominent
+  // Ensure admonition icons and titles are visible and properly styled
   function styleAdmonitionContent() {
     if (!contentDiv) return;
     
-    const admonitions = contentDiv.querySelectorAll('.admonitionblock');
+    const admonitions = contentDiv.querySelectorAll('.admonitionblock, table.admonitionblock');
     admonitions.forEach((admonition) => {
-      const contentCell = admonition.querySelector('td.content') || admonition.querySelector('.content');
-      if (!contentCell) return;
+      // Detect admonition type from class list or table class
+      let admonitionType = 'note';
+      const classList = Array.from(admonition.classList);
       
-      // Find the first text node or element
-      let firstElement: Element | null = null;
-      for (let i = 0; i < contentCell.childNodes.length; i++) {
-        const node = contentCell.childNodes[i];
-        if (node.nodeType === Node.ELEMENT_NODE) {
-          firstElement = node as Element;
+      // Look for type in class names like "admonitionblock note", "admonitionblock information", etc.
+      for (const cls of classList) {
+        if (cls === 'admonitionblock') continue;
+        if (cls.startsWith('admonitionblock-')) {
+          admonitionType = cls.replace('admonitionblock-', '').toLowerCase();
           break;
-        } else if (node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) {
-          // Wrap text node in a span
-          const span = document.createElement('span');
-          span.className = 'admonition-first-line';
-          span.textContent = node.textContent;
-          node.replaceWith(span);
-          firstElement = span;
+        }
+        // Check if it's a direct type class (note, information, warning, etc.)
+        const validTypes = ['important', 'note', 'information', 'info', 'warning', 'caution', 'tip'];
+        if (validTypes.includes(cls.toLowerCase())) {
+          admonitionType = cls.toLowerCase();
           break;
         }
       }
       
-      // If we found a first element, style it
-      if (firstElement) {
-        (firstElement as HTMLElement).style.fontWeight = '700';
-        (firstElement as HTMLElement).style.fontSize = '1.3rem';
-        (firstElement as HTMLElement).style.color = 'var(--accent)';
-        (firstElement as HTMLElement).style.marginBottom = '0.75rem';
-        (firstElement as HTMLElement).style.display = 'block';
-        (firstElement as HTMLElement).style.lineHeight = '1.4';
+      // Also check table class attribute
+      if (admonition instanceof HTMLElement) {
+        const tableClass = admonition.className;
+        const typeMatch = tableClass.match(/admonitionblock\s+(\w+)/);
+        if (typeMatch) {
+          admonitionType = typeMatch[1].toLowerCase();
+        }
+      }
+      
+      // Normalize type
+      if (admonitionType === 'info') admonitionType = 'information';
+      
+      // Get label and icon
+      const labels: Record<string, string> = {
+        'important': 'IMPORTANT',
+        'note': 'NOTE',
+        'information': 'INFORMATION',
+        'warning': 'WARNING',
+        'caution': 'CAUTION',
+        'tip': 'TIP'
+      };
+      const icons: Record<string, string> = {
+        'important': '⚠',
+        'note': 'ℹ',
+        'information': 'ℹ',
+        'warning': '⚠',
+        'caution': '⚡',
+        'tip': '💡'
+      };
+      
+      const label = labels[admonitionType] || 'NOTE';
+      const iconChar = icons[admonitionType] || 'ℹ';
+      
+      // Remove any existing icon cells - icon should only be in title
+      const iconCell = admonition.querySelector('td.icon');
+      if (iconCell) {
+        iconCell.remove();
+      }
+      
+      // Ensure title exists and is visible with icon inline
+      const contentCell = admonition.querySelector('td.content') || admonition.querySelector('.content');
+      if (contentCell) {
+        let titleElement = contentCell.querySelector('.title');
+        
+        if (!titleElement) {
+          // Create title with icon inline
+          titleElement = document.createElement('div');
+          titleElement.className = 'title';
+          
+          // Add icon inside title
+          const titleIcon = document.createElement('i');
+          titleIcon.className = 'icon';
+          titleIcon.textContent = iconChar;
+          titleIcon.style.marginRight = '0.5rem';
+          titleIcon.style.display = 'inline';
+          
+          // Add label text
+          const labelText = document.createTextNode(label);
+          
+          titleElement.appendChild(titleIcon);
+          titleElement.appendChild(labelText);
+          contentCell.insertBefore(titleElement, contentCell.firstChild);
+        } else {
+          // Check if icon is already in title
+          let titleIcon = titleElement.querySelector('i.icon') as HTMLElement;
+          if (!titleIcon) {
+            // Add icon to existing title
+            titleIcon = document.createElement('i');
+            titleIcon.className = 'icon';
+            titleIcon.textContent = iconChar;
+            titleIcon.style.marginRight = '0.5rem';
+            titleIcon.style.display = 'inline';
+            titleElement.insertBefore(titleIcon, titleElement.firstChild);
+          } else {
+            // Update icon if it's wrong
+            titleIcon.textContent = iconChar;
+          }
+          
+          // Update label text if it's wrong (but keep icon)
+          const textNodes = Array.from(titleElement.childNodes).filter(n => n.nodeType === Node.TEXT_NODE);
+          if (textNodes.length > 0) {
+            const lastTextNode = textNodes[textNodes.length - 1];
+            if (lastTextNode.textContent?.trim() !== label) {
+              lastTextNode.textContent = label;
+            }
+          } else {
+            // No text node, add label after icon
+            const labelText = document.createTextNode(label);
+            titleElement.appendChild(labelText);
+          }
+        }
+        
+        // Style the title
+        (titleElement as HTMLElement).style.display = 'flex';
+        (titleElement as HTMLElement).style.alignItems = 'center';
+        (titleElement as HTMLElement).style.visibility = 'visible';
+        (titleElement as HTMLElement).style.color = 'var(--accent)';
       }
     });
   }
