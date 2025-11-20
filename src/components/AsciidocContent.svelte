@@ -18,6 +18,7 @@
   import EmbeddedEvent from './EmbeddedEvent.svelte';
   import BookSearch from './BookSearch.svelte';
   import { parseBookWikilink } from '$lib/books';
+  import { openBookSearchCard } from '$lib/bookSearchLauncher';
 
   interface Props {
     event: NostrEvent;
@@ -1647,12 +1648,7 @@
         
         // Check if this is a book:: wikilink - route to BookCard instead
         if (identifier.startsWith('book::')) {
-          // Keep the full book:: prefix in the query
-          createChild({
-            id: next(),
-            type: 'book',
-            data: identifier
-          } as any);
+          openBookSearchCard(identifier);
         } else {
           createChild({
             id: next(),

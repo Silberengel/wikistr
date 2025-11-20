@@ -6,16 +6,17 @@
   import { cards } from '$lib/state';
   import { type EditorCard, type Card, serializeCardForRouter } from '$lib/types';
   import { scrollCardIntoView, isElementInViewport, hashbow, urlWithoutScheme } from '$lib/utils';
-  import Article from '$cards/Article.svelte';
-  import Editor from '$cards/Editor.svelte';
-  import Welcome from '$cards/Welcome.svelte';
-  import SearchResults from '$cards/SearchResults.svelte';
-  import Settings from '$cards/Settings.svelte';
-  import Relay from '$cards/Relay.svelte';
-  import NewSearch from '$cards/NewSearch.svelte';
-  import User from '$cards/User.svelte';
-  import Book from '$cards/Book.svelte';
-  import Diff from '$cards/Diff.svelte';
+import Article from '$cards/Article.svelte';
+import Editor from '$cards/Editor.svelte';
+import Welcome from '$cards/Welcome.svelte';
+import SearchResults from '$cards/SearchResults.svelte';
+import Settings from '$cards/Settings.svelte';
+import Relay from '$cards/Relay.svelte';
+import NewSearch from '$cards/NewSearch.svelte';
+import User from '$cards/User.svelte';
+import Book from '$cards/Book.svelte';
+import Diff from '$cards/Diff.svelte';
+import { highlightedBookCardId } from '$lib/bookSearchLauncher';
 
   interface Props {
     card: Card;
@@ -196,6 +197,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 <div
   id={`wikicard-${card.id}`}
+  class:highlighted-card={card.type === 'book' && $highlightedBookCardId === card.id}
   class="wikicard
   overflow-y-auto
   {expanded && isDesktop ? 'overflow-x-visible card-expanded' : card.type === 'diff' ? 'overflow-x-visible' : 'overflow-x-hidden'}
@@ -314,3 +316,9 @@
     {/key}
   </article>
 </div>
+
+<style>
+  .highlighted-card {
+    box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.45);
+  }
+</style>

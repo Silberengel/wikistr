@@ -3,6 +3,11 @@
  * Clean, simple utilities without circular dependencies
  */
 
+import {
+  parseBookWikilink as parseBookWikilinkNkbip,
+  type ParsedBookReference
+} from './bookWikilinkParser';
+
 let nextId = 0;
 
 /**
@@ -277,6 +282,75 @@ export function deduplicateRelays(relays: string[]): string[] {
   return [...new Set(normalized)];
 }
 
+function cleanBookWikilinkContent(raw: string): string {
+  if (!raw) return '';
+
+  // Remove any HTML tags that snuck in before parsing
+  let cleaned = raw.replace(/<\/?[^>]+>/g, ' ');
+
+  // Normalize whitespace
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+
+  return cleaned;
+}
+
+function humanizeBookSegment(segment: string): string {
+  if (!segment) return '';
+
+  return segment
+    .replace(/-/g, ' ')
+    .split(/\s+/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+    .trim();
+}
+
+function formatBookReferenceDisplay(ref: ParsedBookReference): string {
+  const titlePart = ref.title ? humanizeBookSegment(ref.title) : '';
+  const collectionPart = ref.collection ? humanizeBookSegment(ref.collection) : '';
+
+  let display = titlePart;
+  if (ref.chapter) {
+    display = display ? `${display} ${ref.chapter}` : ref.chapter;
+  }
+
+  if (ref.section && ref.section.length > 0) {
+    const sectionText = ref.section.join(',');
+    display += `${display && !display.endsWith(':') ? ':' : ''}${sectionText}`;
+  }
+
+  if (!display && collectionPart) {
+    display = collectionPart;
+  }
+
+  if (!display) {
+    display = 'Book reference';
+  }
+
+  const versionText = ref.version?.length ? ref.version.map(v => v.toUpperCase()).join(' ') : '';
+  if (versionText) {
+    display += ` (${versionText})`;
+  }
+
+  return display;
+}
+
+function formatBookWikilinkDisplayText(content: string): string {
+  if (!content) return '';
+
+  const parsed = parseBookWikilinkNkbip(`[[book::${content}]]`);
+  if (!parsed?.references?.length) {
+    return content;
+  }
+
+  const formatted = parsed.references.map(formatBookReferenceDisplay);
+  return formatted.join(', ');
+}
+
+function escapeAsciiDocDisplay(text: string): string {
+  return text.replace(/\[/g, '\\[').replace(/\]/g, '\\]');
+}
+
 /**
  * Preprocess content for AsciiDoc rendering
  */
@@ -320,31 +394,15 @@ export function preprocessContentForAsciidoc(content: string): string {
             // This creates clickable links that will open BookCard components
             // Only process outside of code blocks
             processed = processed.replace(/\[\[book::([^\]]+)\]\]/g, (match, content) => {
-              // Parse the content to create a display text
-              // Format: "bible | john 3:16 | drb" -> "John 3:16 (DRB)"
-              let displayText = content;
-              const parts = content.split(/\s+\|\s+/);
-              if (parts.length >= 2) {
-                // Has collection and reference, maybe version
-                const referencePart = parts[1];
-                const versionPart = parts[2];
-                displayText = referencePart;
-                if (versionPart) {
-                  displayText += ` (${versionPart.toUpperCase()})`;
-                }
-              } else if (parts.length === 1) {
-                // Just reference, maybe with version
-                const refParts = parts[0].split(/\s+\|\s+/);
-                if (refParts.length === 2) {
-                  displayText = `${refParts[0]} (${refParts[1].toUpperCase()})`;
-                } else {
-                  displayText = parts[0];
-                }
+              const cleanedContent = cleanBookWikilinkContent(content);
+              if (!cleanedContent) {
+                return match;
               }
-              
-              // Create AsciiDoc link that will be processed like regular wikilinks
-              // The link target is the full book:: content
-              return `link:wikilink:book::${content}[${displayText}]`;
+
+              const displayText = formatBookWikilinkDisplayText(cleanedContent);
+              const escapedDisplay = escapeAsciiDocDisplay(displayText);
+
+              return `link:wikilink:book::${cleanedContent}[${escapedDisplay}]`;
             });
   
   // Convert regular wikilinks [[identifier]] or [[identifier | display text]] to AsciiDoc link format

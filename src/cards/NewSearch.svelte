@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { next } from '$lib/utils';
+import { next } from '$lib/utils';
   import { getThemeConfig } from '$lib/themes';
   import { relayService } from '$lib/relayService';
   import { account } from '$lib/nostr';
 
-  import type { SearchCard, Card, BookCard } from '$lib/types';
+import type { SearchCard, Card } from '$lib/types';
   import { normalizeIdentifier } from '@nostr/tools/nip54';
+import { openBookSearchCard } from '$lib/bookSearchLauncher';
 import ModeToggle from '$components/ModeToggle.svelte';
 import ProfilePopup from '$components/ProfilePopup.svelte';
 import UserBadge from '$components/UserBadge.svelte';
@@ -38,12 +39,7 @@ import UserBadge from '$components/UserBadge.svelte';
     if (query) {
       // Check if this is a book:: query - preserve the book:: prefix
       if (query.startsWith('book::')) {
-        const newCard: BookCard = {
-          id: next(),
-          type: 'book',
-          data: query // Keep the entire query so BookCard can parse the book:: prefix
-        };
-        replaceNewCard(newCard);
+        openBookSearchCard(query);
       } else {
         const newCard: SearchCard = {
           id: next(),

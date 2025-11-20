@@ -12,14 +12,15 @@
   import type { Card, BookCard, ArticleCard } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next, unique, formatRelativeTime } from '$lib/utils';
   import { relayService } from '$lib/relayService';
-import { 
-    isBookEvent, 
-    extractBookMetadata, 
+import {
+    isBookEvent,
+    extractBookMetadata,
     generateBookTitle,
     type BookReference,
     type BookEvent,
     BOOK_TYPES
   } from '$lib/books';
+import { highlightedBookCardId } from '$lib/bookSearchLauncher';
   
   // Helper to check if event is a bible event
   function isBibleEvent(event: BookEvent): boolean {
@@ -547,18 +548,6 @@ import {
     };
   });
   
-  // Track which references are showing all editions
-  let expandedEditions = $state<Set<string>>(new Set());
-  
-  function toggleEditions(refKey: string) {
-    if (expandedEditions.has(refKey)) {
-      expandedEditions.delete(refKey);
-    } else {
-      expandedEditions.add(refKey);
-    }
-    expandedEditions = new Set(expandedEditions); // Trigger reactivity
-  }
-
   // close handlers
   let uwrcancel: () => void;
   let subs: SubCloser[] = [];
@@ -1023,7 +1012,8 @@ import {
         tried = true;
         
         // If we were searching for a specific version and found no results, try fallback
-        if (parsedQuery?.version && results.length === 0) {
+        const requestedVersionCount = (parsedQuery?.version ? 1 : 0) + (parsedQuery?.versions?.length ?? 0);
+        if (requestedVersionCount > 0 && results.length === 0) {
           versionNotFound = true;
           performFallbackSearch();
         } else {
@@ -1459,21 +1449,15 @@ import {
                           {#each orderedSections as section}
                   {@const refGroup = sectionToRefGroupMap.get(section)}
                   {#if refGroup}
-                    {@const verseEvent = refGroup.best}
-                    {@const refKey = getReferenceKey(verseEvent)}
-                    {@const hasMultipleEditions = refGroup.all.length > 1}
-                    {@const isExpanded = expandedEditions.has(refKey)}
-                    {@const editionsToShow = isExpanded ? refGroup.all : [refGroup.best]}
-                    {@const currentVerseEvent = editionsToShow.find(e => extractEventSections(e).includes(section)) || editionsToShow[0]}
-                    {@const isFirstVerseOfGroup = section === extractEventSections(refGroup.best)[0]}
+                    {@const currentVerseEvent = refGroup.best}
                     
                     <div 
                       class="verse-item"
-                      style="display: flex; margin-bottom: 0.5rem; line-height: 1.6;"
+                      style="display: flex; align-items: flex-start; margin-bottom: 0.5rem; gap: 0.6rem; line-height: 1.6;"
                     >
                       <!-- Verse number (left) -->
                       <span 
-                        style="font-weight: bold; color: var(--accent); margin-right: 0.5rem; min-width: 2rem; flex-shrink: 0;"
+                        style="font-weight: bold; color: var(--accent); min-width: 2rem; flex-shrink: 0;"
                       >
                         {section}
                       </span>
@@ -1491,23 +1475,6 @@ import {
                         {currentVerseEvent.content}
                       </span>
                     </div>
-                    
-                    <!-- Show all editions button (only show once per unique reference) -->
-                    {#if hasMultipleEditions && isFirstVerseOfGroup}
-                      <div style="margin-left: 2.5rem; margin-top: 0.25rem; margin-bottom: 0.75rem;">
-                        <button
-                          onclick={(e) => { e.stopPropagation(); toggleEditions(refKey); }}
-                          style="padding: 0.25rem 0.5rem; font-size: 0.75rem; background-color: var(--bg-tertiary, #f3f4f6); border: 1px solid var(--border, #e5e7eb); border-radius: 0.25rem; cursor: pointer; color: var(--text-secondary, #6b7280); transition: all 0.2s;"
-                          title={isExpanded ? 'Hide other editions' : `Show all ${refGroup.all.length} editions`}
-                          onmouseover={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover, #e5e7eb)'}
-                          onmouseout={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-tertiary, #f3f4f6)'}
-                          onfocus={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover, #e5e7eb)'}
-                          onblur={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-tertiary, #f3f4f6)'}
-                        >
-                          {isExpanded ? '▼' : '▶'} {refGroup.all.length} {refGroup.all.length === 1 ? 'edition' : 'editions'}
-                        </button>
-                      </div>
-                    {/if}
                   {/if}
                 {/each}
               {/each}
@@ -1602,14 +1569,7 @@ import {
           {#each orderedSections as section}
             {@const refGroup = sectionToRefGroup.get(section)}
             {#if refGroup}
-              {@const verseEvent = refGroup.best}
-              {@const refKey = getReferenceKey(verseEvent)}
-              {@const hasMultipleEditions = refGroup.all.length > 1}
-              {@const isExpanded = expandedEditions.has(refKey)}
-              {@const editionsToShow = isExpanded ? refGroup.all : [refGroup.best]}
-              {@const currentVerseEvent = editionsToShow.find(e => extractEventSections(e).includes(section)) || editionsToShow[0]}
-              {@const isFirstVerseOfGroup = section === extractEventSections(refGroup.best)[0]}
-              
+              {@const currentVerseEvent = refGroup.best}
               <div 
                 class="verse-item"
                 style="display: flex; margin-bottom: 0.5rem; line-height: 1.6;"
@@ -1634,23 +1594,6 @@ import {
                   {currentVerseEvent.content}
                 </span>
               </div>
-              
-              <!-- Show all editions button (only show once per unique reference) -->
-              {#if hasMultipleEditions && isFirstVerseOfGroup}
-                <div style="margin-left: 2.5rem; margin-top: 0.25rem; margin-bottom: 0.75rem;">
-                  <button
-                    onclick={(e) => { e.stopPropagation(); toggleEditions(refKey); }}
-                    style="padding: 0.25rem 0.5rem; font-size: 0.75rem; background-color: var(--bg-tertiary, #f3f4f6); border: 1px solid var(--border, #e5e7eb); border-radius: 0.25rem; cursor: pointer; color: var(--text-secondary, #6b7280); transition: all 0.2s;"
-                    title={isExpanded ? 'Hide other editions' : `Show all ${refGroup.all.length} editions`}
-                    onmouseover={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover, #e5e7eb)'}
-                    onmouseout={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-tertiary, #f3f4f6)'}
-                    onfocus={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover, #e5e7eb)'}
-                    onblur={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-tertiary, #f3f4f6)'}
-                  >
-                    {isExpanded ? '▼' : '▶'} {refGroup.all.length} {refGroup.all.length === 1 ? 'edition' : 'editions'}
-                  </button>
-                </div>
-              {/if}
             {/if}
           {/each}
         {/each}
