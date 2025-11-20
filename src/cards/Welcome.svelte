@@ -398,15 +398,21 @@
     if (!initialized) {
       initialized = true;
       
-      // Initialize cache and force update all caches immediately on mount
+      // Initialize cache and show cached results immediately
       (async () => {
         try {
           await contentCache.initialize();
           
-          // Force update ALL caches immediately on mount
-          await updateAllCaches();
-          
+          // Show cached results immediately (fast!)
           buildFeedFromCache();
+          
+          // Update caches in background without blocking UI
+          updateAllCaches().then(() => {
+            // Refresh feed after cache updates complete
+            buildFeedFromCache();
+          }).catch(error => {
+            console.error('❌ Background cache update failed:', error);
+          });
         } catch (error) {
           console.error('❌ Cache initialization failed:', error);
         }
