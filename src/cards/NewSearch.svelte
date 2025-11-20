@@ -38,11 +38,10 @@ import UserBadge from '$components/UserBadge.svelte';
     if (query) {
       // Check if this is a book:: query - preserve the book:: prefix
       if (query.startsWith('book::')) {
-        const bookQuery = query.substring(6); // Remove "book::" prefix
         const newCard: BookCard = {
           id: next(),
           type: 'book',
-          data: bookQuery // Don't normalize - preserve the original query format
+          data: query // Keep the entire query so BookCard can parse the book:: prefix
         };
         replaceNewCard(newCard);
       } else {

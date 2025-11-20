@@ -426,4 +426,8 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+
+  .book-search-results h3 {
+    font-family: var(--font-family-heading);
+  }
 </style>

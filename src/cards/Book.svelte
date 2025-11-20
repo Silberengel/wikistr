@@ -12,15 +12,137 @@
   import type { Card, BookCard, ArticleCard } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next, unique, formatRelativeTime } from '$lib/utils';
   import { relayService } from '$lib/relayService';
-  import { 
+import { 
     isBookEvent, 
     extractBookMetadata, 
     generateBookTitle,
-    formatBookReference,
     type BookReference,
     type BookEvent,
     BOOK_TYPES
   } from '$lib/books';
+  
+  // Helper to check if event is a bible event
+  function isBibleEvent(event: BookEvent): boolean {
+    const cTag = event.tags.find(([tag]) => tag === 'C');
+    const typeTag = event.tags.find(([tag]) => tag === 'type');
+    return !!(cTag && cTag[1]?.toLowerCase() === 'bible') || 
+           !!(typeTag && typeTag[1]?.toLowerCase() === 'bible');
+  }
+  
+  // Helper to capitalize words for display
+  function capitalizeWords(text: string): string {
+    return text.split(' ').map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    ).join(' ');
+  }
+  
+  // Map version codes (e.g., "drb" -> "DRA" for Bible Gateway)
+  const versionMap: Record<string, string> = {
+    'drb': 'DRA',
+    'kjv': 'KJV',
+    'niv': 'NIV',
+    'esv': 'ESV',
+    'nasb': 'NASB',
+    'nlt': 'NLT',
+    'rsv': 'RSV',
+    'asv': 'ASV',
+    'web': 'WEB'
+  };
+  
+  // Generate Bible Gateway URL for the entire query (all references)
+  // Optionally specify a version to use instead of the default
+  function generateCompositeBibleGatewayUrl(specificVersion?: string): string | null {
+    if (!parsedQuery || parsedQuery.references.length === 0) return null;
+    
+    // Build search string from all references
+    const searchParts: string[] = [];
+    
+    for (const ref of parsedQuery.references) {
+      if (!ref.book || !ref.chapter) continue;
+      
+      let part = `${ref.book} ${ref.chapter}`;
+      
+      if (ref.verse) {
+        // Format verses: handle ranges and lists
+        // Bible Gateway format: "3:16-18" for ranges, "3:16,17,20" for non-consecutive
+        const verses = ref.verse.split(',').map(v => v.trim());
+        const verseNumbers: number[] = [];
+        const ranges: string[] = [];
+        
+        // Parse all verse numbers
+        for (const verse of verses) {
+          if (verse.includes('-')) {
+            // It's a range, keep as-is
+            ranges.push(verse);
+          } else {
+            const num = parseInt(verse, 10);
+            if (!isNaN(num)) {
+              verseNumbers.push(num);
+            } else {
+              // Non-numeric, keep as-is
+              ranges.push(verse);
+            }
+          }
+        }
+        
+        // Sort verse numbers
+        verseNumbers.sort((a, b) => a - b);
+        
+        // Group consecutive numbers into ranges
+        if (verseNumbers.length > 0) {
+          let currentRange: number[] = [verseNumbers[0]];
+          
+          for (let i = 1; i < verseNumbers.length; i++) {
+            if (verseNumbers[i] === verseNumbers[i - 1] + 1) {
+              // Consecutive, add to current range
+              currentRange.push(verseNumbers[i]);
+            } else {
+              // Not consecutive, finalize current range and start new one
+              if (currentRange.length === 1) {
+                ranges.push(currentRange[0].toString());
+              } else {
+                ranges.push(`${currentRange[0]}-${currentRange[currentRange.length - 1]}`);
+              }
+              currentRange = [verseNumbers[i]];
+            }
+          }
+          
+          // Finalize last range
+          if (currentRange.length === 1) {
+            ranges.push(currentRange[0].toString());
+          } else {
+            ranges.push(`${currentRange[0]}-${currentRange[currentRange.length - 1]}`);
+          }
+        }
+        
+        if (ranges.length > 0) {
+          part += `:${ranges.join(',')}`;
+        }
+      }
+      
+      searchParts.push(part);
+    }
+    
+    if (searchParts.length === 0) return null;
+    
+    // Get version: use specificVersion if provided, otherwise from query or default to DRB
+    const version = specificVersion?.toLowerCase() ||
+                   parsedQuery.versions?.[0]?.toLowerCase() || 
+                   parsedQuery.version?.toLowerCase() || 
+                   'drb';
+    const bgVersion = versionMap[version] || version.toUpperCase();
+    
+    // Format like Bible Gateway: " romans 3:16-18 " (with spaces before and after)
+    const searchString = ` ${searchParts.join(', ')} `;
+    const encodedSearch = encodeURIComponent(searchString);
+    
+    return `https://www.biblegateway.com/passage/?search=${encodedSearch}&version=${bgVersion}`;
+  }
+  
+  // Generate Bible Gateway URL for a single event (legacy, kept for compatibility)
+  function generateBibleGatewayUrl(event: BookEvent): string | null {
+    return generateCompositeBibleGatewayUrl();
+  }
   
   // Helper to extract sections directly from event tags (NKBIP-08 format only - single-letter 's' tag)
   function extractEventSections(event: BookEvent): string[] {
@@ -33,22 +155,409 @@
   import { page } from '$app/state';
   import { cards } from '$lib/state';
 
-  export let card: Card;
-  export let replaceSelf: (card: Card) => void;
-  export let createChild: (card: Card) => void;
+  interface Props {
+    card: Card;
+    replaceSelf: (card: Card) => void;
+    createChild: (card: Card) => void;
+  }
 
-  let tried = false;
-  let eosed = 0;
-  let editable = false;
-  let versionNotFound = false;
+  let { card, replaceSelf, createChild }: Props = $props();
+
+  let tried = $state(false);
+  let eosed = $state(0);
+  let editable = $state(false);
+  let versionNotFound = $state(false);
   let fallbackResults: BookEvent[] = [];
 
   const bookCard = card as BookCard;
 
-  let query: string;
+  let query = $state<string>('');
   let seenCache: { [id: string]: string[] } = {};
-  let results: BookEvent[] = [];
-  let parsedQuery: { references: BookReference[], version?: string, versions?: string[] } | null = null;
+  let results = $state<BookEvent[]>([]);
+  type DisplayReference = BookReference & { sections?: string[] };
+  let parsedQuery = $state<{ references: DisplayReference[], version?: string, versions?: string[] } | null>(null);
+  let indexOrders = $state<Map<string, string[]>>(new Map());
+  
+  // Helper to create a unique key for a book reference (book + chapter + section)
+  function getReferenceKey(event: BookEvent): string {
+    const metadata = extractBookMetadata(event);
+    const book = metadata.book ? normalizeIdentifier(metadata.book).toLowerCase() : 'unknown';
+    const chapter = metadata.chapter || '';
+    const sections = extractEventSections(event);
+    const section = sections.length > 0 ? sections.sort((a, b) => parseInt(a) - parseInt(b)).join(',') : '';
+    return `${book}:${chapter}:${section}`;
+  }
+  
+  // Helper to format verse range for header (e.g., "16-17,20")
+  function formatVerseRange(sections: string[]): string {
+    if (sections.length === 0) return '';
+    const nums = sections.map(s => parseInt(s)).filter(n => !isNaN(n)).sort((a, b) => a - b);
+    if (nums.length === 0) return sections.join(',');
+    if (nums.length === 1) return nums[0].toString();
+    
+    // Group consecutive numbers
+    const groups: number[][] = [];
+    let currentGroup: number[] = [nums[0]];
+    
+    for (let i = 1; i < nums.length; i++) {
+      if (nums[i] === nums[i - 1] + 1) {
+        currentGroup.push(nums[i]);
+      } else {
+        groups.push(currentGroup);
+        currentGroup = [nums[i]];
+      }
+    }
+    groups.push(currentGroup);
+    
+    return groups.map(group => {
+      if (group.length === 1) return group[0].toString();
+      return `${group[0]}-${group[group.length - 1]}`;
+    }).join(',');
+  }
+  
+  // Keywords that should appear before numeric sections
+  const prefaceKeywords = ['preamble', 'preface', 'foreword', 'introduction'];
+
+  function isPrefaceSection(section: string): boolean {
+    const normalized = section.toLowerCase();
+    return prefaceKeywords.some(keyword => normalized.includes(keyword));
+  }
+
+  // Helper to get all unique sections from a group of references
+  function getAllSectionsFromGroup(referenceGroups: { best: BookEvent; all: BookEvent[] }[]): string[] {
+    const allSections = new Set<string>();
+    for (const refGroup of referenceGroups) {
+      const sections = extractEventSections(refGroup.best);
+      sections.forEach(s => allSections.add(s));
+    }
+    return Array.from(allSections);
+  }
+
+  function getOrderedSections(
+    allSections: string[],
+    sectionMap: Map<string, { best: BookEvent; all: BookEvent[] }>,
+    chapterOrder?: string[]
+  ): string[] {
+    const orderMap = new Map<string, number>();
+    if (chapterOrder && chapterOrder.length > 0) {
+      chapterOrder.forEach((eventId, index) => {
+        if (eventId) {
+          orderMap.set(eventId, index);
+        }
+      });
+    }
+
+    return [...allSections].sort((a, b) => {
+      const refA = sectionMap.get(a);
+      const refB = sectionMap.get(b);
+      const idA = refA?.best.id;
+      const idB = refB?.best.id;
+      const idxA = idA && orderMap.has(idA) ? orderMap.get(idA)! : Number.MAX_SAFE_INTEGER;
+      const idxB = idB && orderMap.has(idB) ? orderMap.get(idB)! : Number.MAX_SAFE_INTEGER;
+
+      if (idxA !== idxB) {
+        return idxA - idxB;
+      }
+
+      const specialA = isPrefaceSection(a);
+      const specialB = isPrefaceSection(b);
+      if (specialA && !specialB) return -1;
+      if (!specialA && specialB) return 1;
+
+      const numA = parseInt(a, 10);
+      const numB = parseInt(b, 10);
+      if (!isNaN(numA) && !isNaN(numB)) {
+        return numA - numB;
+      }
+
+      return a.localeCompare(b);
+    });
+  }
+
+  function getScopeKey(bookKey: string, chapter?: string): string {
+    return `${bookKey}:${chapter && chapter.length > 0 ? chapter : 'book'}`;
+  }
+
+  function extractIndexOrder(event: BookEvent): string[] {
+    return event.tags.filter(([tag]) => tag === 'e').map(([, value]) => value).filter(Boolean);
+  }
+  
+  // Helper to get version preference score (higher = better)
+  function getVersionPreferenceScore(version: string | undefined): number {
+    if (!version) return 0;
+    const v = version.toLowerCase();
+    // Preference order: DRB > KJV > ESV > NASB > others
+    if (v === 'drb' || v === 'douay-rheims' || v === 'douay rheims') return 40;
+    if (v === 'kjv' || v === 'king james' || v === 'king james version') return 30;
+    if (v === 'esv' || v === 'english standard version') return 20;
+    if (v === 'nasb' || v === 'new american standard bible') return 10;
+    return 0;
+  }
+  
+  // Helper to calculate match score (considering all tags)
+  function calculateMatchScore(event: BookEvent, query: typeof parsedQuery): number {
+    if (!query) return 0;
+    
+    let score = 0;
+    const metadata = extractBookMetadata(event);
+    const eventSections = extractEventSections(event);
+    
+    // Check each reference in the query
+    for (const ref of query.references) {
+      const refBook = ref.book ? normalizeIdentifier(ref.book).toLowerCase() : '';
+      const eventBook = metadata.book ? normalizeIdentifier(metadata.book).toLowerCase() : '';
+      
+      if (refBook === eventBook) {
+        score += 10; // Book match
+        
+        if (ref.chapter && metadata.chapter && ref.chapter.toString() === metadata.chapter) {
+          score += 5; // Chapter match
+          
+          // Check section matches
+          if (ref.verse) {
+            const refSections = ref.verse.split(',').map(s => s.trim());
+            const matchingSections = refSections.filter(rs => eventSections.includes(rs));
+            score += matchingSections.length * 2; // Section matches
+          }
+        }
+      }
+    }
+    
+    // Version match bonus
+    if (query.versions && query.versions.length > 0) {
+      const eventVersion = metadata.version?.toLowerCase();
+      if (eventVersion && query.versions.some(v => v.toLowerCase() === eventVersion)) {
+        score += 3;
+      }
+    } else {
+      // No version specified - apply preference for Bible events
+      if (isBibleEvent(event)) {
+        score += getVersionPreferenceScore(metadata.version);
+      }
+    }
+    
+    return score;
+  }
+  
+  async function refreshIndexOrders() {
+    if (!parsedQuery) return;
+
+    const scopes = new Set<string>();
+    for (const ref of parsedQuery.references) {
+      if (!ref.book) continue;
+      const normalizedBook = normalizeIdentifier(ref.book).toLowerCase();
+      const chapterKey = ref.chapter ? ref.chapter.toString() : undefined;
+      scopes.add(getScopeKey(normalizedBook, chapterKey));
+      scopes.add(getScopeKey(normalizedBook, undefined));
+    }
+
+    for (const event of results) {
+      const metadata = extractBookMetadata(event);
+      if (!metadata.book) continue;
+      const normalizedBook = normalizeIdentifier(metadata.book).toLowerCase();
+      const chapterKey = metadata.chapter || undefined;
+      scopes.add(getScopeKey(normalizedBook, chapterKey));
+    }
+
+    const newIndexOrders = new Map<string, string[]>();
+
+    for (const scopeKey of scopes) {
+      const [bookKey, chapterKey] = scopeKey.split(':');
+      if (!bookKey) continue;
+
+      const filters: any = {
+        kinds: [30040],
+        limit: 1,
+        '#T': [bookKey]
+      };
+
+      if (bookCard.bookType) {
+        filters['#C'] = [normalizeIdentifier(bookCard.bookType).toLowerCase()];
+      }
+
+      if (chapterKey && chapterKey !== 'book') {
+        filters['#c'] = [chapterKey];
+      }
+
+      try {
+        const indexResult = await relayService.queryEvents(
+          'anonymous',
+          'wiki-read',
+          [filters],
+          {
+            excludeUserContent: false,
+            currentUserPubkey: undefined
+          }
+        );
+
+        const indexEvent = indexResult.events.find(evt => evt.id);
+        if (indexEvent) {
+          const order = extractIndexOrder(indexEvent as BookEvent);
+          if (order.length > 0) {
+            newIndexOrders.set(scopeKey, order);
+          }
+        }
+      } catch (error) {
+        console.warn('Book: Failed to load index order for scope', scopeKey, error);
+      }
+    }
+
+    indexOrders = newIndexOrders;
+  }
+
+  // Group bible results by book, preserving order, and deduplicate by reference
+  const groupedResults = $derived.by(() => {
+    const bibleResults: BookEvent[] = [];
+    const nonBibleResults: BookEvent[] = [];
+    
+    for (const result of results) {
+      if (isBibleEvent(result)) {
+        bibleResults.push(result);
+      } else {
+        nonBibleResults.push(result);
+      }
+    }
+    
+    // Group by reference key (book:chapter:section)
+    const referenceGroups = new Map<string, BookEvent[]>();
+    for (const result of bibleResults) {
+      const refKey = getReferenceKey(result);
+      if (!referenceGroups.has(refKey)) {
+        referenceGroups.set(refKey, []);
+      }
+      referenceGroups.get(refKey)!.push(result);
+    }
+    
+    // For each reference, find the best match (highest score, then newest)
+    const deduplicatedResults = new Map<string, { best: BookEvent; all: BookEvent[] }>();
+    for (const [refKey, events] of referenceGroups.entries()) {
+      if (events.length === 0) continue;
+      
+      // Calculate match scores
+      const scoredEvents = events.map(event => ({
+        event,
+        score: calculateMatchScore(event, parsedQuery),
+        created_at: event.created_at || 0
+      }));
+      
+      // Sort by score (descending), then by created_at (descending = newest first)
+      scoredEvents.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return b.created_at - a.created_at;
+      });
+      
+      deduplicatedResults.set(refKey, {
+        best: scoredEvents[0].event,
+        all: events
+      });
+    }
+    
+    // Group deduplicated results by book+chapter (for Bible Gateway style grouping)
+    // Structure: Map<bookKey, Map<chapterKey, { best: BookEvent; all: BookEvent[] }[]>>
+    const bibleGroups = new Map<string, Map<string, { best: BookEvent; all: BookEvent[] }[]>>();
+    const bookOrder: string[] = []; // Track order of first appearance
+    
+    for (const [refKey, { best, all }] of deduplicatedResults.entries()) {
+      const metadata = extractBookMetadata(best);
+      const bookKey = metadata.book ? normalizeIdentifier(metadata.book).toLowerCase() : 'unknown';
+      const chapterKey = metadata.chapter || '';
+      
+      if (!bibleGroups.has(bookKey)) {
+        bibleGroups.set(bookKey, new Map());
+        bookOrder.push(bookKey);
+      }
+      
+      const chapterMap = bibleGroups.get(bookKey)!;
+      if (!chapterMap.has(chapterKey)) {
+        chapterMap.set(chapterKey, []);
+      }
+      chapterMap.get(chapterKey)!.push({ best, all });
+    }
+    
+    // Create ordered entries array
+    const orderedBibleGroups = new Map<string, Map<string, { best: BookEvent; all: BookEvent[] }[]>>();
+    for (const bookKey of bookOrder) {
+      orderedBibleGroups.set(bookKey, bibleGroups.get(bookKey)!);
+    }
+    
+    // If any version is requested, group by version (even if just one)
+    const hasVersionRequested = parsedQuery?.versions && parsedQuery.versions.length > 0;
+    
+    if (hasVersionRequested) {
+      // Group by version: Map<versionKey, Map<bookKey, Map<chapterKey, { best: BookEvent; all: BookEvent[] }[]>>>
+      const versionGroups = new Map<string, Map<string, Map<string, { best: BookEvent; all: BookEvent[] }[]>>>();
+      const versionOrder: string[] = [];
+      
+      // Initialize all requested versions (even if empty)
+      for (const requestedVersion of parsedQuery!.versions!) {
+        const versionKey = requestedVersion.toLowerCase();
+        if (!versionGroups.has(versionKey)) {
+          versionGroups.set(versionKey, new Map());
+          versionOrder.push(versionKey);
+        }
+      }
+      
+      // Filter results to only include requested versions
+      for (const [bookKey, chapterMap] of orderedBibleGroups.entries()) {
+        for (const [chapterKey, referenceGroups] of chapterMap.entries()) {
+          for (const refGroup of referenceGroups) {
+            const metadata = extractBookMetadata(refGroup.best);
+            const eventVersion = metadata.version?.toLowerCase();
+            
+            // Find matching requested version
+            const matchingVersion = parsedQuery!.versions!.find(v => v.toLowerCase() === eventVersion);
+            if (matchingVersion) {
+              const versionKey = matchingVersion.toLowerCase();
+              
+              const versionBookMap = versionGroups.get(versionKey)!;
+              if (!versionBookMap.has(bookKey)) {
+                versionBookMap.set(bookKey, new Map());
+              }
+              
+              const versionChapterMap = versionBookMap.get(bookKey)!;
+              if (!versionChapterMap.has(chapterKey)) {
+                versionChapterMap.set(chapterKey, []);
+              }
+              
+              versionChapterMap.get(chapterKey)!.push(refGroup);
+            }
+          }
+        }
+      }
+      
+      // Create ordered version groups (preserve order of requested versions)
+      const orderedVersionGroups = new Map<string, Map<string, Map<string, { best: BookEvent; all: BookEvent[] }[]>>>();
+      for (const versionKey of versionOrder) {
+        orderedVersionGroups.set(versionKey, versionGroups.get(versionKey)!);
+      }
+      
+      return { 
+        bibleGroups: orderedBibleGroups, 
+        versionGroups: orderedVersionGroups,
+        hasVersionRequested: true,
+        nonBibleResults 
+      };
+    }
+    
+    return { 
+      bibleGroups: orderedBibleGroups, 
+      versionGroups: null,
+      hasMultipleVersions: false,
+      nonBibleResults 
+    };
+  });
+  
+  // Track which references are showing all editions
+  let expandedEditions = $state<Set<string>>(new Set());
+  
+  function toggleEditions(refKey: string) {
+    if (expandedEditions.has(refKey)) {
+      expandedEditions.delete(refKey);
+    } else {
+      expandedEditions.add(refKey);
+    }
+    expandedEditions = new Set(expandedEditions); // Trigger reactivity
+  }
 
   // close handlers
   let uwrcancel: () => void;
@@ -71,14 +580,15 @@
       const parsed = parseBookWikilinkNKBIP08(queryToParse);
       if (parsed && parsed.references.length > 0) {
         // Convert NKBIP-08 format to BookReference format
-        const references: BookReference[] = parsed.references.map(ref => ({
+        const references: DisplayReference[] = parsed.references.map(ref => ({
           book: ref.title,
           chapter: ref.chapter ? parseInt(ref.chapter, 10) : undefined,
-          verse: ref.section ? (ref.section.length === 1 ? ref.section[0] : ref.section.join(',')) : undefined
+          verse: ref.section ? (ref.section.length === 1 ? ref.section[0] : ref.section.join(',')) : undefined,
+          sections: ref.section
         }));
         parsedQuery = {
           references,
-          versions: parsed.references[0]?.version
+          versions: parsed.references[0]?.version || []
         };
         // Extract bookType from first reference if available
         if (parsed.references[0]?.collection) {
@@ -115,17 +625,41 @@
     // search operations are now handled by relayService
   }
 
-  // Sort results by book, chapter, section, version
+  // Sort results by order in query, then by chapter, section, version
   function sortBookResults(results: BookEvent[]): BookEvent[] {
+    if (!parsedQuery || parsedQuery.references.length === 0) {
+      // Fallback to alphabetical if no parsed query
+      return results.sort((a, b) => {
+        const metadataA = extractBookMetadata(a);
+        const metadataB = extractBookMetadata(b);
+        const bookA = (metadataA.book || '').toLowerCase();
+        const bookB = (metadataB.book || '').toLowerCase();
+        return bookA.localeCompare(bookB);
+      });
+    }
+    
+    // Create a map of book order from the query
+    const bookOrder = new Map<string, number>();
+    parsedQuery.references.forEach((ref, index) => {
+      if (ref.book) {
+        const normalizedBook = normalizeIdentifier(ref.book).toLowerCase();
+        if (!bookOrder.has(normalizedBook)) {
+          bookOrder.set(normalizedBook, index);
+        }
+      }
+    });
+    
     return results.sort((a, b) => {
       const metadataA = extractBookMetadata(a);
       const metadataB = extractBookMetadata(b);
       
-      // 1. Sort by book title (alphabetically)
-      const bookA = (metadataA.book || '').toLowerCase();
-      const bookB = (metadataB.book || '').toLowerCase();
-      if (bookA !== bookB) {
-        return bookA.localeCompare(bookB);
+      // 1. Sort by book order in query (preserve wikilink order)
+      const bookA = metadataA.book ? normalizeIdentifier(metadataA.book).toLowerCase() : '';
+      const bookB = metadataB.book ? normalizeIdentifier(metadataB.book).toLowerCase() : '';
+      const orderA = bookOrder.get(bookA) ?? 999;
+      const orderB = bookOrder.get(bookB) ?? 999;
+      if (orderA !== orderB) {
+        return orderA - orderB;
       }
       
       // 2. Sort by chapter (numerically)
@@ -172,6 +706,7 @@
       // Sort by book, chapter, section, version, then WOT score
       results = sortBookResults(results);
       seenCache = seenCache;
+      refreshIndexOrders();
     }, 500);
 
     // Check cache first before making relay queries
@@ -494,6 +1029,7 @@
         } else {
           bookCard.results = results;
           bookCard.seenCache = seenCache;
+          refreshIndexOrders();
         }
       }
     }
@@ -503,7 +1039,6 @@
       if (seenCache[id].indexOf(relay.url) === -1) seenCache[id].push(relay.url);
     }
   }
-
   async function performFallbackSearch() {
     if (!parsedQuery) return;
 
@@ -566,6 +1101,7 @@
       results = fallbackResults;
       bookCard.results = results;
       bookCard.seenCache = seenCache;
+      refreshIndexOrders();
     } catch (error) {
       console.error('Failed to search for fallback books:', error);
     }
@@ -657,34 +1193,20 @@
   }
 
   function openBookEvent(result: BookEvent, ev?: MouseEvent) {
-    // Open panels for ALL matching events from the search results
-    // This allows viewing different versions, different sections, etc.
     const isMiddleClick = ev?.button === 1;
+    const dTag = getTagOr(result, 'd') || result.id;
+    const pubkey = result.pubkey;
+    const relayHints = seenCache[result.id] || [];
     
-    // Create ArticleCard for each matching result
-    for (let i = 0; i < results.length; i++) {
-      const event = results[i];
-      const dTag = getTagOr(event, 'd') || event.id;
-      const pubkey = event.pubkey;
-      const relayHints = seenCache[event.id] || [];
-      
-      const articleCard: ArticleCard = {
-        id: next(),
-        type: 'article',
-        data: [dTag, pubkey],
-        relayHints: relayHints,
-        actualEvent: event // Pass the actual event so ArticleCard can use it immediately
-      };
-      
-      if (i === 0) {
-        // First event replaces current card or opens as child
-        if (isMiddleClick) createChild(articleCard);
-        else replaceSelf({ ...articleCard, back: card });
-      } else {
-        // Subsequent events always open as children (new panels)
-        createChild(articleCard);
-      }
-    }
+    const articleCard: ArticleCard = {
+      id: next(),
+      type: 'article',
+      data: [dTag, pubkey],
+      relayHints,
+      actualEvent: result
+    };
+    
+    createChild(articleCard);
   }
 
   function startEditing() {
@@ -704,7 +1226,7 @@
     if (!editable) return;
 
     editable = false;
-    query = query.replace(/[\r\n]/g, '').replace(/[^\w .:-]/g, '-');
+    query = query.replace(/[\r\n]/g, '').trim();
     if (query !== bookCard.data) {
       // replace browser url and history
       let index = $cards.findIndex((t) => t.id === card.id);
@@ -727,6 +1249,32 @@
 
   // Get the display name for the book type
   const bookTypeDisplayName = BOOK_TYPES[bookCard.bookType || 'bible']?.displayName || (bookCard.bookType || 'bible').charAt(0).toUpperCase() + (bookCard.bookType || 'bible').slice(1);
+
+  function formatReferenceForHeader(ref: DisplayReference): string {
+    const book = ref.book ? capitalizeWords(ref.book) : '';
+    const chapter = ref.chapter ? ` ${ref.chapter}` : '';
+    const sections = ref.sections && ref.sections.length > 0 ? `:${formatVerseRange(ref.sections)}` : '';
+    const version = ref.version ? ` (${ref.version.toUpperCase()})` : '';
+    return `${book}${chapter}${sections}${version}`.trim();
+  }
+
+  const readableQuery = $derived.by(() => {
+    if (!parsedQuery || parsedQuery.references.length === 0) {
+      return query;
+    }
+    const parts = parsedQuery.references.map((ref) => formatReferenceForHeader(ref)).filter((part) => part && part.trim().length > 0);
+    return parts.length > 0 ? parts.join('; ') : query;
+  });
+
+  const requestedVersionsLabel = $derived.by(() => {
+    if (!parsedQuery?.versions || parsedQuery.versions.length === 0) return null;
+    const uniqueVersions = Array.from(new Set(parsedQuery.versions.map((v) => v.toLowerCase())));
+    if (uniqueVersions.length === 0) return null;
+    const displayNames = uniqueVersions.map((version) => {
+      return versionMap[version] || version.toUpperCase();
+    });
+    return displayNames.join(', ');
+  });
 
   // Get examples for the book type
   const getExamples = () => {
@@ -759,8 +1307,8 @@
   };
 </script>
 
-<div class="mt-2 font-bold text-4xl">
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
+<div class="mt-2 font-bold text-4xl" style="font-family: var(--font-family-heading);">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="cursor-text"
     onclick={startEditing}
@@ -776,7 +1324,12 @@
         onkeydown={preventKeys}
       />
     {:else}
-      {query}
+      {readableQuery}
+      {#if requestedVersionsLabel}
+        <div class="text-xs font-semibold text-gray-500 uppercase tracking-[0.3em]" style="letter-spacing: 0.1em; margin-top: 0.35rem;">
+          {requestedVersionsLabel}
+        </div>
+      {/if}
     {/if}
   </div>
 </div>
@@ -818,10 +1371,298 @@
       </div>
     </div>
   {/if}
+  {@const compositeBgUrl = generateCompositeBibleGatewayUrl()}
+  
   <div class="mt-4 space-y-4">
-    {#each results as result (result.id)}
+    {#if groupedResults.hasVersionRequested && groupedResults.versionGroups && groupedResults.versionGroups.size > 0}
+      <!-- Multiple versions: Group by version -->
+      {#each Array.from(groupedResults.versionGroups.entries()) as [versionKey, versionBookMap]}
+        {@const versionLabel = versionKey.toUpperCase()}
+        {@const versionDisplayName = versionMap[versionKey] || versionLabel}
+        {@const hasResults = versionBookMap.size > 0}
+        
+        <!-- Version Group Container -->
+        <div 
+          class="version-group" 
+          style="margin: 2rem 0; border: 2px solid var(--accent); border-radius: 0.75rem; padding: 1.5rem; background-color: var(--bg-primary); position: relative;"
+        >
+          <!-- Version Header -->
+          <div 
+            class="version-header" 
+            style="font-size: 0.75em; font-variant: small-caps; letter-spacing: 0.1em; margin-bottom: 1rem; color: var(--text-secondary, #6b7280); opacity: 0.8; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border, #e5e7eb);"
+          >
+            {versionDisplayName}
+          </div>
+          
+          {#if hasResults}
+            {@const versionSpecificBgUrl = generateCompositeBibleGatewayUrl(versionKey)}
+            <!-- Bible Gateway link for this version -->
+            {#if versionSpecificBgUrl}
+              <a 
+                href={versionSpecificBgUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                class="bible-gateway-link"
+                style="position: absolute; top: 1.5rem; right: 1.5rem; text-decoration: none; color: var(--accent); font-size: 1.25rem; transition: opacity 0.2s;"
+                title="View on Bible Gateway"
+              >
+                🔗
+              </a>
+            {/if}
+            
+            <!-- Passages for this version -->
+            {#each Array.from(versionBookMap.entries()) as [bookKey, chapterMap]}
+              {@const firstChapter = Array.from(chapterMap.values())[0]?.[0]}
+              {@const firstMetadata = firstChapter ? extractBookMetadata(firstChapter.best) : null}
+              {@const bookTitle = firstMetadata ? capitalizeWords(firstMetadata.book || '') : ''}
+              
+              <!-- Single container for all passages from this book -->
+              <div 
+                class="book-passage-group" 
+                style="margin: 1.5rem 0; border-left: 4px solid var(--accent); padding: 1.25rem; background-color: var(--bg-secondary); border-radius: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); position: relative;"
+              >
+                <!-- Each chapter group -->
+                {#each Array.from(chapterMap.entries()) as [chapterKey, referenceGroups]}
+                {@const chapterMetadata = extractBookMetadata(referenceGroups[0].best)}
+                {@const chapter = chapterMetadata.chapter || ''}
+                {@const allSections = getAllSectionsFromGroup(referenceGroups)}
+                {@const headerVerses = formatVerseRange(allSections)}
+                {@const chapterKeys = Array.from(chapterMap.keys())}
+                {@const isFirstChapter = chapterKey === chapterKeys[0]}
+                
+                <!-- Chapter header -->
+                <div 
+                  class="chapter-header" 
+                  style="font-weight: bold; font-size: 1.1em; margin-bottom: 0.75rem; margin-top: {isFirstChapter ? '0' : '1.5rem'}; color: var(--accent);"
+                >
+                  {bookTitle} {chapter}:{headerVerses}
+                </div>
+                
+                <!-- Create a map of section -> best event for this chapter -->
+                          {@const sectionToRefGroupMap = (() => {
+                            const map = new Map<string, { best: BookEvent; all: BookEvent[] }>();
+                            for (const refGroup of referenceGroups) {
+                              const sections = extractEventSections(refGroup.best);
+                              for (const section of sections) {
+                                if (!map.has(section)) {
+                                  map.set(section, refGroup);
+                                }
+                              }
+                            }
+                            return map;
+                          })()}
+                          {@const chapterOrderKey = getScopeKey(bookKey, chapter)}
+                          {@const chapterOrderList = indexOrders.get(chapterOrderKey)}
+                          {@const orderedSections = getOrderedSections(allSections, sectionToRefGroupMap, chapterOrderList)}
+                          
+                          <!-- Verses in this chapter (sorted by verse number or index order) -->
+                          {#each orderedSections as section}
+                  {@const refGroup = sectionToRefGroupMap.get(section)}
+                  {#if refGroup}
+                    {@const verseEvent = refGroup.best}
+                    {@const refKey = getReferenceKey(verseEvent)}
+                    {@const hasMultipleEditions = refGroup.all.length > 1}
+                    {@const isExpanded = expandedEditions.has(refKey)}
+                    {@const editionsToShow = isExpanded ? refGroup.all : [refGroup.best]}
+                    {@const currentVerseEvent = editionsToShow.find(e => extractEventSections(e).includes(section)) || editionsToShow[0]}
+                    {@const isFirstVerseOfGroup = section === extractEventSections(refGroup.best)[0]}
+                    
+                    <div 
+                      class="verse-item"
+                      style="display: flex; margin-bottom: 0.5rem; line-height: 1.6;"
+                    >
+                      <!-- Verse number (left) -->
+                      <span 
+                        style="font-weight: bold; color: var(--accent); margin-right: 0.5rem; min-width: 2rem; flex-shrink: 0;"
+                      >
+                        {section}
+                      </span>
+                      
+                      <!-- Verse content -->
+                      <span 
+                        class="verse-content" 
+                        style="color: var(--text-primary); flex: 1; cursor: pointer;"
+                        onclick={(e) => openBookEvent(currentVerseEvent, e)}
+                        role="button"
+                        tabindex="0"
+                        onkeydown={(e) => e.key === 'Enter' && openBookEvent(currentVerseEvent, undefined)}
+                        title="Click to open this passage in a new panel"
+                      >
+                        {currentVerseEvent.content}
+                      </span>
+                    </div>
+                    
+                    <!-- Show all editions button (only show once per unique reference) -->
+                    {#if hasMultipleEditions && isFirstVerseOfGroup}
+                      <div style="margin-left: 2.5rem; margin-top: 0.25rem; margin-bottom: 0.75rem;">
+                        <button
+                          onclick={(e) => { e.stopPropagation(); toggleEditions(refKey); }}
+                          style="padding: 0.25rem 0.5rem; font-size: 0.75rem; background-color: var(--bg-tertiary, #f3f4f6); border: 1px solid var(--border, #e5e7eb); border-radius: 0.25rem; cursor: pointer; color: var(--text-secondary, #6b7280); transition: all 0.2s;"
+                          title={isExpanded ? 'Hide other editions' : `Show all ${refGroup.all.length} editions`}
+                          onmouseover={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover, #e5e7eb)'}
+                          onmouseout={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-tertiary, #f3f4f6)'}
+                          onfocus={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover, #e5e7eb)'}
+                          onblur={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-tertiary, #f3f4f6)'}
+                        >
+                          {isExpanded ? '▼' : '▶'} {refGroup.all.length} {refGroup.all.length === 1 ? 'edition' : 'editions'}
+                        </button>
+                      </div>
+                    {/if}
+                  {/if}
+                {/each}
+              {/each}
+              </div>
+            {/each}
+          {:else}
+            <!-- No results for this version -->
+            {@const versionSpecificBgUrl = generateCompositeBibleGatewayUrl(versionKey)}
+            <div style="padding: 2rem; text-align: center; color: var(--text-secondary, #6b7280);">
+              <div style="font-style: italic; margin-bottom: 1rem;">
+                No passages found for {versionDisplayName}
+              </div>
+              {#if versionSpecificBgUrl}
+                <a 
+                  href={versionSpecificBgUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  style="display: inline-block; padding: 0.5rem 1rem; background-color: var(--accent); color: white; text-decoration: none; border-radius: 0.25rem; font-size: 0.875rem; transition: opacity 0.2s;"
+                  onmouseover={(e) => e.currentTarget.style.opacity = '0.8'}
+                  onmouseout={(e) => e.currentTarget.style.opacity = '1'}
+                  onfocus={(e) => e.currentTarget.style.opacity = '0.8'}
+                  onblur={(e) => e.currentTarget.style.opacity = '1'}
+                >
+                  View on Bible Gateway →
+                </a>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      {/each}
+    {:else}
+      <!-- Single version: Grouped Bible Results (Bible Gateway style) -->
+      {#each Array.from(groupedResults.bibleGroups.entries()) as [bookKey, chapterMap]}
+      {@const firstChapter = Array.from(chapterMap.values())[0]?.[0]}
+      {@const firstMetadata = firstChapter ? extractBookMetadata(firstChapter.best) : null}
+      {@const bookTitle = firstMetadata ? capitalizeWords(firstMetadata.book || '') : ''}
+      
+      <!-- Single container for all passages from this book -->
+      <div 
+        class="book-passage-group" 
+        style="margin: 1.5rem 0; border-left: 4px solid var(--accent); padding: 1.25rem; background-color: var(--bg-secondary); border-radius: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); position: relative;"
+      >
+        <!-- Bible Gateway link (top-right) -->
+        {#if compositeBgUrl}
+          <a 
+            href={compositeBgUrl} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            class="bible-gateway-link"
+            style="position: absolute; top: 0.75rem; right: 0.75rem; text-decoration: none; color: var(--accent); font-size: 1.25rem; transition: opacity 0.2s;"
+            title="View on Bible Gateway"
+          >
+            🔗
+          </a>
+        {/if}
+        
+        <!-- Each chapter group -->
+        {#each Array.from(chapterMap.entries()) as [chapterKey, referenceGroups]}
+          {@const chapterMetadata = extractBookMetadata(referenceGroups[0].best)}
+          {@const chapter = chapterMetadata.chapter || ''}
+          {@const allSections = getAllSectionsFromGroup(referenceGroups)}
+          {@const headerVerses = formatVerseRange(allSections)}
+          {@const chapterKeys = Array.from(chapterMap.keys())}
+          {@const isFirstChapter = chapterKey === chapterKeys[0]}
+          
+          <!-- Chapter header -->
+          <div 
+            class="chapter-header" 
+            style="font-weight: bold; font-size: 1.1em; margin-bottom: 0.75rem; margin-top: {isFirstChapter ? '0' : '1.5rem'}; color: var(--accent);"
+          >
+            {bookTitle} {chapter}:{headerVerses}
+          </div>
+          
+          <!-- Create a map of section -> best event for this chapter -->
+          {@const sectionToRefGroup = (() => {
+            const map = new Map<string, { best: BookEvent; all: BookEvent[] }>();
+            for (const refGroup of referenceGroups) {
+              const sections = extractEventSections(refGroup.best);
+              for (const section of sections) {
+                if (!map.has(section)) {
+                  map.set(section, refGroup);
+                }
+              }
+            }
+            return map;
+          })()}
+          {@const chapterOrderKey = getScopeKey(bookKey, chapter)}
+          {@const chapterOrderList = indexOrders.get(chapterOrderKey)}
+          {@const orderedSections = getOrderedSections(allSections, sectionToRefGroup, chapterOrderList)}
+          
+          <!-- Verses in this chapter (sorted by verse number or index order) -->
+          {#each orderedSections as section}
+            {@const refGroup = sectionToRefGroup.get(section)}
+            {#if refGroup}
+              {@const verseEvent = refGroup.best}
+              {@const refKey = getReferenceKey(verseEvent)}
+              {@const hasMultipleEditions = refGroup.all.length > 1}
+              {@const isExpanded = expandedEditions.has(refKey)}
+              {@const editionsToShow = isExpanded ? refGroup.all : [refGroup.best]}
+              {@const currentVerseEvent = editionsToShow.find(e => extractEventSections(e).includes(section)) || editionsToShow[0]}
+              {@const isFirstVerseOfGroup = section === extractEventSections(refGroup.best)[0]}
+              
+              <div 
+                class="verse-item"
+                style="display: flex; margin-bottom: 0.5rem; line-height: 1.6;"
+              >
+                <!-- Verse number (left) -->
+                <span 
+                  style="font-weight: bold; color: var(--accent); margin-right: 0.5rem; min-width: 2rem; flex-shrink: 0;"
+                >
+                  {section}
+                </span>
+                
+                <!-- Verse content -->
+                <span 
+                  class="verse-content" 
+                  style="color: var(--text-primary); flex: 1; cursor: pointer;"
+                  onclick={(e) => openBookEvent(currentVerseEvent, e)}
+                  role="button"
+                  tabindex="0"
+                  onkeydown={(e) => e.key === 'Enter' && openBookEvent(currentVerseEvent, undefined)}
+                  title="Click to open this passage in a new panel"
+                >
+                  {currentVerseEvent.content}
+                </span>
+              </div>
+              
+              <!-- Show all editions button (only show once per unique reference) -->
+              {#if hasMultipleEditions && isFirstVerseOfGroup}
+                <div style="margin-left: 2.5rem; margin-top: 0.25rem; margin-bottom: 0.75rem;">
+                  <button
+                    onclick={(e) => { e.stopPropagation(); toggleEditions(refKey); }}
+                    style="padding: 0.25rem 0.5rem; font-size: 0.75rem; background-color: var(--bg-tertiary, #f3f4f6); border: 1px solid var(--border, #e5e7eb); border-radius: 0.25rem; cursor: pointer; color: var(--text-secondary, #6b7280); transition: all 0.2s;"
+                    title={isExpanded ? 'Hide other editions' : `Show all ${refGroup.all.length} editions`}
+                    onmouseover={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover, #e5e7eb)'}
+                    onmouseout={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-tertiary, #f3f4f6)'}
+                    onfocus={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover, #e5e7eb)'}
+                    onblur={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-tertiary, #f3f4f6)'}
+                  >
+                    {isExpanded ? '▼' : '▶'} {refGroup.all.length} {refGroup.all.length === 1 ? 'edition' : 'editions'}
+                  </button>
+                </div>
+              {/if}
+            {/if}
+          {/each}
+        {/each}
+      </div>
+    {/each}
+    {/if}
+    
+    <!-- Non-Bible Results -->
+    {#each groupedResults.nonBibleResults as result (result.id)}
       {@const metadata = extractBookMetadata(result)}
       {@const title = generateBookTitle(metadata)}
+      
       <div 
         class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
         role="button"
@@ -877,5 +1718,9 @@
     100% {
       transform: rotate(360deg);
     }
+  }
+  
+  .bible-gateway-link:hover {
+    opacity: 0.7;
   }
 </style>
