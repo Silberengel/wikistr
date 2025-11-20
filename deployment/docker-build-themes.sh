@@ -3,11 +3,11 @@
 # Docker build script for all four Wikistr applications
 set -e
 
-# Configuration
-DOCKER_REGISTRY="silberengel"
-IMAGE_NAME="wikistr"
-VERSION="v4.1"
-LATEST_TAG="latest"
+# Configuration (allow overrides via environment variables)
+DOCKER_REGISTRY="${DOCKER_REGISTRY:-silberengel}"
+IMAGE_NAME="${IMAGE_NAME:-wikistr}"
+VERSION="${VERSION:-v4.2}"
+LATEST_TAG="${LATEST_TAG:-latest}"
 
 # Colors for output
 RED='\033[0;31m'
