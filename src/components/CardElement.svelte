@@ -179,12 +179,13 @@
       case 'editor':
         return 'edit:' + (card as EditorCard).data.title;
       case 'book':
-        const bookCard = card as any;
-        if (bookCard.bookType) {
-          return 'book:' + bookCard.bookType + ':' + encodeURIComponent(card.data);
-        } else {
-          return 'book:' + encodeURIComponent(card.data);
+        // Always use book:: format for URLs
+        // Check if data already starts with book:: to avoid duplication
+        const bookData = card.data as string;
+        if (bookData.startsWith('book::')) {
+          return encodeURIComponent(bookData);
         }
+        return 'book::' + encodeURIComponent(bookData);
       case 'diff':
         return 'diff:' + encodeURIComponent(card.data);
     }

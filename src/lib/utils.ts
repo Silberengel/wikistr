@@ -316,17 +316,35 @@ export function preprocessContentForAsciidoc(content: string): string {
     return placeholder;
   });
   
-            // Convert bookstr wikilinks [[book::...]] to HTML placeholder divs wrapped in AsciiDoc inline passthrough
-            // Inline passthrough pass:[...] allows raw HTML to pass through AsciiDoc processing
+            // Convert bookstr wikilinks [[book::...]] to AsciiDoc link format (like regular wikilinks)
+            // This creates clickable links that will open BookCard components
             // Only process outside of code blocks
             processed = processed.replace(/\[\[book::([^\]]+)\]\]/g, (match, content) => {
-              // Create a unique ID for this bookstr link
-              const id = `bookstr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-              // Store the original content in a data attribute
-              // Use AsciiDoc inline passthrough syntax to preserve HTML
-              const htmlDiv = `<div class="bookstr-placeholder" data-bookstr-id="${id}" data-bookstr-content="${content.replace(/"/g, '&quot;')}"></div>`;
-              const placeholder = `pass:[${htmlDiv}]`;
-              return placeholder;
+              // Parse the content to create a display text
+              // Format: "bible | john 3:16 | drb" -> "John 3:16 (DRB)"
+              let displayText = content;
+              const parts = content.split(/\s+\|\s+/);
+              if (parts.length >= 2) {
+                // Has collection and reference, maybe version
+                const referencePart = parts[1];
+                const versionPart = parts[2];
+                displayText = referencePart;
+                if (versionPart) {
+                  displayText += ` (${versionPart.toUpperCase()})`;
+                }
+              } else if (parts.length === 1) {
+                // Just reference, maybe with version
+                const refParts = parts[0].split(/\s+\|\s+/);
+                if (refParts.length === 2) {
+                  displayText = `${refParts[0]} (${refParts[1].toUpperCase()})`;
+                } else {
+                  displayText = parts[0];
+                }
+              }
+              
+              // Create AsciiDoc link that will be processed like regular wikilinks
+              // The link target is the full book:: content
+              return `link:wikilink:book::${content}[${displayText}]`;
             });
   
   // Convert regular wikilinks [[identifier]] or [[identifier | display text]] to AsciiDoc link format

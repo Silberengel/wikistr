@@ -5,6 +5,7 @@
   import { parseBookWikilink, bookReferenceToTags, type ParsedBookReference, type ParsedBookWikilink } from '$lib/bookWikilinkParser';
   import type { Card, BookCard, ArticleCard } from '$lib/types';
   import { next, getTagOr } from '$lib/utils';
+  import { normalizeIdentifier } from '@nostr/tools/nip54';
 
   interface Props {
     bookstrContent: string;
@@ -169,7 +170,7 @@
 
         // Check cache first for instant results
         const { contentCache } = await import('$lib/contentCache');
-        const cachedEvents = contentCache.getEvents('wiki');
+        const cachedEvents = await contentCache.getEvents('wiki');
         const bookKinds = [30040, 30041]; // Book event kinds
         
         // Helper function to check if an event matches a book reference
@@ -189,10 +190,10 @@
             return { matches: false };
           }
           
-          // Check book name (T tag) - normalize for comparison
+          // Check book name (T tag) - normalize for comparison using normalizeIdentifier
           if (ref.title) {
-            const normalizedRefTitle = ref.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-            const normalizedEventTitle = (tTag || '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+            const normalizedRefTitle = normalizeIdentifier(ref.title).toLowerCase();
+            const normalizedEventTitle = normalizeIdentifier(tTag || '').toLowerCase();
             if (normalizedEventTitle !== normalizedRefTitle) {
               return { matches: false };
             }
@@ -239,24 +240,28 @@
         // Store events grouped by version
         const eventsByVersion = new Map<string | undefined, Array<{ event: NostrEvent; sectionValue?: string }>>();
         
-        for (const version of versionsToFetch) {
+          for (const version of versionsToFetch) {
           // Check cache first
           let foundEvents: Array<{ event: NostrEvent; sectionValue?: string }> = [];
           
-          for (const cached of cachedEvents) {
-            if (bookKinds.includes(cached.event.kind)) {
-              const match = eventMatchesRef(cached.event, ref, version);
-              if (match.matches) {
-                foundEvents.push({ event: cached.event, sectionValue: match.sectionValue });
+          if (cachedEvents && Array.isArray(cachedEvents)) {
+            for (const cached of cachedEvents) {
+              if (cached && cached.event && bookKinds.includes(cached.event.kind)) {
+                const match = eventMatchesRef(cached.event, ref, version);
+                if (match.matches) {
+                  foundEvents.push({ event: cached.event, sectionValue: match.sectionValue });
+                }
               }
             }
           }
           
           if (foundEvents.length > 0) {
-            console.log(`BookPassageGroup: Found ${foundEvents.length} cached events for "${ref.title}"`);
+            console.log(`BookPassageGroup: Found ${foundEvents.length} cached events for "${ref.title}" ${ref.chapter ? `chapter ${ref.chapter}` : ''} ${ref.section ? `sections ${ref.section.join(',')}` : ''} ${version ? `version ${version}` : ''}`);
             eventsByVersion.set(version, foundEvents);
             continue; // Skip relay query if we found cached events
           }
+          
+          console.log(`BookPassageGroup: No cached events found for "${ref.title}" ${ref.chapter ? `chapter ${ref.chapter}` : ''} ${ref.section ? `sections ${ref.section.join(',')}` : ''} ${version ? `version ${version}` : ''}, querying relays...`);
           
           // Check if we have a range of sections (e.g., ["4", "5", "6"] from "4-6")
           const hasRange = ref.section && ref.section.length > 1;
@@ -592,66 +597,31 @@
   }
 </script>
 
-{#if loading || passages.length === 0}
-  <!-- Fallback card: show while loading or if no passages found -->
+{#if loading}
+  <!-- Loading spinner -->
+  <div class="book-passage-loading" style="padding: 1rem; text-align: center; color: var(--text-secondary);">
+    <div style="display: inline-block; width: 20px; height: 20px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+    <span style="margin-left: 0.5rem;">Loading passage...</span>
+  </div>
+{:else if passages.length === 0}
+  <!-- No passages found - show nothing or minimal message -->
   {#if parsedReference}
     {@const bgUrl = generateBibleGatewayUrlForWikilink(parsedReference)}
     <div 
-      class="book-passage-fallback" 
-      style="margin: 1.5rem 0; border-left: 4px solid var(--accent); padding: 1.25rem; background-color: var(--bg-secondary); border-radius: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); position: relative; cursor: pointer;"
-      onclick={handleClick}
-      role="button"
-      tabindex="0"
-      onkeydown={(e) => e.key === 'Enter' && handleClick()}
-      title="Click to search for this book passage"
+      class="book-passage-not-found" 
+      style="margin: 1.5rem 0; padding: 0.75rem; color: var(--text-secondary); font-style: italic; font-size: 0.9rem;"
     >
-      <!-- Bible Gateway link (top-right) - one link for entire wikilink with all references and versions -->
+      Passage not found on Nostr relays
       {#if bgUrl}
         <a 
           href={bgUrl} 
           target="_blank" 
           rel="noopener noreferrer"
-          class="bible-gateway-link"
-          style="position: absolute; top: 0.75rem; right: 0.75rem; text-decoration: none; color: var(--accent); font-size: 1.25rem; transition: opacity 0.2s;"
-          title="View on Bible Gateway"
+          style="margin-left: 0.5rem; color: var(--accent); text-decoration: underline;"
         >
-          🔗
+          View on Bible Gateway
         </a>
       {/if}
-
-      <!-- All references -->
-      {#each parsedReference.references as ref (ref.title + (ref.chapter || '') + (ref.section?.join(',') || ''))}
-        <div class="book-passage-fallback-item" style="margin-bottom: 0.75rem; padding: 0.75rem; background-color: var(--bg-primary); border-radius: 0.375rem;">
-          <!-- Passage reference (human-readable) -->
-          <div class="passage-reference" style="font-weight: 600; font-size: 1rem; color: var(--text-primary); line-height: 1.4;">
-            {capitalizeWords(ref.title)}
-            {#if ref.chapter}
-              {ref.chapter}
-              {#if ref.section && ref.section.length > 0}
-                :{ref.section.length === 1 ? ref.section[0] : `${ref.section[0]}-${ref.section[ref.section.length - 1]}`}
-              {/if}
-            {/if}
-            {#if ref.version && ref.version.length > 0}
-              <span style="font-weight: 400; color: var(--text-secondary); font-size: 0.9em; margin-left: 0.5rem;">
-                ({ref.version.map((v: string) => v.toUpperCase()).join(', ')})
-              </span>
-            {/if}
-          </div>
-        </div>
-      {/each}
-
-      <!-- Loading or not found message -->
-      <div class="passage-status" style="color: var(--text-secondary); font-style: italic; font-size: 0.95rem; margin-top: 0.5rem;">
-        {#if loading}
-          <span style="display: inline-block; animation: pulse 2s ease-in-out infinite;">Loading passage...</span>
-        {:else}
-          Passage not found on Nostr relays
-        {/if}
-      </div>
-    </div>
-  {:else}
-    <div class="book-passage-loading" style="padding: 1rem; text-align: center; color: var(--text-secondary);">
-      Loading passages...
     </div>
   {/if}
 {:else if error}
@@ -711,7 +681,7 @@
             onclick={(e) => openEvent(event, e)}
             role="button"
             tabindex="0"
-            onkeydown={(e) => e.key === 'Enter' && openEvent(event, e)}
+            onkeydown={(e) => e.key === 'Enter' && openEvent(event, undefined)}
             title="Click to open this passage in a new panel"
           >
             {reference.title}
@@ -744,12 +714,12 @@
     opacity: 0.7;
   }
 
-  @keyframes pulse {
-    0%, 100% {
-      opacity: 1;
+  @keyframes spin {
+    0% {
+      transform: rotate(0deg);
     }
-    50% {
-      opacity: 0.5;
+    100% {
+      transform: rotate(360deg);
     }
   }
 </style>

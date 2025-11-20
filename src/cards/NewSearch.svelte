@@ -161,7 +161,7 @@ import UserBadge from '$components/UserBadge.svelte';
       bind:value={query}
       class="block w-full sm:text-sm border rounded-l-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-offset-2"
       style="font-family: {theme.typography.fontFamily}; background-color: var(--bg-primary); color: var(--text-primary); border-color: var(--border); --tw-ring-color: var(--accent);"
-      placeholder="article name, search term, or book:type:reference"
+      placeholder="article name, search term, or book::reference"
     />
   </div>
   <button

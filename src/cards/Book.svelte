@@ -13,8 +13,6 @@
   import { addUniqueTaggedReplaceable, getTagOr, next, unique, formatRelativeTime } from '$lib/utils';
   import { relayService } from '$lib/relayService';
   import { 
-    parseBookWikilink, 
-    generateBookSearchQuery, 
     isBookEvent, 
     extractBookMetadata, 
     generateBookTitle,
@@ -23,6 +21,43 @@
     type BookEvent,
     BOOK_TYPES
   } from '$lib/books';
+  
+  // Helper to extract sections directly from event tags (not from metadata.verse string)
+  function extractEventSections(event: BookEvent): string[] {
+    // Check for NKBIP-08 format first
+    const sectionTags = event.tags.filter(([tag]) => tag === 's').map(([, value]) => value);
+    if (sectionTags.length > 0) {
+      return sectionTags;
+    }
+    
+    // Fall back to old format
+    const verseTag = event.tags.find(([tag]) => tag === 'verse');
+    if (verseTag && verseTag[1]) {
+      // Expand verse string to sections
+      const sections: string[] = [];
+      const parts = verseTag[1].split(',').map(p => p.trim());
+      
+      for (const part of parts) {
+        if (part.includes('-')) {
+          // It's a range
+          const [start, end] = part.split('-').map(s => parseInt(s.trim(), 10));
+          if (!isNaN(start) && !isNaN(end) && start <= end) {
+            for (let i = start; i <= end; i++) {
+              sections.push(i.toString());
+            }
+          } else {
+            sections.push(part);
+          }
+        } else {
+          sections.push(part);
+        }
+      }
+      
+      return sections;
+    }
+    
+    return [];
+  }
   import { parseBookWikilink as parseBookWikilinkNKBIP08, type ParsedBookReference } from '$lib/bookWikilinkParser';
   import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
@@ -62,10 +97,10 @@
     }
     
     if (queryToParse.match(/^\[\[book::/)) {
-      // New NKBIP-08 format: parse with NKBIP-08 parser
+      // NKBIP-08 format: parse with NKBIP-08 parser
       const parsed = parseBookWikilinkNKBIP08(queryToParse);
       if (parsed && parsed.references.length > 0) {
-        // Convert NKBIP-08 format to legacy format for compatibility
+        // Convert NKBIP-08 format to BookReference format
         const references: BookReference[] = parsed.references.map(ref => ({
           book: ref.title,
           chapter: ref.chapter ? parseInt(ref.chapter, 10) : undefined,
@@ -79,10 +114,13 @@
         if (parsed.references[0]?.collection) {
           bookCard.bookType = parsed.references[0].collection;
         }
+        console.log('Book: Parsed query successfully:', { query, queryToParse, parsed, parsedQuery });
+      } else {
+        console.warn('Book: Parser returned no references for query:', query, 'parsed as:', queryToParse, 'result:', parsed);
       }
     } else {
-      // Legacy format: use old parser
-      parsedQuery = parseBookWikilink(query, bookCard.bookType);
+      // Invalid format - query must start with book::
+      console.warn('Book query must use book:: format, got:', query);
     }
   });
 
@@ -108,7 +146,10 @@
   }
 
   async function performBookSearch() {
-    if (!parsedQuery) return;
+    if (!parsedQuery) {
+      console.warn('Book: Cannot perform search, parsedQuery is null. Query was:', query);
+      return;
+    }
 
     // cancel existing subscriptions and zero variables
     destroy();
@@ -138,11 +179,21 @@
         console.log(`Book: Found ${bookCachedEvents.length} cached book events, filtering...`);
         
         // Filter cached events that match our book query criteria
+        let matchedCount = 0;
+        let rejectedCount = 0;
         for (const cached of bookCachedEvents) {
           const evt = cached.event as BookEvent;
           
           // Check if this event matches our book criteria
-          if (isBookEvent(evt, bookCard.bookType) && matchesBookQuery(evt, parsedQuery!)) {
+          const isBook = isBookEvent(evt, bookCard.bookType);
+          if (!isBook) {
+            rejectedCount++;
+            continue;
+          }
+          
+          const matches = matchesBookQuery(evt, parsedQuery!);
+          if (matches) {
+            matchedCount++;
             // Track which relays returned this event
             cached.relays.forEach(relay => {
               if (!seenCache[evt.id]) seenCache[evt.id] = [];
@@ -152,8 +203,20 @@
             });
             
             if (addUniqueTaggedReplaceable(results, evt)) update();
+          } else {
+            rejectedCount++;
+            // Debug: log why events are being rejected
+            const metadata = extractBookMetadata(evt);
+            console.log('Book: Event rejected:', {
+              id: evt.id.slice(0, 8),
+              metadata,
+              query: parsedQuery,
+              tags: evt.tags.filter(([t]) => ['C', 'T', 'c', 's', 'v'].includes(t))
+            });
           }
         }
+        
+        console.log(`Book: Cache filtering complete - matched: ${matchedCount}, rejected: ${rejectedCount}, total cached: ${bookCachedEvents.length}`);
         
         if (results.length > 0) {
           console.log(`Book: Found ${results.length} matching events in cache`);
@@ -165,9 +228,13 @@
       console.error('Book: Failed to check cache:', error);
     }
 
-    setTimeout(() => {
-      tried = true;
-    }, 1500);
+    // Don't set a timeout if we already have cache results - they'll set tried = true
+    // Only set timeout if we have no cache results yet
+    if (results.length === 0) {
+      setTimeout(() => {
+        tried = true;
+      }, 3000); // Increased timeout to allow relay queries to complete
+    }
 
     const relaysFromPreferredAuthors = unique(
       (await Promise.all(([]).map((pk) => loadRelayList(pk))))
@@ -209,7 +276,7 @@
           limit: 25
         };
         
-        // C tag: collection (e.g., "bible")
+        // C tag: collection (e.g., "bible") - only include if collection is specified
         if (bookCard.bookType) {
           filter['#C'] = [bookCard.bookType];
         }
@@ -217,6 +284,7 @@
         // T tag: title/book name (normalized using NIP-54)
         if (ref.book) {
           // Normalize book name using NIP-54 rules: lowercase, replace non-alphanumeric with hyphens
+          // The parser already normalized it, but we normalize again to ensure consistency
           const normalizedBook = normalizeIdentifier(ref.book);
           filter['#T'] = [normalizedBook];
         }
@@ -227,10 +295,52 @@
         }
         
         // s tag: section/verse
+        // Limit expansion to avoid "too many tags" errors from relays
+        // Most relays have limits around 20-30 tags per filter
         if (ref.verse) {
-          // Handle verse ranges and multiple verses
-          const verses = ref.verse.split(/[,\s]+/).filter(v => v.trim());
-          filter['#s'] = verses;
+          // Expand verse ranges to individual sections (e.g., "2-4" -> ["2", "3", "4"])
+          const expandVerseToSections = (verse: string, maxSections: number = 20): string[] => {
+            const sections: string[] = [];
+            const parts = verse.split(',').map(p => p.trim());
+            
+            for (const part of parts) {
+              if (sections.length >= maxSections) {
+                // Stop expanding if we hit the limit
+                break;
+              }
+              
+              if (part.includes('-')) {
+                // It's a range
+                const [start, end] = part.split('-').map(s => parseInt(s.trim(), 10));
+                if (!isNaN(start) && !isNaN(end) && start <= end) {
+                  // Limit range expansion to avoid too many tags
+                  const rangeLimit = Math.min(end, start + (maxSections - sections.length) - 1);
+                  for (let i = start; i <= rangeLimit && sections.length < maxSections; i++) {
+                    sections.push(i.toString());
+                  }
+                } else {
+                  // Invalid range, just add as-is
+                  if (sections.length < maxSections) {
+                    sections.push(part);
+                  }
+                }
+              } else {
+                // Single section
+                if (sections.length < maxSections) {
+                  sections.push(part);
+                }
+              }
+            }
+            
+            return sections;
+          };
+          
+          const verses = expandVerseToSections(ref.verse);
+          // Only add section filter if we have sections (and not too many)
+          if (verses.length > 0 && verses.length <= 20) {
+            filter['#s'] = verses;
+          }
+          // If we have too many sections, omit the section filter and filter client-side
         }
         
         // v tag: version
@@ -244,6 +354,7 @@
       }
       
       // Use relayService for book search with tag filters
+      // Note: Some relays may not support all NKBIP-08 tags, so errors are expected
       try {
         const result = await relayService.queryEvents(
           'anonymous',
@@ -263,7 +374,9 @@
           }
         }
       } catch (error) {
-        console.error('Failed to search for books:', error);
+        // Some relays may reject filters with certain tags - this is expected
+        // We'll still get results from cache and other relays that support the tags
+        console.warn('Book search: Some relays rejected the query (this is normal for relays that don\'t support NKBIP-08 tags):', error);
       }
     });
 
@@ -304,7 +417,7 @@
         limit: 25
       };
       
-      // C tag: collection (e.g., "bible")
+      // C tag: collection (e.g., "bible") - only include if collection is specified
       if (bookCard.bookType) {
         filter['#C'] = [bookCard.bookType];
       }
@@ -321,9 +434,51 @@
       }
       
       // s tag: section/verse
+      // Limit expansion to avoid "too many tags" errors from relays
       if (ref.verse) {
-        const verses = ref.verse.split(/[,\s]+/).filter(v => v.trim());
-        filter['#s'] = verses;
+        // Expand verse ranges to individual sections (e.g., "2-4" -> ["2", "3", "4"])
+        const expandVerseToSections = (verse: string, maxSections: number = 20): string[] => {
+          const sections: string[] = [];
+          const parts = verse.split(',').map(p => p.trim());
+          
+          for (const part of parts) {
+            if (sections.length >= maxSections) {
+              // Stop expanding if we hit the limit
+              break;
+            }
+            
+            if (part.includes('-')) {
+              // It's a range
+              const [start, end] = part.split('-').map(s => parseInt(s.trim(), 10));
+              if (!isNaN(start) && !isNaN(end) && start <= end) {
+                // Limit range expansion to avoid too many tags
+                const rangeLimit = Math.min(end, start + (maxSections - sections.length) - 1);
+                for (let i = start; i <= rangeLimit && sections.length < maxSections; i++) {
+                  sections.push(i.toString());
+                }
+              } else {
+                // Invalid range, just add as-is
+                if (sections.length < maxSections) {
+                  sections.push(part);
+                }
+              }
+            } else {
+              // Single section
+              if (sections.length < maxSections) {
+                sections.push(part);
+              }
+            }
+          }
+          
+          return sections;
+        };
+        
+        const verses = expandVerseToSections(ref.verse);
+        // Only add section filter if we have sections (and not too many)
+        if (verses.length > 0 && verses.length <= 20) {
+          filter['#s'] = verses;
+        }
+        // If we have too many sections, omit the section filter and filter client-side
       }
       
       // No v tag - search all versions
@@ -365,29 +520,85 @@
     }
   }
 
-  function matchesBookQuery(event: BookEvent, query: { references: BookReference[], version?: string }): boolean {
+  function matchesBookQuery(event: BookEvent, query: { references: BookReference[], version?: string, versions?: string[] }): boolean {
     const metadata = extractBookMetadata(event);
     
     // If a specific version is requested, check if this event matches that version
-    if (query.version && metadata.version) {
-      if (metadata.version.toLowerCase() !== query.version.toLowerCase()) {
-        return false; // Version doesn't match
+    // Support both singular 'version' and plural 'versions' from parsed query
+    const requestedVersions = query.versions || (query.version ? [query.version] : []);
+    if (requestedVersions.length > 0 && metadata.version) {
+      const queryVersions = requestedVersions.map(v => v.toLowerCase());
+      const eventVersions = metadata.version.toLowerCase().split(/\s+/);
+      const hasMatchingVersion = queryVersions.some(qv => eventVersions.includes(qv));
+      if (!hasMatchingVersion) {
+        return false; // No version matches
       }
     }
     
+    // Normalize book names for comparison (both should already be normalized, but ensure consistency)
+    const normalizeBookName = (name: string) => normalizeIdentifier(name).toLowerCase();
+    
     // Check if any of the references match
     for (const ref of query.references) {
-      if (metadata.book && ref.book.toLowerCase() === metadata.book.toLowerCase()) {
-        if (ref.chapter && metadata.chapter && ref.chapter.toString() === metadata.chapter) {
-          if (ref.verse && metadata.verse) {
-            // Check if verses match (this is a simplified check)
-            return metadata.verse.includes(ref.verse) || ref.verse.includes(metadata.verse);
+      if (!metadata.book) continue;
+      
+      // Normalize both sides for comparison
+      const normalizedQueryBook = normalizeBookName(ref.book);
+      const normalizedEventBook = normalizeBookName(metadata.book);
+      
+      if (normalizedQueryBook !== normalizedEventBook) {
+        continue; // Book doesn't match
+      }
+      
+      // Book matches - check chapter
+      if (ref.chapter) {
+        if (!metadata.chapter || ref.chapter.toString() !== metadata.chapter) {
+          continue; // Chapter doesn't match
+        }
+        
+        // Chapter matches - check verse/section
+        if (ref.verse) {
+          // Expand verse ranges properly (e.g., "2-4" -> ["2", "3", "4"])
+          const expandVerseToSections = (verse: string): string[] => {
+            const sections: string[] = [];
+            const parts = verse.split(',').map(p => p.trim());
+            
+            for (const part of parts) {
+              if (part.includes('-')) {
+                // It's a range
+                const [start, end] = part.split('-').map(s => parseInt(s.trim(), 10));
+                if (!isNaN(start) && !isNaN(end) && start <= end) {
+                  for (let i = start; i <= end; i++) {
+                    sections.push(i.toString());
+                  }
+                } else {
+                  // Invalid range, just add as-is
+                  sections.push(part);
+                }
+              } else {
+                // Single section
+                sections.push(part);
+              }
+            }
+            
+            return sections;
+          };
+          
+          const querySections = expandVerseToSections(ref.verse);
+          // Extract sections directly from event tags (more reliable than metadata.verse)
+          const eventSections = extractEventSections(event);
+          
+          // Check if any query section matches any event section
+          const hasMatchingSection = querySections.some(qs => eventSections.includes(qs));
+          if (!hasMatchingSection) {
+            continue; // No section matches
           }
-          return true; // Chapter matches
         }
-        if (!ref.chapter) {
-          return true; // Just book matches
-        }
+        // Chapter matches (and verse matches if specified)
+        return true;
+      } else {
+        // Just book matches (no chapter specified)
+        return true;
       }
     }
     
@@ -519,59 +730,7 @@
   </div>
 </div>
 
-{#if !tried && results.length === 0}
-  <!-- Book Search Instructions -->
-  <div class="px-4 py-6 bg-brown-200 border border-brown-300 rounded-lg mt-4">
-    <h3 class="text-lg font-semibold text-espresso-900 mb-3">📖 {bookTypeDisplayName} Search</h3>
-    <div class="text-sm text-espresso-800 space-y-2">
-      <p><strong>Search for {bookTypeDisplayName.toLowerCase()} passages using standard notation:</strong></p>
-      <div class="p-3 rounded border border-brown-300 font-mono text-xs space-y-1" style="background-color: var(--theme-bg);">
-        {#each getExamples() as example}
-          <div>{example}</div>
-        {/each}
-      </div>
-      <p><strong>Supported formats:</strong></p>
-      <ul class="text-xs text-espresso-700 ml-4 space-y-1">
-        {#if bookCard.bookType === 'quran'}
-          <li>• Single verse: <code>Al-Fatiha 1</code></li>
-          <li>• Surah: <code>Al-Fatiha</code></li>
-          <li>• Verse range: <code>Al-Fatiha 1-7</code></li>
-          <li>• Multiple verses: <code>Al-Fatiha 1,3,5</code></li>
-          <li>• With version: <code>Al-Fatiha 1-7 | SAHIH</code></li>
-          <li>• Multiple versions: <code>Al-Fatiha 1-7 | SAHIH PICKTHALL</code></li>
-        {:else if bookCard.bookType === 'catechism'}
-          <li>• Single article: <code>Article 1:1</code></li>
-          <li>• Part: <code>Part I</code></li>
-          <li>• Article range: <code>Article 1:1-5</code></li>
-          <li>• With version: <code>Article 1:1 | CCC</code></li>
-          <li>• Multiple versions: <code>Article 1:1 | CCC YOUCAT</code></li>
-        {:else}
-          <li>• Single verse: <code>John 3:16</code></li>
-          <li>• Chapter: <code>John 3</code></li>
-          <li>• Book: <code>John</code></li>
-          <li>• Verse range: <code>John 3:16-18</code></li>
-          <li>• Multiple verses: <code>John 3:16,18</code></li>
-          <li>• With version: <code>John 3:16 | KJV</code></li>
-          <li>• Multiple references: <code>Romans 1:16-25; Psalm 19:2-3</code></li>
-          <li>• Multiple versions: <code>Romans 1:16-25 | KJV DRB</code></li>
-        {/if}
-      </ul>
-      <p class="text-xs text-espresso-600 mt-2">
-        Use abbreviations where available. Case and whitespace are flexible: <code>john3:16</code> works the same as <code>John 3:16</code>
-      </p>
-      {#if bookCard.bookType === 'bible'}
-        <p class="text-xs text-espresso-600 mt-2">
-          <strong>Compare Bible versions:</strong> Use <code>diff::</code> prefix in the main search bar:
-        </p>
-        <div class="p-3 rounded border border-brown-300 font-mono text-xs mt-1" style="background-color: var(--theme-bg);">
-          <div>diff::John 3:16 KJV | NIV</div>
-          <div>diff::bible:Romans 1:16 KJV | ESV</div>
-          <div>diff::Psalm 23:1 KJV | DRB</div>
-        </div>
-      {/if}
-    </div>
-  </div>
-{:else if tried && results.length === 0 && !versionNotFound}
+{#if tried && results.length === 0 && !versionNotFound}
   <div class="mt-4 text-gray-500 italic">
     No {bookTypeDisplayName.toLowerCase()} passages found for "{query}"
   </div>
@@ -643,9 +802,11 @@
       </div>
     {/each}
   </div>
-{:else if !tried}
+{:else if !tried && parsedQuery}
+  <!-- Show loading state while searching -->
   <div class="mt-4 text-gray-500 italic">
-    Searching for {bookTypeDisplayName.toLowerCase()} passages...
+    <div style="display: inline-block; width: 20px; height: 20px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; margin-right: 0.5rem; vertical-align: middle;"></div>
+    <span>Searching for {bookTypeDisplayName.toLowerCase()} passages...</span>
   </div>
 {/if}
 
@@ -656,5 +817,14 @@
     line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+  
+  @keyframes spin {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
   }
 </style>

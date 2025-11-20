@@ -18,8 +18,6 @@
   import EmbeddedEvent from './EmbeddedEvent.svelte';
   import BookSearch from './BookSearch.svelte';
   import { parseBookWikilink } from '$lib/books';
-  import BookPassageGroup from './BookPassageGroup.svelte';
-  import { mount, unmount } from 'svelte';
 
   interface Props {
     event: NostrEvent;
@@ -43,8 +41,6 @@
   let embeddedEvents = $state<Array<{id: string, bech32: string, type: 'nevent' | 'note' | 'naddr'}>>([]);
   let bookSearchResults = $state<Array<{id: string, query: string, results: any[], bookType?: string}>>([]);
   let readInsteadData = $state<Array<{id: string, naddr: string, pubkey: string, identifier: string, displayName: string}>>([]);
-  let bookstrPassages = $state<Array<{id: string, content: string}>>([]);
-  let mountedBookstrComponents = new Map<string, any>();
 
   // Global functions for dynamically generated HTML
   function handleProfileAvatarClick(pubkey: string) {
@@ -732,6 +728,55 @@
   async function postprocessHtml(html: string): Promise<string> {
     let processed = html;
     
+    // First, fix any existing anchor tags that might have been processed by Asciidoctor
+    // but have incorrect hrefs (missing book:: prefix or wrong format)
+    // This handles cases where Asciidoctor processed link:wikilink:book::... but stripped the prefix
+    processed = processed.replace(/<a\s+([^>]*href=["'])([^"']*)(["'][^>]*)>([^<]*)<\/a>/g, (match, beforeHref, href, afterHref, linkText) => {
+      // If the link text looks like a book reference but href doesn't have book::, fix it
+      if (linkText.match(/^\w+\s+\d+:\d+/) && !href.includes('book::') && !href.startsWith('wikilink:')) {
+        // This might be a book link that Asciidoctor processed incorrectly
+        // Try to reconstruct the book:: query from the link text
+        // But for now, just ensure wikilink: prefix is preserved
+        return match; // Keep as is for now
+      }
+      return match;
+    });
+    
+    // Convert plain text link:wikilink: patterns to actual anchor tags
+    // AsciiDoc might not convert these, so we need to do it manually
+    // Pattern: link:wikilink:identifier[display text]
+    // First, handle links with display text - be more permissive with the identifier pattern
+    processed = processed.replace(/link:wikilink:([^\[]+)\[([^\]]+)\]/g, (match, identifier, displayText) => {
+      // Escape HTML in display text
+      const escapedDisplay = displayText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      // Ensure the identifier is preserved exactly, including book:: prefix
+      // Store the full identifier in a data attribute as backup
+      const dataAttr = identifier.startsWith('book::') ? ` data-book="${identifier.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"` : '';
+      return `<a href="wikilink:${identifier}"${dataAttr} class="wikilink" style="color: var(--accent); text-decoration: underline; cursor: pointer;">${escapedDisplay}</a>`;
+    });
+    
+    // Then handle links without display text: link:wikilink:identifier
+    // Only match if not already inside an anchor tag (check for <a> before and </a> after)
+    processed = processed.replace(/link:wikilink:([^\s<>"'\]]+)/g, (match, identifier, offset, string) => {
+      // Check if we're inside an anchor tag by looking backwards and forwards
+      const before = string.substring(Math.max(0, offset - 100), offset);
+      const after = string.substring(offset + match.length, Math.min(string.length, offset + match.length + 100));
+      
+      // If we find an unclosed <a> tag before, or a </a> after without a matching <a>, skip
+      const lastOpenA = before.lastIndexOf('<a');
+      const lastCloseA = before.lastIndexOf('</a>');
+      const nextCloseA = after.indexOf('</a>');
+      
+      // If there's an open <a> tag before us that hasn't been closed, we're inside a link
+      if (lastOpenA > lastCloseA) {
+        return match; // Don't replace, we're inside an anchor tag
+      }
+      
+      // Escape identifier for display
+      const escapedId = identifier.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return `<a href="wikilink:${identifier}" class="wikilink" style="color: var(--accent); text-decoration: underline; cursor: pointer;">${escapedId}</a>`;
+    });
+    
     // Process Nostr links in the HTML output
     processed = await processNostrLinks(processed);
     
@@ -1171,9 +1216,8 @@
     
     htmlContent = renderedHtml;
     
-    // Mount bookstr components and setup TOC after a delay
+    // Setup TOC after a delay
     setTimeout(() => {
-      mountBookstrComponents();
       setupCollapsibleTOC();
     }, 100);
     
@@ -1273,9 +1317,8 @@
       authorPreferredWikiAuthors = ps.items;
     });
 
-    // Clear previous read instead data and bookstr passages
+    // Clear previous read instead data
     readInsteadData = [];
-    bookstrPassages = [];
 
     // Handle different event kinds
     // 30040: Publication Index - fetch and render referenced events
@@ -1330,32 +1373,7 @@
     
     html = await postprocessHtml(html);
     
-    // Find bookstr placeholder divs that were created by preprocessContentForAsciidoc
-    // They might be escaped, so check both escaped and unescaped versions
-    const placeholderRegex = /<div class="bookstr-placeholder"[^>]*data-bookstr-id="([^"]+)"[^>]*data-bookstr-content="([^"]+)"[^>]*><\/div>/g;
-    let match;
-    while ((match = placeholderRegex.exec(html)) !== null) {
-      const [, id, content] = match;
-      bookstrPassages.push({
-        id,
-        content: content.replace(/&quot;/g, '"')
-      });
-    }
-    
-    // Also check for HTML-escaped versions
-    const escapedRegex = /&lt;div class="bookstr-placeholder"[^&]*data-bookstr-id="([^"]+)"[^&]*data-bookstr-content="([^"]+)"[^&]*&gt;&lt;\/div&gt;/g;
-    while ((match = escapedRegex.exec(html)) !== null) {
-      const [, id, content] = match;
-      bookstrPassages.push({
-        id,
-        content: content.replace(/&quot;/g, '"')
-      });
-    }
-    
-    
-    // Replace placeholders with markers that we can find in the DOM
-    html = html.replace(/<div class="bookstr-placeholder"[^>]*data-bookstr-id="([^"]+)"[^>]*><\/div>/g, 
-      '<div data-bookstr-id="$1" class="bookstr-marker"></div>');
+    // Bookstr wikilinks are now converted to regular AsciiDoc links, so no need to process placeholders
     
     htmlContent = html;
     
@@ -1363,21 +1381,11 @@
     setTimeout(() => {
       applySyntaxHighlighting();
       renderLatexExpressions();
-      mountBookstrComponents();
       setupCollapsibleTOC();
       styleAdmonitionContent();
     }, 100);
   });
 
-  // Cleanup mounted components on destroy
-  onDestroy(() => {
-    mountedBookstrComponents.forEach((instance) => {
-      if (instance) {
-        unmount(instance);
-      }
-    });
-    mountedBookstrComponents.clear();
-  });
 
   // Setup collapsible TOC with button
   // Ensure admonition icons and titles are visible and properly styled
@@ -1596,69 +1604,6 @@
   }
   
   // Mount BookPassageGroup components at marker locations
-  function mountBookstrComponents() {
-    if (!contentDiv) {
-      return;
-    }
-    
-    // Find all bookstr markers in the rendered HTML
-    const markers = contentDiv.querySelectorAll('[data-bookstr-id]');
-    
-    if (markers.length === 0 && bookstrPassages.length > 0) {
-      // Try again after a delay
-      setTimeout(() => {
-        const retryMarkers = contentDiv.querySelectorAll('[data-bookstr-id]');
-        if (retryMarkers.length > 0) {
-          mountBookstrComponents();
-        }
-      }, 200);
-      return;
-    }
-    
-    markers.forEach((marker) => {
-      const markerElement = marker as HTMLElement;
-      const bookstrId = markerElement.getAttribute('data-bookstr-id');
-      if (!bookstrId) {
-        return;
-      }
-      
-      // Find the corresponding passage data
-      const passage = bookstrPassages.find(p => p.id === bookstrId);
-      if (!passage) {
-        return;
-      }
-      
-      // Skip if already mounted
-      if (mountedBookstrComponents.has(bookstrId)) {
-        return;
-      }
-      
-      // Create a container to replace the marker
-      const container = document.createElement('div');
-      container.className = 'bookstr-component-container';
-      
-      // Replace marker with container
-      markerElement.parentNode?.replaceChild(container, markerElement);
-      
-      try {
-        // Mount the BookPassageGroup component
-        const instance = mount(BookPassageGroup, {
-          target: container,
-          props: {
-            bookstrContent: passage.content,
-            createChild: createChild,
-            relayHints: relayHints
-          }
-        });
-        
-        // Store the instance for cleanup
-        mountedBookstrComponents.set(bookstrId, instance);
-      } catch (error) {
-        console.error(`mountBookstrComponents: Error mounting ${bookstrId}:`, error);
-      }
-    });
-  }
-  
   // Track clicked links to prevent duplicate card creation
   const clickedLinks = new Set<string>();
 
@@ -1673,7 +1618,22 @@
         clickEvent.preventDefault();
         clickEvent.stopPropagation();
         
-        const identifier = href.replace('wikilink:', '');
+        let identifier = href.replace('wikilink:', '');
+        
+        // If identifier doesn't start with book:: but the link text looks like a book reference,
+        // try to reconstruct it from the link text or data attributes
+        if (!identifier.startsWith('book::')) {
+          const linkText = target.textContent || '';
+          const dataBook = target.getAttribute('data-book');
+          if (dataBook) {
+            identifier = `book::${dataBook}`;
+          } else if (linkText.match(/^\w+\s+\d+:\d+/)) {
+            // Looks like a book reference but missing book:: prefix
+            // This shouldn't happen, but handle it gracefully
+            console.warn('Book link missing book:: prefix, href:', href, 'text:', linkText);
+          }
+        }
+        
         const linkKey = `wikilink:${identifier}`;
         
         // Prevent duplicate card creation
@@ -1687,11 +1647,11 @@
         
         // Check if this is a book:: wikilink - route to BookCard instead
         if (identifier.startsWith('book::')) {
-          const bookQuery = identifier.substring(6); // Remove "book::" prefix
+          // Keep the full book:: prefix in the query
           createChild({
             id: next(),
             type: 'book',
-            data: bookQuery
+            data: identifier
           } as any);
         } else {
           createChild({
@@ -1700,17 +1660,6 @@
             data: identifier,
             preferredAuthors: [event.pubkey, ...authorPreferredWikiAuthors]
           } as any);
-        }
-      } else if (href?.startsWith('book:')) {
-        clickEvent.preventDefault();
-        const bookQuery = href.replace('book:', '');
-        const parts = bookQuery.split(':');
-        if (parts.length >= 2) {
-          const bookType = parts[0];
-          const query = parts.slice(1).join(':');
-          addBookSearch(query, bookType);
-        } else {
-          addBookSearch(bookQuery);
         }
       } else if (href?.startsWith('#nostr-')) {
         // Handle our special nostr anchor links

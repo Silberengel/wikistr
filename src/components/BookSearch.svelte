@@ -14,8 +14,7 @@
   import { relayService } from '$lib/relayService';
   import { contentCache } from '$lib/contentCache';
   import { 
-    parseBookWikilink, 
-    generateBookSearchQuery, 
+    generateBookSearchQuery,
     isBookEvent, 
     extractBookMetadata, 
     generateBookTitle,
@@ -59,10 +58,10 @@
     }
     
     if (queryToParse.match(/^\[\[book::/)) {
-      // New NKBIP-08 format: parse with NKBIP-08 parser
+      // NKBIP-08 format: parse with NKBIP-08 parser
       const parsed = parseBookWikilinkNKBIP08(queryToParse);
       if (parsed && parsed.references.length > 0) {
-        // Convert NKBIP-08 format to legacy format for compatibility
+        // Convert NKBIP-08 format to BookReference format
         const references: BookReference[] = parsed.references.map(ref => ({
           book: ref.title,
           chapter: ref.chapter ? parseInt(ref.chapter, 10) : undefined,
@@ -79,11 +78,8 @@
         performBookSearch();
       }
     } else {
-      // Legacy format: use old parser
-      parsedQuery = parseBookWikilink(query, bookType);
-      if (parsedQuery) {
-        performBookSearch();
-      }
+      // Invalid format - query must start with book::
+      console.warn('Book query must use book:: format, got:', query);
     }
   });
 
