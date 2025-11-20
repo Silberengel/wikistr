@@ -1523,6 +1523,7 @@
     button.textContent = 'Table Of Contents';
     button.className = 'toc-toggle-button';
     button.style.cssText = `
+      margin-top: 1rem;
       margin-bottom: 1rem;
       padding: 0.5rem 1rem;
       background-color: var(--bg-secondary);

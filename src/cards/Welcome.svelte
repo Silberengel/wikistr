@@ -55,13 +55,13 @@
   });
 
   /**
-   * Build feed from cache - filter out non-wiki events
+   * Build feed from cache - only show 30817 and 30818 events with valid d-tags
    */
   function buildFeedFromCache(): void {
     const allCachedEvents = contentCache.getEvents('wiki');
     
-    // Only include actual wiki article kinds
-    const wikiKinds = [30818, 30817, 30040, 30041, 30023];
+    // Only include wiki article kinds 30817 and 30818
+    const wikiKinds = [30817, 30818];
     
     // Valid d-tag pattern: only alphanumeric and hyphens (no spaces, underscores, or special symbols)
     const validDTagPattern = /^[a-zA-Z0-9-]+$/;
@@ -72,37 +72,28 @@
     for (const cached of allCachedEvents) {
       const event = cached.event;
       
-      // Only process wiki article kinds
+      // Only process 30817 and 30818 events
       if (!wikiKinds.includes(event.kind)) {
         continue;
       }
       
-      const isReplaceable = event.kind === 30818 || event.kind === 30817 || event.kind === 30023 || event.kind === 30041 || event.kind === 1111;
-      
-      if (isReplaceable) {
-        const dTag = event.tags.find(([t]) => t === 'd')?.[1];
-        if (dTag) {
-          // Skip events with invalid d-tags (contains spaces, special symbols, etc.)
-          if (!validDTagPattern.test(dTag)) {
-            continue;
-          }
-          
-          const aTag = `${event.kind}:${event.pubkey}:${dTag}`;
-          const existing = deduplicated.get(aTag);
-          if (!existing || (event.created_at || 0) > (existing.created_at || 0)) {
-            deduplicated.set(aTag, event);
-          }
-          continue;
-        } else {
-          // Skip replaceable events without d-tags
-          continue;
-        }
+      // Both 30817 and 30818 are replaceable and require d-tags
+      const dTag = event.tags.find(([t]) => t === 'd')?.[1];
+      if (!dTag) {
+        // Skip events without d-tags
+        continue;
       }
       
-      // For non-replaceable events, use event.id
-      const existing = deduplicated.get(event.id);
-      if (!existing) {
-        deduplicated.set(event.id, event);
+      // Skip events with invalid d-tags (contains spaces, special symbols, etc.)
+      if (!validDTagPattern.test(dTag)) {
+        continue;
+      }
+      
+      // Deduplicate by a-tag, keeping only the newest
+      const aTag = `${event.kind}:${event.pubkey}:${dTag}`;
+      const existing = deduplicated.get(aTag);
+      if (!existing || (event.created_at || 0) > (existing.created_at || 0)) {
+        deduplicated.set(aTag, event);
       }
     }
     

@@ -1033,10 +1033,10 @@
   /* Code block buttons - compact icon buttons */
   .code-wrap-btn,
   .code-copy-btn {
-    @apply rounded border focus:outline-none;
+    @apply rounded focus:outline-none;
     background-color: var(--bg-secondary) !important;
     color: var(--text-primary) !important;
-    border-color: var(--border) !important;
+    border: none !important;
     transition: all 0.2s ease !important;
     opacity: 0.9 !important;
     padding: 0 !important;
@@ -1084,14 +1084,12 @@
   .code-copy-btn:hover {
     opacity: 1 !important;
     color: var(--accent) !important;
-    border-color: var(--accent) !important;
   }
 
   .code-wrap-btn:active,
   .code-copy-btn:active {
     background-color: var(--accent) !important;
     color: var(--bg-primary) !important;
-    border-color: var(--accent) !important;
   }
 
   /* LaTeX Styling */
