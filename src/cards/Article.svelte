@@ -20,6 +20,15 @@
   import Comments from '$components/Comments.svelte';
   import { nip19 } from '@nostr/tools';
   import { cards } from '$lib/state';
+  import {
+    downloadAsMarkdown,
+    downloadAsAsciiDoc,
+    downloadAsPDF,
+    downloadAsEPUB,
+    downloadBookAsAsciiDoc,
+    downloadBookAsPDF,
+    downloadBookAsEPUB
+  } from '$lib/articleDownload';
 
   interface Props {
     card: Card;
@@ -51,6 +60,8 @@
   let rawJsonWordWrap = $state(true); // Word-wrap ON by default
   let rawJsonCopied = $state(false);
   let asciidocCopied = $state(false);
+  let showDownloadMenu = $state(false);
+  let isDownloading = $state(false);
 
   const articleCard = card as ArticleCard;
   const dTag = articleCard.data[0];
@@ -749,8 +760,173 @@
       </div>
       
       <div class="flex-1">
-        <div class="font-bold text-4xl mb-4" style="font-family: {theme.typography.fontFamilyHeading};">
-          {title || dTag}
+        <div class="flex items-center justify-between mb-4">
+          <div class="font-bold text-4xl" style="font-family: {theme.typography.fontFamilyHeading};">
+            {title || dTag}
+          </div>
+          {#if event}
+            <div class="relative">
+              <button
+                onclick={() => showDownloadMenu = !showDownloadMenu}
+                class="p-2 rounded-lg transition-colors hover:bg-gray-200 dark:hover:bg-gray-700"
+                style="color: var(--text-secondary);"
+                title="Download options"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path>
+                </svg>
+              </button>
+              {#if showDownloadMenu}
+                <div
+                  class="absolute right-0 mt-2 w-48 rounded-lg shadow-lg z-50"
+                  style="background-color: var(--bg-primary); border: 1px solid var(--border);"
+                  onclick={(e) => e.stopPropagation()}
+                >
+                  <div class="py-1">
+                    {#if event.kind === 30040}
+                      <!-- Book (30040) - download with all branches and leaves -->
+                      <button
+                        onclick={async () => {
+                          showDownloadMenu = false;
+                          isDownloading = true;
+                          try {
+                            await downloadBookAsAsciiDoc(event);
+                          } catch (error) {
+                            alert('Failed to download book. Make sure all content events are available.');
+                          } finally {
+                            isDownloading = false;
+                          }
+                        }}
+                        disabled={isDownloading}
+                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                        style="color: var(--text-primary);"
+                      >
+                        {#if isDownloading}
+                          ⏳ Fetching book content...
+                        {:else}
+                          📝 Download as AsciiDoc (with all branches & leaves)
+                        {/if}
+                      </button>
+                      <button
+                        onclick={async () => {
+                          showDownloadMenu = false;
+                          isDownloading = true;
+                          try {
+                            await downloadBookAsPDF(event);
+                          } catch (error) {
+                            alert('Failed to download book PDF. Make sure the AsciiDoctor server is running and all content events are available.');
+                          } finally {
+                            isDownloading = false;
+                          }
+                        }}
+                        disabled={isDownloading}
+                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                        style="color: var(--text-primary);"
+                      >
+                        {#if isDownloading}
+                          ⏳ Generating PDF...
+                        {:else}
+                          📕 Download as PDF (with all branches & leaves)
+                        {/if}
+                      </button>
+                      <button
+                        onclick={async () => {
+                          showDownloadMenu = false;
+                          isDownloading = true;
+                          try {
+                            await downloadBookAsEPUB(event);
+                          } catch (error) {
+                            alert('Failed to download book EPUB. Make sure the AsciiDoctor server is running and all content events are available.');
+                          } finally {
+                            isDownloading = false;
+                          }
+                        }}
+                        disabled={isDownloading}
+                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                        style="color: var(--text-primary);"
+                      >
+                        {#if isDownloading}
+                          ⏳ Generating EPUB...
+                        {:else}
+                          📚 Download as EPUB (with all branches & leaves)
+                        {/if}
+                      </button>
+                    {:else}
+                      <!-- Regular articles -->
+                      {#if event.kind === 30023 || event.kind === 30817}
+                        <button
+                          onclick={async () => {
+                            showDownloadMenu = false;
+                            downloadAsMarkdown(event);
+                          }}
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          style="color: var(--text-primary);"
+                        >
+                          📄 Download as Markdown
+                        </button>
+                      {/if}
+                      {#if event.kind === 30023 || event.kind === 30817 || event.kind === 30818 || event.kind === 30041}
+                        <button
+                          onclick={async () => {
+                            showDownloadMenu = false;
+                            downloadAsAsciiDoc(event);
+                          }}
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          style="color: var(--text-primary);"
+                        >
+                          📝 Download as AsciiDoc
+                        </button>
+                      {/if}
+                      <button
+                        onclick={async () => {
+                          showDownloadMenu = false;
+                          isDownloading = true;
+                          try {
+                            await downloadAsPDF(event);
+                          } catch (error) {
+                            alert('Failed to download PDF. Make sure the AsciiDoctor server is running.');
+                          } finally {
+                            isDownloading = false;
+                          }
+                        }}
+                        disabled={isDownloading}
+                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                        style="color: var(--text-primary);"
+                      >
+                        {#if isDownloading}
+                          ⏳ Generating PDF...
+                        {:else}
+                          📕 Download as PDF
+                        {/if}
+                      </button>
+                      <button
+                        onclick={async () => {
+                          showDownloadMenu = false;
+                          isDownloading = true;
+                          try {
+                            await downloadAsEPUB(event);
+                          } catch (error) {
+                            alert('Failed to download EPUB. Make sure the AsciiDoctor server is running.');
+                          } finally {
+                            isDownloading = false;
+                          }
+                        }}
+                        disabled={isDownloading}
+                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                        style="color: var(--text-primary);"
+                      >
+                        {#if isDownloading}
+                          ⏳ Generating EPUB...
+                        {:else}
+                          📚 Download as EPUB
+                        {/if}
+                      </button>
+                    {/if}
+                  </div>
+                </div>
+              {/if}
+            </div>
+          {/if}
         </div>
         <div class="flex items-center space-x-3 mb-4">
           <UserBadge pubkey={event.pubkey} {createChild} onProfileClick={handleProfileClick} size="small" hideSearchIcon={false} />
@@ -910,6 +1086,14 @@
 
   {/if}
 </div>
+
+<!-- Click outside to close download menu -->
+{#if showDownloadMenu}
+  <div
+    class="fixed inset-0 z-40"
+    onclick={() => showDownloadMenu = false}
+  ></div>
+{/if}
 
 <!-- Profile Popup -->
 <ProfilePopup 

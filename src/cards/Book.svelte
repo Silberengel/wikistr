@@ -22,6 +22,16 @@ import {
   } from '$lib/books';
 import { highlightedBookCardId } from '$lib/bookSearchLauncher';
 import { openOrCreateArticleCard } from '$lib/articleLauncher';
+import {
+  downloadBookAsAsciiDoc,
+  downloadBookAsPDF,
+  downloadBookAsEPUB
+} from '$lib/articleDownload';
+import {
+  downloadBookAsAsciiDoc,
+  downloadBookAsPDF,
+  downloadBookAsEPUB
+} from '$lib/articleDownload';
   
   // Helper to check if event is a bible event
   function isBibleEvent(event: BookEvent): boolean {
@@ -89,6 +99,8 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
   let referenceOgLoading = $state<Map<string, boolean>>(new Map());
   let referenceOgErrors = $state<Map<string, string | null>>(new Map());
   const bibleGatewayUrlForQuery = $derived.by(() => (bookCard.bookType === 'bible' && parsedQuery ? generateBibleGatewayUrl(parsedQuery) : null));
+  let showDownloadMenu = $state(false);
+  let isDownloading = $state(false);
 
   const bookCard = card as BookCard;
 
@@ -1420,31 +1432,77 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
 </script>
 
 <div class="mt-2 font-bold text-4xl" style="font-family: var(--font-family-heading);">
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div
-    class="cursor-text"
-    onclick={startEditing}
-    onkeydown={preventKeys}
-    role="textbox"
-    tabindex="0"
-  >
-    {#if editable}
-      <input
-        bind:value={query}
-        class="bg-transparent border-none outline-none w-full text-4xl font-bold"
-        onblur={finishedEditing}
-        onkeydown={preventKeys}
-      />
-    {:else}
-      {readableQuery}
-      {#if requestedVersionsLabel}
-        <div class="text-xs font-semibold text-gray-500 uppercase tracking-[0.3em]" style="letter-spacing: 0.1em; margin-top: 0.35rem;">
-          {requestedVersionsLabel}
-        </div>
+  <div class="flex items-center justify-between">
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="cursor-text flex-1"
+      onclick={startEditing}
+      onkeydown={preventKeys}
+      role="textbox"
+      tabindex="0"
+    >
+      {#if editable}
+        <input
+          bind:value={query}
+          class="bg-transparent border-none outline-none w-full text-4xl font-bold"
+          onblur={finishedEditing}
+          onkeydown={preventKeys}
+        />
+      {:else}
+        {readableQuery}
+        {#if requestedVersionsLabel}
+          <div class="text-xs font-semibold text-gray-500 uppercase tracking-[0.3em]" style="letter-spacing: 0.1em; margin-top: 0.35rem;">
+            {requestedVersionsLabel}
+          </div>
+        {/if}
       {/if}
+    </div>
+    {#if results.length > 0}
+      <div class="relative ml-4">
+        <button
+          onclick={() => showDownloadMenu = !showDownloadMenu}
+          class="p-2 rounded-lg transition-colors hover:bg-gray-200 dark:hover:bg-gray-700"
+          style="color: var(--text-secondary);"
+          title="Download options"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path>
+          </svg>
+        </button>
+        {#if showDownloadMenu}
+          <div
+            class="absolute right-0 mt-2 w-64 rounded-lg shadow-lg z-50"
+            style="background-color: var(--bg-primary); border: 1px solid var(--border);"
+            onclick={(e) => e.stopPropagation()}
+          >
+            <div class="py-1">
+              <div class="px-4 py-2 text-xs font-semibold" style="color: var(--text-secondary);">
+                Download search results
+              </div>
+              <button
+                onclick={async () => {
+                  showDownloadMenu = false;
+                  // For now, just show a message - we'd need to combine all results
+                  alert('Combining all search results into a single document is not yet implemented. Please download individual passages from the article view.');
+                }}
+                class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                style="color: var(--text-primary);"
+              >
+                📚 Download all results as EPUB
+              </button>
+            </div>
+          </div>
+        {/if}
+      </div>
     {/if}
   </div>
 </div>
+{#if showDownloadMenu}
+  <div
+    class="fixed inset-0 z-40"
+    onclick={() => showDownloadMenu = false}
+  ></div>
+{/if}
 
 <!-- Retry button at top of results pane -->
 {#if tried || results.length > 0}
