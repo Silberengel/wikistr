@@ -11,24 +11,32 @@ services:
     build:
       context: ..
       dockerfile: deployment/Dockerfile.wikistr
+      args:
+        VITE_OG_PROXY_URL: ${VITE_OG_PROXY_URL:-/sites/}
     image: silberengel/wikistr:v4.2-wikistr
 
   biblestr:
     build:
       context: ..
       dockerfile: deployment/Dockerfile.biblestr
+      args:
+        VITE_OG_PROXY_URL: ${VITE_OG_PROXY_URL:-/sites/}
     image: silberengel/wikistr:v4.2-biblestr
 
   quranstr:
     build:
       context: ..
       dockerfile: deployment/Dockerfile.quranstr
+      args:
+        VITE_OG_PROXY_URL: ${VITE_OG_PROXY_URL:-/sites/}
     image: silberengel/wikistr:v4.2-quranstr
 
   torahstr:
     build:
       context: ..
       dockerfile: deployment/Dockerfile.torahstr
+      args:
+        VITE_OG_PROXY_URL: ${VITE_OG_PROXY_URL:-/sites/}
     image: silberengel/wikistr:v4.2-torahstr
 
   og-proxy:

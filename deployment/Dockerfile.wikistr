@@ -18,6 +18,9 @@ COPY src/app.wikistr.html src/app.html
 
 # Set theme environment variable for dark theme
 ENV THEME=wikistr
+# Set OG proxy URL (defaults to /sites/ for production, can be overridden at build time)
+ARG VITE_OG_PROXY_URL=/sites/
+ENV VITE_OG_PROXY_URL=${VITE_OG_PROXY_URL}
 
 # Build the application
 RUN npm run build

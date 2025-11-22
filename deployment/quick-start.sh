@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Quick start script for Wikistr v3.0
+# Quick start script for Wikistr v4.2
 set -e
 
 # Colors for output
@@ -10,7 +10,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}🚀 Wikistr v3.0 Quick Start${NC}"
+echo -e "${GREEN}🚀 Wikistr v4.2 Quick Start${NC}"
 echo
 
 # Check if Docker is running
