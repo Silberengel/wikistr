@@ -26,7 +26,7 @@ fi
 
 # Stop and remove existing containers if they exist
 echo -e "${BLUE}🧹 Cleaning up existing containers...${NC}"
-for container in wikistr biblestr quranstr torahstr og-proxy; do
+for container in wikistr biblestr quranstr torahstr og-proxy asciidoctor; do
     if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
         echo -e "  Stopping and removing ${container}..."
         docker stop "${container}" > /dev/null 2>&1 || true
@@ -68,6 +68,22 @@ docker run -d \
   node deployment/proxy-server.js
 echo -e "  ${GREEN}✓${NC} og-proxy running on http://localhost:8090"
 
+# AsciiDoctor Server on port 8091
+echo -e "  Deploying asciidoctor on port 8091..."
+# Check if image exists, if not build it
+if ! docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "silberengel/wikistr:latest-asciidoctor"; then
+    echo -e "    Building asciidoctor image..."
+    docker build -f "${PARENT_DIR}/deployment/Dockerfile.asciidoctor" -t silberengel/wikistr:latest-asciidoctor "${PARENT_DIR}"
+fi
+docker run -d \
+  --name asciidoctor \
+  --network ${NETWORK_NAME} \
+  -p 8091:8091 \
+  -e ASCIIDOCTOR_PORT=8091 \
+  -e ASCIIDOCTOR_ALLOW_ORIGIN="*" \
+  silberengel/wikistr:latest-asciidoctor
+echo -e "  ${GREEN}✓${NC} asciidoctor running on http://localhost:8091"
+
 # Wikistr on port 8080
 echo -e "  Deploying wikistr on port 8080..."
 docker run -d --name wikistr --network ${NETWORK_NAME} -p 8080:80 silberengel/wikistr:latest-wikistr
@@ -97,6 +113,7 @@ echo -e "  • Biblestr: http://localhost:8081"
 echo -e "  • Quranstr: http://localhost:8082"
 echo -e "  • Torahstr: http://localhost:8083"
 echo -e "  • OG Proxy: http://localhost:8090"
+echo -e "  • AsciiDoctor: http://localhost:8091"
 echo
 echo -e "${BLUE}💡 Management commands:${NC}"
 echo -e "  # View logs"
@@ -105,12 +122,13 @@ echo -e "  docker logs -f biblestr"
 echo -e "  docker logs -f quranstr"
 echo -e "  docker logs -f torahstr"
 echo -e "  docker logs -f og-proxy"
+echo -e "  docker logs -f asciidoctor"
 echo
 echo -e "  # Stop all"
-echo -e "  docker stop wikistr biblestr quranstr torahstr og-proxy"
+echo -e "  docker stop wikistr biblestr quranstr torahstr og-proxy asciidoctor"
 echo
 echo -e "  # Remove all"
-echo -e "  docker rm wikistr biblestr quranstr torahstr og-proxy"
+echo -e "  docker rm wikistr biblestr quranstr torahstr og-proxy asciidoctor"
 echo
 echo -e "${GREEN}🎉 Deployment complete!${NC}"
 

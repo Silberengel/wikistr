@@ -69,11 +69,19 @@ case $choice in
         echo -e "  # Torahstr"
         echo -e "  docker run -p 4080:80 silberengel/wikistr:latest-torahstr"
         echo
+        echo -e "  # OG Proxy"
+        echo -e "  docker run -p 8090:8090 -v \$(pwd)/..:/app:ro -w /app node:20-alpine node deployment/proxy-server.js"
+        echo
+        echo -e "  # AsciiDoctor Server"
+        echo -e "  docker run -p 8091:8091 -v \$(pwd)/..:/app:ro -w /app ruby:3.2-slim sh -c 'bundle install --gemfile=deployment/Gemfile && bundle exec ruby deployment/asciidoctor.rb'"
+        echo
         echo -e "${YELLOW}Access URLs:${NC}"
         echo -e "  - Wikistr: http://localhost:3000"
         echo -e "  - Biblestr: http://localhost:4000"
         echo -e "  - Quranstr: http://localhost:4050"
         echo -e "  - Torahstr: http://localhost:4080"
+        echo -e "  - OG Proxy: http://localhost:8090"
+        echo -e "  - AsciiDoctor Server: http://localhost:8091"
         ;;
     *)
         echo -e "${RED}❌ Invalid choice. Please run the script again.${NC}"

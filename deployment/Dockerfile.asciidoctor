@@ -1,0 +1,27 @@
+FROM ruby:3.2-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Gemfile and install dependencies
+COPY deployment/Gemfile deployment/Gemfile.lock* ./deployment/
+WORKDIR /app/deployment
+RUN bundle install --without development test
+
+# Copy server script
+COPY deployment/asciidoctor.rb ./
+
+# Expose port
+EXPOSE 8091
+
+# Set environment variables
+ENV ASCIIDOCTOR_PORT=8091
+ENV ASCIIDOCTOR_ALLOW_ORIGIN=*
+
+# Run the server
+CMD ["bundle", "exec", "ruby", "asciidoctor.rb"]
+

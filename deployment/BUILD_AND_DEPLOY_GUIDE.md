@@ -177,13 +177,32 @@ docker run -d \
 If containers already exist, stop and remove them first:
 ```bash
 # Stop and remove existing containers
-docker stop wikistr biblestr quranstr torahstr og-proxy
-docker rm wikistr biblestr quranstr torahstr og-proxy
+docker stop wikistr biblestr quranstr torahstr og-proxy asciidoctor
+docker rm wikistr biblestr quranstr torahstr og-proxy asciidoctor
 
 # Then run the new containers as shown above
 ```
 
 **Note**: The OG proxy container doesn't need version updates like the theme containers, but you may need to restart it if you update the `proxy-server.js` file or change environment variables.
+
+#### Deploy AsciiDoctor Server
+
+The AsciiDoctor server provides PDF and EPUB conversion services for AsciiDoc content. It runs in a Docker container using Ruby.
+
+```bash
+# Build the AsciiDoctor server image
+docker build -f deployment/Dockerfile.asciidoctor -t silberengel/wikistr:latest-asciidoctor .
+
+# Deploy AsciiDoctor server on port 8091
+docker run -d \
+  --name asciidoctor \
+  -p 8091:8091 \
+  -e ASCIIDOCTOR_PORT=8091 \
+  -e ASCIIDOCTOR_ALLOW_ORIGIN="https://*.imwald.eu" \
+  silberengel/wikistr:latest-asciidoctor
+```
+
+**Note**: The AsciiDoctor server is required for PDF/EPUB export functionality. Make sure to build the image first before deploying.
 
 #### Verify Deployment
 
@@ -237,13 +256,18 @@ Add the following configuration to each theme's SSL virtual host:
     ProxyPass /sites/ http://127.0.0.1:8090/sites/
     ProxyPassReverse /sites/ http://127.0.0.1:8090/sites/
     
+    # AsciiDoctor Server for PDF/EPUB conversion
+    # This proxies /asciidoctor/ requests to the AsciiDoctor server container
+    ProxyPass /asciidoctor/ http://127.0.0.1:8091/
+    ProxyPassReverse /asciidoctor/ http://127.0.0.1:8091/
+    
     # Headers for proper proxying
     Header always set X-Forwarded-Proto https
     Header always set X-Forwarded-Port 443
 </VirtualHost>
 ```
 
-**Important**: The `/sites/` proxy configuration must come **after** the main `ProxyPass /` directive, otherwise it won't work correctly.
+**Important**: The `/sites/` and `/asciidoctor/` proxy configurations must come **after** the main `ProxyPass /` directive, otherwise they won't work correctly.
 
 **Port Mappings for Each Application:**
 - **Wikistr**: `http://127.0.0.1:3000/`
@@ -281,6 +305,16 @@ The OG proxy service runs in a Docker container alongside the theme containers. 
 - Proxies requests to external sites (like BibleGateway) for OpenGraph metadata fetching
 
 The proxy is configured in `docker-compose.yml` for local development and must be deployed as a separate Docker container on the cloud server (see Cloud Deployment section above).
+
+#### AsciiDoctor Server Service
+
+The AsciiDoctor server runs in a Docker container alongside the theme containers. It's a Ruby service that:
+
+- Listens on port 8091 (configurable via `ASCIIDOCTOR_PORT` environment variable)
+- Handles CORS for `*.imwald.eu` domains (configurable via `ASCIIDOCTOR_ALLOW_ORIGIN`)
+- Provides PDF and EPUB conversion endpoints (`/convert/pdf` and `/convert/epub`)
+
+The server is configured in `docker-compose.yml` for local development and must be deployed as a separate Docker container on the cloud server. Build the image first using `Dockerfile.asciidoctor`.
 
 #### OG Proxy URL Configuration
 
@@ -434,6 +468,7 @@ curl http://localhost:4000  # biblestr
 curl http://localhost:4050  # quranstr
 curl http://localhost:4080  # torahstr
 curl http://localhost:8090  # og-proxy
+curl http://localhost:8091  # asciidoctor
 ```
 
 ## 🐛 Troubleshooting
