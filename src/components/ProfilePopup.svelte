@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { relayService } from '$lib/relayService';
   import { nip19 } from '@nostr/tools';
-  import { account } from '$lib/nostr';
+  import { account, signer } from '$lib/nostr';
   import { sendZap, fetchZapReceipts, fetchLNURLPay } from '$lib/zaps';
   import UserBadge from './UserBadge.svelte';
 
@@ -25,6 +25,9 @@
   let zapReceipts = $state<any[]>([]);
   let zapLoading = $state(false);
   let lnurlPayInfo = $state<{ allowsNostr?: boolean; nostrPubkey?: string } | null>(null);
+  let editing = $state(false);
+  let editFormData = $state<any>(null);
+  let saving = $state(false);
 
   // Detect if we're on mobile
   onMount(() => {
@@ -327,12 +330,13 @@
 
   // Verify NIP-05
   async function verifyNip05() {
-    if (!userData?.nip05 || nip05Verifying || nip05Verified || nip05RetryCount >= 2) return;
+    if (!userData || !userData.nip05 || nip05Verifying || nip05Verified || nip05RetryCount >= 2) return;
     
     nip05Verifying = true;
     nip05RetryCount++;
     
     try {
+      if (!userData || !userData.nip05) return;
       const [name, domain] = userData.nip05.split('@');
       
       // Validate domain exists and is not undefined
@@ -358,7 +362,12 @@
         const data = await response.json();
         const names = data.names || {};
         const wellKnownPubkey = names[name];
-        nip05Verified = wellKnownPubkey === userData.pubkey;
+        // Check userData is still valid after async operation
+        if (userData && userData.pubkey) {
+          nip05Verified = wellKnownPubkey === userData.pubkey;
+        } else {
+          nip05Verified = false;
+        }
       } else {
         nip05Verified = false;
       }
@@ -929,6 +938,180 @@
     return paytoTypes[normalized] || { long: type, short: type.toUpperCase(), symbol: '' };
   }
 
+  // Initialize edit form data
+  function initializeEditForm() {
+    if (!userData) return;
+    
+    editFormData = {
+      // Tag-based fields (single value)
+      display_name: userData.display_name || '',
+      name: userData.name || '',
+      about: userData.about || '',
+      picture: userData.picture || '',
+      banner: userData.banner || '',
+      // Tag-based fields (multi-value - only these three)
+      websites: userData.websites && userData.websites.length > 0 ? [...userData.websites] : [''],
+      nip05s: userData.nip05s && userData.nip05s.length > 0 ? [...userData.nip05s] : [''],
+      lud16s: userData.lud16s && userData.lud16s.length > 0 ? [...userData.lud16s] : [''],
+      // JSON content fields (single value)
+      json_display_name: userData.display_name || '',
+      json_name: userData.name || '',
+      json_about: userData.about || '',
+      json_picture: userData.picture || '',
+      json_banner: userData.banner || '',
+      json_website: userData.website || '',
+      json_nip05: userData.nip05 || '',
+      json_lud16: userData.lud16 || '',
+      // Bot tag
+      bot: userData.bot === true ? 'true' : (userData.bot === false ? 'false' : ''),
+      // Payto payment targets
+      payto: userData.payto && userData.payto.length > 0 
+        ? userData.payto.map((p: any) => ({ type: p.type, authority: p.authority }))
+        : [{ type: '', authority: '' }]
+    };
+  }
+
+  // Add a new entry to a multi-value field
+  function addFieldEntry(fieldName: string) {
+    if (!editFormData) return;
+    if (Array.isArray(editFormData[fieldName])) {
+      editFormData[fieldName] = [...editFormData[fieldName], ''];
+    }
+  }
+
+  // Remove an entry from a multi-value field
+  function removeFieldEntry(fieldName: string, index: number) {
+    if (!editFormData) return;
+    if (Array.isArray(editFormData[fieldName]) && editFormData[fieldName].length > 1) {
+      editFormData[fieldName] = editFormData[fieldName].filter((_: any, i: number) => i !== index);
+    }
+  }
+
+  // Add a new payto entry
+  function addPaytoEntry() {
+    if (!editFormData) return;
+    if (!Array.isArray(editFormData.payto)) {
+      editFormData.payto = [];
+    }
+    editFormData.payto = [...editFormData.payto, { type: '', authority: '' }];
+  }
+
+  // Remove a payto entry
+  function removePaytoEntry(index: number) {
+    if (!editFormData) return;
+    if (Array.isArray(editFormData.payto) && editFormData.payto.length > 1) {
+      editFormData.payto = editFormData.payto.filter((_: any, i: number) => i !== index);
+    }
+  }
+
+  // Save profile changes
+  async function saveProfile() {
+    if (!editFormData || !$account) return;
+    
+    saving = true;
+    try {
+      // Build tags for kind 0 event
+      const tags: string[][] = [];
+      
+      // Add tag-based fields (single value)
+      if (editFormData.display_name.trim()) {
+        tags.push(['display_name', editFormData.display_name.trim()]);
+      }
+      if (editFormData.name.trim()) {
+        tags.push(['name', editFormData.name.trim()]);
+      }
+      if (editFormData.about.trim()) {
+        tags.push(['about', editFormData.about.trim()]);
+      }
+      if (editFormData.picture.trim()) {
+        tags.push(['picture', editFormData.picture.trim()]);
+      }
+      if (editFormData.banner.trim()) {
+        tags.push(['banner', editFormData.banner.trim()]);
+      }
+      
+      // Add multi-value tag-based fields (only websites, nip05s, lud16s)
+      editFormData.websites.filter((v: string) => v.trim()).forEach((v: string) => {
+        tags.push(['website', v.trim()]);
+      });
+      editFormData.nip05s.filter((v: string) => v.trim()).forEach((v: string) => {
+        tags.push(['nip05', v.trim()]);
+      });
+      editFormData.lud16s.filter((v: string) => v.trim()).forEach((v: string) => {
+        tags.push(['lud16', v.trim()]);
+      });
+      
+      // Add bot tag if set
+      if (editFormData.bot === 'true' || editFormData.bot === 'false') {
+        tags.push(['bot', editFormData.bot]);
+      }
+      
+      // Build JSON content (single values only)
+      const jsonContent: any = {};
+      if (editFormData.json_display_name.trim()) jsonContent.display_name = editFormData.json_display_name.trim();
+      if (editFormData.json_name.trim()) jsonContent.name = editFormData.json_name.trim();
+      if (editFormData.json_about.trim()) jsonContent.about = editFormData.json_about.trim();
+      if (editFormData.json_picture.trim()) jsonContent.picture = editFormData.json_picture.trim();
+      if (editFormData.json_banner.trim()) jsonContent.banner = editFormData.json_banner.trim();
+      if (editFormData.json_website.trim()) jsonContent.website = editFormData.json_website.trim();
+      if (editFormData.json_nip05.trim()) jsonContent.nip05 = editFormData.json_nip05.trim();
+      if (editFormData.json_lud16.trim()) jsonContent.lud16 = editFormData.json_lud16.trim();
+      if (editFormData.bot === 'true' || editFormData.bot === 'false') {
+        jsonContent.bot = editFormData.bot === 'true';
+      }
+      
+      // Create kind 0 event
+      const kind0Event = await signer.signEvent({
+        kind: 0,
+        tags,
+        content: JSON.stringify(jsonContent),
+        created_at: Math.floor(Date.now() / 1000)
+      });
+      
+      // Publish kind 0 event (use social-write for profile metadata)
+      await relayService.publishEvent(
+        $account.pubkey,
+        'social-write',
+        kind0Event,
+        false
+      );
+      
+      // Create kind 10133 event for payto targets
+      const paytoTags: string[][] = [];
+      editFormData.payto.forEach((p: any) => {
+        if (p.type.trim() && p.authority.trim()) {
+          paytoTags.push(['payto', p.type.trim().toLowerCase(), p.authority.trim()]);
+        }
+      });
+      
+      if (paytoTags.length > 0) {
+        const kind10133Event = await signer.signEvent({
+          kind: 10133,
+          tags: paytoTags,
+          content: '',
+          created_at: Math.floor(Date.now() / 1000)
+        });
+        
+        // Publish kind 10133 event (use social-write for payment metadata)
+        await relayService.publishEvent(
+          $account.pubkey,
+          'social-write',
+          kind10133Event,
+          false
+        );
+      }
+      
+      // Refresh profile data
+      editing = false;
+      await fetchUserData();
+    } catch (error) {
+      console.error('Failed to save profile:', error);
+      alert(`Failed to save profile: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      saving = false;
+    }
+  }
+
   // Process links when userData changes
   $effect(() => {
     if (userData && aboutElement) {
@@ -975,16 +1158,31 @@
       <!-- Header -->
       <div class="flex items-center justify-between p-4" style="border-bottom: 1px solid var(--border);">
         <h3 class="text-lg font-semibold" style="color: var(--text-primary);">Profile</h3>
-        <button
-          onclick={onClose}
-          class="transition-colors hover:opacity-70"
-          style="color: var(--text-secondary);"
-          aria-label="Close profile"
-        >
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-          </svg>
-        </button>
+        <div class="flex items-center space-x-2">
+          {#if $account && userData && $account.pubkey === userData.pubkey && !editing}
+            <button
+              onclick={() => {
+                editing = true;
+                initializeEditForm();
+              }}
+              class="px-3 py-1 rounded text-sm transition-colors"
+              style="background-color: var(--accent); color: white;"
+              title="Edit profile"
+            >
+              Edit
+            </button>
+          {/if}
+          <button
+            onclick={onClose}
+            class="transition-colors hover:opacity-70"
+            style="color: var(--text-secondary);"
+            aria-label="Close profile"
+          >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
       <!-- Content -->
@@ -993,6 +1191,369 @@
           <div class="flex items-center justify-center py-8">
             <div class="w-8 h-8 border-4 rounded-full animate-spin" style="border-color: var(--border); border-top-color: var(--accent);"></div>
             <span class="ml-3" style="color: var(--text-secondary);">Loading profile...</span>
+          </div>
+        {:else if editing && editFormData}
+          <!-- Edit Form -->
+          <div class="space-y-4">
+            <div class="flex items-center justify-between mb-4">
+              <h4 class="text-lg font-semibold" style="color: var(--text-primary);">Edit Profile</h4>
+              <div class="flex items-center space-x-2">
+                <button
+                  onclick={() => {
+                    editing = false;
+                    editFormData = null;
+                  }}
+                  class="px-3 py-1 rounded text-sm transition-colors"
+                  style="background-color: var(--bg-secondary); color: var(--text-primary);"
+                >
+                  Cancel
+                </button>
+                <button
+                  onclick={saveProfile}
+                  disabled={saving}
+                  class="px-3 py-1 rounded text-sm transition-colors"
+                  style="background-color: var(--accent); color: white;"
+                >
+                  {saving ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+
+            <!-- Tag-based Fields (Single value) -->
+            <div class="space-y-4">
+              <h5 class="font-semibold" style="color: var(--text-primary);">Tag-based Fields (Single value)</h5>
+              
+              <!-- Display Name -->
+              <div>
+                <label for="edit-display-name" class="block text-sm font-medium mb-1" style="color: var(--text-primary);">Display Name</label>
+                <input
+                  id="edit-display-name"
+                  type="text"
+                  bind:value={editFormData.display_name}
+                  class="w-full px-3 py-2 rounded border"
+                  style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+                  placeholder="Display name"
+                />
+              </div>
+
+              <!-- Name -->
+              <div>
+                <label for="edit-name" class="block text-sm font-medium mb-1" style="color: var(--text-primary);">Name</label>
+                <input
+                  id="edit-name"
+                  type="text"
+                  bind:value={editFormData.name}
+                  class="w-full px-3 py-2 rounded border"
+                  style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+                  placeholder="Name"
+                />
+              </div>
+
+              <!-- About -->
+              <div>
+                <label for="edit-about" class="block text-sm font-medium mb-1" style="color: var(--text-primary);">About</label>
+                <textarea
+                  id="edit-about"
+                  bind:value={editFormData.about}
+                  class="w-full px-3 py-2 rounded border"
+                  style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+                  placeholder="About"
+                  rows="3"
+                ></textarea>
+              </div>
+
+              <!-- Picture -->
+              <div>
+                <label for="edit-picture" class="block text-sm font-medium mb-1" style="color: var(--text-primary);">Picture</label>
+                <input
+                  id="edit-picture"
+                  type="text"
+                  bind:value={editFormData.picture}
+                  class="w-full px-3 py-2 rounded border"
+                  style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+                  placeholder="Picture URL"
+                />
+              </div>
+
+              <!-- Banner -->
+              <div>
+                <label for="edit-banner" class="block text-sm font-medium mb-1" style="color: var(--text-primary);">Banner</label>
+                <input
+                  id="edit-banner"
+                  type="text"
+                  bind:value={editFormData.banner}
+                  class="w-full px-3 py-2 rounded border"
+                  style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+                  placeholder="Banner URL"
+                />
+              </div>
+
+              <!-- Bot Tag -->
+              <div>
+                <label for="edit-bot" class="block text-sm font-medium mb-1" style="color: var(--text-primary);">Bot</label>
+                <select
+                  id="edit-bot"
+                  bind:value={editFormData.bot}
+                  class="w-full px-3 py-2 rounded border"
+                  style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+                >
+                  <option value="">Not set</option>
+                  <option value="true">True</option>
+                  <option value="false">False</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Tag-based Fields (Multi-value) -->
+            <div class="space-y-4 mt-6 pt-4 border-t" style="border-color: var(--border);">
+              <h5 class="font-semibold" style="color: var(--text-primary);">Tag-based Fields (Multiple values allowed)</h5>
+              
+              <!-- Websites -->
+              <div>
+                <div class="block text-sm font-medium mb-1" style="color: var(--text-primary);">Websites</div>
+                {#each editFormData.websites as website, i}
+                  <div class="flex items-center space-x-2 mb-2">
+                    <label for="edit-website-{i}" class="sr-only">Website {i + 1}</label>
+                    <input
+                      id="edit-website-{i}"
+                      type="text"
+                      bind:value={editFormData.websites[i]}
+                      class="flex-1 px-3 py-2 rounded border"
+                      style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+                      placeholder="Website URL"
+                    />
+                    {#if editFormData.websites.length > 1}
+                      <button
+                        onclick={() => removeFieldEntry('websites', i)}
+                        class="px-2 py-1 rounded text-sm"
+                        style="background-color: var(--bg-tertiary); color: var(--text-secondary);"
+                      >
+                        ×
+                      </button>
+                    {/if}
+                  </div>
+                {/each}
+                <button
+                  onclick={() => addFieldEntry('websites')}
+                  class="mt-1 px-2 py-1 rounded text-sm"
+                  style="background-color: var(--bg-secondary); color: var(--accent);"
+                >
+                  + Add
+                </button>
+              </div>
+
+              <!-- NIP-05s -->
+              <div>
+                <div class="block text-sm font-medium mb-1" style="color: var(--text-primary);">NIP-05</div>
+                {#each editFormData.nip05s as nip05, i}
+                  <div class="flex items-center space-x-2 mb-2">
+                    <label for="edit-nip05-{i}" class="sr-only">NIP-05 {i + 1}</label>
+                    <input
+                      id="edit-nip05-{i}"
+                      type="text"
+                      bind:value={editFormData.nip05s[i]}
+                      class="flex-1 px-3 py-2 rounded border"
+                      style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+                      placeholder="user@domain.com"
+                    />
+                    {#if editFormData.nip05s.length > 1}
+                      <button
+                        onclick={() => removeFieldEntry('nip05s', i)}
+                        class="px-2 py-1 rounded text-sm"
+                        style="background-color: var(--bg-tertiary); color: var(--text-secondary);"
+                      >
+                        ×
+                      </button>
+                    {/if}
+                  </div>
+                {/each}
+                <button
+                  onclick={() => addFieldEntry('nip05s')}
+                  class="mt-1 px-2 py-1 rounded text-sm"
+                  style="background-color: var(--bg-secondary); color: var(--accent);"
+                >
+                  + Add
+                </button>
+              </div>
+
+              <!-- Lightning Addresses -->
+              <div>
+                <div class="block text-sm font-medium mb-1" style="color: var(--text-primary);">Lightning Addresses</div>
+                {#each editFormData.lud16s as lud16, i}
+                  <div class="flex items-center space-x-2 mb-2">
+                    <label for="edit-lud16-{i}" class="sr-only">Lightning Address {i + 1}</label>
+                    <input
+                      id="edit-lud16-{i}"
+                      type="text"
+                      bind:value={editFormData.lud16s[i]}
+                      class="flex-1 px-3 py-2 rounded border"
+                      style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+                      placeholder="user@domain.com"
+                    />
+                    {#if editFormData.lud16s.length > 1}
+                      <button
+                        onclick={() => removeFieldEntry('lud16s', i)}
+                        class="px-2 py-1 rounded text-sm"
+                        style="background-color: var(--bg-tertiary); color: var(--text-secondary);"
+                      >
+                        ×
+                      </button>
+                    {/if}
+                  </div>
+                {/each}
+                <button
+                  onclick={() => addFieldEntry('lud16s')}
+                  class="mt-1 px-2 py-1 rounded text-sm"
+                  style="background-color: var(--bg-secondary); color: var(--accent);"
+                >
+                  + Add
+                </button>
+              </div>
+            </div>
+
+            <!-- JSON Content Fields (Single value) -->
+            <div class="space-y-4 mt-6 pt-4 border-t" style="border-color: var(--border);">
+              <h5 class="font-semibold" style="color: var(--text-primary);">JSON Content Fields (Single value only)</h5>
+              
+              <div>
+                <label for="edit-json-display-name" class="block text-sm font-medium mb-1" style="color: var(--text-primary);">Display Name</label>
+                <input
+                  id="edit-json-display-name"
+                  type="text"
+                  bind:value={editFormData.json_display_name}
+                  class="w-full px-3 py-2 rounded border"
+                  style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+                  placeholder="Display name"
+                />
+              </div>
+
+              <div>
+                <label for="edit-json-name" class="block text-sm font-medium mb-1" style="color: var(--text-primary);">Name</label>
+                <input
+                  id="edit-json-name"
+                  type="text"
+                  bind:value={editFormData.json_name}
+                  class="w-full px-3 py-2 rounded border"
+                  style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+                  placeholder="Name"
+                />
+              </div>
+
+              <div>
+                <label for="edit-json-about" class="block text-sm font-medium mb-1" style="color: var(--text-primary);">About</label>
+                <textarea
+                  id="edit-json-about"
+                  bind:value={editFormData.json_about}
+                  class="w-full px-3 py-2 rounded border"
+                  style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+                  placeholder="About"
+                  rows="3"
+                ></textarea>
+              </div>
+
+              <div>
+                <label for="edit-json-picture" class="block text-sm font-medium mb-1" style="color: var(--text-primary);">Picture</label>
+                <input
+                  id="edit-json-picture"
+                  type="text"
+                  bind:value={editFormData.json_picture}
+                  class="w-full px-3 py-2 rounded border"
+                  style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+                  placeholder="Picture URL"
+                />
+              </div>
+
+              <div>
+                <label for="edit-json-banner" class="block text-sm font-medium mb-1" style="color: var(--text-primary);">Banner</label>
+                <input
+                  id="edit-json-banner"
+                  type="text"
+                  bind:value={editFormData.json_banner}
+                  class="w-full px-3 py-2 rounded border"
+                  style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+                  placeholder="Banner URL"
+                />
+              </div>
+
+              <div>
+                <label for="edit-json-website" class="block text-sm font-medium mb-1" style="color: var(--text-primary);">Website</label>
+                <input
+                  id="edit-json-website"
+                  type="text"
+                  bind:value={editFormData.json_website}
+                  class="w-full px-3 py-2 rounded border"
+                  style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+                  placeholder="Website URL"
+                />
+              </div>
+
+              <div>
+                <label for="edit-json-nip05" class="block text-sm font-medium mb-1" style="color: var(--text-primary);">NIP-05</label>
+                <input
+                  id="edit-json-nip05"
+                  type="text"
+                  bind:value={editFormData.json_nip05}
+                  class="w-full px-3 py-2 rounded border"
+                  style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+                  placeholder="user@domain.com"
+                />
+              </div>
+
+              <div>
+                <label for="edit-json-lud16" class="block text-sm font-medium mb-1" style="color: var(--text-primary);">Lightning Address</label>
+                <input
+                  id="edit-json-lud16"
+                  type="text"
+                  bind:value={editFormData.json_lud16}
+                  class="w-full px-3 py-2 rounded border"
+                  style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+                  placeholder="user@domain.com"
+                />
+              </div>
+            </div>
+
+            <!-- Payment Targets (Kind 10133) -->
+            <div class="space-y-4 mt-6 pt-4 border-t" style="border-color: var(--border);">
+              <h5 class="font-semibold" style="color: var(--text-primary);">Payment Methods (NIP-A3 payto)</h5>
+              {#each editFormData.payto as payto, i}
+                <div class="flex items-center space-x-2 mb-2">
+                  <label for="edit-payto-type-{i}" class="sr-only">Payment Type</label>
+                  <input
+                    id="edit-payto-type-{i}"
+                    type="text"
+                    bind:value={editFormData.payto[i].type}
+                    class="w-32 px-3 py-2 rounded border"
+                    style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+                    placeholder="Type (e.g., bitcoin)"
+                  />
+                  <label for="edit-payto-authority-{i}" class="sr-only">Payment Authority</label>
+                  <input
+                    id="edit-payto-authority-{i}"
+                    type="text"
+                    bind:value={editFormData.payto[i].authority}
+                    class="flex-1 px-3 py-2 rounded border"
+                    style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+                    placeholder="Address/Authority"
+                  />
+                  {#if editFormData.payto.length > 1}
+                    <button
+                      onclick={() => removePaytoEntry(i)}
+                      class="px-2 py-1 rounded text-sm"
+                      style="background-color: var(--bg-tertiary); color: var(--text-secondary);"
+                    >
+                      ×
+                    </button>
+                  {/if}
+                </div>
+              {/each}
+              <button
+                onclick={addPaytoEntry}
+                class="px-2 py-1 rounded text-sm"
+                style="background-color: var(--bg-secondary); color: var(--accent);"
+              >
+                + Add Payment Method
+              </button>
+            </div>
           </div>
         {:else if userData}
           <!-- Profile Picture and Name -->
@@ -1104,9 +1665,9 @@
                     >
                       {nip05}
                     </button>
-                    {#if nip05 === userData.nip05 && nip05Verifying && !nip05Verified}
+                    {#if userData && nip05 === userData.nip05 && nip05Verifying && !nip05Verified}
                       <div class="w-4 h-4 border-2 rounded-full animate-spin" style="border-color: var(--border); border-top-color: var(--accent);"></div>
-                    {:else if nip05 === userData.nip05 && nip05Verified}
+                    {:else if userData && nip05 === userData.nip05 && nip05Verified}
                       <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" style="color: #10b981;">
                         <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
                       </svg>
