@@ -644,42 +644,12 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
 
   onMount(() => {
     query = bookCard.data;
-    // Check if query is in new NKBIP-08 format (with or without brackets)
-    let queryToParse = query;
-    if (query.startsWith('book::')) {
-      // Search bar format: book::... (no brackets)
-      queryToParse = `[[${query}]]`; // Add brackets for parser
-    } else if (query.match(/^\[\[book::/)) {
-      // Wikilink format: [[book::...]] (already has brackets)
-      queryToParse = query;
-    }
-    
-    if (queryToParse.match(/^\[\[book::/)) {
-      // NKBIP-08 format: parse with NKBIP-08 parser
-      const parsed = parseBookWikilinkNKBIP08(queryToParse);
-      if (parsed && parsed.references.length > 0) {
-        // Convert NKBIP-08 format to BookReference format
-        const references: DisplayReference[] = parsed.references.map(ref => ({
-          book: ref.title,
-          chapter: ref.chapter ? parseInt(ref.chapter, 10) : undefined,
-          verse: ref.section ? (ref.section.length === 1 ? ref.section[0] : ref.section.join(',')) : undefined,
-          sections: ref.section
-        }));
-        parsedQuery = {
-          references,
-          versions: parsed.references[0]?.version || []
-        };
-        // Extract bookType from first reference if available
-        if (parsed.references[0]?.collection) {
-          bookCard.bookType = parsed.references[0].collection;
-        }
-        console.log('Book: Parsed query successfully:', { query, queryToParse, parsed, parsedQuery });
-      } else {
-        console.warn('Book: Parser returned no references for query:', query, 'parsed as:', queryToParse, 'result:', parsed);
-      }
+    // Parse the query using the shared function
+    const parsed = parseQueryString(query);
+    if (parsed) {
+      console.log('Book: Parsed query successfully:', { query, parsedQuery });
     } else {
-      // Invalid format - query must start with book::
-      console.warn('Book query must use book:: format, got:', query);
+      console.warn('Book: Parser returned no references for query:', query);
     }
   });
 
@@ -1322,12 +1292,54 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
     }
   }
 
+  // Parse the query and update parsedQuery
+  function parseQueryString(queryStr: string) {
+    let queryToParse = queryStr;
+    if (queryStr.startsWith('book::')) {
+      // Search bar format: book::... (no brackets)
+      queryToParse = `[[${queryStr}]]`; // Add brackets for parser
+    } else if (queryStr.match(/^\[\[book::/)) {
+      // Wikilink format: [[book::...]] (already has brackets)
+      queryToParse = queryStr;
+    }
+    
+    if (queryToParse.match(/^\[\[book::/)) {
+      // NKBIP-08 format: parse with NKBIP-08 parser
+      const parsed = parseBookWikilinkNKBIP08(queryToParse);
+      if (parsed && parsed.references.length > 0) {
+        // Convert NKBIP-08 format to BookReference format
+        const references: DisplayReference[] = parsed.references.map(ref => ({
+          book: ref.title,
+          chapter: ref.chapter ? parseInt(ref.chapter, 10) : undefined,
+          verse: ref.section ? (ref.section.length === 1 ? ref.section[0] : ref.section.join(',')) : undefined,
+          sections: ref.section
+        }));
+        parsedQuery = {
+          references,
+          versions: parsed.references[0]?.version || []
+        };
+        // Extract bookType from first reference if available
+        if (parsed.references[0]?.collection) {
+          bookCard.bookType = parsed.references[0].collection;
+        }
+        return true;
+      }
+    }
+    
+    // If parsing fails, set parsedQuery to null
+    parsedQuery = null;
+    return false;
+  }
+
   function finishedEditing() {
     if (!editable) return;
 
     editable = false;
     query = query.replace(/[\r\n]/g, '').trim();
     if (query !== bookCard.data) {
+      // Parse the new query to update parsedQuery
+      parseQueryString(query);
+      
       // replace browser url and history
       let index = $cards.findIndex((t) => t.id === card.id);
       let replacementURL = page.url.pathname.split('/').slice(1);
@@ -1340,7 +1352,7 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
       bookCard.data = query;
       bookCard.results = undefined;
 
-      // redo the query
+      // redo the query (parsedQuery is already updated synchronously by parseQueryString)
       debouncedPerformBookSearch();
     }
   }
