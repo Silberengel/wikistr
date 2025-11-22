@@ -11,7 +11,7 @@
   import { wot, userWikiRelays } from '$lib/nostr';
   import type { Card, BookCard, ArticleCard } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next, unique, formatRelativeTime } from '$lib/utils';
-import { relayService } from '$lib/relayService';
+  import { relayService } from '$lib/relayService';
 import {
     isBookEvent,
     extractBookMetadata,
@@ -21,7 +21,6 @@ import {
     BOOK_TYPES
   } from '$lib/books';
 import { highlightedBookCardId } from '$lib/bookSearchLauncher';
-import { fetchBibleGatewayOgFromUrl, generateBibleGatewayUrlFromQuery } from '$lib/bibleGateway';
   
   // Helper to check if event is a bible event
   function isBibleEvent(event: BookEvent): boolean {
@@ -166,16 +165,10 @@ import { fetchBibleGatewayOgFromUrl, generateBibleGatewayUrlFromQuery } from '$l
   let { card, replaceSelf, createChild }: Props = $props();
 
   let tried = $state(false);
+  let eosed = $state(0);
   let editable = $state(false);
   let versionNotFound = $state(false);
-let pendingOperations = $state(0);
-const loading = $derived.by(() => pendingOperations > 0);
-const showOgPreview = $derived.by(() => (results.length === 0 || versionNotFound) && (tried || loading || searchTimedOut));
-  let ogPreview = $state<{ title?: string; description?: string; image?: string } | null>(null);
-  let ogLoading = $state(false);
-  let ogError = $state<string | null>(null);
-  let ogLoadedQuery = $state('');
-  const bibleGatewayUrlForQuery = $derived.by(() => (query ? generateBibleGatewayUrlFromQuery(query) : null));
+  let fallbackResults: BookEvent[] = [];
 
   const bookCard = card as BookCard;
 
@@ -185,9 +178,6 @@ const showOgPreview = $derived.by(() => (results.length === 0 || versionNotFound
   type DisplayReference = BookReference & { sections?: string[] };
   let parsedQuery = $state<{ references: DisplayReference[], version?: string, versions?: string[] } | null>(null);
   let indexOrders = $state<Map<string, string[]>>(new Map());
-  const SEARCH_TIMEOUT_MS = 10000;
-  let searchTimedOut = $state(false);
-  let searchTimeoutId: ReturnType<typeof setTimeout> | null = null;
   
   // Helper to create a unique key for a book reference (book + chapter + section)
   function getReferenceKey(event: BookEvent): string {
@@ -197,14 +187,6 @@ const showOgPreview = $derived.by(() => (results.length === 0 || versionNotFound
     const sections = extractEventSections(event);
     const section = sections.length > 0 ? sections.sort((a, b) => parseInt(a) - parseInt(b)).join(',') : '';
     return `${book}:${chapter}:${section}`;
-  }
-
-  function beginOperation() {
-    pendingOperations = pendingOperations + 1;
-  }
-
-  function endOperation() {
-    pendingOperations = Math.max(pendingOperations - 1, 0);
   }
   
   // Helper to format verse range for header (e.g., "16-17,20")
@@ -299,21 +281,6 @@ const showOgPreview = $derived.by(() => (results.length === 0 || versionNotFound
 
   function extractIndexOrder(event: BookEvent): string[] {
     return event.tags.filter(([tag]) => tag === 'e').map(([, value]) => value).filter(Boolean);
-  }
-
-  function clearSearchTimeout() {
-    if (searchTimeoutId !== null) {
-      clearTimeout(searchTimeoutId);
-      searchTimeoutId = null;
-    }
-  }
-
-  function scheduleSearchTimeout() {
-    clearSearchTimeout();
-    searchTimedOut = false;
-    searchTimeoutId = setTimeout(() => {
-      searchTimedOut = true;
-    }, SEARCH_TIMEOUT_MS);
   }
   
   // Helper to get version preference score (higher = better)
@@ -644,7 +611,6 @@ const showOgPreview = $derived.by(() => (results.length === 0 || versionNotFound
   function destroy() {
     if (uwrcancel) uwrcancel();
     subs.forEach((sub) => sub.close());
-    clearSearchTimeout();
     // search operations are now handled by relayService
   }
 
@@ -719,22 +685,18 @@ const showOgPreview = $derived.by(() => (results.length === 0 || versionNotFound
       return;
     }
 
-    beginOperation();
-
     // cancel existing subscriptions and zero variables
     destroy();
     tried = false;
+    eosed = 0;
     results = [];
-    versionNotFound = false;
-    scheduleSearchTimeout();
+
     const update = debounce(() => {
       // Sort by book, chapter, section, version, then WOT score
       results = sortBookResults(results);
       seenCache = seenCache;
       refreshIndexOrders();
     }, 500);
-
-    try {
 
     // Check cache first before making relay queries
     try {
@@ -1043,17 +1005,98 @@ const showOgPreview = $derived.by(() => (results.length === 0 || versionNotFound
         console.warn('Book search: Some relays rejected the query (this is normal for relays that don\'t support NKBIP-08 tags):', error);
       }
     });
-    } finally {
-      tried = true;
-      const requestedVersionCount = (parsedQuery?.version ? 1 : 0) + (parsedQuery?.versions?.length ?? 0);
-      versionNotFound = requestedVersionCount > 0 && results.length === 0;
+
+    function oneose() {
+      eosed++;
+      if (eosed >= 2) {
+        tried = true;
+        
+        // If we were searching for a specific version and found no results, try fallback
+        const requestedVersionCount = (parsedQuery?.version ? 1 : 0) + (parsedQuery?.versions?.length ?? 0);
+        if (requestedVersionCount > 0 && results.length === 0) {
+          versionNotFound = true;
+          performFallbackSearch();
+        } else {
+          bookCard.results = results;
+          bookCard.seenCache = seenCache;
+          refreshIndexOrders();
+        }
+      }
+    }
+
+    function receivedEvent(relay: AbstractRelay, id: string) {
+      if (!(id in seenCache)) seenCache[id] = [];
+      if (seenCache[id].indexOf(relay.url) === -1) seenCache[id].push(relay.url);
+    }
+  }
+  async function performFallbackSearch() {
+    if (!parsedQuery) return;
+
+    // Create a new query without the version specification
+    const fallbackQuery = { references: parsedQuery.references, version: undefined, versions: undefined };
+    
+    // Build relay filters using only T and c tags (filter collection, section, version client-side)
+    const filters: any[] = [];
+    
+    for (const ref of fallbackQuery.references) {
+      const filter: any = {
+        kinds: [30040, 30041],
+        limit: 100 // Increase limit since we're filtering more client-side
+      };
+      
+      // Only use T (title) and c (chapter) tags in relay filter
+      // Filter collection, section, and version client-side
+      
+      // T tag: title/book name (normalized using NIP-54)
+      if (ref.book) {
+        const normalizedBook = normalizeIdentifier(ref.book);
+        filter['#T'] = [normalizedBook];
+      }
+      
+      // c tag: chapter
+      if (ref.chapter) {
+        filter['#c'] = [ref.chapter.toString()];
+      }
+      
+      // Don't include #C, #s, or #v in relay filter - filter client-side instead
+      
+      filters.push(filter);
+    }
+    
+    const fallbackUpdate = debounce(() => {
+      // Sort by book, chapter, section, version, then WOT score
+      fallbackResults = sortBookResults(fallbackResults);
+    }, 500);
+
+    // Use relayService for fallback search with tag filters
+    try {
+      const fallbackResult = await relayService.queryEvents(
+        'anonymous',
+        'wiki-read',
+        filters,
+        {
+          excludeUserContent: false,
+          currentUserPubkey: undefined
+        }
+      );
+
+      for (const evt of fallbackResult.events) {
+        // Check if this event matches our book criteria (without version restriction)
+        if (isBookEvent(evt as BookEvent, bookCard.bookType) && matchesBookQuery(evt as BookEvent, fallbackQuery)) {
+          if (addUniqueTaggedReplaceable(fallbackResults, evt)) fallbackUpdate();
+        }
+      }
+
+      // Update the main results with fallback results
+      results = fallbackResults;
       bookCard.results = results;
       bookCard.seenCache = seenCache;
       refreshIndexOrders();
-      clearSearchTimeout();
-      endOperation();
+    } catch (error) {
+      console.error('Failed to search for fallback books:', error);
     }
   }
+
   function matchesBookQuery(event: BookEvent, query: { references: BookReference[], version?: string, versions?: string[] }): boolean {
     const metadata = extractBookMetadata(event);
     
@@ -1139,43 +1182,6 @@ const showOgPreview = $derived.by(() => (results.length === 0 || versionNotFound
     return false;
   }
 
-  async function loadBibleGatewayPreview() {
-    const bibleGatewayUrl = generateBibleGatewayUrlFromQuery(query);
-    if (!bibleGatewayUrl) {
-      ogPreview = null;
-      ogError = null;
-      ogLoadedQuery = query;
-      return;
-    }
-
-    if (ogLoadedQuery === query || ogLoading) return;
-
-    ogLoading = true;
-    ogError = null;
-
-    try {
-      ogPreview = await fetchBibleGatewayOgFromUrl(bibleGatewayUrl);
-      ogLoadedQuery = query;
-    } catch (error) {
-      ogError = (error as Error).message;
-    } finally {
-      ogLoading = false;
-    }
-  }
-
-  $effect(() => {
-    if (query && ogLoadedQuery !== query) {
-      ogPreview = null;
-      ogError = null;
-    }
-  });
-
-  $effect(() => {
-    if (query && ogLoadedQuery !== query && !ogLoading) {
-      loadBibleGatewayPreview();
-    }
-  });
-
   function openBookEvent(result: BookEvent, ev?: MouseEvent) {
     const isMiddleClick = ev?.button === 1;
     const dTag = getTagOr(result, 'd') || result.id;
@@ -1250,20 +1256,15 @@ const showOgPreview = $derived.by(() => (results.length === 0 || versionNotFound
     return parts.length > 0 ? parts.join('; ') : query;
   });
 
-const requestedVersionsLabel = $derived.by(() => {
-  if (!parsedQuery?.versions || parsedQuery.versions.length === 0) return null;
-  const uniqueVersions = Array.from(new Set(parsedQuery.versions.map((v) => v.toLowerCase())));
-  if (uniqueVersions.length === 0) return null;
-  const displayNames = uniqueVersions.map((version) => {
-    return versionMap[version] || version.toUpperCase();
+  const requestedVersionsLabel = $derived.by(() => {
+    if (!parsedQuery?.versions || parsedQuery.versions.length === 0) return null;
+    const uniqueVersions = Array.from(new Set(parsedQuery.versions.map((v) => v.toLowerCase())));
+    if (uniqueVersions.length === 0) return null;
+    const displayNames = uniqueVersions.map((version) => {
+      return versionMap[version] || version.toUpperCase();
+    });
+    return displayNames.join(', ');
   });
-  return displayNames.join(', ');
-});
-const requestedVersionDescription = $derived.by(() => {
-  if (requestedVersionsLabel) return requestedVersionsLabel;
-  if (parsedQuery?.version) return parsedQuery.version.toUpperCase();
-  return 'selected version(s)';
-});
 
   // Get examples for the book type
   const getExamples = () => {
@@ -1323,85 +1324,28 @@ const requestedVersionDescription = $derived.by(() => {
   </div>
 </div>
 
-{#if loading && results.length === 0 && !searchTimedOut}
-  <div class="flex items-center gap-2 text-sm text-gray-500 mt-4">
-    <div class="book-search-spinner"></div>
-    Searching for {bookTypeDisplayName.toLowerCase()} passages...
+{#if tried && results.length === 0 && !versionNotFound}
+  <div class="mt-4 text-gray-500 italic">
+    No {bookTypeDisplayName.toLowerCase()} passages found for "{query}"
   </div>
-{/if}
-
-{#if showOgPreview}
-  <div class="mt-3 space-y-4">
-    {#if versionNotFound}
-      <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-        <div class="flex items-center space-x-2 text-yellow-800">
-          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
-          </svg>
-          <span class="font-medium">Version not found</span>
-        </div>
-        <div class="mt-2 text-sm text-yellow-700">
-          The requested version "{requestedVersionDescription}" was not found. Showing the BibleGateway preview while passages load.
-        </div>
+{:else if versionNotFound && results.length === 0}
+  <div class="mt-4">
+    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+      <div class="flex items-center space-x-2 text-yellow-800">
+        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+        </svg>
+        <span class="font-medium">Version not found</span>
       </div>
-    {/if}
-    <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-      {#if ogLoading}
-        <div class="flex items-center gap-2 text-xs text-gray-500">
-          <div class="book-search-spinner"></div>
-          Loading preview from BibleGateway...
-        </div>
-      {:else if ogPreview}
-        <div class="space-y-2">
-          {#if ogPreview.image}
-            <img
-              src={ogPreview.image}
-              alt={ogPreview.title || 'BibleGateway preview'}
-              class="w-full h-36 object-cover rounded-lg"
-            />
-          {/if}
-          <div class="space-y-1">
-            <div class="font-semibold text-sm text-gray-900">
-              {ogPreview.title || 'BibleGateway passage'}
-            </div>
-            <div class="text-xs text-gray-600 line-clamp-3">
-              {ogPreview.description || 'Preview generated by BibleGateway'}
-            </div>
-          </div>
-        </div>
-      {:else if ogError}
-        <div class="text-xs text-rose-500">{ogError}</div>
-      {:else}
-        <div class="text-xs text-gray-500">Preview unavailable.</div>
-      {/if}
-      {#if bibleGatewayUrlForQuery}
-        <div class="mt-3 text-right">
-          <a
-            href={bibleGatewayUrlForQuery}
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-xs font-semibold text-blue-600 hover:text-blue-800"
-          >
-            Open on BibleGateway
-          </a>
-        </div>
-      {/if}
-      {#if searchTimedOut}
-        <div class="text-xs text-amber-500 mt-2">
-          Search timed out after 10 seconds; the OG preview replaces the old fallback components.
-        </div>
-      {/if}
+      <div class="mt-2 text-sm text-yellow-700">
+        The requested version "{parsedQuery?.version}" was not found. Showing all available versions instead.
+      </div>
+    </div>
+    <div class="text-gray-500 italic">
+      Searching for all versions of "{query.replace(/\s*\|\s*[^|]+\s*$/, '')}"...
     </div>
   </div>
-{/if}
-
-{#if results.length > 0}
-  {#if loading}
-    <div class="flex items-center gap-2 text-xs text-gray-500 mt-4">
-      <div class="book-search-spinner"></div>
-      Continuing to gather {bookTypeDisplayName.toLowerCase()} passages...
-    </div>
-  {/if}
+{:else if results.length > 0}
   {#if versionNotFound}
     <div class="mt-4 mb-4">
       <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -1412,7 +1356,7 @@ const requestedVersionDescription = $derived.by(() => {
           <span class="font-medium">Showing all available versions</span>
         </div>
         <div class="mt-2 text-sm text-blue-700">
-          The requested version "{requestedVersionDescription}" was not found. Here are all available versions:
+          The requested version "{parsedQuery?.version}" was not found. Here are all available versions:
         </div>
       </div>
     </div>
@@ -1427,8 +1371,6 @@ const requestedVersionDescription = $derived.by(() => {
         {@const versionDisplayName = versionMap[versionKey] || versionLabel}
         {@const hasResults = versionBookMap.size > 0}
         
-        {#if hasResults}
-        {@const versionSpecificBgUrl = generateCompositeBibleGatewayUrl(versionKey)}
         <!-- Version Group Container -->
         <div 
           class="version-group" 
@@ -1442,6 +1384,8 @@ const requestedVersionDescription = $derived.by(() => {
             {versionDisplayName}
           </div>
           
+          {#if hasResults}
+            {@const versionSpecificBgUrl = generateCompositeBibleGatewayUrl(versionKey)}
             <!-- Bible Gateway link for this version -->
             {#if versionSpecificBgUrl}
               <a 
@@ -1536,8 +1480,30 @@ const requestedVersionDescription = $derived.by(() => {
               {/each}
               </div>
             {/each}
+          {:else}
+            <!-- No results for this version -->
+            {@const versionSpecificBgUrl = generateCompositeBibleGatewayUrl(versionKey)}
+            <div style="padding: 2rem; text-align: center; color: var(--text-secondary, #6b7280);">
+              <div style="font-style: italic; margin-bottom: 1rem;">
+                No passages found for {versionDisplayName}
+              </div>
+              {#if versionSpecificBgUrl}
+                <a 
+                  href={versionSpecificBgUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  style="display: inline-block; padding: 0.5rem 1rem; background-color: var(--accent); color: white; text-decoration: none; border-radius: 0.25rem; font-size: 0.875rem; transition: opacity 0.2s;"
+                  onmouseover={(e) => e.currentTarget.style.opacity = '0.8'}
+                  onmouseout={(e) => e.currentTarget.style.opacity = '1'}
+                  onfocus={(e) => e.currentTarget.style.opacity = '0.8'}
+                  onblur={(e) => e.currentTarget.style.opacity = '1'}
+                >
+                  View on Bible Gateway →
+                </a>
+              {/if}
+            </div>
+          {/if}
         </div>
-        {/if}
       {/each}
     {:else}
       <!-- Single version: Grouped Bible Results (Bible Gateway style) -->
@@ -1671,6 +1637,12 @@ const requestedVersionDescription = $derived.by(() => {
       </div>
     {/each}
   </div>
+{:else if !tried && parsedQuery}
+  <!-- Show loading state while searching -->
+  <div class="mt-4 text-gray-500 italic">
+    <div style="display: inline-block; width: 20px; height: 20px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; margin-right: 0.5rem; vertical-align: middle;"></div>
+    <span>Searching for {bookTypeDisplayName.toLowerCase()} passages...</span>
+  </div>
 {/if}
 
 <style>
@@ -1693,14 +1665,5 @@ const requestedVersionDescription = $derived.by(() => {
   
   .bible-gateway-link:hover {
     opacity: 0.7;
-  }
-
-  .book-search-spinner {
-    width: 14px;
-    height: 14px;
-    border: 2px solid var(--border);
-    border-top-color: var(--accent);
-    border-radius: 9999px;
-    animation: spin 1s linear infinite;
   }
 </style>
