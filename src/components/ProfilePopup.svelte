@@ -6,6 +6,7 @@
   import { sendZap, fetchZapReceipts, fetchLNURLPay } from '$lib/zaps';
   import UserBadge from './UserBadge.svelte';
   import ProfileWebsiteOG from './ProfileWebsiteOG.svelte';
+  import QRCode from 'qrcode';
 
   interface Props {
     pubkey: string;
@@ -32,6 +33,8 @@
   let showInvoiceModal = $state(false);
   let invoiceData = $state<{ invoice: string; amountSats: number } | null>(null);
   let showNpubQRModal = $state(false);
+  let invoiceQRCode = $state<string | null>(null);
+  let npubQRCode = $state<string | null>(null);
 
   // Detect if we're on mobile
   onMount(() => {
@@ -512,6 +515,20 @@
           invoice: result.invoice,
           amountSats: amountSats
         };
+        // Generate QR code for invoice
+        try {
+          invoiceQRCode = await QRCode.toDataURL(result.invoice, {
+            width: 300,
+            margin: 2,
+            color: {
+              dark: '#000000',
+              light: '#FFFFFF'
+            }
+          });
+        } catch (e) {
+          console.error('Failed to generate invoice QR code:', e);
+          invoiceQRCode = null;
+        }
         showInvoiceModal = true;
 
         // Refresh zap receipts after a delay
@@ -1887,7 +1904,24 @@
                   </a>
                 </p>
                 <button
-                  onclick={() => showNpubQRModal = true}
+                  onclick={async () => {
+                    if (userData?.npub) {
+                      try {
+                        npubQRCode = await QRCode.toDataURL(userData.npub, {
+                          width: 300,
+                          margin: 2,
+                          color: {
+                            dark: '#000000',
+                            light: '#FFFFFF'
+                          }
+                        });
+                      } catch (e) {
+                        console.error('Failed to generate npub QR code:', e);
+                        npubQRCode = null;
+                      }
+                    }
+                    showNpubQRModal = true;
+                  }}
                   class="ml-2 p-2 rounded transition-colors hover:opacity-80"
                   style="background-color: var(--bg-secondary); color: var(--accent); border: 1px solid var(--border);"
                   title="Show QR code for npub"
@@ -1912,11 +1946,13 @@
     onclick={(e) => {
       if (e.target === e.currentTarget) {
         showInvoiceModal = false;
+        invoiceQRCode = null;
       }
     }}
     onkeydown={(e) => {
       if (e.key === 'Escape') {
         showInvoiceModal = false;
+        invoiceQRCode = null;
       }
     }}
     role="dialog"
@@ -1936,7 +1972,11 @@
       <div class="flex items-center justify-between p-4" style="border-bottom: 1px solid var(--border);">
         <h3 class="text-lg font-semibold" style="color: var(--text-primary);">Lightning Invoice</h3>
         <button
-          onclick={() => showInvoiceModal = false}
+          onclick={() => {
+            showInvoiceModal = false;
+        invoiceQRCode = null;
+            invoiceQRCode = null;
+          }}
           class="transition-colors hover:opacity-70"
           style="color: var(--text-secondary);"
           aria-label="Close invoice"
@@ -1954,15 +1994,23 @@
         </div>
 
         <!-- QR Code -->
-        <div class="flex justify-center mb-4">
-          <div class="p-4 rounded" style="background-color: white;">
-            <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(invoiceData.invoice)}`}
-              alt="Lightning invoice QR code"
-              class="w-64 h-64"
-            />
+        {#if invoiceQRCode}
+          <div class="flex justify-center mb-4">
+            <div class="p-4 rounded" style="background-color: white;">
+              <img
+                src={invoiceQRCode}
+                alt="Lightning invoice QR code"
+                class="w-64 h-64"
+              />
+            </div>
           </div>
-        </div>
+        {:else}
+          <div class="flex justify-center mb-4">
+            <div class="p-4 rounded text-sm" style="background-color: var(--bg-secondary); color: var(--text-secondary);">
+              Generating QR code...
+            </div>
+          </div>
+        {/if}
 
         <!-- Invoice Text (Copyable) -->
         <div class="mb-4">
@@ -2055,11 +2103,13 @@
     onclick={(e) => {
       if (e.target === e.currentTarget) {
         showNpubQRModal = false;
+        npubQRCode = null;
       }
     }}
     onkeydown={(e) => {
       if (e.key === 'Escape') {
         showNpubQRModal = false;
+        npubQRCode = null;
       }
     }}
     role="dialog"
@@ -2079,7 +2129,11 @@
       <div class="flex items-center justify-between p-4" style="border-bottom: 1px solid var(--border);">
         <h3 class="text-lg font-semibold" style="color: var(--text-primary);">Nostr Public Key (npub)</h3>
         <button
-          onclick={() => showNpubQRModal = false}
+          onclick={() => {
+            showNpubQRModal = false;
+        npubQRCode = null;
+            npubQRCode = null;
+          }}
           class="transition-colors hover:opacity-70"
           style="color: var(--text-secondary);"
           aria-label="Close QR code"
@@ -2097,15 +2151,23 @@
         </div>
 
         <!-- QR Code -->
-        <div class="flex justify-center mb-4">
-          <div class="p-4 rounded" style="background-color: white;">
-            <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(userData.npub)}`}
-              alt="Npub QR code"
-              class="w-64 h-64"
-            />
+        {#if npubQRCode}
+          <div class="flex justify-center mb-4">
+            <div class="p-4 rounded" style="background-color: white;">
+              <img
+                src={npubQRCode}
+                alt="Npub QR code"
+                class="w-64 h-64"
+              />
+            </div>
           </div>
-        </div>
+        {:else}
+          <div class="flex justify-center mb-4">
+            <div class="p-4 rounded text-sm" style="background-color: var(--bg-secondary); color: var(--text-secondary);">
+              Generating QR code...
+            </div>
+          </div>
+        {/if}
 
         <!-- Npub Text (Copyable) -->
         <div class="mb-4">
