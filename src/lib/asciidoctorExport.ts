@@ -257,18 +257,39 @@ export async function exportToEPUB(options: ExportOptions): Promise<Blob> {
     if (text.includes('__sveltekit') || text.includes('sveltekit-preload-data')) {
       throw new Error('Server returned SvelteKit app shell instead of EPUB. Check AsciiDoctor server is running at /asciidoctor/ and proxy is configured correctly.');
     }
-    try {
-      const error = JSON.parse(text);
-      throw new Error(error.error || error.message || 'Server returned non-EPUB response');
-    } catch {
-      throw new Error(`Server returned unexpected content type: ${contentType}. Response preview: ${text.substring(0, 200)}`);
+    // Check if it's a JSON error response
+    if (text.trim().startsWith('{')) {
+      try {
+        const error = JSON.parse(text);
+        throw new Error(error.error || error.message || 'Server returned error instead of EPUB');
+      } catch {
+        // Not valid JSON, continue with generic error
+      }
     }
+    throw new Error(`Server returned unexpected content type: ${contentType}. Response preview: ${text.substring(0, 200)}`);
   }
 
+  // Read as blob (binary)
   const blob = await response.blob();
   
   if (!blob || blob.size === 0) {
     throw new Error('Server returned empty EPUB file');
+  }
+  
+  // Verify it's actually a ZIP file (EPUB is a ZIP archive)
+  // Check ZIP magic bytes (first 4 bytes should be "PK\x03\x04")
+  const arrayBuffer = await blob.slice(0, 4).arrayBuffer();
+  const uint8Array = new Uint8Array(arrayBuffer);
+  const magicBytes = String.fromCharCode(...uint8Array);
+  if (magicBytes !== 'PK\x03\x04') {
+    // Not a ZIP file, try to read as text to get error message
+    const text = await blob.text();
+    try {
+      const error = JSON.parse(text);
+      throw new Error(error.error || error.message || 'Server returned invalid EPUB (not a ZIP file)');
+    } catch {
+      throw new Error('Server returned invalid EPUB file (not a valid ZIP archive). File may be corrupted or an error response.');
+    }
   }
   
   return blob;

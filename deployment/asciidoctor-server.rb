@@ -8,6 +8,7 @@ require 'asciidoctor-revealjs'
 require 'json'
 require 'tempfile'
 require 'fileutils'
+require 'zip'
 
 set :port, ENV.fetch('ASCIIDOCTOR_PORT', 8091).to_i
 set :bind, '0.0.0.0'
@@ -170,19 +171,69 @@ post '/convert/epub' do
         epub_attributes['epub3-cover-image'] = cover_image
       end
       
-      Asciidoctor.convert_file temp_adoc.path,
+      # Convert to EPUB
+      result = Asciidoctor.convert_file temp_adoc.path,
         backend: 'epub3',
         safe: 'unsafe',
         to_file: epub_file,
         attributes: epub_attributes
       
-      # Read EPUB content
-      epub_content = File.read(epub_file)
+      # Verify EPUB file was created and exists
+      unless File.exist?(epub_file)
+        status 500
+        return { error: 'EPUB file was not created', debug: "Expected file: #{epub_file}" }.to_json
+      end
       
-      # Set headers
+      # Check file size
+      file_size = File.size(epub_file)
+      if file_size == 0
+        status 500
+        return { error: 'Generated EPUB file is empty' }.to_json
+      end
+      
+      # Verify it's a valid ZIP file (EPUB is a ZIP archive)
+      # Check for ZIP magic bytes
+      begin
+        File.open(epub_file, 'rb') do |f|
+          magic = f.read(4)
+          unless magic == "PK\x03\x04"  # ZIP file signature
+            status 500
+            return { error: 'Generated file is not a valid ZIP/EPUB', magic: magic.unpack('H*').first }.to_json
+          end
+        end
+        
+        # Verify ZIP structure using rubyzip
+        require 'zip'
+        Zip::File.open(epub_file) do |zip_file|
+          # Check for required EPUB files
+          unless zip_file.find_entry('META-INF/container.xml')
+            status 500
+            return { error: 'Generated EPUB is missing required META-INF/container.xml' }.to_json
+          end
+        end
+      rescue Zip::Error => e
+        status 500
+        return { error: 'Generated EPUB is not a valid ZIP file', message: e.message }.to_json
+      rescue => e
+        status 500
+        return { error: 'Failed to validate EPUB file', message: e.message }.to_json
+      end
+      
+      # Read EPUB content as binary
+      epub_content = File.binread(epub_file)
+      
+      # Verify file is not empty (double check)
+      if epub_content.nil? || epub_content.empty?
+        status 500
+        return { error: 'Generated EPUB file is empty after reading' }.to_json
+      end
+      
+      # Set headers before sending binary content
       content_type 'application/epub+zip'
       headers 'Content-Disposition' => "attachment; filename=\"#{title.gsub(/[^a-z0-9]/i, '_')}.epub\""
+      headers 'Content-Length' => epub_content.bytesize.to_s
       
+      # Return binary content
       epub_content
     ensure
       temp_adoc.unlink
