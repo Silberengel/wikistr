@@ -14,9 +14,11 @@ import UserBadge from '$components/UserBadge.svelte';
   import { nip19 } from '@nostr/tools';
   import BookConfigList from '$components/BookConfigList.svelte';
   import BookConfigForm from '$components/BookConfigForm.svelte';
+  import pkg from '../../package.json';
 
   // Theme configuration
   const theme = getThemeConfig();
+  const version = pkg.version;
 
   interface Props {
     replaceNewCard: (card: Card) => void;
@@ -234,6 +236,14 @@ import UserBadge from '$components/UserBadge.svelte';
       </div>
     </div>
     
+    <!-- Version Information -->
+    <div class="mb-4 pt-4 border-t" style="border-color: var(--border);">
+      <div class="block text-sm font-medium mb-2" style="color: var(--text-primary);">Version</div>
+      <div class="text-xs" style="color: var(--text-secondary);">
+        <div>WikiStr v{version} from GitCitadel</div>
+      </div>
+    </div>
+    
     <!-- Relays Section -->
     <div>
       <div class="flex items-center justify-between mb-2">
@@ -314,6 +324,15 @@ import UserBadge from '$components/UserBadge.svelte';
       <div class="flex items-center space-x-3">
         <ModeToggle />
         <span class="text-sm" style="color: var(--text-secondary);">Toggle light/dark mode</span>
+      </div>
+    </div>
+    
+    <!-- Version Information -->
+    <div class="mb-4 pt-4 border-t" style="border-color: var(--border);">
+      <div class="block text-sm font-medium mb-2" style="color: var(--text-primary);">Version</div>
+      <div class="text-xs" style="color: var(--text-secondary);">
+        <div>WikiStr v{version}</div>
+        <div class="mt-1 opacity-75">from GitCitadel</div>
       </div>
     </div>
     

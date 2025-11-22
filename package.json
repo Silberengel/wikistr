@@ -1,7 +1,7 @@
 {
-  "name": "biblestr",
-  "version": "2.0.0",
-  "description": "A decentralized Bible study and wiki system built on Nostr",
+  "name": "wikistr",
+  "version": "4.2.0",
+  "description": "A decentralized book study and wiki system built on Nostr",
   "private": true,
   "scripts": {
     "dev": "npm run themes && vite dev",
