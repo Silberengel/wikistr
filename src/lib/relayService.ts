@@ -29,8 +29,8 @@ class RelayService {
   // Subscription management to prevent concurrent request overload
   private activeSubscriptions = new Set<string>();
   private requestQueue: Array<() => Promise<void>> = [];
-  private maxConcurrentSubscriptions = 2; // Further reduced
-  private maxQueueSize = 20; // Limit queue size to prevent memory issues
+  private maxConcurrentSubscriptions = 5; // Increased to handle more concurrent requests
+  private maxQueueSize = 50; // Increased queue size to handle bursts of requests
   private isProcessingQueue = false;
   private requestDeduplication = new Map<string, Promise<any>>(); // Deduplicate identical requests
   
@@ -63,8 +63,19 @@ class RelayService {
    */
   private async queueRequest<T>(requestFn: () => Promise<T>, subscriptionId: string): Promise<T> {
     // Create a deduplication key based on the request type and target user
-    // Use type-userPubkey-targetUser for proper deduplication
-    const deduplicationKey = subscriptionId.split('-').slice(0, 4).join('-');
+    // For metadata requests, extract the target user pubkey (3rd segment) and use it for deduplication
+    // This ensures multiple requests for the same user's metadata are deduplicated
+    const parts = subscriptionId.split('-');
+    let deduplicationKey: string;
+    
+    if (parts[0] === 'metadata-read' && parts.length >= 4) {
+      // For metadata requests: metadata-read-{userPubkey}-{targetUser}-{timestamp}-{random}
+      // Use: metadata-read-{userPubkey}-{targetUser} to deduplicate requests for same user
+      deduplicationKey = `${parts[0]}-${parts[1]}-${parts[2]}`;
+    } else {
+      // For other requests, use type-userPubkey-targetUser (first 4 parts, excluding timestamp)
+      deduplicationKey = parts.slice(0, 4).join('-');
+    }
     
     // Check if we already have an identical request in progress
     if (this.requestDeduplication.has(deduplicationKey)) {
@@ -88,8 +99,8 @@ class RelayService {
         } finally {
           this.activeSubscriptions.delete(subscriptionId);
           this.requestDeduplication.delete(deduplicationKey);
-          // Process next item in queue with a small delay
-          setTimeout(() => this.processQueue(), 500);
+          // Process next item in queue with a smaller delay for faster processing
+          setTimeout(() => this.processQueue(), 100);
         }
       };
       
@@ -113,13 +124,11 @@ class RelayService {
    * Clean up old deduplication entries to prevent memory leaks
    */
   private cleanupDeduplicationCache(): void {
-    // Remove entries older than 30 seconds
-    const now = Date.now();
-    for (const [key, promise] of this.requestDeduplication.entries()) {
-      const timestamp = parseInt(key.split('-')[2]);
-      if (now - timestamp > 30000) {
-        this.requestDeduplication.delete(key);
-      }
+    // Limit cache size to prevent unbounded growth
+    // Remove oldest entries if cache exceeds limit
+    if (this.requestDeduplication.size > 100) {
+      const keysToDelete = Array.from(this.requestDeduplication.keys()).slice(0, 20);
+      keysToDelete.forEach(key => this.requestDeduplication.delete(key));
     }
   }
 

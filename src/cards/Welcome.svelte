@@ -195,7 +195,7 @@
         const metadataResult = await relayService.queryEvents(
           'anonymous',
           'metadata-read',
-          [{ kinds: [0], authors, limit: authors.length }],
+              [{ kinds: [0], authors, limit: authors.length }],
           { excludeUserContent: false, currentUserPubkey: undefined }
         );
         

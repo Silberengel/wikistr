@@ -107,19 +107,35 @@
       
       if (userEvent) {
         try {
-          const content = JSON.parse(userEvent.content);
+          // Parse profile data from tags (preferred) and content (fallback)
+          const profileData = parseProfileData(userEvent);
+          
+          // Ensure arrays are always arrays, even if empty
+          const websites = Array.isArray(profileData.websites) && profileData.websites.length > 0 
+            ? profileData.websites 
+            : (profileData.website ? [profileData.website] : []);
+          const nip05s = Array.isArray(profileData.nip05s) && profileData.nip05s.length > 0 
+            ? profileData.nip05s 
+            : (profileData.nip05 ? [profileData.nip05] : []);
+          const lud16s = Array.isArray(profileData.lud16s) && profileData.lud16s.length > 0 
+            ? profileData.lud16s 
+            : (profileData.lud16 ? [profileData.lud16] : []);
           
           userData = {
             pubkey: hexPubkey,
             npub: npub,
-            display_name: content.display_name || content.name || 'Unknown',
-            name: content.name || 'Unknown',
-            about: content.about || '',
-            picture: content.picture || '',
-            banner: content.banner || '',
-            website: content.website || '',
-            lud16: content.lud16 || '',
-            nip05: content.nip05 || ''
+            display_name: profileData.display_name || profileData.name || 'Unknown',
+            name: profileData.name || 'Unknown',
+            about: profileData.about || '',
+            picture: profileData.picture || '',
+            banner: profileData.banner || '',
+            website: profileData.website || '',
+            websites: websites,
+            lud16: profileData.lud16 || '',
+            lud16s: lud16s,
+            nip05: profileData.nip05 || '',
+            nip05s: nip05s,
+            bot: profileData.bot
           };
           
         } catch (e) {
@@ -137,8 +153,12 @@
           picture: '',
           banner: '',
           website: '',
+          websites: [],
           lud16: '',
-          nip05: ''
+          lud16s: [],
+          nip05: '',
+          nip05s: [],
+          bot: undefined
         };
       }
     } catch (e) {
@@ -152,8 +172,12 @@
         picture: '',
         banner: '',
         website: '',
+        websites: [],
         lud16: '',
-        nip05: ''
+        lud16s: [],
+        nip05: '',
+        nip05s: [],
+        bot: undefined
       };
     } finally {
       loading = false;
@@ -178,8 +202,12 @@
         picture: '',
         banner: '',
         website: '',
+        websites: [],
         lud16: '',
-        nip05: ''
+        lud16s: [],
+        nip05: '',
+        nip05s: [],
+        bot: undefined
       };
       loading = true; // Keep loading true until fetchUserData completes
       
@@ -197,8 +225,12 @@
             picture: '',
             banner: '',
             website: '',
+            websites: [],
             lud16: '',
-            nip05: ''
+            lud16s: [],
+            nip05: '',
+            nip05s: [],
+            bot: undefined
           };
         }
       }, 15000); // 15 second safety timeout
@@ -308,13 +340,183 @@
     window.open(wellKnownUrl, '_blank', 'noopener,noreferrer');
   }
 
+  // Parse profile data from tags (preferred) and content (fallback)
+  function parseProfileData(event: any): any {
+    const result: any = {
+      display_name: [],
+      name: [],
+      about: [],
+      picture: [],
+      banner: [],
+      website: [],
+      websites: [],
+      lud16: [],
+      lud16s: [],
+      nip05: [],
+      nip05s: [],
+      bot: undefined // undefined means not present, true/false means explicitly set
+    };
+    
+    // First, parse from tags (preferred)
+    if (event.tags && Array.isArray(event.tags)) {
+      for (const tag of event.tags) {
+        if (!Array.isArray(tag) || tag.length < 2) continue;
+        
+        const tagName = tag[0];
+        const tagValue = tag[1];
+        
+        // Special handling for bot tag (boolean)
+        if (tagName.toLowerCase() === 'bot') {
+          // Default to true if present, only false if value is explicitly "false"
+          const botValue = Array.isArray(tagValue) ? tagValue[0] : tagValue;
+          result.bot = botValue !== 'false' && botValue !== false;
+          continue;
+        }
+        
+        // Handle array tags - if tag[1] is an array, use all values
+        if (Array.isArray(tagValue)) {
+          for (const value of tagValue) {
+            if (typeof value === 'string' && value.trim()) {
+              addToResult(result, tagName, value.trim());
+            }
+          }
+        } else if (typeof tagValue === 'string' && tagValue.trim()) {
+          addToResult(result, tagName, tagValue.trim());
+        }
+      }
+    }
+    
+    // Then, parse from content as fallback (only if tags didn't provide values)
+    if (event.content) {
+      try {
+        const content = typeof event.content === 'string' ? JSON.parse(event.content) : event.content;
+        
+        // Only use content values if we don't have tag values
+        if (result.display_name.length === 0 && content.display_name) {
+          result.display_name.push(content.display_name);
+        }
+        if (result.name.length === 0 && content.name) {
+          result.name.push(content.name);
+        }
+        if (result.about.length === 0 && content.about) {
+          result.about.push(content.about);
+        }
+        if (result.picture.length === 0 && content.picture) {
+          result.picture.push(content.picture);
+        }
+        if (result.banner.length === 0 && content.banner) {
+          result.banner.push(content.banner);
+        }
+        if (result.website.length === 0 && content.website) {
+          result.website.push(content.website);
+        }
+        if (result.lud16.length === 0 && content.lud16) {
+          result.lud16.push(content.lud16);
+        }
+        if (result.nip05.length === 0 && content.nip05) {
+          result.nip05.push(content.nip05);
+        }
+        // Parse bot from content as fallback (only if not already set from tags)
+        if (result.bot === undefined && content.bot !== undefined) {
+          result.bot = content.bot !== false && content.bot !== 'false';
+        }
+      } catch (e) {
+        // If content is not JSON, treat it as a string (for kind 1)
+        if (result.about.length === 0 && typeof event.content === 'string') {
+          result.about.push(event.content);
+        }
+      }
+    }
+    
+    // Normalize and deduplicate - convert arrays to single values or arrays
+    const normalized: any = {};
+    
+    // For single-value fields, use first value; keep arrays for multi-value fields
+    normalized.display_name = normalizeField(result.display_name);
+    normalized.name = normalizeField(result.name);
+    normalized.about = normalizeField(result.about);
+    normalized.picture = normalizeField(result.picture);
+    normalized.banner = normalizeField(result.banner);
+    
+    // For multi-value fields, keep as arrays and deduplicate
+    normalized.websites = deduplicateArray(result.website.concat(result.websites));
+    normalized.lud16s = deduplicateArray(result.lud16.concat(result.lud16s));
+    normalized.nip05s = deduplicateArray(result.nip05.concat(result.nip05s));
+    
+    // Also set single-value versions for backward compatibility
+    normalized.website = normalized.websites[0] || '';
+    normalized.lud16 = normalized.lud16s[0] || '';
+    normalized.nip05 = normalized.nip05s[0] || '';
+    
+    // Bot tag: default to undefined (not present), only set if explicitly present
+    normalized.bot = result.bot;
+    
+    return normalized;
+  }
+  
+  function addToResult(result: any, tagName: string, value: string) {
+    const normalizedName = tagName.toLowerCase();
+    
+    switch (normalizedName) {
+      case 'display_name':
+      case 'displayname':
+        result.display_name.push(value);
+        break;
+      case 'name':
+        result.name.push(value);
+        break;
+      case 'about':
+      case 'bio':
+        result.about.push(value);
+        break;
+      case 'picture':
+      case 'avatar':
+        result.picture.push(value);
+        break;
+      case 'banner':
+        result.banner.push(value);
+        break;
+      case 'website':
+      case 'url':
+        result.website.push(value);
+        break;
+      case 'lud16':
+      case 'lightning':
+        result.lud16.push(value);
+        break;
+      case 'nip05':
+        result.nip05.push(value);
+        break;
+    }
+  }
+  
+  function normalizeField(values: string[]): string {
+    // Return first non-empty value, or empty string
+    const filtered = values.filter(v => v && v.trim());
+    return filtered[0] || '';
+  }
+  
+  function deduplicateArray(values: string[]): string[] {
+    // Remove duplicates and empty values, preserve order
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const value of values) {
+      const normalized = value.trim().toLowerCase();
+      if (normalized && !seen.has(normalized)) {
+        seen.add(normalized);
+        result.push(value.trim());
+      }
+    }
+    return result;
+  }
+
   // Process links when userData changes
   $effect(() => {
     if (userData && aboutElement) {
       processAboutLinks();
     }
     
-    // Verify NIP-05 when userData is loaded (max 2 attempts)
+    // Verify NIP-05 when userData is loaded (max 2 attempts) - verify first one
     if (userData && userData.nip05 && !nip05Verifying && nip05RetryCount < 2) {
       verifyNip05();
     }
@@ -387,8 +589,16 @@
                 </svg>
               </div>
             {/if}
-            <div>
-              <h2 class="text-xl font-semibold" style="color: var(--text-primary);">{userData.display_name}</h2>
+            <div class="flex-1">
+              <div class="flex items-center space-x-2">
+                <h2 class="text-xl font-semibold" style="color: var(--text-primary);">{userData.display_name}</h2>
+                {#if userData.bot === true}
+                  <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" style="color: var(--accent);">
+                    <title>Bot account</title>
+                    <path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/>
+                  </svg>
+                {/if}
+              </div>
               {#if userData.name && userData.name !== userData.display_name}
                 <p style="color: var(--text-secondary);">@{userData.name}</p>
               {/if}
@@ -405,62 +615,80 @@
             </div>
           {/if}
 
-          <!-- Website -->
-          {#if userData.website}
+          <!-- Websites -->
+          {#if userData.websites && userData.websites.length > 0}
             <div class="mb-6">
-              <h4 class="font-semibold mb-1" style="color: var(--text-primary);">Website</h4>
-              <a
-                href={userData.website}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="underline break-all"
-                style="color: var(--accent);"
-              >
-                {userData.website}
-              </a>
+              <h4 class="font-semibold mb-1" style="color: var(--text-primary);">Website{userData.websites.length > 1 ? 's' : ''}</h4>
+              <div class="space-y-1">
+                {#each userData.websites as website}
+                  <div>
+                    <a
+                      href={website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="underline break-all block"
+                      style="color: var(--accent);"
+                    >
+                      {website}
+                    </a>
+                  </div>
+                {/each}
+              </div>
             </div>
           {/if}
 
           <!-- NIP-05 -->
-          {#if userData.nip05}
+          {#if userData.nip05s && userData.nip05s.length > 0}
             <div class="mb-6">
-              <h4 class="font-semibold mb-1">NIP-05</h4>
-              <div class="flex items-center space-x-2">
-                <button
-                  onclick={openNip05WellKnown}
-                  class="font-mono underline cursor-pointer"
-                  style="color: var(--text-primary);"
-                  title="Open well-known JSON"
-                >
-                  {userData.nip05}
-                </button>
-                {#if nip05Verifying && !nip05Verified}
-                  <div class="w-4 h-4 border-2 rounded-full animate-spin" style="border-color: var(--border); border-top-color: var(--accent);"></div>
-                {:else if nip05Verified}
-                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" style="color: #10b981;">
-                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
-                  </svg>
-                {/if}
+              <h4 class="font-semibold mb-1">NIP-05{userData.nip05s.length > 1 ? 's' : ''}</h4>
+              <div class="space-y-2">
+                {#each userData.nip05s as nip05}
+                  <div class="flex items-center space-x-2">
+                    <button
+                      onclick={() => {
+                        const [name, domain] = nip05.split('@');
+                        const wellKnownUrl = `https://${domain}/.well-known/nostr.json?name=${name}`;
+                        window.open(wellKnownUrl, '_blank', 'noopener,noreferrer');
+                      }}
+                      class="font-mono underline cursor-pointer text-left"
+                      style="color: var(--text-primary);"
+                      title="Open well-known JSON"
+                    >
+                      {nip05}
+                    </button>
+                    {#if nip05 === userData.nip05 && nip05Verifying && !nip05Verified}
+                      <div class="w-4 h-4 border-2 rounded-full animate-spin" style="border-color: var(--border); border-top-color: var(--accent);"></div>
+                    {:else if nip05 === userData.nip05 && nip05Verified}
+                      <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" style="color: #10b981;">
+                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                      </svg>
+                    {/if}
+                  </div>
+                {/each}
               </div>
             </div>
           {/if}
 
           <!-- Lightning -->
-          {#if userData.lud16}
+          {#if userData.lud16s && userData.lud16s.length > 0}
             <div class="mb-6">
-              <h4 class="font-semibold mb-1">Lightning</h4>
-              <div class="flex items-center space-x-2">
-                <span class="font-mono" style="color: var(--text-primary);">{userData.lud16}</span>
-                <button
-                  onclick={() => navigator.clipboard.writeText(userData.lud16)}
-                  class="p-1 rounded transition-colors"
-                  style="background-color: var(--bg-secondary);"
-                  title="Copy lightning address"
-                >
-                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" style="color: #f59e0b;">
-                    <path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"/>
-                  </svg>
-                </button>
+              <h4 class="font-semibold mb-1">Lightning{userData.lud16s.length > 1 ? ' Addresses' : ''}</h4>
+              <div class="space-y-2">
+                {#each userData.lud16s as lud16}
+                  <div class="flex items-center space-x-2">
+                    <span class="font-mono" style="color: var(--text-primary);">{lud16}</span>
+                    <button
+                      onclick={() => navigator.clipboard.writeText(lud16)}
+                      class="p-1 rounded transition-colors"
+                      style="background-color: var(--bg-secondary);"
+                      title="Copy lightning address"
+                    >
+                      <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" style="color: #f59e0b;">
+                        <path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"/>
+                      </svg>
+                    </button>
+                  </div>
+                {/each}
               </div>
             </div>
           {/if}

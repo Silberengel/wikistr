@@ -304,7 +304,25 @@
     
     if (cachedAuthorEvent) {
       try {
-        const content = JSON.parse(cachedAuthorEvent.event.content);
+        // Try to parse from tags first, then content
+        let content: any = {};
+        if (cachedAuthorEvent.event.tags && Array.isArray(cachedAuthorEvent.event.tags)) {
+          for (const tag of cachedAuthorEvent.event.tags) {
+            if (Array.isArray(tag) && tag.length >= 2) {
+              const key = tag[0].toLowerCase();
+              const value = Array.isArray(tag[1]) ? tag[1][0] : tag[1];
+              if (value && typeof value === 'string') {
+                if (key === 'display_name' || key === 'displayname') content.display_name = value;
+                else if (key === 'name') content.name = value;
+                else if (key === 'picture' || key === 'avatar') content.picture = value;
+              }
+            }
+          }
+        }
+        // Fallback to content if tags didn't provide values
+        if (!content.display_name && !content.name && !content.picture) {
+          content = JSON.parse(cachedAuthorEvent.event.content);
+        }
         author = createAuthorFromContent(content);
       } catch (e) {
         console.warn('Article: Failed to parse cached author metadata:', e);
@@ -324,7 +342,25 @@
         if (result.events.length > 0) {
           const event = result.events[0];
           try {
-            const content = JSON.parse(event.content);
+            // Try to parse from tags first, then content
+            let content: any = {};
+            if (event.tags && Array.isArray(event.tags)) {
+              for (const tag of event.tags) {
+                if (Array.isArray(tag) && tag.length >= 2) {
+                  const key = tag[0].toLowerCase();
+                  const value = Array.isArray(tag[1]) ? tag[1][0] : tag[1];
+                  if (value && typeof value === 'string') {
+                    if (key === 'display_name' || key === 'displayname') content.display_name = value;
+                    else if (key === 'name') content.name = value;
+                    else if (key === 'picture' || key === 'avatar') content.picture = value;
+                  }
+                }
+              }
+            }
+            // Fallback to content if tags didn't provide values
+            if (!content.display_name && !content.name && !content.picture) {
+              content = JSON.parse(event.content);
+            }
             author = createAuthorFromContent(content);
             
             // Store the author metadata in cache for future use

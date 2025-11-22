@@ -42,7 +42,26 @@
       
       if (cachedUserEvent) {
         try {
-          const content = JSON.parse(cachedUserEvent.event.content);
+          // Try to parse from tags first, then content
+          let content: any = {};
+          if (cachedUserEvent.event.tags && Array.isArray(cachedUserEvent.event.tags)) {
+            // Parse from tags
+            for (const tag of cachedUserEvent.event.tags) {
+              if (Array.isArray(tag) && tag.length >= 2) {
+                const key = tag[0].toLowerCase();
+                const value = Array.isArray(tag[1]) ? tag[1][0] : tag[1];
+                if (value && typeof value === 'string') {
+                  if (key === 'display_name' || key === 'displayname') content.display_name = value;
+                  else if (key === 'name') content.name = value;
+                  else if (key === 'picture' || key === 'avatar') content.picture = value;
+                }
+              }
+            }
+          }
+          // Fallback to content if tags didn't provide values
+          if (!content.display_name && !content.name && !content.picture) {
+            content = JSON.parse(cachedUserEvent.event.content);
+          }
           user = {
             pubkey: pubkey,
             npub: pubkey,
@@ -96,7 +115,25 @@
       if (metadataResult && metadataResult.events.length > 0) {
         const event = metadataResult.events[0];
         try {
-          const content = JSON.parse(event.content);
+          // Try to parse from tags first, then content
+          let content: any = {};
+          if (event.tags && Array.isArray(event.tags)) {
+            for (const tag of event.tags) {
+              if (Array.isArray(tag) && tag.length >= 2) {
+                const key = tag[0].toLowerCase();
+                const value = Array.isArray(tag[1]) ? tag[1][0] : tag[1];
+                if (value && typeof value === 'string') {
+                  if (key === 'display_name' || key === 'displayname') content.display_name = value;
+                  else if (key === 'name') content.name = value;
+                  else if (key === 'picture' || key === 'avatar') content.picture = value;
+                }
+              }
+            }
+          }
+          // Fallback to content if tags didn't provide values
+          if (!content.display_name && !content.name && !content.picture) {
+            content = JSON.parse(event.content);
+          }
           user = {
             pubkey: pubkey,
             npub: pubkey,
