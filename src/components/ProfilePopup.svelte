@@ -2,6 +2,8 @@
   import { onMount } from 'svelte';
   import { relayService } from '$lib/relayService';
   import { nip19 } from '@nostr/tools';
+  import { account } from '$lib/nostr';
+  import { sendZap, fetchZapReceipts, fetchLNURLPay } from '$lib/zaps';
   import UserBadge from './UserBadge.svelte';
 
   interface Props {
@@ -20,6 +22,9 @@
   let nip05Verified = $state(false);
   let nip05Verifying = $state(false);
   let nip05RetryCount = $state(0);
+  let zapReceipts = $state<any[]>([]);
+  let zapLoading = $state(false);
+  let lnurlPayInfo = $state<{ allowsNostr?: boolean; nostrPubkey?: string } | null>(null);
 
   // Detect if we're on mobile
   onMount(() => {
@@ -340,6 +345,174 @@
     window.open(wellKnownUrl, '_blank', 'noopener,noreferrer');
   }
 
+  // Check if user supports nostr zaps
+  async function checkZapSupport() {
+    if (!userData || !userData.lud16s || userData.lud16s.length === 0) {
+      lnurlPayInfo = null;
+      return;
+    }
+
+    // Check the first lightning address for zap support
+    const lud16 = userData.lud16s[0];
+    try {
+      const lnurlPay = await fetchLNURLPay(lud16);
+      if (lnurlPay) {
+        lnurlPayInfo = {
+          allowsNostr: lnurlPay.allowsNostr || false,
+          nostrPubkey: lnurlPay.nostrPubkey
+        };
+      } else {
+        lnurlPayInfo = null;
+      }
+    } catch (error) {
+      console.error('Failed to check zap support:', error);
+      lnurlPayInfo = null;
+    }
+  }
+
+  // Send a zap to the user
+  async function sendZapToUser() {
+    if (!userData || !$account) {
+      alert('Please log in to send zaps');
+      return;
+    }
+
+    if (!lnurlPayInfo?.allowsNostr) {
+      alert('This user does not support nostr zaps. Use the lightning address directly.');
+      return;
+    }
+
+    try {
+      // Prompt for amount
+      const amountInput = prompt('Enter zap amount in sats (default: 1000):', '1000');
+      if (amountInput === null) {
+        return; // User cancelled
+      }
+
+      const amountSats = parseInt(amountInput) || 1000;
+      const amountMillisats = amountSats * 1000;
+
+      // Prompt for optional message
+      const message = prompt('Enter optional zap message (or leave empty):', '');
+
+      zapLoading = true;
+
+      // Get relays from relay service
+      const relays = await relayService.getRelaysForOperation($account.pubkey, 'social-write');
+      
+      // Send zap
+      const result = await sendZap({
+        recipientPubkey: userData.pubkey,
+        amountMillisats,
+        relays: relays.length > 0 ? relays : ['wss://relay.damus.io'], // Fallback relay
+        content: message || undefined
+      });
+
+      if (result) {
+        // Open invoice in lightning wallet
+        const lightningUrl = `lightning:${result.invoice}`;
+        try {
+          window.location.href = lightningUrl;
+        } catch (e) {
+          // Fallback: copy to clipboard
+          await navigator.clipboard.writeText(result.invoice);
+          alert(`Zap invoice copied to clipboard!\n\n${result.invoice}\n\nPaste it into your lightning wallet.`);
+        }
+
+        // Refresh zap receipts after a delay
+        setTimeout(() => {
+          loadZapReceipts();
+        }, 3000);
+      }
+    } catch (error) {
+      console.error('Failed to send zap:', error);
+      alert(`Failed to send zap: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      zapLoading = false;
+    }
+  }
+
+  // Load zap receipts for this user
+  async function loadZapReceipts() {
+    if (!userData) return;
+
+    try {
+      const receipts = await fetchZapReceipts(userData.pubkey);
+      zapReceipts = receipts;
+    } catch (error) {
+      console.error('Failed to load zap receipts:', error);
+    }
+  }
+
+  // Open lightning invoice for a lightning address
+  async function openLightningInvoice(lud16: string) {
+    if (!lud16 || !lud16.includes('@')) {
+      console.error('Invalid lightning address:', lud16);
+      return;
+    }
+
+    try {
+      const [username, domain] = lud16.split('@');
+      
+      // Step 1: Fetch LNURL from .well-known/lnurlp
+      const lnurlEndpoint = `https://${domain}/.well-known/lnurlp/${username}`;
+      const lnurlResponse = await fetch(lnurlEndpoint);
+      
+      if (!lnurlResponse.ok) {
+        throw new Error(`Failed to fetch LNURL: ${lnurlResponse.statusText}`);
+      }
+      
+      const lnurlData = await lnurlResponse.json();
+      
+      if (!lnurlData.callback) {
+        throw new Error('No callback URL in LNURL response');
+      }
+      
+      // Step 2: Prompt for amount (default to 1000 sats = 100000 millisats)
+      const amountInput = prompt('Enter amount in sats (default: 1000):', '1000');
+      if (amountInput === null) {
+        return; // User cancelled
+      }
+      
+      const amountSats = parseInt(amountInput) || 1000;
+      const amountMillisats = amountSats * 1000;
+      
+      // Step 3: Fetch invoice from callback
+      const callbackUrl = new URL(lnurlData.callback);
+      callbackUrl.searchParams.set('amount', amountMillisats.toString());
+      
+      const invoiceResponse = await fetch(callbackUrl.toString());
+      
+      if (!invoiceResponse.ok) {
+        throw new Error(`Failed to fetch invoice: ${invoiceResponse.statusText}`);
+      }
+      
+      const invoiceData = await invoiceResponse.json();
+      
+      if (!invoiceData.pr) {
+        throw new Error('No invoice (pr) in response');
+      }
+      
+      // Step 4: Open invoice in lightning wallet
+      // Try lightning: protocol first, then fallback to copying to clipboard
+      const invoice = invoiceData.pr;
+      const lightningUrl = `lightning:${invoice}`;
+      
+      // Try to open with lightning: protocol
+      try {
+        window.location.href = lightningUrl;
+      } catch (e) {
+        // If lightning: protocol doesn't work, copy to clipboard and show QR code option
+        await navigator.clipboard.writeText(invoice);
+        alert(`Invoice copied to clipboard!\n\n${invoice}\n\nPaste it into your lightning wallet.`);
+      }
+      
+    } catch (error) {
+      console.error('Failed to open lightning invoice:', error);
+      alert(`Failed to generate lightning invoice: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
   // Parse profile data from tags (preferred) and content (fallback)
   function parseProfileData(event: any): any {
     const result: any = {
@@ -520,6 +693,12 @@
     if (userData && userData.nip05 && !nip05Verifying && nip05RetryCount < 2) {
       verifyNip05();
     }
+
+    // Check zap support and load zap receipts
+    if (userData) {
+      checkZapSupport();
+      loadZapReceipts();
+    }
   });
 </script>
 
@@ -605,6 +784,29 @@
             </div>
           </div>
 
+          <!-- Zap Button -->
+          {#if $account && lnurlPayInfo?.allowsNostr}
+            <div class="mb-6">
+              <button
+                onclick={sendZapToUser}
+                disabled={zapLoading}
+                class="w-full px-4 py-2 rounded transition-colors font-semibold flex items-center justify-center space-x-2"
+                style="background-color: var(--accent); color: white;"
+                title="Send a lightning zap"
+              >
+                {#if zapLoading}
+                  <div class="w-4 h-4 border-2 rounded-full animate-spin" style="border-color: white; border-top-color: transparent;"></div>
+                  <span>Sending zap...</span>
+                {:else}
+                  <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"/>
+                  </svg>
+                  <span>⚡ Zap</span>
+                {/if}
+              </button>
+            </div>
+          {/if}
+
           <!-- About Section -->
           {#if userData.about}
             <div class="mb-6">
@@ -676,19 +878,52 @@
               <div class="space-y-2">
                 {#each userData.lud16s as lud16}
                   <div class="flex items-center space-x-2">
-                    <span class="font-mono" style="color: var(--text-primary);">{lud16}</span>
                     <button
-                      onclick={() => navigator.clipboard.writeText(lud16)}
+                      onclick={() => openLightningInvoice(lud16)}
+                      class="font-mono underline cursor-pointer text-left flex-1"
+                      style="color: var(--accent);"
+                      title="Click to generate and open lightning invoice"
+                    >
+                      {lud16}
+                    </button>
+                    <button
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        navigator.clipboard.writeText(lud16);
+                      }}
                       class="p-1 rounded transition-colors"
                       style="background-color: var(--bg-secondary);"
                       title="Copy lightning address"
                     >
                       <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" style="color: #f59e0b;">
-                        <path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"/>
+                        <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z"/>
+                        <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z"/>
                       </svg>
                     </button>
                   </div>
                 {/each}
+              </div>
+            </div>
+          {/if}
+
+          <!-- Zap Receipts -->
+          {#if zapReceipts.length > 0}
+            <div class="mb-6 pt-4 border-t" style="border-color: var(--border);">
+              <h4 class="font-semibold mb-2" style="color: var(--text-primary);">Zaps Received ({zapReceipts.length})</h4>
+              <div class="space-y-2 text-sm" style="color: var(--text-secondary);">
+                {#each zapReceipts.slice(0, 5) as receipt}
+                  <div class="flex items-center space-x-2">
+                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" style="color: #f59e0b;">
+                      <path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"/>
+                    </svg>
+                    <span class="font-mono text-xs">
+                      {new Date(receipt.created_at * 1000).toLocaleDateString()}
+                    </span>
+                  </div>
+                {/each}
+                {#if zapReceipts.length > 5}
+                  <p class="text-xs" style="color: var(--text-secondary);">+{zapReceipts.length - 5} more</p>
+                {/if}
               </div>
             </div>
           {/if}
