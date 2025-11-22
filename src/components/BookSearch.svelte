@@ -25,7 +25,7 @@
   } from '$lib/books';
   import { parseBookWikilink as parseBookWikilinkNKBIP08, bookReferenceToTags, type ParsedBookReference } from '$lib/bookWikilinkParser';
   import { generateBibleGatewayUrl, fetchBibleGatewayOg } from '$lib/bibleGatewayUtils';
-  import BookReferenceOgPreview from '$components/BookReferenceOgPreview.svelte';
+  import BookFallbackCards from '$components/BookFallbackCards.svelte';
   import { generateBibleGatewayUrlForReference } from '$lib/bibleGatewayUtils';
 
   interface Props {
@@ -449,104 +449,31 @@
 </script>
 
 <div class="book-search-results">
-  {#if tried && results.length === 0 && !versionNotFound}
-    <!-- Use same layout as multiple references -->
-    {#if parsedQuery && parsedQuery.references.length > 0}
-      <div class="mt-4 space-y-4">
-        <div class="space-y-4">
-          <h3 class="text-base font-bold text-gray-900">BibleGateway</h3>
-          {#each parsedQuery.references as ref}
-            {@const refKey = `${ref.book}:${ref.chapter}:${ref.verse || ''}`}
-            {@const refBgUrl = generateBibleGatewayUrlForReference(ref)}
-            <BookReferenceOgPreview
-              reference={ref}
-              bibleGatewayUrl={refBgUrl}
-              ogPreview={referenceOgPreviews.get(refKey) || null}
-              ogLoading={referenceOgLoading.get(refKey) || false}
-              ogError={referenceOgErrors.get(refKey) || null}
-            />
-          {/each}
-          {#if bibleGatewayUrlForQuery}
-            {@const buttonOgImage = ogPreview?.image || (parsedQuery.references?.[0] ? referenceOgPreviews.get(`${parsedQuery.references[0].book}:${parsedQuery.references[0].chapter}:${parsedQuery.references[0].verse || ''}`)?.image : null)}
-            <div class="flex justify-center pt-2">
-              <a
-                href={bibleGatewayUrlForQuery}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="inline-flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors shadow-sm hover:shadow"
-              >
-                {#if buttonOgImage}
-                  <img
-                    src={buttonOgImage}
-                    alt="BibleGateway"
-                    class="w-10 h-10 object-contain"
-                    onerror={(e) => {
-                      const img = e.currentTarget as HTMLImageElement;
-                      img.style.display = 'none';
-                      const svg = img.nextElementSibling as HTMLElement;
-                      if (svg) svg.classList.remove('hidden');
-                    }}
-                  />
-                {/if}
-                <svg class="w-10 h-10 {buttonOgImage ? 'hidden' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                </svg>
-                View All Passages on BibleGateway
-              </a>
-            </div>
-          {/if}
-        </div>
-      </div>
-    {/if}
-  {:else if versionNotFound && results.length === 0}
-    <!-- Use same layout as multiple references -->
-    {#if parsedQuery && parsedQuery.references.length > 0}
-      <div class="mt-4 space-y-4">
-        <div class="space-y-4">
-          <h3 class="text-base font-bold text-gray-900">BibleGateway</h3>
-          {#each parsedQuery.references as ref}
-            {@const refKey = `${ref.book}:${ref.chapter}:${ref.verse || ''}`}
-            {@const refBgUrl = generateBibleGatewayUrlForReference(ref)}
-            <BookReferenceOgPreview
-              reference={ref}
-              bibleGatewayUrl={refBgUrl}
-              ogPreview={referenceOgPreviews.get(refKey) || null}
-              ogLoading={referenceOgLoading.get(refKey) || false}
-              ogError={referenceOgErrors.get(refKey) || null}
-            />
-          {/each}
-          {#if bibleGatewayUrlForQuery}
-            {@const buttonOgImage = ogPreview?.image || (parsedQuery.references?.[0] ? referenceOgPreviews.get(`${parsedQuery.references[0].book}:${parsedQuery.references[0].chapter}:${parsedQuery.references[0].verse || ''}`)?.image : null)}
-            <div class="flex justify-center pt-2">
-              <a
-                href={bibleGatewayUrlForQuery}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="inline-flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors shadow-sm hover:shadow"
-              >
-                {#if buttonOgImage}
-                  <img
-                    src={buttonOgImage}
-                    alt="BibleGateway"
-                    class="w-10 h-10 object-contain"
-                    onerror={(e) => {
-                      const img = e.currentTarget as HTMLImageElement;
-                      img.style.display = 'none';
-                      const svg = img.nextElementSibling as HTMLElement;
-                      if (svg) svg.classList.remove('hidden');
-                    }}
-                  />
-                {/if}
-                <svg class="w-10 h-10 {buttonOgImage ? 'hidden' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                </svg>
-                View All Passages on BibleGateway
-              </a>
-            </div>
-          {/if}
-        </div>
-      </div>
-    {/if}
+  <!-- Retry button at top of results pane -->
+  {#if tried || results.length > 0}
+    <div class="mb-4 flex justify-end">
+      <button
+        onclick={() => performBookSearch()}
+        class="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors shadow-sm hover:shadow"
+        title="Retry search"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        Retry
+      </button>
+    </div>
+  {/if}
+
+  {#if (tried && results.length === 0 && !versionNotFound) || (versionNotFound && results.length === 0)}
+    <BookFallbackCards
+      parsedQuery={parsedQuery}
+      bibleGatewayUrl={bibleGatewayUrlForQuery}
+      referenceOgPreviews={referenceOgPreviews}
+      referenceOgLoading={referenceOgLoading}
+      referenceOgErrors={referenceOgErrors}
+      getReferenceKey={getReferenceKey}
+    />
   {:else if results.length > 0}
     {#if versionNotFound}
       <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">

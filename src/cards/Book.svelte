@@ -60,7 +60,7 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
   import { page } from '$app/state';
   import { cards } from '$lib/state';
   import { generateBibleGatewayUrl, generateBibleGatewayUrlForReference, fetchBibleGatewayOg } from '$lib/bibleGatewayUtils';
-  import BookReferenceOgPreview from '$components/BookReferenceOgPreview.svelte';
+  import BookFallbackCards from '$components/BookFallbackCards.svelte';
 
   interface Props {
     card: Card;
@@ -187,20 +187,48 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
       return;
     }
 
-    if (referenceOgLoading.get(refKey) || referenceOgPreviews.has(refKey)) {
+    // Skip if already loading or already has preview
+    if (referenceOgLoading.get(refKey)) {
+      console.log('Book: Skipping OG load - already loading', { refKey });
+      return;
+    }
+    if (referenceOgPreviews.has(refKey)) {
+      console.log('Book: Skipping OG load - already has preview', { refKey });
       return;
     }
 
-    referenceOgLoading.set(refKey, true);
-    referenceOgErrors.set(refKey, null);
+    console.log('Book: Starting OG load', { refKey, targetUrl });
+    // Create a new Map to trigger reactivity
+    const newLoading = new Map(referenceOgLoading);
+    newLoading.set(refKey, true);
+    referenceOgLoading = newLoading;
+    
+    // Clear any previous error
+    if (referenceOgErrors.has(refKey)) {
+      const newErrors = new Map(referenceOgErrors);
+      newErrors.delete(refKey);
+      referenceOgErrors = newErrors;
+    }
 
     try {
       const preview = await fetchBibleGatewayOg(targetUrl);
-      referenceOgPreviews.set(refKey, preview);
+      console.log('Book: OG load successful', { refKey, preview });
+      // Create a new Map to trigger reactivity
+      const newPreviews = new Map(referenceOgPreviews);
+      newPreviews.set(refKey, preview);
+      referenceOgPreviews = newPreviews;
     } catch (error) {
-      referenceOgErrors.set(refKey, (error as Error).message);
+      console.error('Book: OG load failed', { refKey, error });
+      // Create a new Map to trigger reactivity
+      const newErrors = new Map(referenceOgErrors);
+      newErrors.set(refKey, (error as Error).message);
+      referenceOgErrors = newErrors;
     } finally {
-      referenceOgLoading.set(refKey, false);
+      // Create a new Map to trigger reactivity
+      const newLoading = new Map(referenceOgLoading);
+      newLoading.set(refKey, false);
+      referenceOgLoading = newLoading;
+      console.log('Book: OG load finished', { refKey });
     }
   }
 
@@ -239,34 +267,25 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
     for (const [versionKey, versionBookMap] of groupedResults.versionGroups.entries()) {
       const hasResults = versionBookMap.size > 0;
       
-      // Load OG preview for empty versions
-      if (!hasResults) {
-        // If multiple references, load OG preview for each reference
-        if (parsedQuery.references && parsedQuery.references.length > 1) {
-          for (const ref of parsedQuery.references) {
-            const refKey = getReferenceKeyWithVersion(ref, versionKey);
-            if (!referenceOgPreviews.has(refKey) && !referenceOgLoading.get(refKey)) {
-              loadReferenceOgPreview(ref, versionKey).catch(err => console.error('Failed to load reference OG:', err));
-            }
-          }
-        } else {
-          // Single reference: load combined OG preview
-          const url = generateBibleGatewayUrl(parsedQuery, versionKey);
-          if (url && !versionOgPreviews.has(versionKey) && !versionOgLoading.get(versionKey)) {
-            console.log('Book: Loading OG preview for empty version:', versionKey);
-            loadVersionOgPreview(versionKey).catch(err => console.error('Failed to load version OG:', err));
+      // Load OG preview for empty versions - always load reference-specific previews
+      if (!hasResults && parsedQuery.references) {
+        for (const ref of parsedQuery.references) {
+          const refKey = getReferenceKeyWithVersion(ref, versionKey);
+          if (!referenceOgPreviews.has(refKey) && !referenceOgLoading.get(refKey)) {
+            console.log('Book: Loading reference OG preview for empty version:', { versionKey, ref });
+            loadReferenceOgPreview(ref, versionKey).catch(err => console.error('Failed to load reference OG:', err));
           }
         }
       }
     }
   });
 
-  // Load OG previews for each reference when there are no results and multiple references
+  // Load OG previews for each reference when there are no results
   $effect(() => {
     if (!tried || !parsedQuery || results.length > 0 || !bookCard.bookType || bookCard.bookType !== 'bible') return;
-    if (!parsedQuery.references || parsedQuery.references.length <= 1) return;
+    if (!parsedQuery.references || parsedQuery.references.length === 0) return;
     
-    // Load OG preview for each reference
+    // Load OG preview for each reference (including single references)
     for (const ref of parsedQuery.references) {
       const refKey = getReferenceKey(ref);
       if (!referenceOgPreviews.has(refKey) && !referenceOgLoading.get(refKey)) {
@@ -1415,120 +1434,52 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
   </div>
 </div>
 
+<!-- Retry button at top of results pane -->
+{#if tried || results.length > 0}
+  <div class="mt-4 mb-4 flex justify-end">
+    <button
+      onclick={() => performBookSearch()}
+      class="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors shadow-sm hover:shadow"
+      title="Retry search"
+    >
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+      </svg>
+      Retry
+    </button>
+  </div>
+{/if}
+
 {#if tried && results.length === 0}
-  {#if bookCard.bookType === 'bible' && parsedQuery && parsedQuery.references && parsedQuery.references.length > 1}
-    <!-- Multiple references: Show one header, then list each reference separately -->
-    <div class="mt-4 space-y-4">
-      {#if versionNotFound}
-        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <div class="flex items-center space-x-2 text-yellow-800">
-            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
-            </svg>
-            <span class="font-medium">Version not found</span>
-          </div>
-          <div class="mt-2 text-sm text-yellow-700">
-            The requested version was not found. Showing the BibleGateway preview while passages load.
-          </div>
+  {#if versionNotFound}
+    <div class="mt-4 mb-4">
+      <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+        <div class="flex items-center space-x-2 text-yellow-800">
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+          </svg>
+          <span class="font-medium">Version not found</span>
         </div>
-      {/if}
-      <div class="text-gray-500 italic">
-        No {BOOK_TYPES[bookCard.bookType]?.displayName.toLowerCase() || 'bible'} passages found for "{query}"
-      </div>
-      <div class="space-y-4">
-        <h3 class="text-base font-bold text-gray-900">BibleGateway</h3>
-        {#each parsedQuery.references as ref}
-          {@const refKey = getReferenceKey(ref)}
-          {@const refBgUrl = generateBibleGatewayUrlForReference(ref, parsedQuery.versions?.[0] || parsedQuery.version)}
-          <BookReferenceOgPreview
-            reference={ref}
-            bibleGatewayUrl={refBgUrl}
-            ogPreview={referenceOgPreviews.get(refKey) || null}
-            ogLoading={referenceOgLoading.get(refKey) || false}
-            ogError={referenceOgErrors.get(refKey) || null}
-          />
-        {/each}
-        {#if bibleGatewayUrlForQuery}
-          {@const buttonOgImage = ogPreview?.image || (parsedQuery?.references?.[0] ? referenceOgPreviews.get(getReferenceKey(parsedQuery.references[0]))?.image : null)}
-          <div class="flex justify-center pt-2">
-            <a
-              href={bibleGatewayUrlForQuery}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="inline-flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors shadow-sm hover:shadow"
-            >
-              {#if buttonOgImage}
-                <img
-                  src={buttonOgImage}
-                  alt="BibleGateway"
-                  class="w-10 h-10 object-contain"
-                  onerror={(e) => {
-                    const img = e.currentTarget as HTMLImageElement;
-                    img.style.display = 'none';
-                    const svg = img.nextElementSibling as HTMLElement;
-                    if (svg) svg.classList.remove('hidden');
-                  }}
-                />
-              {/if}
-              <svg class="w-10 h-10 {buttonOgImage ? 'hidden' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-              </svg>
-              View All Passages on BibleGateway
-            </a>
-          </div>
-        {/if}
+        <div class="mt-2 text-sm text-yellow-700">
+          The requested version was not found. Showing the BibleGateway preview while passages load.
+        </div>
       </div>
     </div>
-  {:else}
-    <!-- Single reference: Use same layout as multiple references -->
-    {#if parsedQuery}
-      <div class="mt-4 space-y-4">
-        <div class="space-y-4">
-          <h3 class="text-base font-bold text-gray-900">BibleGateway</h3>
-          {#each parsedQuery.references as ref}
-          {@const refKey = getReferenceKey(ref)}
-          {@const refBgUrl = generateBibleGatewayUrlForReference(ref)}
-          <BookReferenceOgPreview
-            reference={ref}
-            bibleGatewayUrl={refBgUrl}
-            ogPreview={referenceOgPreviews.get(refKey) || null}
-            ogLoading={referenceOgLoading.get(refKey) || false}
-            ogError={referenceOgErrors.get(refKey) || null}
-          />
-        {/each}
-        {#if bibleGatewayUrlForQuery}
-          {@const buttonOgImage = ogPreview?.image || (parsedQuery.references?.[0] ? referenceOgPreviews.get(getReferenceKey(parsedQuery.references[0]))?.image : null)}
-          <div class="flex justify-center pt-2">
-            <a
-              href={bibleGatewayUrlForQuery}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="inline-flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors shadow-sm hover:shadow"
-            >
-              {#if buttonOgImage}
-                <img
-                  src={buttonOgImage}
-                  alt="BibleGateway"
-                  class="w-10 h-10 object-contain"
-                  onerror={(e) => {
-                    const img = e.currentTarget as HTMLImageElement;
-                    img.style.display = 'none';
-                    const svg = img.nextElementSibling as HTMLElement;
-                    if (svg) svg.classList.remove('hidden');
-                  }}
-                />
-              {/if}
-              <svg class="w-10 h-10 {buttonOgImage ? 'hidden' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-              </svg>
-              View All Passages on BibleGateway
-            </a>
-          </div>
-        {/if}
-        </div>
-      </div>
-    {/if}
   {/if}
+  {#if bookCard.bookType === 'bible'}
+    <div class="text-gray-500 italic">
+      No {BOOK_TYPES[bookCard.bookType]?.displayName.toLowerCase() || 'bible'} passages found for "{query}"
+    </div>
+  {/if}
+  <BookFallbackCards
+    parsedQuery={parsedQuery}
+    bibleGatewayUrl={bibleGatewayUrlForQuery}
+    referenceOgPreviews={referenceOgPreviews}
+    referenceOgLoading={referenceOgLoading}
+    referenceOgErrors={referenceOgErrors}
+    getReferenceKey={getReferenceKey}
+    getReferenceKeyWithVersion={getReferenceKeyWithVersion}
+  />
 {:else if results.length > 0}
   {#if versionNotFound}
     <div class="mt-4 mb-4">
@@ -1664,106 +1615,21 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
               </div>
             {/each}
           {:else}
-            <!-- No results for this version - show reference cards if multiple references -->
+            <!-- No results for this version - show reference cards -->
             {@const versionSpecificBgUrl = generateCompositeBibleGatewayUrl(versionKey)}
             {@const versionSpecificParsedQuery = parsedQuery ? { ...parsedQuery, versions: [versionKey] } : null}
-            {@const versionQuery = query.replace(/\s*\|\s*[^|]+\s*$/, '') + ' | ' + versionDisplayName}
-            <div style="padding: 2rem;">
-              {#if parsedQuery && parsedQuery.references && parsedQuery.references.length > 1}
-                <!-- Multiple references: Show one header, then list each reference separately -->
-                <div class="space-y-4">
-                  <div class="text-xs text-gray-400 italic leading-relaxed">
-                    The search result was not found on the relays. Here is the result from a different website:
-                  </div>
-                  <h3 class="text-base font-bold text-gray-900">BibleGateway</h3>
-                  {#each parsedQuery.references as ref}
-                    {@const refKey = getReferenceKeyWithVersion(ref, versionKey)}
-                    {@const refBgUrl = generateBibleGatewayUrlForReference(ref, versionKey)}
-                    <BookReferenceOgPreview
-                      reference={ref}
-                      bibleGatewayUrl={refBgUrl}
-                      ogPreview={referenceOgPreviews.get(refKey) || null}
-                      ogLoading={referenceOgLoading.get(refKey) || false}
-                      ogError={referenceOgErrors.get(refKey) || null}
-                    />
-                  {/each}
-                  {#if versionSpecificBgUrl}
-                    {@const versionButtonOgImage = versionOgPreviews.get(versionKey)?.image || (parsedQuery?.references?.[0] ? referenceOgPreviews.get(getReferenceKey(parsedQuery.references[0]))?.image : null)}
-                    <div class="flex justify-center pt-2">
-                      <a
-                        href={versionSpecificBgUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="inline-flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors shadow-sm hover:shadow"
-                      >
-                        {#if versionButtonOgImage}
-                          <img
-                            src={versionButtonOgImage}
-                            alt="BibleGateway"
-                            class="w-10 h-10 object-contain"
-                            onerror={(e) => {
-                              const img = e.currentTarget as HTMLImageElement;
-                              img.style.display = 'none';
-                              const svg = img.nextElementSibling as HTMLElement;
-                              if (svg) svg.classList.remove('hidden');
-                            }}
-                          />
-                        {/if}
-                        <svg class="w-10 h-10 {versionButtonOgImage ? 'hidden' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                        </svg>
-                        View All Passages on BibleGateway
-                      </a>
-                    </div>
-                  {/if}
-                </div>
-              {:else}
-                <!-- Single reference: Use same layout as multiple references -->
-                <div class="space-y-4">
-                  <h3 class="text-base font-bold text-gray-900">BibleGateway</h3>
-                  {#each (versionSpecificParsedQuery?.references || []) as ref}
-                    {@const refKey = getReferenceKeyWithVersion(ref, versionKey)}
-                    {@const refBgUrl = generateBibleGatewayUrlForReference(ref, versionKey)}
-                    <BookReferenceOgPreview
-                      reference={ref}
-                      bibleGatewayUrl={refBgUrl}
-                      ogPreview={referenceOgPreviews.get(refKey) || versionOgPreviews.get(versionKey) || null}
-                      ogLoading={referenceOgLoading.get(refKey) || versionOgLoading.get(versionKey) || false}
-                      ogError={referenceOgErrors.get(refKey) || versionOgErrors.get(versionKey) || null}
-                    />
-                  {/each}
-                  {#if versionSpecificBgUrl}
-                    {@const versionButtonOgImage = versionOgPreviews.get(versionKey)?.image || (versionSpecificParsedQuery?.references?.[0] ? referenceOgPreviews.get(getReferenceKeyWithVersion(versionSpecificParsedQuery.references[0], versionKey))?.image : null)}
-                    <div class="flex justify-center pt-2">
-                      <a
-                        href={versionSpecificBgUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="inline-flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors shadow-sm hover:shadow"
-                      >
-                        {#if versionButtonOgImage}
-                          <img
-                            src={versionButtonOgImage}
-                            alt="BibleGateway"
-                            class="w-10 h-10 object-contain"
-                            onerror={(e) => {
-                              const img = e.currentTarget as HTMLImageElement;
-                              img.style.display = 'none';
-                              const svg = img.nextElementSibling as HTMLElement;
-                              if (svg) svg.classList.remove('hidden');
-                            }}
-                          />
-                        {/if}
-                        <svg class="w-10 h-10 {versionButtonOgImage ? 'hidden' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                        </svg>
-                        View All Passages on BibleGateway
-                      </a>
-                    </div>
-                  {/if}
-                </div>
-              {/if}
-            </div>
+            <BookFallbackCards
+              parsedQuery={versionSpecificParsedQuery}
+              bibleGatewayUrl={versionSpecificBgUrl}
+              referenceOgPreviews={referenceOgPreviews}
+              referenceOgLoading={referenceOgLoading}
+              referenceOgErrors={referenceOgErrors}
+              getReferenceKey={getReferenceKey}
+              getReferenceKeyWithVersion={getReferenceKeyWithVersion}
+              version={versionKey}
+              versionDisplayName={versionDisplayName}
+              noWrapper={true}
+            />
           {/if}
         </div>
       {/each}

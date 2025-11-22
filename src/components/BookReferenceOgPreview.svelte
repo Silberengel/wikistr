@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { BookReference } from '$lib/books';
+  import { formatSections } from '$lib/utils';
 
   interface Props {
     reference: BookReference;
@@ -22,7 +23,11 @@
     const parts: string[] = [];
     if (ref.book) parts.push(ref.book);
     if (ref.chapter) parts.push(String(ref.chapter));
-    if (ref.verse) parts.push(ref.verse);
+    if (ref.verse) {
+      // If verse is comma-separated (e.g., "16,17,18"), format it as a range
+      const verseParts = ref.verse.includes(',') ? ref.verse.split(',').map(v => v.trim()) : [ref.verse];
+      parts.push(formatSections(verseParts));
+    }
     return parts.join(' ');
   }
 </script>
