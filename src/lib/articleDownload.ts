@@ -4,6 +4,7 @@
  */
 
 import type { NostrEvent } from '@nostr/tools/pure';
+import { nip19 } from '@nostr/tools';
 import { relayService } from '$lib/relayService';
 import { exportToPDF, exportToEPUB, exportToHTML5, exportToRevealJS, downloadBlob } from './asciidoctorExport';
 
@@ -11,7 +12,11 @@ import { exportToPDF, exportToEPUB, exportToHTML5, exportToRevealJS, downloadBlo
  * Download article as markdown (with YAML frontmatter metadata)
  */
 export async function downloadAsMarkdown(event: NostrEvent, filename?: string): Promise<void> {
-  const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
+  // Get title - prefer title tag, then d tag (identifier), then a descriptive fallback
+  const titleTag = event.tags.find(([k]) => k === 'title')?.[1];
+  const dTag = event.tags.find(([k]) => k === 'd')?.[1];
+  const title = titleTag || dTag || `Untitled Document (${event.kind})`;
+  
   const author = await getAuthorName(event);
   const description = event.tags.find(([k]) => k === 'description')?.[1];
   const summary = event.tags.find(([k]) => k === 'summary')?.[1];
@@ -21,10 +26,20 @@ export async function downloadAsMarkdown(event: NostrEvent, filename?: string): 
   const publishedOn = event.tags.find(([k]) => k === 'published_on')?.[1];
   const topicTags = event.tags.filter(([k]) => k === 't').map(([, v]) => v);
   
+  // Encode pubkey to npub
+  let npub: string;
+  try {
+    npub = nip19.npubEncode(event.pubkey);
+  } catch (e) {
+    // Fallback to hex if encoding fails
+    npub = event.pubkey;
+  }
+  
   // Build YAML frontmatter
   let frontmatter = '---\n';
   frontmatter += `title: ${JSON.stringify(title)}\n`;
   frontmatter += `author: ${JSON.stringify(author)}\n`;
+  frontmatter += `pubkey: ${JSON.stringify(npub)}\n`;
   
   if (description) frontmatter += `description: ${JSON.stringify(description)}\n`;
   if (summary) frontmatter += `summary: ${JSON.stringify(summary)}\n`;
