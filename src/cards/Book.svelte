@@ -22,16 +22,6 @@ import {
   } from '$lib/books';
 import { highlightedBookCardId } from '$lib/bookSearchLauncher';
 import { openOrCreateArticleCard } from '$lib/articleLauncher';
-import {
-  downloadBookAsAsciiDoc,
-  downloadBookAsPDF,
-  downloadBookAsEPUB
-} from '$lib/articleDownload';
-import {
-  downloadBookAsAsciiDoc,
-  downloadBookAsPDF,
-  downloadBookAsEPUB
-} from '$lib/articleDownload';
   
   // Helper to check if event is a bible event
   function isBibleEvent(event: BookEvent): boolean {

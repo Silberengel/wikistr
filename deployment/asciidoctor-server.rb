@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 require 'sinatra'
+require 'puma'
 require 'asciidoctor'
 require 'asciidoctor-pdf'
 require 'asciidoctor-epub3'
@@ -9,6 +10,7 @@ require 'fileutils'
 
 set :port, ENV.fetch('ASCIIDOCTOR_PORT', 8091).to_i
 set :bind, '0.0.0.0'
+set :server, 'puma'
 
 # CORS configuration
 before do

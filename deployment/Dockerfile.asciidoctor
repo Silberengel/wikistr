@@ -13,7 +13,7 @@ WORKDIR /app/deployment
 RUN bundle install --without development test
 
 # Copy server script
-COPY deployment/asciidoctor.rb ./
+COPY deployment/asciidoctor-server.rb ./
 
 # Expose port
 EXPOSE 8091
@@ -23,5 +23,5 @@ ENV ASCIIDOCTOR_PORT=8091
 ENV ASCIIDOCTOR_ALLOW_ORIGIN=*
 
 # Run the server
-CMD ["bundle", "exec", "ruby", "asciidoctor.rb"]
+CMD ["bundle", "exec", "ruby", "asciidoctor-server.rb"]
 

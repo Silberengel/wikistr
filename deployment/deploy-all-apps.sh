@@ -107,6 +107,62 @@ echo -e "  ${GREEN}✓${NC} torahstr running on http://localhost:8083"
 echo
 echo -e "${GREEN}✅ All applications deployed successfully!${NC}"
 echo
+
+# Health check function
+check_health() {
+    local url=$1
+    local name=$2
+    local max_attempts=30
+    local attempt=1
+    
+    while [ $attempt -le $max_attempts ]; do
+        if curl -s -f -o /dev/null -w "%{http_code}" "$url" > /dev/null 2>&1; then
+            return 0
+        fi
+        sleep 1
+        attempt=$((attempt + 1))
+    done
+    return 1
+}
+
+# Wait a moment for containers to start
+echo -e "${BLUE}⏳ Waiting for services to start...${NC}"
+sleep 3
+
+# Health checks
+echo -e "${BLUE}🏥 Checking service health...${NC}"
+echo
+
+# Check each service
+services=(
+    "http://localhost:8080|Wikistr"
+    "http://localhost:8081|Biblestr"
+    "http://localhost:8082|Quranstr"
+    "http://localhost:8083|Torahstr"
+    "http://localhost:8090|OG Proxy"
+    "http://localhost:8091/healthz|AsciiDoctor"
+)
+
+all_healthy=true
+for service in "${services[@]}"; do
+    IFS='|' read -r url name <<< "$service"
+    if check_health "$url" "$name"; then
+        echo -e "  ${GREEN}✓${NC} ${name} is up"
+    else
+        echo -e "  ${RED}✗${NC} ${name} is down (${url})"
+        all_healthy=false
+    fi
+done
+
+echo
+if [ "$all_healthy" = true ]; then
+    echo -e "${GREEN}✅ All services are healthy!${NC}"
+else
+    echo -e "${YELLOW}⚠️  Some services are not responding. They may still be starting up.${NC}"
+    echo -e "${YELLOW}   Check logs with: docker logs <container-name>${NC}"
+fi
+echo
+
 echo -e "${BLUE}📋 Access URLs:${NC}"
 echo -e "  • Wikistr:  http://localhost:8080"
 echo -e "  • Biblestr: http://localhost:8081"

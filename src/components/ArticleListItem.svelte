@@ -56,13 +56,15 @@
   );
 
   function handleClick(ev: MouseEvent) {
+    ev.preventDefault();
+    ev.stopPropagation();
     openArticle(event, ev);
   }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div
-  onmouseup={handleClick}
+  onclick={handleClick}
   class="cursor-pointer p-4 border-2 border-stone-200 rounded-lg mt-2 relative"
   style="background-color: var(--theme-bg);"
 >

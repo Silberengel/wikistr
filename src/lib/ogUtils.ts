@@ -43,16 +43,37 @@ export async function fetchOGMetadata(url: string): Promise<OGMetadata | null> {
     });
     
     if (!response.ok) {
+      console.warn('OG fetch failed:', response.status, response.statusText, 'for', url);
       return null;
     }
     
+    // Check content type
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
+      console.warn('OG fetch: unexpected content type', contentType, 'for', url);
+    }
+    
     const html = await response.text();
+    
+    if (!html || html.trim().length === 0) {
+      console.warn('OG fetch: empty response for', url);
+      return null;
+    }
+    
     if (typeof DOMParser === 'undefined') {
+      console.warn('OG fetch: DOMParser not available');
       return null;
     }
     
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
+    
+    // Check for parse errors (XML parser errors)
+    const parseError = doc.querySelector('parsererror');
+    if (parseError) {
+      console.warn('OG fetch: HTML parse error for', url, parseError.textContent?.slice(0, 100));
+      // Continue anyway - partial HTML might still have metadata
+    }
     
     // Extract OG metadata
     const getMetaContent = (property: string): string | undefined => {
@@ -77,6 +98,7 @@ export async function fetchOGMetadata(url: string): Promise<OGMetadata | null> {
     
     // Only return if we have at least a title
     if (!title) {
+      console.warn('OG fetch: no title found for', url);
       return null;
     }
     
@@ -88,7 +110,7 @@ export async function fetchOGMetadata(url: string): Promise<OGMetadata | null> {
       siteName
     };
   } catch (error) {
-    console.error('Failed to fetch OG metadata:', error);
+    console.error('Failed to fetch OG metadata for', url, ':', error);
     return null;
   }
 }

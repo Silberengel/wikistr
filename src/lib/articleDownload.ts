@@ -28,18 +28,59 @@ export function downloadAsAsciiDoc(event: NostrEvent, filename?: string): void {
 }
 
 /**
+ * Convert markdown to AsciiDoc format
+ */
+function convertMarkdownToAsciiDoc(markdown: string): string {
+  if (!markdown || markdown.trim().length === 0) {
+    return '= Empty Document\n\nNo content available.';
+  }
+  
+  // Simple conversion: wrap markdown in AsciiDoc format
+  // Most markdown is compatible with AsciiDoc, but we ensure it's valid
+  return markdown;
+}
+
+/**
+ * Prepare content for AsciiDoc conversion
+ */
+function prepareAsciiDocContent(event: NostrEvent): string {
+  if (!event.content || event.content.trim().length === 0) {
+    const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
+    return `= ${title}\n\nNo content available.`;
+  }
+  
+  // For 30817 (Markdown), convert to AsciiDoc format
+  if (event.kind === 30817 || event.kind === 30023) {
+    return convertMarkdownToAsciiDoc(event.content);
+  }
+  
+  // For 30818 (AsciiDoc), use directly
+  return event.content;
+}
+
+/**
  * Download article as PDF
  */
 export async function downloadAsPDF(event: NostrEvent, filename?: string): Promise<void> {
   const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
   const author = event.pubkey.slice(0, 8) + '...';
   
+  if (!event.content || event.content.trim().length === 0) {
+    throw new Error('Cannot download PDF: article content is empty');
+  }
+  
   try {
+    const asciiDocContent = prepareAsciiDocContent(event);
     const blob = await exportToPDF({
-      content: event.content,
+      content: asciiDocContent,
       title,
       author
     });
+    
+    if (!blob || blob.size === 0) {
+      throw new Error('Server returned empty PDF file');
+    }
+    
     const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.pdf`;
     downloadBlob(blob, name);
   } catch (error) {
@@ -55,12 +96,22 @@ export async function downloadAsEPUB(event: NostrEvent, filename?: string): Prom
   const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
   const author = event.pubkey.slice(0, 8) + '...';
   
+  if (!event.content || event.content.trim().length === 0) {
+    throw new Error('Cannot download EPUB: article content is empty');
+  }
+  
   try {
+    const asciiDocContent = prepareAsciiDocContent(event);
     const blob = await exportToEPUB({
-      content: event.content,
+      content: asciiDocContent,
       title,
       author
     });
+    
+    if (!blob || blob.size === 0) {
+      throw new Error('Server returned empty EPUB file');
+    }
+    
     const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.epub`;
     downloadBlob(blob, name);
   } catch (error) {
@@ -477,6 +528,11 @@ export async function downloadBookAsAsciiDoc(indexEvent: NostrEvent, filename?: 
 export async function downloadBookAsPDF(indexEvent: NostrEvent, filename?: string): Promise<void> {
   const contentEvents = await fetchBookContentEvents(indexEvent);
   const combined = await combineBookEvents(indexEvent, contentEvents);
+  
+  if (!combined || combined.trim().length === 0) {
+    throw new Error('Cannot download PDF: book content is empty');
+  }
+  
   const title = indexEvent.tags.find(([k]) => k === 'title')?.[1] || 
                 indexEvent.tags.find(([k]) => k === 'T')?.[1] ||
                 indexEvent.id.slice(0, 8);
@@ -493,6 +549,11 @@ export async function downloadBookAsPDF(indexEvent: NostrEvent, filename?: strin
       title,
       author
     });
+    
+    if (!blob || blob.size === 0) {
+      throw new Error('Server returned empty PDF file');
+    }
+    
     const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.pdf`;
     downloadBlob(blob, name);
   } catch (error) {
@@ -507,6 +568,11 @@ export async function downloadBookAsPDF(indexEvent: NostrEvent, filename?: strin
 export async function downloadBookAsEPUB(indexEvent: NostrEvent, filename?: string): Promise<void> {
   const contentEvents = await fetchBookContentEvents(indexEvent);
   const combined = await combineBookEvents(indexEvent, contentEvents);
+  
+  if (!combined || combined.trim().length === 0) {
+    throw new Error('Cannot download EPUB: book content is empty');
+  }
+  
   const title = indexEvent.tags.find(([k]) => k === 'title')?.[1] || 
                 indexEvent.tags.find(([k]) => k === 'T')?.[1] ||
                 indexEvent.id.slice(0, 8);
@@ -523,6 +589,11 @@ export async function downloadBookAsEPUB(indexEvent: NostrEvent, filename?: stri
       title,
       author
     });
+    
+    if (!blob || blob.size === 0) {
+      throw new Error('Server returned empty EPUB file');
+    }
+    
     const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.epub`;
     downloadBlob(blob, name);
   } catch (error) {

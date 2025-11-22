@@ -783,10 +783,11 @@
                   onclick={(e) => e.stopPropagation()}
                 >
                   <div class="py-1">
-                    {#if event.kind === 30040}
+                    {#if event && event.kind === 30040}
                       <!-- Book (30040) - download with all branches and leaves -->
                       <button
                         onclick={async () => {
+                          if (!event) return;
                           showDownloadMenu = false;
                           isDownloading = true;
                           try {
@@ -809,6 +810,7 @@
                       </button>
                       <button
                         onclick={async () => {
+                          if (!event) return;
                           showDownloadMenu = false;
                           isDownloading = true;
                           try {
@@ -831,6 +833,7 @@
                       </button>
                       <button
                         onclick={async () => {
+                          if (!event) return;
                           showDownloadMenu = false;
                           isDownloading = true;
                           try {
@@ -851,11 +854,12 @@
                           📚 Download as EPUB (with all branches & leaves)
                         {/if}
                       </button>
-                    {:else}
+                    {:else if event}
                       <!-- Regular articles -->
                       {#if event.kind === 30023 || event.kind === 30817}
                         <button
                           onclick={async () => {
+                            if (!event) return;
                             showDownloadMenu = false;
                             downloadAsMarkdown(event);
                           }}
@@ -868,6 +872,7 @@
                       {#if event.kind === 30023 || event.kind === 30817 || event.kind === 30818 || event.kind === 30041}
                         <button
                           onclick={async () => {
+                            if (!event) return;
                             showDownloadMenu = false;
                             downloadAsAsciiDoc(event);
                           }}
@@ -879,6 +884,7 @@
                       {/if}
                       <button
                         onclick={async () => {
+                          if (!event) return;
                           showDownloadMenu = false;
                           isDownloading = true;
                           try {
@@ -901,6 +907,7 @@
                       </button>
                       <button
                         onclick={async () => {
+                          if (!event) return;
                           showDownloadMenu = false;
                           isDownloading = true;
                           try {
@@ -1091,7 +1098,11 @@
 {#if showDownloadMenu}
   <div
     class="fixed inset-0 z-40"
+    role="button"
+    tabindex="-1"
     onclick={() => showDownloadMenu = false}
+    onkeydown={(e) => e.key === 'Escape' && (showDownloadMenu = false)}
+    aria-label="Close menu"
   ></div>
 {/if}
 
