@@ -17,6 +17,9 @@
   import UserBadge from './UserBadge.svelte';
   import EmbeddedEvent from './EmbeddedEvent.svelte';
   import BookSearch from './BookSearch.svelte';
+  import LinkOGCard from './LinkOGCard.svelte';
+  import LinkFallback from './LinkFallback.svelte';
+  import { isStandaloneLink, extractNostrIdentifier } from '$lib/ogUtils';
   import { parseBookWikilink } from '$lib/books';
   import { openBookSearchCard } from '$lib/bookSearchLauncher';
   import { openArticleCard } from '$lib/articleLauncher';
@@ -43,6 +46,7 @@
   let embeddedEvents = $state<Array<{id: string, bech32: string, type: 'nevent' | 'note' | 'naddr'}>>([]);
   let bookSearchResults = $state<Array<{id: string, query: string, results: any[], bookType?: string}>>([]);
   let readInsteadData = $state<Array<{id: string, naddr: string, pubkey: string, identifier: string, displayName: string}>>([]);
+  let standaloneLinks = $state<Array<{id: string, url: string, hasOG: boolean}>>([]);
 
   // Global functions for dynamically generated HTML
   function handleProfileAvatarClick(pubkey: string) {
@@ -130,12 +134,55 @@
     );
   }
 
-  // Reactive statement to apply highlighting when content changes
+  // Reactive statement to apply highlighting and process standalone links when content changes
   $effect(() => {
     if (htmlContent && contentDiv) {
       applySyntaxHighlighting();
+      processStandaloneLinks();
     }
   });
+  
+  // Process standalone links and replace them with components
+  function processStandaloneLinks() {
+    if (!contentDiv) return;
+    
+    // Find all external links (http/https, not nostr: or wikilink:)
+    const links = contentDiv.querySelectorAll<HTMLAnchorElement>('a[href^="http://"], a[href^="https://"]');
+    const newStandaloneLinks: Array<{id: string, url: string, hasOG: boolean}> = [];
+    
+    links.forEach((link) => {
+      // Skip if already processed
+      if (link.dataset.ogProcessed === 'true') return;
+      
+      // Check if this is a standalone link
+      if (isStandaloneLink(link)) {
+        const url = link.href;
+        const linkId = `link-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Check if it has Nostr identifier (will use fallback)
+        const nostrId = extractNostrIdentifier(url);
+        const hasOG = !nostrId; // If it has Nostr ID, we'll use fallback instead of OG
+        
+        // Replace link with placeholder div
+        const placeholder = document.createElement('div');
+        placeholder.id = linkId;
+        placeholder.className = 'standalone-link-placeholder';
+        placeholder.dataset.url = url;
+        placeholder.dataset.hasOg = hasOG.toString();
+        
+        link.parentNode?.replaceChild(placeholder, link);
+        
+        newStandaloneLinks.push({ id: linkId, url, hasOG });
+      } else {
+        // Mark as processed so we don't check again
+        link.dataset.ogProcessed = 'true';
+      }
+    });
+    
+    if (newStandaloneLinks.length > 0) {
+      standaloneLinks = [...standaloneLinks, ...newStandaloneLinks];
+    }
+  }
 
 
   // Decode Nostr NIP-19 bech32 strings
@@ -1840,6 +1887,15 @@
     {@html htmlContent}
   {/if}
 </div>
+
+<!-- Standalone Link OG Cards -->
+{#each standaloneLinks as link (link.id)}
+  {#if link.hasOG}
+    <LinkOGCard url={link.url} />
+  {:else}
+    <LinkFallback url={link.url} />
+  {/if}
+{/each}
 
 <!-- Bookstr Passage Groups are now mounted inline at marker locations -->
 

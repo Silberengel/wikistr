@@ -1,0 +1,167 @@
+/**
+ * OpenGraph metadata fetching utilities
+ */
+
+const OG_PROXY_URL = (import.meta.env.VITE_OG_PROXY_URL as string | undefined)?.trim() || '/sites/';
+
+export interface OGMetadata {
+  title?: string;
+  description?: string;
+  image?: string;
+  url?: string;
+  siteName?: string;
+}
+
+/**
+ * Build proxy URL for OG fetching
+ */
+function buildProxyUrl(url: string): string {
+  // Encode the URL for the proxy
+  const encoded = encodeURIComponent(url);
+  
+  // If OG_PROXY_URL is a full URL, use it directly
+  if (OG_PROXY_URL.startsWith('http://') || OG_PROXY_URL.startsWith('https://')) {
+    const sanitizedProxy = OG_PROXY_URL.replace(/\/$/, '');
+    return `${sanitizedProxy}/${encoded}`;
+  }
+  
+  // Otherwise, treat as relative path
+  const sanitizedProxy = OG_PROXY_URL.endsWith('/') ? OG_PROXY_URL : `${OG_PROXY_URL}/`;
+  return `${sanitizedProxy}${encoded}`;
+}
+
+/**
+ * Fetch OpenGraph metadata from a URL via proxy
+ */
+export async function fetchOGMetadata(url: string): Promise<OGMetadata | null> {
+  try {
+    const proxied = buildProxyUrl(url);
+    const response = await fetch(proxied, {
+      headers: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      }
+    });
+    
+    if (!response.ok) {
+      return null;
+    }
+    
+    const html = await response.text();
+    if (typeof DOMParser === 'undefined') {
+      return null;
+    }
+    
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    
+    // Extract OG metadata
+    const getMetaContent = (property: string): string | undefined => {
+      const meta = doc.querySelector(`meta[property="${property}"]`) || 
+                   doc.querySelector(`meta[name="${property}"]`);
+      return meta?.getAttribute('content')?.trim() || undefined;
+    };
+    
+    const title = getMetaContent('og:title') || 
+                  doc.querySelector('title')?.textContent?.trim() || 
+                  undefined;
+    
+    const description = getMetaContent('og:description') || 
+                       getMetaContent('description') || 
+                       undefined;
+    
+    const image = getMetaContent('og:image') || undefined;
+    
+    const urlMeta = getMetaContent('og:url') || url;
+    
+    const siteName = getMetaContent('og:site_name') || undefined;
+    
+    // Only return if we have at least a title
+    if (!title) {
+      return null;
+    }
+    
+    return {
+      title,
+      description,
+      image,
+      url: urlMeta,
+      siteName
+    };
+  } catch (error) {
+    console.error('Failed to fetch OG metadata:', error);
+    return null;
+  }
+}
+
+/**
+ * Check if a URL contains a Nostr identifier
+ */
+export function extractNostrIdentifier(url: string): {
+  type: 'npub' | 'nprofile' | 'nevent' | 'note' | 'naddr' | null;
+  value: string;
+} | null {
+  // Try to extract bech32 identifiers from URL
+  const bech32Pattern = /(npub1|nprofile1|nevent1|note1|naddr1)[a-zA-Z0-9]{58,}/;
+  const match = url.match(bech32Pattern);
+  
+  if (match) {
+    const bech32 = match[0];
+    const type = bech32.substring(0, bech32.indexOf('1')) as 'npub' | 'nprofile' | 'nevent' | 'note' | 'naddr';
+    return { type, value: bech32 };
+  }
+  
+  // Try to extract hex IDs (64 char hex strings)
+  const hexPattern = /[0-9a-fA-F]{64}/;
+  const hexMatch = url.match(hexPattern);
+  
+  if (hexMatch) {
+    return { type: 'note', value: hexMatch[0] };
+  }
+  
+  return null;
+}
+
+/**
+ * Check if a link is standalone (in its own <p> tag or block-level element)
+ */
+export function isStandaloneLink(element: HTMLElement): boolean {
+  // Check if the link is the only content in its parent paragraph
+  const parent = element.parentElement;
+  if (!parent) return false;
+  
+  // If parent is a <p> tag
+  if (parent.tagName === 'P') {
+    const textContent = parent.textContent?.trim() || '';
+    const linkText = element.textContent?.trim() || '';
+    // If link text is most of the paragraph content (80%+), consider it standalone
+    if (linkText.length > 0 && linkText.length / textContent.length > 0.8) {
+      return true;
+    }
+  }
+  
+  // Check if link is in a list item (don't render OG for links in lists)
+  let current: HTMLElement | null = parent;
+  while (current) {
+    if (current.tagName === 'LI' || current.tagName === 'UL' || current.tagName === 'OL') {
+      return false;
+    }
+    current = current.parentElement;
+  }
+  
+  // Check if link is in a blockquote (could be standalone)
+  current = parent;
+  while (current) {
+    if (current.tagName === 'BLOCKQUOTE') {
+      // In blockquote, check if it's the main content
+      const textContent = current.textContent?.trim() || '';
+      const linkText = element.textContent?.trim() || '';
+      if (linkText.length > 0 && linkText.length / textContent.length > 0.8) {
+        return true;
+      }
+    }
+    current = current.parentElement;
+  }
+  
+  return false;
+}
+

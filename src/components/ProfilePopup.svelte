@@ -5,6 +5,7 @@
   import { account, signer } from '$lib/nostr';
   import { sendZap, fetchZapReceipts, fetchLNURLPay } from '$lib/zaps';
   import UserBadge from './UserBadge.svelte';
+  import ProfileWebsiteOG from './ProfileWebsiteOG.svelte';
 
   interface Props {
     pubkey: string;
@@ -1627,20 +1628,10 @@
           <!-- Websites -->
           {#if userData.websites && userData.websites.length > 0}
             <div class="mb-6">
-              <h4 class="font-semibold mb-1" style="color: var(--text-primary);">Website{userData.websites.length > 1 ? 's' : ''}</h4>
-              <div class="space-y-1">
+              <h4 class="font-semibold mb-2" style="color: var(--text-primary);">Website{userData.websites.length > 1 ? 's' : ''}</h4>
+              <div class="space-y-2">
                 {#each userData.websites as website}
-                  <div>
-                    <a
-                      href={website}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="underline break-all block"
-                      style="color: var(--accent);"
-                    >
-                      {website}
-                    </a>
-                  </div>
+                  <ProfileWebsiteOG url={website} />
                 {/each}
               </div>
             </div>

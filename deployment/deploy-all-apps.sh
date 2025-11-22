@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 
 VERSION="v4.2"
 
-echo -e "${GREEN}🚀 Deploying all Wikistr applications v${VERSION}${NC}"
+echo -e "${GREEN}🚀 Deploying all Wikistr applications version ${VERSION}${NC}"
 echo
 
 # Check if Docker is running
