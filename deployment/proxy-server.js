@@ -7,8 +7,8 @@ const ALLOW_ORIGINS = (process.env.PROXY_ALLOW_ORIGIN || '*')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
-const USER_AGENT = process.env.PROXY_USER_AGENT || 'wikistr-og-proxy/1.0';
-const TIMEOUT_MS = Number(process.env.PROXY_TIMEOUT_MS || 10_000);
+const USER_AGENT = process.env.PROXY_USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const TIMEOUT_MS = Number(process.env.PROXY_TIMEOUT_MS || 30_000); // Increased to 30 seconds for Bible Gateway
 const MAX_BODY_BYTES = Number(process.env.PROXY_MAX_BODY_BYTES || 5 * 1024 * 1024);
 
 function escapeForRegex(value) {
@@ -69,17 +69,32 @@ function setCorsHeaders(req, res) {
   res.setHeader('Access-Control-Max-Age', '86400');
 }
 
-async function proxyRequest(targetUrl, res) {
+async function proxyRequest(targetUrl, res, retryCount = 0) {
+  const MAX_RETRIES = 3;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
+    // Use a more browser-like user agent and headers for Bible Gateway
+    const isBibleGateway = targetUrl.includes('biblegateway.com');
+    const fetchHeaders = {
+      'User-Agent': USER_AGENT,
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Connection': 'keep-alive',
+      'Upgrade-Insecure-Requests': '1',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Cache-Control': 'max-age=0'
+    };
+    
     const upstream = await fetch(targetUrl, {
       signal: controller.signal,
-      headers: {
-        'User-Agent': USER_AGENT,
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-      }
+      headers: fetchHeaders,
+      // Add redirect handling
+      redirect: 'follow'
     });
 
     const responseHeaders = {};
@@ -115,6 +130,37 @@ async function proxyRequest(targetUrl, res) {
       res.write(Buffer.from(payload));
     }
     res.end();
+  } catch (error) {
+    clearTimeout(timeout);
+    
+    // Handle DNS/network errors with retry
+    const isRetryableError = 
+      error.message?.includes('EAI_AGAIN') ||
+      error.message?.includes('getaddrinfo') ||
+      error.message?.includes('ENOTFOUND') ||
+      error.message?.includes('ECONNREFUSED') ||
+      error.message?.includes('ETIMEDOUT') ||
+      (error.name === 'TypeError' && error.message?.includes('fetch failed'));
+    
+    if (isRetryableError && retryCount < MAX_RETRIES) {
+      const delay = Math.min(1000 * Math.pow(2, retryCount), 5000); // Exponential backoff, max 5s
+      console.log(`[proxy] Retryable error (attempt ${retryCount + 1}/${MAX_RETRIES}), retrying in ${delay}ms:`, error.message);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return proxyRequest(targetUrl, res, retryCount + 1);
+    }
+    
+    // Handle abort/timeout errors more gracefully
+    if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+      console.error('[proxy] Request timeout or aborted for', targetUrl);
+      if (!res.writableEnded) {
+        res.writeHead(504, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'Request timeout - upstream server took too long to respond' }));
+      }
+      return;
+    }
+    
+    // Re-throw other errors to be handled by the caller
+    throw error;
   } finally {
     clearTimeout(timeout);
   }

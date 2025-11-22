@@ -31,6 +31,37 @@ if ! docker info > /dev/null 2>&1; then
     exit 1
 fi
 
+# Clean up old images before building
+echo -e "${BLUE}🧹 Cleaning up old Docker images...${NC}"
+
+# Remove dangling images (images with <none> tag)
+DANGLING_IMAGES=$(docker images -f "dangling=true" -q --filter "reference=silberengel/wikistr")
+if [ -n "$DANGLING_IMAGES" ]; then
+    echo -e "  Removing dangling images..."
+    docker rmi $DANGLING_IMAGES 2>/dev/null || true
+    echo -e "  ${GREEN}✓${NC} Dangling images removed"
+else
+    echo -e "  ${YELLOW}⚠${NC} No dangling images found"
+fi
+
+# Remove old version tags (keep only current version and latest)
+echo -e "  Removing old version tags..."
+for theme in "${THEMES[@]}"; do
+    # Find all version tags for this theme except current version and latest
+    OLD_TAGS=$(docker images --format "{{.Repository}}:{{.Tag}}" silberengel/wikistr | grep "${theme}" | grep -v "${VERSION}-${theme}" | grep -v "latest-${theme}" | grep -E "v[0-9]+\.[0-9]+" || true)
+    if [ -n "$OLD_TAGS" ]; then
+        echo "$OLD_TAGS" | while read -r tag; do
+            if [ -n "$tag" ]; then
+                echo -e "    Removing ${tag}..."
+                docker rmi "$tag" 2>/dev/null || true
+            fi
+        done
+    fi
+done
+echo -e "  ${GREEN}✓${NC} Old version tags removed"
+
+echo
+
 # Build all images using docker-compose with OG proxy URL
 echo -e "${BLUE}📦 Building Docker images...${NC}"
 export VITE_OG_PROXY_URL="${OG_PROXY_URL}"
@@ -53,6 +84,31 @@ done
 
 echo
 echo -e "${GREEN}✅ All images tagged successfully!${NC}"
+echo
+
+# Clean up old images after building (remove old version tags that are no longer needed)
+echo -e "${BLUE}🧹 Final cleanup of old images...${NC}"
+for theme in "${THEMES[@]}"; do
+    # Find old version tags (not current version, not latest)
+    OLD_TAGS=$(docker images --format "{{.Repository}}:{{.Tag}}" silberengel/wikistr | grep "${theme}" | grep -v "${VERSION}-${theme}" | grep -v "latest-${theme}" | grep -E "v[0-9]+\.[0-9]+" || true)
+    if [ -n "$OLD_TAGS" ]; then
+        echo "$OLD_TAGS" | while read -r tag; do
+            if [ -n "$tag" ]; then
+                echo -e "  Removing old tag: ${tag}"
+                docker rmi "$tag" 2>/dev/null || true
+            fi
+        done
+    fi
+done
+
+# Remove any remaining dangling images
+DANGLING_IMAGES=$(docker images -f "dangling=true" -q --filter "reference=silberengel/wikistr")
+if [ -n "$DANGLING_IMAGES" ]; then
+    echo -e "  Removing remaining dangling images..."
+    docker rmi $DANGLING_IMAGES 2>/dev/null || true
+fi
+
+echo -e "${GREEN}✅ Cleanup complete!${NC}"
 echo
 
 # Ask if user wants to push to Docker Hub

@@ -178,12 +178,14 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
   
   let content = event.content;
   
-  // For 30817 (Markdown), convert to AsciiDoc format
+  // For 30817 (Markdown) and 30023 (Long-form Markdown), convert to AsciiDoc format
   if (event.kind === 30817 || event.kind === 30023) {
+    // Markdown is mostly compatible with AsciiDoc, but ensure it's valid
     content = convertMarkdownToAsciiDoc(event.content);
   }
   
-  // For 30818 (AsciiDoc), use directly
+  // For 30818 (AsciiDoc), use directly - it's already AsciiDoc format
+  // For 30040 (Index) and 30041 (Content), they should already be AsciiDoc
   // If content already has a title, we might want to preserve it
   // But if includeMetadata is true, we'll wrap it with metadata
   
@@ -315,10 +317,20 @@ export async function downloadAsHTML5(event: NostrEvent, filename?: string): Pro
   
   try {
     // Prepare AsciiDoc content with metadata
+    // This converts Markdown (30817, 30023) to AsciiDoc and wraps with metadata
     const asciiDocContent = await prepareAsciiDocContent(event, true);
     const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
     const author = await getAuthorName(event);
     
+    // Verify AsciiDoc content was created
+    if (!asciiDocContent || asciiDocContent.trim().length === 0) {
+      throw new Error('Failed to prepare AsciiDoc content');
+    }
+    
+    // Log for debugging (first 200 chars)
+    console.log('HTML5 Download: Sending AsciiDoc to server (preview):', asciiDocContent.substring(0, 200));
+    
+    // Send AsciiDoc content to AsciiDoctor server and request HTML
     const blob = await exportToHTML5({
       content: asciiDocContent,
       title,
@@ -847,6 +859,306 @@ export async function downloadBookAsEPUB(indexEvent: NostrEvent, filename?: stri
     downloadBlob(blob, name);
   } catch (error) {
     console.error('Failed to download book EPUB:', error);
+    throw error;
+  }
+}
+
+/**
+ * Combine multiple book search results into a single document
+ */
+async function combineBookSearchResults(
+  results: NostrEvent[],
+  parsedQuery: { references: any[]; version?: string; versions?: string[] } | null
+): Promise<string> {
+  // Build title from query
+  const queryTitle = parsedQuery 
+    ? parsedQuery.references.map(ref => {
+        const parts: string[] = [];
+        if (ref.book) parts.push(ref.book);
+        if (ref.chapter) parts.push(String(ref.chapter));
+        if (ref.verse) parts.push(ref.verse);
+        return parts.join(' ');
+      }).join('; ')
+    : 'Book Search Results';
+  
+  const versions = parsedQuery?.versions || (parsedQuery?.version ? [parsedQuery.version] : []);
+  const versionStr = versions.length > 0 ? ` (${versions.join(', ')})` : '';
+  const title = `${queryTitle}${versionStr}`;
+  
+  // Get author from first result or use anonymous
+  let author = 'Anonymous';
+  if (results.length > 0) {
+    const firstEvent = results[0];
+    const authorTag = firstEvent.tags.find(([k]) => k === 'author')?.[1];
+    if (authorTag) {
+      author = authorTag;
+    } else {
+      try {
+        author = await getUserHandle(firstEvent.pubkey);
+      } catch (e) {
+        // Keep default
+      }
+    }
+  }
+  
+  // Build AsciiDoc document
+  let doc = `= ${title}\n`;
+  doc += `:author: ${author}\n`;
+  doc += `:doctype: book\n`;
+  doc += `\n`;
+  
+  // Group results by version for better organization
+  const resultsByVersion = new Map<string, NostrEvent[]>();
+  for (const event of results) {
+    const versionTags = event.tags.filter(([tag]) => tag === 'v').map(([, value]) => value);
+    const version = versionTags.length > 0 ? versionTags[0] : 'default';
+    if (!resultsByVersion.has(version)) {
+      resultsByVersion.set(version, []);
+    }
+    resultsByVersion.get(version)!.push(event);
+  }
+  
+  // Add each result as a section
+  for (const [version, versionResults] of resultsByVersion.entries()) {
+    if (version !== 'default' || resultsByVersion.size > 1) {
+      doc += `== ${version.toUpperCase()}\n\n`;
+    }
+    
+    for (const event of versionResults) {
+      // Extract metadata from event tags
+      const sectionTitle = event.tags.find(([k]) => k === 'title')?.[1];
+      const bookTag = event.tags.find(([k]) => k === 'T')?.[1];
+      const chapterTag = event.tags.find(([k]) => k === 'c')?.[1];
+      const sectionTags = event.tags.filter(([k]) => k === 's').map(([, v]) => v);
+      
+      // Create section header
+      if (sectionTitle) {
+        doc += `=== ${sectionTitle}\n\n`;
+      } else if (bookTag && chapterTag) {
+        const sectionLabel = sectionTags.length > 0 ? sectionTags.join(', ') : '';
+        let header = `${bookTag} ${chapterTag}${sectionLabel ? ':' + sectionLabel : ''}`;
+        doc += `=== ${header}\n\n`;
+      } else {
+        const contentPreview = event.content.slice(0, 50).replace(/\n/g, ' ');
+        doc += `=== ${contentPreview}...\n\n`;
+      }
+      
+      // Add content
+      doc += event.content;
+      doc += `\n\n`;
+    }
+  }
+  
+  return doc;
+}
+
+/**
+ * Download book search results as Markdown
+ */
+export async function downloadBookSearchResultsAsMarkdown(
+  results: NostrEvent[],
+  parsedQuery: { references: any[]; version?: string; versions?: string[] } | null
+): Promise<void> {
+  if (results.length === 0) {
+    throw new Error('No results to download');
+  }
+  
+  // Build title from query
+  const queryTitle = parsedQuery 
+    ? parsedQuery.references.map(ref => {
+        const parts: string[] = [];
+        if (ref.book) parts.push(ref.book);
+        if (ref.chapter) parts.push(String(ref.chapter));
+        if (ref.verse) parts.push(ref.verse);
+        return parts.join(' ');
+      }).join('; ')
+    : 'Book Search Results';
+  
+  const versions = parsedQuery?.versions || (parsedQuery?.version ? [parsedQuery.version] : []);
+  const versionStr = versions.length > 0 ? ` (${versions.join(', ')})` : '';
+  const title = `${queryTitle}${versionStr}`;
+  
+  // Get author from first result
+  const firstEvent = results[0];
+  const author = await getAuthorName(firstEvent);
+  
+  // Build YAML frontmatter
+  let frontmatter = '---\n';
+  frontmatter += `title: ${JSON.stringify(title)}\n`;
+  frontmatter += `author: ${JSON.stringify(author)}\n`;
+  frontmatter += `event_count: ${results.length}\n`;
+  frontmatter += `---\n\n`;
+  
+  // Build content
+  let content = frontmatter;
+  
+  // Group results by version
+  const resultsByVersion = new Map<string, NostrEvent[]>();
+  for (const event of results) {
+    const versionTags = event.tags.filter(([tag]) => tag === 'v').map(([, value]) => value);
+    const version = versionTags.length > 0 ? versionTags[0] : 'default';
+    if (!resultsByVersion.has(version)) {
+      resultsByVersion.set(version, []);
+    }
+    resultsByVersion.get(version)!.push(event);
+  }
+  
+  // Add each result
+  for (const [version, versionResults] of resultsByVersion.entries()) {
+    if (version !== 'default' || resultsByVersion.size > 1) {
+      content += `# ${version.toUpperCase()}\n\n`;
+    }
+    
+    for (const event of versionResults) {
+      const sectionTitle = event.tags.find(([k]) => k === 'title')?.[1];
+      const bookTag = event.tags.find(([k]) => k === 'T')?.[1];
+      const chapterTag = event.tags.find(([k]) => k === 'c')?.[1];
+      
+      if (sectionTitle) {
+        content += `## ${sectionTitle}\n\n`;
+      } else if (bookTag && chapterTag) {
+        content += `## ${bookTag} ${chapterTag}\n\n`;
+      }
+      
+      content += event.content;
+      content += `\n\n`;
+    }
+  }
+  
+  const blob = new Blob([content], { type: 'text/markdown' });
+  const name = `${title.replace(/[^a-z0-9]/gi, '_')}.md`;
+  downloadBlob(blob, name);
+}
+
+/**
+ * Download book search results as AsciiDoc
+ */
+export async function downloadBookSearchResultsAsAsciiDoc(
+  results: NostrEvent[],
+  parsedQuery: { references: any[]; version?: string; versions?: string[] } | null
+): Promise<void> {
+  if (results.length === 0) {
+    throw new Error('No results to download');
+  }
+  
+  const combined = await combineBookSearchResults(results, parsedQuery);
+  const queryTitle = parsedQuery 
+    ? parsedQuery.references.map(ref => {
+        const parts: string[] = [];
+        if (ref.book) parts.push(ref.book);
+        if (ref.chapter) parts.push(String(ref.chapter));
+        if (ref.verse) parts.push(ref.verse);
+        return parts.join(' ');
+      }).join('; ')
+    : 'Book Search Results';
+  
+  const versions = parsedQuery?.versions || (parsedQuery?.version ? [parsedQuery.version] : []);
+  const versionStr = versions.length > 0 ? ` (${versions.join(', ')})` : '';
+  const name = `${queryTitle.replace(/[^a-z0-9]/gi, '_')}${versionStr.replace(/[^a-z0-9]/gi, '_')}.adoc`;
+  const blob = new Blob([combined], { type: 'text/asciidoc' });
+  downloadBlob(blob, name);
+}
+
+/**
+ * Download book search results as PDF
+ */
+export async function downloadBookSearchResultsAsPDF(
+  results: NostrEvent[],
+  parsedQuery: { references: any[]; version?: string; versions?: string[] } | null
+): Promise<void> {
+  if (results.length === 0) {
+    throw new Error('No results to download');
+  }
+  
+  const combined = await combineBookSearchResults(results, parsedQuery);
+  
+  const queryTitle = parsedQuery 
+    ? parsedQuery.references.map(ref => {
+        const parts: string[] = [];
+        if (ref.book) parts.push(ref.book);
+        if (ref.chapter) parts.push(String(ref.chapter));
+        if (ref.verse) parts.push(ref.verse);
+        return parts.join(' ');
+      }).join('; ')
+    : 'Book Search Results';
+  
+  const versions = parsedQuery?.versions || (parsedQuery?.version ? [parsedQuery.version] : []);
+  const versionStr = versions.length > 0 ? ` (${versions.join(', ')})` : '';
+  const title = `${queryTitle}${versionStr}`;
+  
+  const firstEvent = results[0];
+  let author = firstEvent.tags.find(([k]) => k === 'author')?.[1];
+  if (!author) {
+    author = await getUserHandle(firstEvent.pubkey);
+  }
+  
+  try {
+    const blob = await exportToPDF({
+      content: combined,
+      title,
+      author
+    });
+    
+    if (!blob || blob.size === 0) {
+      throw new Error('Server returned empty PDF file');
+    }
+    
+    const name = `${title.replace(/[^a-z0-9]/gi, '_')}.pdf`;
+    downloadBlob(blob, name);
+  } catch (error) {
+    console.error('Failed to download book search results PDF:', error);
+    throw error;
+  }
+}
+
+/**
+ * Download book search results as EPUB
+ */
+export async function downloadBookSearchResultsAsEPUB(
+  results: NostrEvent[],
+  parsedQuery: { references: any[]; version?: string; versions?: string[] } | null
+): Promise<void> {
+  if (results.length === 0) {
+    throw new Error('No results to download');
+  }
+  
+  const combined = await combineBookSearchResults(results, parsedQuery);
+  
+  const queryTitle = parsedQuery 
+    ? parsedQuery.references.map(ref => {
+        const parts: string[] = [];
+        if (ref.book) parts.push(ref.book);
+        if (ref.chapter) parts.push(String(ref.chapter));
+        if (ref.verse) parts.push(ref.verse);
+        return parts.join(' ');
+      }).join('; ')
+    : 'Book Search Results';
+  
+  const versions = parsedQuery?.versions || (parsedQuery?.version ? [parsedQuery.version] : []);
+  const versionStr = versions.length > 0 ? ` (${versions.join(', ')})` : '';
+  const title = `${queryTitle}${versionStr}`;
+  
+  const firstEvent = results[0];
+  let author = firstEvent.tags.find(([k]) => k === 'author')?.[1];
+  if (!author) {
+    author = await getUserHandle(firstEvent.pubkey);
+  }
+  
+  try {
+    const blob = await exportToEPUB({
+      content: combined,
+      title,
+      author
+    });
+    
+    if (!blob || blob.size === 0) {
+      throw new Error('Server returned empty EPUB file');
+    }
+    
+    const name = `${title.replace(/[^a-z0-9]/gi, '_')}.epub`;
+    downloadBlob(blob, name);
+  } catch (error) {
+    console.error('Failed to download book search results EPUB:', error);
     throw error;
   }
 }

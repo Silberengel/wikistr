@@ -7,7 +7,12 @@
 // In test environment, always use absolute URL
 const getAsciiDoctorServerUrl = () => {
   if (import.meta.env.VITE_ASCIIDOCTOR_SERVER_URL) {
-    return import.meta.env.VITE_ASCIIDOCTOR_SERVER_URL;
+    const url = import.meta.env.VITE_ASCIIDOCTOR_SERVER_URL;
+    // Ensure trailing slash for relative paths
+    if (url.startsWith('/') && !url.endsWith('/')) {
+      return url + '/';
+    }
+    return url;
   }
   // In test environment (vitest), use absolute URL
   if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') {
@@ -15,7 +20,7 @@ const getAsciiDoctorServerUrl = () => {
   }
   // In browser, use relative path (works with Apache proxy)
   if (typeof window !== 'undefined') {
-    return '/asciidoctor';
+    return '/asciidoctor/';
   }
   // Default fallback
   return 'http://localhost:8091';
@@ -33,7 +38,9 @@ export interface ExportOptions {
  * Convert AsciiDoc content to PDF
  */
 export async function exportToPDF(options: ExportOptions): Promise<Blob> {
-  const response = await fetch(`${ASCIIDOCTOR_SERVER_URL}/convert/pdf`, {
+  const baseUrl = ASCIIDOCTOR_SERVER_URL.endsWith('/') ? ASCIIDOCTOR_SERVER_URL : `${ASCIIDOCTOR_SERVER_URL}/`;
+  const url = `${baseUrl}convert/pdf`;
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -58,13 +65,17 @@ export async function exportToPDF(options: ExportOptions): Promise<Blob> {
   // Verify we got a PDF response
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('application/pdf')) {
-    // Might be an error response, try to read as JSON
+    // Might be an error response, try to read as JSON or text
     const text = await response.text();
+    // Check if it's the SvelteKit app shell (common error when proxy fails)
+    if (text.includes('__sveltekit') || text.includes('sveltekit-preload-data')) {
+      throw new Error('Server returned SvelteKit app shell instead of PDF. Check AsciiDoctor server is running at /asciidoctor/ and proxy is configured correctly.');
+    }
     try {
       const error = JSON.parse(text);
       throw new Error(error.error || error.message || 'Server returned non-PDF response');
     } catch {
-      throw new Error(`Server returned unexpected content type: ${contentType}`);
+      throw new Error(`Server returned unexpected content type: ${contentType}. Response preview: ${text.substring(0, 200)}`);
     }
   }
 
@@ -81,13 +92,24 @@ export async function exportToPDF(options: ExportOptions): Promise<Blob> {
  * Convert AsciiDoc content to HTML5
  */
 export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
-  const response = await fetch(`${ASCIIDOCTOR_SERVER_URL}/convert/html5`, {
+  const baseUrl = ASCIIDOCTOR_SERVER_URL.endsWith('/') ? ASCIIDOCTOR_SERVER_URL : `${ASCIIDOCTOR_SERVER_URL}/`;
+  const url = `${baseUrl}convert/html5`;
+  
+  // Verify we have AsciiDoc content
+  if (!options.content || options.content.trim().length === 0) {
+    throw new Error('Cannot export to HTML5: AsciiDoc content is empty');
+  }
+  
+  console.log('AsciiDoctor Export: Sending request to', url);
+  console.log('AsciiDoctor Export: Content preview (first 200 chars):', options.content.substring(0, 200));
+  
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      content: options.content,
+      content: options.content, // AsciiDoc content
       title: options.title,
       author: options.author || '',
     }),
@@ -106,13 +128,17 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
   // Verify we got an HTML response
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('text/html')) {
-    // Might be an error response, try to read as JSON
+    // Might be an error response, try to read as JSON or text
     const text = await response.text();
+    // Check if it's the SvelteKit app shell (common error)
+    if (text.includes('__sveltekit') || text.includes('sveltekit-preload-data')) {
+      throw new Error('Server returned SvelteKit app shell instead of HTML. Check AsciiDoctor server configuration and proxy settings.');
+    }
     try {
       const error = JSON.parse(text);
       throw new Error(error.error || error.message || 'Server returned non-HTML response');
     } catch {
-      throw new Error(`Server returned unexpected content type: ${contentType}`);
+      throw new Error(`Server returned unexpected content type: ${contentType}. Response preview: ${text.substring(0, 200)}`);
     }
   }
 
@@ -122,14 +148,35 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
     throw new Error('Server returned empty HTML file');
   }
   
-  return blob;
+  // Verify the blob content is actually HTML from AsciiDoctor, not the SvelteKit app
+  const blobText = await blob.text();
+  
+  // Check if it's the SvelteKit app shell (common error when proxy fails)
+  if (blobText.includes('__sveltekit') || blobText.includes('sveltekit-preload-data') || blobText.includes('_app/immutable')) {
+    console.error('AsciiDoctor Export: Received SvelteKit app shell instead of HTML');
+    console.error('AsciiDoctor Export: URL was:', url);
+    console.error('AsciiDoctor Export: Response preview:', blobText.substring(0, 500));
+    throw new Error('Server returned SvelteKit app shell instead of HTML. The AsciiDoctor server may not be running, or the proxy at /asciidoctor/ is not configured correctly. Check: 1) AsciiDoctor server is running on port 8091, 2) Apache proxy is configured: ProxyPass /asciidoctor/ http://127.0.0.1:8091/');
+  }
+  
+  // Verify it's actually HTML from AsciiDoctor (should contain asciidoc classes or structure)
+  if (!blobText.includes('<html') && !blobText.includes('<!DOCTYPE') && !blobText.includes('<!doctype')) {
+    console.error('AsciiDoctor Export: Response does not appear to be HTML');
+    console.error('AsciiDoctor Export: Response preview:', blobText.substring(0, 500));
+    throw new Error('Server returned invalid HTML. Response preview: ' + blobText.substring(0, 200));
+  }
+  
+  // Return a new blob with the verified content
+  return new Blob([blobText], { type: 'text/html; charset=utf-8' });
 }
 
 /**
  * Convert AsciiDoc content to Reveal.js presentation
  */
 export async function exportToRevealJS(options: ExportOptions): Promise<Blob> {
-  const response = await fetch(`${ASCIIDOCTOR_SERVER_URL}/convert/revealjs`, {
+  const baseUrl = ASCIIDOCTOR_SERVER_URL.endsWith('/') ? ASCIIDOCTOR_SERVER_URL : `${ASCIIDOCTOR_SERVER_URL}/`;
+  const url = `${baseUrl}convert/revealjs`;
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -177,7 +224,9 @@ export async function exportToRevealJS(options: ExportOptions): Promise<Blob> {
  * Convert AsciiDoc content to EPUB
  */
 export async function exportToEPUB(options: ExportOptions): Promise<Blob> {
-  const response = await fetch(`${ASCIIDOCTOR_SERVER_URL}/convert/epub`, {
+  const baseUrl = ASCIIDOCTOR_SERVER_URL.endsWith('/') ? ASCIIDOCTOR_SERVER_URL : `${ASCIIDOCTOR_SERVER_URL}/`;
+  const url = `${baseUrl}convert/epub`;
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -202,13 +251,17 @@ export async function exportToEPUB(options: ExportOptions): Promise<Blob> {
   // Verify we got an EPUB response
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('application/epub') && !contentType.includes('application/zip')) {
-    // Might be an error response, try to read as JSON
+    // Might be an error response, try to read as JSON or text
     const text = await response.text();
+    // Check if it's the SvelteKit app shell (common error when proxy fails)
+    if (text.includes('__sveltekit') || text.includes('sveltekit-preload-data')) {
+      throw new Error('Server returned SvelteKit app shell instead of EPUB. Check AsciiDoctor server is running at /asciidoctor/ and proxy is configured correctly.');
+    }
     try {
       const error = JSON.parse(text);
       throw new Error(error.error || error.message || 'Server returned non-EPUB response');
     } catch {
-      throw new Error(`Server returned unexpected content type: ${contentType}`);
+      throw new Error(`Server returned unexpected content type: ${contentType}. Response preview: ${text.substring(0, 200)}`);
     }
   }
 
@@ -240,7 +293,9 @@ export function downloadBlob(blob: Blob, filename: string): void {
  */
 export async function checkServerHealth(): Promise<boolean> {
   try {
-    const response = await fetch(`${ASCIIDOCTOR_SERVER_URL}/healthz`, {
+    const baseUrl = ASCIIDOCTOR_SERVER_URL.endsWith('/') ? ASCIIDOCTOR_SERVER_URL : `${ASCIIDOCTOR_SERVER_URL}/`;
+    const url = `${baseUrl}healthz`;
+    const response = await fetch(url, {
       method: 'GET',
     });
     return response.ok;

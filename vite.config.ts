@@ -14,7 +14,17 @@ const config: UserConfig = {
       '/sites': {
         target: 'http://localhost:8090',
         changeOrigin: true,
-        rewrite: (path) => path // Keep /sites/ prefix
+        rewrite: (path) => path // Keep /sites/ prefix - server expects /sites/{encoded-url}
+      },
+      '/asciidoctor': {
+        target: 'http://localhost:8091',
+        changeOrigin: true,
+        rewrite: (path) => {
+          // Remove /asciidoctor prefix, server expects paths like /convert/pdf
+          const newPath = path.replace(/^\/asciidoctor/, '');
+          // Ensure leading slash
+          return newPath.startsWith('/') ? newPath : '/' + newPath;
+        }
       }
     }
   },

@@ -191,7 +191,7 @@ post '/convert/html5' do
     temp_adoc.close
     
     begin
-      # Convert to HTML5
+      # Convert to HTML5 with standalone document
       html_content = Asciidoctor.convert content,
         backend: 'html5',
         safe: 'unsafe',
@@ -203,8 +203,16 @@ post '/convert/html5' do
           'allow-uri-read' => '',
           'stylesheet' => 'default',
           'linkcss' => '',
-          'copycss' => ''
+          'copycss' => '',
+          'standalone' => '',
+          'noheader' => '',
+          'nofooter' => ''
         }
+      
+      # Ensure we have a complete HTML document
+      unless html_content.include?('<!doctype') || html_content.include?('<!DOCTYPE')
+        html_content = "<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<title>#{title}</title>\n</head>\n<body>\n#{html_content}\n</body>\n</html>"
+      end
       
       # Set headers
       content_type 'text/html; charset=utf-8'

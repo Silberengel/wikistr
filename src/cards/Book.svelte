@@ -62,6 +62,12 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
   import { cards } from '$lib/state';
   import { generateBibleGatewayUrl, generateBibleGatewayUrlForReference, fetchBibleGatewayOg } from '$lib/bibleGatewayUtils';
   import BookFallbackCards from '$components/BookFallbackCards.svelte';
+  import {
+    downloadBookSearchResultsAsMarkdown,
+    downloadBookSearchResultsAsAsciiDoc,
+    downloadBookSearchResultsAsPDF,
+    downloadBookSearchResultsAsEPUB
+  } from '$lib/articleDownload';
 
   interface Props {
     card: Card;
@@ -1451,15 +1457,15 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
       <div class="relative ml-4">
         <button
           onclick={() => showDownloadMenu = !showDownloadMenu}
-          class="p-2 rounded-lg transition-colors hover:bg-gray-200 dark:hover:bg-gray-700"
+          class="px-3 py-2 rounded-lg transition-colors hover:bg-gray-200 dark:hover:bg-gray-700 text-sm"
           style="color: var(--text-secondary);"
           title="Download options"
         >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path>
-          </svg>
+          ...
         </button>
         {#if showDownloadMenu}
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             class="absolute right-0 mt-2 w-64 rounded-lg shadow-lg z-50"
             style="background-color: var(--bg-primary); border: 1px solid var(--border);"
@@ -1467,18 +1473,103 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
           >
             <div class="py-1">
               <div class="px-4 py-2 text-xs font-semibold" style="color: var(--text-secondary);">
-                Download search results
+                Download...
               </div>
               <button
                 onclick={async () => {
+                  if (results.length === 0) return;
                   showDownloadMenu = false;
-                  // For now, just show a message - we'd need to combine all results
-                  alert('Combining all search results into a single document is not yet implemented. Please download individual passages from the article view.');
+                  isDownloading = true;
+                  try {
+                    await downloadBookSearchResultsAsMarkdown(results, parsedQuery);
+                  } catch (error) {
+                    alert('Failed to download search results as Markdown.');
+                    console.error('Download error:', error);
+                  } finally {
+                    isDownloading = false;
+                  }
                 }}
-                class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                disabled={isDownloading || results.length === 0}
+                class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                 style="color: var(--text-primary);"
               >
-                📚 Download all results as EPUB
+                {#if isDownloading}
+                  Preparing...
+                {:else}
+                  Markdown
+                {/if}
+              </button>
+              <button
+                onclick={async () => {
+                  if (results.length === 0) return;
+                  showDownloadMenu = false;
+                  isDownloading = true;
+                  try {
+                    await downloadBookSearchResultsAsAsciiDoc(results, parsedQuery);
+                  } catch (error) {
+                    alert('Failed to download search results as AsciiDoc.');
+                    console.error('Download error:', error);
+                  } finally {
+                    isDownloading = false;
+                  }
+                }}
+                disabled={isDownloading || results.length === 0}
+                class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                style="color: var(--text-primary);"
+              >
+                {#if isDownloading}
+                  Preparing...
+                {:else}
+                  AsciiDoc
+                {/if}
+              </button>
+              <button
+                onclick={async () => {
+                  if (results.length === 0) return;
+                  showDownloadMenu = false;
+                  isDownloading = true;
+                  try {
+                    await downloadBookSearchResultsAsPDF(results, parsedQuery);
+                  } catch (error) {
+                    alert('Failed to download search results as PDF. Make sure the AsciiDoctor server is running.');
+                    console.error('Download error:', error);
+                  } finally {
+                    isDownloading = false;
+                  }
+                }}
+                disabled={isDownloading || results.length === 0}
+                class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                style="color: var(--text-primary);"
+              >
+                {#if isDownloading}
+                  Generating PDF...
+                {:else}
+                  PDF
+                {/if}
+              </button>
+              <button
+                onclick={async () => {
+                  if (results.length === 0) return;
+                  showDownloadMenu = false;
+                  isDownloading = true;
+                  try {
+                    await downloadBookSearchResultsAsEPUB(results, parsedQuery);
+                  } catch (error) {
+                    alert('Failed to download search results as EPUB. Make sure the AsciiDoctor server is running.');
+                    console.error('Download error:', error);
+                  } finally {
+                    isDownloading = false;
+                  }
+                }}
+                disabled={isDownloading || results.length === 0}
+                class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                style="color: var(--text-primary);"
+              >
+                {#if isDownloading}
+                  Generating EPUB...
+                {:else}
+                  EPUB
+                {/if}
               </button>
             </div>
           </div>
@@ -1488,6 +1579,8 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
   </div>
 </div>
 {#if showDownloadMenu}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="fixed inset-0 z-40"
     onclick={() => showDownloadMenu = false}
@@ -1531,15 +1624,34 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
       No {BOOK_TYPES[bookCard.bookType]?.displayName.toLowerCase() || 'bible'} passages found for "{query}"
     </div>
   {/if}
-  <BookFallbackCards
-    parsedQuery={parsedQuery}
-    bibleGatewayUrl={bibleGatewayUrlForQuery}
-    referenceOgPreviews={referenceOgPreviews}
-    referenceOgLoading={referenceOgLoading}
-    referenceOgErrors={referenceOgErrors}
-    getReferenceKey={getReferenceKey}
-    getReferenceKeyWithVersion={getReferenceKeyWithVersion}
-  />
+  {#if parsedQuery && parsedQuery.versions && parsedQuery.versions.length > 1}
+    <!-- Multiple versions: Show OG cards for each version -->
+    {#each parsedQuery.versions as version}
+      <BookFallbackCards
+        parsedQuery={parsedQuery}
+        bibleGatewayUrl={generateBibleGatewayUrl(parsedQuery, version)}
+        referenceOgPreviews={referenceOgPreviews}
+        referenceOgLoading={referenceOgLoading}
+        referenceOgErrors={referenceOgErrors}
+        getReferenceKey={getReferenceKey}
+        getReferenceKeyWithVersion={getReferenceKeyWithVersion}
+        version={version}
+        versionDisplayName={version.toUpperCase()}
+        noWrapper={false}
+      />
+    {/each}
+  {:else}
+    <!-- Single version or no version specified -->
+    <BookFallbackCards
+      parsedQuery={parsedQuery}
+      bibleGatewayUrl={bibleGatewayUrlForQuery}
+      referenceOgPreviews={referenceOgPreviews}
+      referenceOgLoading={referenceOgLoading}
+      referenceOgErrors={referenceOgErrors}
+      getReferenceKey={getReferenceKey}
+      getReferenceKeyWithVersion={getReferenceKeyWithVersion}
+    />
+  {/if}
 {:else if results.length > 0}
   {#if versionNotFound}
     <div class="mt-4 mb-4">

@@ -33,6 +33,31 @@ for container in wikistr biblestr quranstr torahstr og-proxy asciidoctor; do
         docker rm "${container}" > /dev/null 2>&1 || true
     fi
 done
+# Also clean up docker-compose containers (they have different names like deployment_og-proxy_1)
+for container in deployment_og-proxy_1 deployment_asciidoctor_1; do
+    if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+        echo -e "  Stopping and removing ${container}..."
+        docker stop "${container}" > /dev/null 2>&1 || true
+        docker rm "${container}" > /dev/null 2>&1 || true
+    fi
+done
+# Also check for any container using port 8090 or 8091
+if docker ps --format '{{.Names}}\t{{.Ports}}' | grep -q ":8090->"; then
+    CONTAINER_8090=$(docker ps --format '{{.Names}}\t{{.Ports}}' | grep ":8090->" | awk '{print $1}' | head -1)
+    if [ -n "$CONTAINER_8090" ] && [ "$CONTAINER_8090" != "og-proxy" ]; then
+        echo -e "  Stopping container using port 8090: ${CONTAINER_8090}..."
+        docker stop "${CONTAINER_8090}" > /dev/null 2>&1 || true
+        docker rm "${CONTAINER_8090}" > /dev/null 2>&1 || true
+    fi
+fi
+if docker ps --format '{{.Names}}\t{{.Ports}}' | grep -q ":8091->"; then
+    CONTAINER_8091=$(docker ps --format '{{.Names}}\t{{.Ports}}' | grep ":8091->" | awk '{print $1}' | head -1)
+    if [ -n "$CONTAINER_8091" ] && [ "$CONTAINER_8091" != "asciidoctor" ]; then
+        echo -e "  Stopping container using port 8091: ${CONTAINER_8091}..."
+        docker stop "${CONTAINER_8091}" > /dev/null 2>&1 || true
+        docker rm "${CONTAINER_8091}" > /dev/null 2>&1 || true
+    fi
+fi
 
 echo -e "${GREEN}✅ Cleanup complete${NC}"
 echo
@@ -57,6 +82,16 @@ echo -e "  Deploying og-proxy on port 8090..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PARENT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# Check if port 8090 is already in use and stop any container using it
+if docker ps --format '{{.Names}}\t{{.Ports}}' | grep -q ":8090->"; then
+    CONTAINER_USING_PORT=$(docker ps --format '{{.Names}}\t{{.Ports}}' | grep ":8090->" | awk '{print $1}' | head -1)
+    if [ -n "$CONTAINER_USING_PORT" ]; then
+        echo -e "    Stopping existing container using port 8090: ${CONTAINER_USING_PORT}..."
+        docker stop "${CONTAINER_USING_PORT}" > /dev/null 2>&1 || true
+        docker rm "${CONTAINER_USING_PORT}" > /dev/null 2>&1 || true
+    fi
+fi
+
 docker run -d \
   --name og-proxy \
   --network ${NETWORK_NAME} \
@@ -64,6 +99,7 @@ docker run -d \
   -v "${PARENT_DIR}:/app:ro" \
   -w /app \
   -e PROXY_ALLOW_ORIGIN="*" \
+  -e PROXY_TIMEOUT_MS=30000 \
   node:20-alpine \
   node deployment/proxy-server.js
 echo -e "  ${GREEN}✓${NC} og-proxy running on http://localhost:8090"

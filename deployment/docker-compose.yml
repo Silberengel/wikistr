@@ -49,6 +49,13 @@ services:
       - "8090:8090"
     environment:
       PROXY_ALLOW_ORIGIN: https://*.imwald.eu
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
+    networks:
+      - default
+      - wikistr-network
     restart: unless-stopped
 
   asciidoctor:
@@ -65,3 +72,7 @@ services:
       ASCIIDOCTOR_PORT: 8091
       ASCIIDOCTOR_ALLOW_ORIGIN: https://*.imwald.eu
     restart: unless-stopped
+
+networks:
+  wikistr-network:
+    external: true

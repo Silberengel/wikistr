@@ -223,11 +223,52 @@ export function generateBibleGatewayUrlForReference(
  */
 export async function fetchBibleGatewayOg(url: string): Promise<{ title?: string; description?: string; image?: string }> {
   const proxied = buildProxyUrl(url);
-  const response = await fetch(proxied);
-  if (!response.ok) {
+  
+  let response: Response;
+  try {
+    response = await fetch(proxied, {
+      headers: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      },
+      // Add timeout to prevent hanging (25 seconds)
+      signal: AbortSignal.timeout(25000)
+    });
+    
+    if (!response.ok) {
+      // For 502/504 errors, provide more context
+      if (response.status === 502 || response.status === 504) {
+        console.warn('BibleGateway OG fetch failed: Proxy server error', response.status, response.statusText, 'for', url);
+        throw new Error('Proxy server error - Bible Gateway may be temporarily unavailable');
+      }
+      console.warn('BibleGateway OG fetch failed:', response.status, response.statusText, 'for', url);
+      throw new Error('Preview unavailable');
+    }
+  } catch (error: any) {
+    // Handle timeout and network errors
+    if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+      console.warn('BibleGateway OG fetch timeout for', url);
+      throw new Error('Request timeout - Bible Gateway took too long to respond');
+    }
+    if (error.message?.includes('Proxy server error')) {
+      throw error; // Re-throw our custom error
+    }
+    console.warn('BibleGateway OG fetch error:', error.message || error, 'for', url);
     throw new Error('Preview unavailable');
   }
+  
+  // Check content type
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
+    console.warn('BibleGateway OG fetch: unexpected content type', contentType, 'for', url);
+  }
+  
   const html = await response.text();
+  
+  if (!html || html.trim().length === 0) {
+    console.warn('BibleGateway OG fetch: empty response for', url);
+    throw new Error('Preview unavailable');
+  }
+  
   if (typeof DOMParser === 'undefined') {
     throw new Error('Preview unavailable');
   }

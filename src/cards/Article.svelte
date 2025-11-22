@@ -770,21 +770,22 @@
             <div class="relative">
               <button
                 onclick={() => showDownloadMenu = !showDownloadMenu}
-                class="p-2 rounded-lg transition-colors hover:bg-gray-200 dark:hover:bg-gray-700"
+                class="px-3 py-2 rounded-lg transition-colors hover:bg-gray-200 dark:hover:bg-gray-700 text-sm"
                 style="color: var(--text-secondary);"
                 title="Download options"
               >
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path>
-                </svg>
+                ...
               </button>
               {#if showDownloadMenu}
                 <div
-                  class="absolute right-0 mt-2 w-48 rounded-lg shadow-lg z-50"
+                  class="absolute right-0 mt-2 w-56 rounded-lg shadow-lg z-50"
                   style="background-color: var(--bg-primary); border: 1px solid var(--border);"
                   onclick={(e) => e.stopPropagation()}
                 >
                   <div class="py-1">
+                    <div class="px-4 py-2 text-xs font-semibold" style="color: var(--text-secondary);">
+                      Download...
+                    </div>
                     {#if event && event.kind === 30040}
                       <!-- Book (30040) - download with all branches and leaves -->
                       <button
@@ -805,9 +806,9 @@
                         style="color: var(--text-primary);"
                       >
                         {#if isDownloading}
-                          ⏳ Fetching book content...
+                          Fetching book content...
                         {:else}
-                          📝 Download as AsciiDoc (with all branches & leaves)
+                          AsciiDoc (with all branches & leaves)
                         {/if}
                       </button>
                       <button
@@ -828,9 +829,9 @@
                         style="color: var(--text-primary);"
                       >
                         {#if isDownloading}
-                          ⏳ Generating PDF...
+                          Generating PDF...
                         {:else}
-                          📕 Download as PDF (with all branches & leaves)
+                          PDF (with all branches & leaves)
                         {/if}
                       </button>
                       <button
@@ -851,9 +852,9 @@
                         style="color: var(--text-primary);"
                       >
                         {#if isDownloading}
-                          ⏳ Generating EPUB...
+                          Generating EPUB...
                         {:else}
-                          📚 Download as EPUB (with all branches & leaves)
+                          EPUB (with all branches & leaves)
                         {/if}
                       </button>
                     {:else if event}
@@ -877,9 +878,9 @@
                           style="color: var(--text-primary);"
                         >
                           {#if isDownloading}
-                            ⏳ Preparing...
+                            Preparing...
                           {:else}
-                            📄 Download as Markdown
+                            Markdown
                           {/if}
                         </button>
                         <button
@@ -900,9 +901,9 @@
                           style="color: var(--text-primary);"
                         >
                           {#if isDownloading}
-                            ⏳ Generating PDF...
+                            Generating PDF...
                           {:else}
-                            📕 Download as PDF
+                            PDF
                           {/if}
                         </button>
                         <button
@@ -923,9 +924,9 @@
                           style="color: var(--text-primary);"
                         >
                           {#if isDownloading}
-                            ⏳ Generating HTML5...
+                            Generating HTML5...
                           {:else}
-                            🌐 Download as HTML5
+                            HTML5
                           {/if}
                         </button>
                       {/if}
@@ -950,9 +951,9 @@
                           style="color: var(--text-primary);"
                         >
                           {#if isDownloading}
-                            ⏳ Preparing...
+                            Preparing...
                           {:else}
-                            📄 Download as Markdown
+                            Markdown
                           {/if}
                         </button>
                         <button
@@ -973,9 +974,9 @@
                           style="color: var(--text-primary);"
                         >
                           {#if isDownloading}
-                            ⏳ Preparing...
+                            Preparing...
                           {:else}
-                            📝 Download as AsciiDoc
+                            AsciiDoc
                           {/if}
                         </button>
                         <button
@@ -996,9 +997,9 @@
                           style="color: var(--text-primary);"
                         >
                           {#if isDownloading}
-                            ⏳ Generating PDF...
+                            Generating PDF...
                           {:else}
-                            📕 Download as PDF
+                            PDF
                           {/if}
                         </button>
                         <button
@@ -1019,9 +1020,9 @@
                           style="color: var(--text-primary);"
                         >
                           {#if isDownloading}
-                            ⏳ Generating EPUB...
+                            Generating EPUB...
                           {:else}
-                            📚 Download as EPUB
+                            EPUB
                           {/if}
                         </button>
                         <button
@@ -1042,9 +1043,9 @@
                           style="color: var(--text-primary);"
                         >
                           {#if isDownloading}
-                            ⏳ Generating HTML5...
+                            Generating HTML5...
                           {:else}
-                            🌐 Download as HTML5
+                            HTML5
                           {/if}
                         </button>
                         <button
@@ -1065,9 +1066,9 @@
                           style="color: var(--text-primary);"
                         >
                           {#if isDownloading}
-                            ⏳ Generating Reveal.js...
+                            Generating Reveal.js...
                           {:else}
-                            🎯 Download as Reveal.js
+                            Reveal.js
                           {/if}
                         </button>
                       {/if}
