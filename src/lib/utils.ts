@@ -305,6 +305,69 @@ function humanizeBookSegment(segment: string): string {
     .trim();
 }
 
+/**
+ * Format section array, preserving ranges
+ * Converts [16, 17, 18] to "16-18" instead of "16,17,18"
+ */
+export function formatSections(sections: string[]): string {
+  if (sections.length === 0) return '';
+  if (sections.length === 1) return sections[0];
+  
+  // Separate numeric and non-numeric sections, sort numeric ones
+  const numeric: number[] = [];
+  const nonNumeric: string[] = [];
+  
+  for (const section of sections) {
+    const num = parseInt(section, 10);
+    if (isNaN(num)) {
+      nonNumeric.push(section);
+    } else {
+      numeric.push(num);
+    }
+  }
+  
+  // Sort numeric sections
+  numeric.sort((a, b) => a - b);
+  
+  // Group consecutive numbers into ranges
+  const parts: Array<string | { start: number; end: number }> = [];
+  
+  // Process numeric sections
+  let i = 0;
+  while (i < numeric.length) {
+    let rangeStart = numeric[i];
+    let rangeEnd = numeric[i];
+    let j = i + 1;
+    
+    while (j < numeric.length && numeric[j] === rangeEnd + 1) {
+      rangeEnd = numeric[j];
+      j++;
+    }
+    
+    // If we have a range (at least 2 consecutive numbers), store as range
+    if (j - i >= 2) {
+      parts.push({ start: rangeStart, end: rangeEnd });
+      i = j;
+    } else {
+      // Single number
+      parts.push(numeric[i].toString());
+      i++;
+    }
+  }
+  
+  // Add non-numeric sections at the end
+  parts.push(...nonNumeric);
+  
+  // Format parts
+  return parts.map(part => {
+    if (typeof part === 'string') {
+      return part;
+    } else {
+      return `${part.start}-${part.end}`;
+    }
+  }).join(',');
+}
+
 function formatBookReferenceDisplay(ref: ParsedBookReference): string {
   const titlePart = ref.title ? humanizeBookSegment(ref.title) : '';
   const collectionPart = ref.collection ? humanizeBookSegment(ref.collection) : '';
@@ -315,7 +378,7 @@ function formatBookReferenceDisplay(ref: ParsedBookReference): string {
   }
 
   if (ref.section && ref.section.length > 0) {
-    const sectionText = ref.section.join(',');
+    const sectionText = formatSections(ref.section);
     display += `${display && !display.endsWith(':') ? ':' : ''}${sectionText}`;
   }
 

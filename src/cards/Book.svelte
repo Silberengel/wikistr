@@ -10,7 +10,7 @@
 
   import { wot, userWikiRelays } from '$lib/nostr';
   import type { Card, BookCard, ArticleCard } from '$lib/types';
-  import { addUniqueTaggedReplaceable, getTagOr, next, unique, formatRelativeTime } from '$lib/utils';
+  import { addUniqueTaggedReplaceable, getTagOr, next, unique, formatRelativeTime, formatSections } from '$lib/utils';
   import { relayService } from '$lib/relayService';
 import {
     isBookEvent,
@@ -37,18 +37,6 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
     ).join(' ');
   }
   
-  // Map version codes (e.g., "drb" -> "DRA" for Bible Gateway)
-  const versionMap: Record<string, string> = {
-    'drb': 'DRA',
-    'kjv': 'KJV',
-    'niv': 'NIV',
-    'esv': 'ESV',
-    'nasb': 'NASB',
-    'nlt': 'NLT',
-    'rsv': 'RSV',
-    'asv': 'ASV',
-    'web': 'WEB'
-  };
   
   // Generate Bible Gateway URL for the entire query (all references)
   // Optionally specify a version to use instead of the default
@@ -72,7 +60,6 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
   import { page } from '$app/state';
   import { cards } from '$lib/state';
   import { generateBibleGatewayUrl, generateBibleGatewayUrlForReference, fetchBibleGatewayOg } from '$lib/bibleGatewayUtils';
-  import BookSearchFallback from '$components/BookSearchFallback.svelte';
   import BookReferenceOgPreview from '$components/BookReferenceOgPreview.svelte';
 
   interface Props {
@@ -183,9 +170,16 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
     return `${ref.book || ''}:${ref.chapter || ''}:${ref.verse || ''}`;
   }
 
+  // Helper to create a unique key for a reference with version
+  function getReferenceKeyWithVersion(ref: BookReference, version?: string): string {
+    const baseKey = getReferenceKey(ref);
+    return version ? `${baseKey}:${version.toLowerCase()}` : baseKey;
+  }
+
   // Load OG preview for a specific reference (for individual BG cards)
   async function loadReferenceOgPreview(ref: BookReference, version?: string) {
-    const refKey = getReferenceKey(ref);
+    // Use version-specific key if version is provided (for version cards)
+    const refKey = version ? getReferenceKeyWithVersion(ref, version) : getReferenceKey(ref);
     const targetUrl = generateBibleGatewayUrlForReference(ref, version || parsedQuery?.versions?.[0] || parsedQuery?.version);
     
     if (!targetUrl) {
@@ -250,7 +244,7 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
         // If multiple references, load OG preview for each reference
         if (parsedQuery.references && parsedQuery.references.length > 1) {
           for (const ref of parsedQuery.references) {
-            const refKey = getReferenceKey(ref);
+            const refKey = getReferenceKeyWithVersion(ref, versionKey);
             if (!referenceOgPreviews.has(refKey) && !referenceOgLoading.get(refKey)) {
               loadReferenceOgPreview(ref, versionKey).catch(err => console.error('Failed to load reference OG:', err));
             }
@@ -291,32 +285,7 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
     return `${book}:${chapter}:${section}`;
   }
   
-  // Helper to format verse range for header (e.g., "16-17,20")
-  function formatVerseRange(sections: string[]): string {
-    if (sections.length === 0) return '';
-    const nums = sections.map(s => parseInt(s)).filter(n => !isNaN(n)).sort((a, b) => a - b);
-    if (nums.length === 0) return sections.join(',');
-    if (nums.length === 1) return nums[0].toString();
-    
-    // Group consecutive numbers
-    const groups: number[][] = [];
-    let currentGroup: number[] = [nums[0]];
-    
-    for (let i = 1; i < nums.length; i++) {
-      if (nums[i] === nums[i - 1] + 1) {
-        currentGroup.push(nums[i]);
-      } else {
-        groups.push(currentGroup);
-        currentGroup = [nums[i]];
-      }
-    }
-    groups.push(currentGroup);
-    
-    return groups.map(group => {
-      if (group.length === 1) return group[0].toString();
-      return `${group[0]}-${group[group.length - 1]}`;
-    }).join(',');
-  }
+  // Use formatSections from utils instead of formatVerseRange
   
   // Keywords that should appear before numeric sections
   const prefaceKeywords = ['preamble', 'preface', 'foreword', 'introduction'];
@@ -1365,7 +1334,7 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
   function formatReferenceForHeader(ref: DisplayReference): string {
     const book = ref.book ? capitalizeWords(ref.book) : '';
     const chapter = ref.chapter ? ` ${ref.chapter}` : '';
-    const sections = ref.sections && ref.sections.length > 0 ? `:${formatVerseRange(ref.sections)}` : '';
+    const sections = ref.sections && ref.sections.length > 0 ? `:${formatSections(ref.sections)}` : '';
     const version = ref.version ? ` (${ref.version.toUpperCase()})` : '';
     return `${book}${chapter}${sections}${version}`.trim();
   }
@@ -1383,7 +1352,7 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
     const uniqueVersions = Array.from(new Set(parsedQuery.versions.map((v) => v.toLowerCase())));
     if (uniqueVersions.length === 0) return null;
     const displayNames = uniqueVersions.map((version) => {
-      return versionMap[version] || version.toUpperCase();
+      return version.toUpperCase();
     });
     return displayNames.join(', ');
   });
@@ -1467,9 +1436,6 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
         No {BOOK_TYPES[bookCard.bookType]?.displayName.toLowerCase() || 'bible'} passages found for "{query}"
       </div>
       <div class="space-y-4">
-        <div class="text-xs text-gray-400 italic leading-relaxed">
-          The search result was not found on the relays. Here is the result from a different website:
-        </div>
         <h3 class="text-base font-bold text-gray-900">BibleGateway</h3>
         {#each parsedQuery.references as ref}
           {@const refKey = getReferenceKey(ref)}
@@ -1514,19 +1480,54 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
       </div>
     </div>
   {:else}
-    <!-- Single reference: Use existing fallback component -->
-    <BookSearchFallback
-      {query}
-      bookType={bookCard.bookType || 'bible'}
-      {parsedQuery}
-      {tried}
-      resultsLength={results.length}
-      {versionNotFound}
-      bibleGatewayUrl={bibleGatewayUrlForQuery}
-      {ogPreview}
-      {ogLoading}
-      {ogError}
-    />
+    <!-- Single reference: Use same layout as multiple references -->
+    {#if parsedQuery}
+      <div class="mt-4 space-y-4">
+        <div class="space-y-4">
+          <h3 class="text-base font-bold text-gray-900">BibleGateway</h3>
+          {#each parsedQuery.references as ref}
+          {@const refKey = getReferenceKey(ref)}
+          {@const refBgUrl = generateBibleGatewayUrlForReference(ref)}
+          <BookReferenceOgPreview
+            reference={ref}
+            bibleGatewayUrl={refBgUrl}
+            ogPreview={referenceOgPreviews.get(refKey) || null}
+            ogLoading={referenceOgLoading.get(refKey) || false}
+            ogError={referenceOgErrors.get(refKey) || null}
+          />
+        {/each}
+        {#if bibleGatewayUrlForQuery}
+          {@const buttonOgImage = ogPreview?.image || (parsedQuery.references?.[0] ? referenceOgPreviews.get(getReferenceKey(parsedQuery.references[0]))?.image : null)}
+          <div class="flex justify-center pt-2">
+            <a
+              href={bibleGatewayUrlForQuery}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors shadow-sm hover:shadow"
+            >
+              {#if buttonOgImage}
+                <img
+                  src={buttonOgImage}
+                  alt="BibleGateway"
+                  class="w-10 h-10 object-contain"
+                  onerror={(e) => {
+                    const img = e.currentTarget as HTMLImageElement;
+                    img.style.display = 'none';
+                    const svg = img.nextElementSibling as HTMLElement;
+                    if (svg) svg.classList.remove('hidden');
+                  }}
+                />
+              {/if}
+              <svg class="w-10 h-10 {buttonOgImage ? 'hidden' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              </svg>
+              View All Passages on BibleGateway
+            </a>
+          </div>
+        {/if}
+        </div>
+      </div>
+    {/if}
   {/if}
 {:else if results.length > 0}
   {#if versionNotFound}
@@ -1550,8 +1551,7 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
     {#if groupedResults.hasVersionRequested && groupedResults.versionGroups && groupedResults.versionGroups.size > 0}
       <!-- Multiple versions: Group by version -->
       {#each Array.from(groupedResults.versionGroups.entries()) as [versionKey, versionBookMap]}
-        {@const versionLabel = versionKey.toUpperCase()}
-        {@const versionDisplayName = versionMap[versionKey] || versionLabel}
+        {@const versionDisplayName = versionKey.toUpperCase()}
         {@const hasResults = versionBookMap.size > 0}
         
         <!-- Version Group Container -->
@@ -1599,7 +1599,7 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
                 {@const chapterMetadata = extractBookMetadata(referenceGroups[0].best)}
                 {@const chapter = chapterMetadata.chapter || ''}
                 {@const allSections = getAllSectionsFromGroup(referenceGroups)}
-                {@const headerVerses = formatVerseRange(allSections)}
+                {@const headerVerses = formatSections(allSections)}
                 {@const chapterKeys = Array.from(chapterMap.keys())}
                 {@const isFirstChapter = chapterKey === chapterKeys[0]}
                 
@@ -1677,7 +1677,7 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
                   </div>
                   <h3 class="text-base font-bold text-gray-900">BibleGateway</h3>
                   {#each parsedQuery.references as ref}
-                    {@const refKey = getReferenceKey(ref)}
+                    {@const refKey = getReferenceKeyWithVersion(ref, versionKey)}
                     {@const refBgUrl = generateBibleGatewayUrlForReference(ref, versionKey)}
                     <BookReferenceOgPreview
                       reference={ref}
@@ -1718,19 +1718,50 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
                   {/if}
                 </div>
               {:else}
-                <!-- Single reference: Use existing fallback component -->
-                <BookSearchFallback
-                  query={versionQuery}
-                  bookType={bookCard.bookType || 'bible'}
-                  parsedQuery={versionSpecificParsedQuery}
-                  tried={true}
-                  resultsLength={0}
-                  versionNotFound={false}
-                  bibleGatewayUrl={versionSpecificBgUrl}
-                  ogPreview={versionOgPreviews.get(versionKey) || null}
-                  ogLoading={versionOgLoading.get(versionKey) || false}
-                  ogError={versionOgErrors.get(versionKey) || null}
-                />
+                <!-- Single reference: Use same layout as multiple references -->
+                <div class="space-y-4">
+                  <h3 class="text-base font-bold text-gray-900">BibleGateway</h3>
+                  {#each (versionSpecificParsedQuery?.references || []) as ref}
+                    {@const refKey = getReferenceKeyWithVersion(ref, versionKey)}
+                    {@const refBgUrl = generateBibleGatewayUrlForReference(ref, versionKey)}
+                    <BookReferenceOgPreview
+                      reference={ref}
+                      bibleGatewayUrl={refBgUrl}
+                      ogPreview={referenceOgPreviews.get(refKey) || versionOgPreviews.get(versionKey) || null}
+                      ogLoading={referenceOgLoading.get(refKey) || versionOgLoading.get(versionKey) || false}
+                      ogError={referenceOgErrors.get(refKey) || versionOgErrors.get(versionKey) || null}
+                    />
+                  {/each}
+                  {#if versionSpecificBgUrl}
+                    {@const versionButtonOgImage = versionOgPreviews.get(versionKey)?.image || (versionSpecificParsedQuery?.references?.[0] ? referenceOgPreviews.get(getReferenceKeyWithVersion(versionSpecificParsedQuery.references[0], versionKey))?.image : null)}
+                    <div class="flex justify-center pt-2">
+                      <a
+                        href={versionSpecificBgUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors shadow-sm hover:shadow"
+                      >
+                        {#if versionButtonOgImage}
+                          <img
+                            src={versionButtonOgImage}
+                            alt="BibleGateway"
+                            class="w-10 h-10 object-contain"
+                            onerror={(e) => {
+                              const img = e.currentTarget as HTMLImageElement;
+                              img.style.display = 'none';
+                              const svg = img.nextElementSibling as HTMLElement;
+                              if (svg) svg.classList.remove('hidden');
+                            }}
+                          />
+                        {/if}
+                        <svg class="w-10 h-10 {versionButtonOgImage ? 'hidden' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                        </svg>
+                        View All Passages on BibleGateway
+                      </a>
+                    </div>
+                  {/if}
+                </div>
               {/if}
             </div>
           {/if}
@@ -1767,7 +1798,7 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
           {@const chapterMetadata = extractBookMetadata(referenceGroups[0].best)}
           {@const chapter = chapterMetadata.chapter || ''}
           {@const allSections = getAllSectionsFromGroup(referenceGroups)}
-          {@const headerVerses = formatVerseRange(allSections)}
+          {@const headerVerses = formatSections(allSections)}
           {@const chapterKeys = Array.from(chapterMap.keys())}
           {@const isFirstChapter = chapterKey === chapterKeys[0]}
           

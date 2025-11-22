@@ -28,9 +28,6 @@
 </script>
 
 <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-  <div class="text-xs text-gray-400 italic mb-3 leading-relaxed">
-    The search result was not found on the relays. Here is the result from a different website:
-  </div>
   {#if ogLoading}
     <div class="flex items-center gap-2 text-xs text-gray-500">
       <div class="book-og-spinner"></div>

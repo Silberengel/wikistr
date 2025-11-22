@@ -4,10 +4,12 @@
   import { relayService } from '$lib/relayService';
   import { parseBookWikilink, bookReferenceToTags, type ParsedBookReference, type ParsedBookWikilink } from '$lib/bookWikilinkParser';
   import type { Card, BookCard, ArticleCard } from '$lib/types';
-  import { next, getTagOr } from '$lib/utils';
+  import { next, getTagOr, formatSections } from '$lib/utils';
   import { normalizeIdentifier } from '@nostr/tools/nip54';
-  import { generateBibleGatewayUrl } from '$lib/bibleGatewayUtils';
+  import { generateBibleGatewayUrl, generateBibleGatewayUrlForReference, fetchBibleGatewayOg } from '$lib/bibleGatewayUtils';
   import type { BookReference } from '$lib/books';
+  import BookReferenceOgPreview from '$components/BookReferenceOgPreview.svelte';
+  import { BOOK_TYPES } from '$lib/books';
 
   interface Props {
     bookstrContent: string;
@@ -21,6 +23,110 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let parsedReference = $state<ParsedBookWikilink | null>(null);
+  
+  // OG preview state (same as Book.svelte)
+  let ogPreview = $state<{ title?: string; description?: string; image?: string } | null>(null);
+  let ogLoading = $state(false);
+  let ogError = $state<string | null>(null);
+  let referenceOgPreviews = $state<Map<string, { title?: string; description?: string; image?: string }>>(new Map());
+  let referenceOgLoading = $state<Map<string, boolean>>(new Map());
+  let referenceOgErrors = $state<Map<string, string | null>>(new Map());
+  
+  // Convert ParsedBookReference to BookReference
+  function convertToBookReference(ref: ParsedBookReference): BookReference {
+    return {
+      book: ref.title,
+      chapter: ref.chapter ? parseInt(ref.chapter, 10) : undefined,
+      verse: ref.section ? (ref.section.length === 1 ? ref.section[0] : ref.section.join(',')) : undefined
+    };
+  }
+  
+  // Convert ParsedBookWikilink to format expected by BookReferenceOgPreview
+  function convertToParsedQuery(parsed: ParsedBookWikilink): { references: BookReference[]; version?: string; versions?: string[] } | null {
+    if (!parsed || parsed.references.length === 0) return null;
+    
+    const references: BookReference[] = parsed.references
+      .filter((ref: ParsedBookReference) => ref.collection === 'bible' || !ref.collection)
+      .map(convertToBookReference);
+    
+    if (references.length === 0) return null;
+    
+    // Collect all unique versions
+    const allVersions = new Set<string>();
+    for (const ref of parsed.references) {
+      if (ref.version && ref.version.length > 0) {
+        for (const v of ref.version) {
+          allVersions.add(v.toLowerCase());
+        }
+      }
+    }
+    
+    const versions = allVersions.size > 0 ? Array.from(allVersions) : undefined;
+    
+    return { references, versions };
+  }
+  
+  // Helper to create a unique key for a reference
+  function getReferenceKey(ref: BookReference): string {
+    return `${ref.book || ''}:${ref.chapter || ''}:${ref.verse || ''}`;
+  }
+  
+  // Helper to create a unique key for a reference with version
+  function getReferenceKeyWithVersion(ref: BookReference, version?: string): string {
+    const baseKey = getReferenceKey(ref);
+    return version ? `${baseKey}:${version.toLowerCase()}` : baseKey;
+  }
+  
+  // Load OG preview for a specific reference
+  async function loadReferenceOgPreview(ref: BookReference, version?: string) {
+    const refKey = version ? getReferenceKeyWithVersion(ref, version) : getReferenceKey(ref);
+    const targetUrl = generateBibleGatewayUrlForReference(ref, version);
+    
+    if (!targetUrl) {
+      referenceOgErrors.set(refKey, 'Could not generate BibleGateway URL');
+      return;
+    }
+
+    if (referenceOgLoading.get(refKey) || referenceOgPreviews.has(refKey)) {
+      return;
+    }
+
+    referenceOgLoading.set(refKey, true);
+    referenceOgErrors.set(refKey, null);
+
+    try {
+      const preview = await fetchBibleGatewayOg(targetUrl);
+      referenceOgPreviews.set(refKey, preview);
+    } catch (error) {
+      referenceOgErrors.set(refKey, (error as Error).message);
+    } finally {
+      referenceOgLoading.set(refKey, false);
+    }
+  }
+  
+  // Load combined OG preview
+  async function loadBibleGatewayPreview(parsedQuery: { references: BookReference[]; version?: string; versions?: string[] }) {
+    const targetUrl = generateBibleGatewayUrl(parsedQuery);
+    
+    if (!targetUrl) {
+      ogPreview = null;
+      ogError = null;
+      return;
+    }
+
+    if (ogLoading) return;
+
+    ogLoading = true;
+    ogError = null;
+
+    try {
+      ogPreview = await fetchBibleGatewayOg(targetUrl);
+    } catch (error) {
+      ogError = (error as Error).message;
+    } finally {
+      ogLoading = false;
+    }
+  }
 
   /**
    * Generate Bible Gateway URL for all references in a wikilink
@@ -76,7 +182,9 @@
     if (reference.chapter) {
       formatted += ` ${reference.chapter}`;
       if (reference.section && reference.section.length > 0) {
-        formatted += `:${reference.section.join(',')}`;
+        // Format sections, preserving ranges (e.g., "16-18" instead of "16,17,18")
+        const formattedSections = formatSections(reference.section);
+        formatted += `:${formattedSections}`;
       }
     }
     
@@ -86,7 +194,6 @@
     
     return formatted;
   }
-
 
   // Parse immediately for fallback display
   const fullWikilink = `[[book::${bookstrContent}]]`;
@@ -487,7 +594,7 @@
         passages = fetchedPassages;
       } catch (e) {
         error = `Failed to fetch book passages: ${e}`;
-        console.error('BookPassageGroup error:', e);
+        console.error('BookPassageGroup errors:', e);
       } finally {
         loading = false;
       }
@@ -499,6 +606,26 @@
     } else {
       // Fallback: use setTimeout with a small delay to allow main content to render first
       setTimeout(loadPassages, 100);
+    }
+  });
+  
+  // Load OG previews when no passages are found - always load individual reference previews
+  $effect(() => {
+    if (!loading && passages.length === 0 && parsedReference && parsedReference.references.length > 0) {
+      const parsedQuery = convertToParsedQuery(parsedReference);
+      if (parsedQuery) {
+        const hasBible = parsedQuery.references.some(ref => ref.book);
+        if (hasBible) {
+          // Always load OG preview for each reference (same for single and multiple)
+          for (const ref of parsedQuery.references) {
+            const version = parsedQuery.versions?.[0] || parsedQuery.version;
+            const refKey = getReferenceKeyWithVersion(ref, version);
+            if (!referenceOgPreviews.has(refKey) && !referenceOgLoading.get(refKey)) {
+              loadReferenceOgPreview(ref, version).catch(err => console.error('Failed to load reference OG:', err));
+            }
+          }
+        }
+      }
     }
   });
   
@@ -545,25 +672,59 @@
     <span style="margin-left: 0.5rem;">Loading passage...</span>
   </div>
 {:else if passages.length === 0}
-  <!-- No passages found - show nothing or minimal message -->
+  <!-- No passages found - always show individual reference cards (same for single and multiple) -->
   {#if parsedReference}
-    {@const bgUrl = generateBibleGatewayUrlForWikilink(parsedReference)}
-    <div 
-      class="book-passage-not-found" 
-      style="margin: 1.5rem 0; padding: 0.75rem; color: var(--text-secondary); font-style: italic; font-size: 0.9rem;"
-    >
-      Passage not found on Nostr relays
-      {#if bgUrl}
-        <a 
-          href={bgUrl} 
-          target="_blank" 
-          rel="noopener noreferrer"
-          style="margin-left: 0.5rem; color: var(--accent); text-decoration: underline;"
-        >
-          View on Bible Gateway
-        </a>
-      {/if}
-    </div>
+    {@const parsedQuery = convertToParsedQuery(parsedReference)}
+    {@const hasBible = parsedQuery && parsedQuery.references.some(ref => ref.book)}
+    {#if parsedQuery && hasBible}
+      {@const bgUrl = generateBibleGatewayUrl(parsedQuery)}
+      {@const buttonOgImage = ogPreview?.image || (parsedQuery.references?.[0] ? referenceOgPreviews.get(getReferenceKeyWithVersion(parsedQuery.references[0], parsedQuery.versions?.[0] || parsedQuery.version))?.image : null)}
+      <!-- Always show one header, then list each reference separately (same for single and multiple) -->
+      <div class="mt-4 space-y-4">
+        <div class="space-y-4">
+          <h3 class="text-base font-bold text-gray-900">BibleGateway</h3>
+          {#each parsedQuery.references as ref}
+            {@const refKey = getReferenceKeyWithVersion(ref, parsedQuery.versions?.[0] || parsedQuery.version)}
+            {@const refBgUrl = generateBibleGatewayUrlForReference(ref, parsedQuery.versions?.[0] || parsedQuery.version)}
+            <BookReferenceOgPreview
+              reference={ref}
+              bibleGatewayUrl={refBgUrl}
+              ogPreview={referenceOgPreviews.get(refKey) || null}
+              ogLoading={referenceOgLoading.get(refKey) || false}
+              ogError={referenceOgErrors.get(refKey) || null}
+            />
+          {/each}
+          {#if bgUrl}
+            <div class="flex justify-center pt-2">
+              <a
+                href={bgUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors shadow-sm hover:shadow"
+              >
+                {#if buttonOgImage}
+                  <img
+                    src={buttonOgImage}
+                    alt="BibleGateway"
+                    class="w-10 h-10 object-contain"
+                    onerror={(e) => {
+                      const img = e.currentTarget as HTMLImageElement;
+                      img.style.display = 'none';
+                      const svg = img.nextElementSibling as HTMLElement;
+                      if (svg) svg.classList.remove('hidden');
+                    }}
+                  />
+                {/if}
+                <svg class="w-10 h-10 {buttonOgImage ? 'hidden' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                </svg>
+                View All Passages on BibleGateway
+              </a>
+            </div>
+          {/if}
+        </div>
+      </div>
+    {/if}
   {/if}
 {:else if error}
   <div class="book-passage-error" style="padding: 1rem; border: 1px solid var(--border); border-radius: 0.5rem; background-color: var(--bg-secondary); color: var(--text-error);">
@@ -573,7 +734,7 @@
   {@const passagesByVersion = (() => {
     const grouped = new Map<string | undefined, Array<{ event: NostrEvent; reference: ParsedBookReference; sectionValue?: string; version?: string }>>();
     for (const passage of passages) {
-      const versionKey = passage.version || undefined; // undefined means default DRA
+      const versionKey = passage.version || undefined; // undefined means default DRB
       if (!grouped.has(versionKey)) {
         grouped.set(versionKey, []);
       }
@@ -609,7 +770,7 @@
     {#each Array.from(passagesByVersion.entries()) as [version, versionPassages], i}
       <!-- Version header -->
       <div class="version-header" style="font-weight: 600; font-size: 1rem; margin-bottom: 1rem; margin-top: {i === 0 ? '0' : '1.5rem'}; color: var(--text-secondary); text-transform: uppercase;">
-        {version ? version : 'DRA'}
+        {version ? version : 'DRB'}
       </div>
 
       <!-- All passages for this version -->
@@ -631,7 +792,7 @@
               {#if sectionValue}
                 :{sectionValue}
               {:else if reference.section && reference.section.length > 0}
-                :{reference.section.join(',')}
+                :{formatSections(reference.section)}
               {/if}
             {/if}
           </div>
