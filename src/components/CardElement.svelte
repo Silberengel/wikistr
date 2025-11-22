@@ -113,6 +113,56 @@ import { highlightedArticleCardId } from '$lib/articleLauncher';
     goto('/' + newCards.map((card) => toURL(card)).join('/'));
   }
 
+  // Check if this card can be moved (not welcome, not new/search, not at ends)
+  // Welcome and new cards are hardcoded in layout, so cards in $cards won't be those types
+  // But we should still check to be safe
+  const canMoveLeft = $derived.by(() => {
+    const index = $cards.findIndex((item) => item.id === card.id);
+    // Can move left if not at the start (index > 0) and not a special card type
+    return index > 0 && card.type !== 'welcome' && card.type !== 'new';
+  });
+
+  const canMoveRight = $derived.by(() => {
+    const index = $cards.findIndex((item) => item.id === card.id);
+    // Can move right if not at the end and not a special card type
+    const isLastCard = index === $cards.length - 1;
+    if (isLastCard || card.type === 'welcome' || card.type === 'new') return false;
+    // Check if next card exists and isn't a special type
+    const nextCard = $cards[index + 1];
+    return nextCard && nextCard.type !== 'new';
+  });
+
+  function moveLeft() {
+    const index = $cards.findIndex((item) => item.id === card.id);
+    if (index <= 0) return;
+    
+    const newCards = [...$cards];
+    [newCards[index - 1], newCards[index]] = [newCards[index], newCards[index - 1]];
+    goto('/' + newCards.map((card) => toURL(card)).join('/'));
+    
+    // Scroll the moved card into view
+    setTimeout(() => {
+      scrollCardIntoView(String(card.id), true);
+    }, 50);
+  }
+
+  function moveRight() {
+    const index = $cards.findIndex((item) => item.id === card.id);
+    if (index < 0 || index >= $cards.length - 1) return;
+    
+    const nextCard = $cards[index + 1];
+    if (nextCard && nextCard.type === 'new') return;
+    
+    const newCards = [...$cards];
+    [newCards[index], newCards[index + 1]] = [newCards[index + 1], newCards[index]];
+    goto('/' + newCards.map((card) => toURL(card)).join('/'));
+    
+    // Scroll the moved card into view
+    setTimeout(() => {
+      scrollCardIntoView(String(card.id), true);
+    }, 50);
+  }
+
   function createChild(newChild: Card) {
     const index = $cards.findIndex((item) => item.id === card.id);
     const newCards = $cards
@@ -236,6 +286,48 @@ import { highlightedArticleCardId } from '$lib/articleLauncher';
         <div></div>
       {/if}
       <div class="flex items-center gap-2">
+        {#if canMoveLeft || canMoveRight}
+          <div class="flex items-center gap-1">
+            {#if canMoveLeft}
+              <button
+                aria-label="Move left"
+                onclick={(e) => { e.stopPropagation(); moveLeft(); }}
+                class="transition-colors hover:opacity-70 p-1"
+                title="Move pane left"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="w-5 h-5"
+                  style="stroke: var(--text-secondary);"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke-width="2"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            {/if}
+            {#if canMoveRight}
+              <button
+                aria-label="Move right"
+                onclick={(e) => { e.stopPropagation(); moveRight(); }}
+                class="transition-colors hover:opacity-70 p-1"
+                title="Move pane right"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="w-5 h-5"
+                  style="stroke: var(--text-secondary);"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke-width="2"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            {/if}
+          </div>
+        {/if}
         {#if isDesktop}
           <button
             onclick={toggleExpand}
