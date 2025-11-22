@@ -10,6 +10,7 @@
   import ArticleListItem from '$components/ArticleListItem.svelte';
   import { account } from '$lib/nostr';
   import { relayService } from '$lib/relayService';
+  import { openOrCreateArticleCard } from '$lib/articleLauncher';
 
   interface Props {
     card: Card;
@@ -84,15 +85,24 @@
       sig: result.sig
     };
     
-    let articleCard: ArticleCard = {
-      id: next(),
+    const articleCardData: Omit<ArticleCard, 'id'> = {
       type: 'article',
       data: [getTagOr(result, 'd'), result.pubkey],
       relayHints: [relayCard.data],
       actualEvent: cleanEvent
     };
-    if (ev.button === 1) createChild(articleCard);
-    else replaceSelf(articleCard);
+    
+    if (ev.button === 1) {
+      // Middle-click: open in new card with duplicate checking
+      openOrCreateArticleCard(articleCardData);
+    } else {
+      // Left-click: replace current card
+      const articleCard: ArticleCard = {
+        id: next(),
+        ...articleCardData
+      };
+      replaceSelf(articleCard);
+    }
   }
 </script>
 

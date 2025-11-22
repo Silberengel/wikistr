@@ -6,9 +6,10 @@
   import { relayService } from '$lib/relayService';
   import { wikiKind, reactionKind, account, setAccount, wot } from '$lib/nostr';
   import { getThemeConfig } from '$lib/themes';
-  import { next } from '$lib/utils';
+  import { next, getTagOr } from '$lib/utils';
   import { contentCache } from '$lib/contentCache';
   import { cards } from '$lib/state';
+  import { openOrCreateArticleCard } from '$lib/articleLauncher';
   
   // Components
   import UserBadge from '$components/UserBadge.svelte';
@@ -381,13 +382,15 @@
       sig: result.sig
     };
     
-    createChild({
-      id: next(),
+    const dTag = getTagOr(result, 'd') || result.id;
+    const articleCardData: Omit<ArticleCard, 'id'> = {
       type: 'article',
-      data: [result.tags.find(t => t[0] === 'd')?.[1] || '', result.pubkey],
+      data: [dTag, result.pubkey],
       actualEvent: cleanEvent,
       relayHints: currentRelays
-    } as ArticleCard);
+    };
+    
+    openOrCreateArticleCard(articleCardData);
   }
 
   // Initialize

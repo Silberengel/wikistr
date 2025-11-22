@@ -19,6 +19,7 @@
   import BookSearch from './BookSearch.svelte';
   import { parseBookWikilink } from '$lib/books';
   import { openBookSearchCard } from '$lib/bookSearchLauncher';
+  import { openArticleCard } from '$lib/articleLauncher';
 
   interface Props {
     event: NostrEvent;
@@ -246,14 +247,13 @@
         if (fetchedEvent) {
         // Create an ArticleCard for the fetched event
         const dTag = fetchedEvent.tags.find(([k]) => k === 'd')?.[1] || fetchedEvent.id;
-        const articleCard: ArticleCard = {
-          id: next(),
+        const articleCard: Omit<ArticleCard, 'id'> = {
           type: 'article',
           data: [dTag, fetchedEvent.pubkey],
           relayHints: [],
           actualEvent: fetchedEvent
         };
-        createChild(articleCard);
+        openOrCreateArticleCard(articleCard);
         } else {
           console.log(`Event ${bech32} not found`);
         }
@@ -1650,12 +1650,8 @@
         if (identifier.startsWith('book::')) {
           openBookSearchCard(identifier);
         } else {
-          createChild({
-            id: next(),
-            type: 'find',
-            data: identifier,
-            preferredAuthors: [event.pubkey, ...authorPreferredWikiAuthors]
-          } as any);
+          // Open article card (checks for existing, creates if not found)
+          openArticleCard(identifier, [event.pubkey, ...authorPreferredWikiAuthors]);
         }
       } else if (href?.startsWith('#nostr-')) {
         // Handle our special nostr anchor links

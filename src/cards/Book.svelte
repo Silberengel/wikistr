@@ -21,6 +21,7 @@ import {
     BOOK_TYPES
   } from '$lib/books';
 import { highlightedBookCardId } from '$lib/bookSearchLauncher';
+import { openOrCreateArticleCard } from '$lib/articleLauncher';
   
   // Helper to check if event is a bible event
   function isBibleEvent(event: BookEvent): boolean {
@@ -1268,15 +1269,14 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
     const pubkey = result.pubkey;
     const relayHints = seenCache[result.id] || [];
     
-    const articleCard: ArticleCard = {
-      id: next(),
+    const articleCardData: Omit<ArticleCard, 'id'> = {
       type: 'article',
       data: [dTag, pubkey],
       relayHints,
       actualEvent: result
     };
     
-    createChild(articleCard);
+    openOrCreateArticleCard(articleCardData);
   }
 
   function startEditing() {

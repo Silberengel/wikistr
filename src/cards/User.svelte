@@ -5,6 +5,7 @@
 
   import type { ArticleCard, Card, UserCard } from '$lib/types';
   import { addUniqueTaggedReplaceable, getTagOr, next } from '$lib/utils';
+  import { openOrCreateArticleCard } from '$lib/articleLauncher';
   // Support all wiki kinds: 30818 (AsciiDoc), 30817 (Markdown), 30040 (Index), 30041 (Content)
   const wikiKinds = [30818, 30817, 30040, 30041, 30023];
   import ArticleListItem from '$components/ArticleListItem.svelte';
@@ -101,14 +102,13 @@
       sig: result.sig
     };
     
-    let articleCard: ArticleCard = {
-      id: next(),
+    const articleCard: Omit<ArticleCard, 'id'> = {
       type: 'article',
       data: [getTagOr(result, 'd'), result.pubkey],
       relayHints: seenCache[result.id] || [],
       actualEvent: cleanEvent
     };
-    createChild(articleCard);
+    openOrCreateArticleCard(articleCard);
   }
 </script>
 

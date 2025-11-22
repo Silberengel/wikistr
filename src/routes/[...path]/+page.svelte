@@ -71,7 +71,47 @@
           nextCards[n] = (page.state as [number, Card])[1];
         } else {
           // or create a new card from the path and assign it to this place
-          nextCards[n] = cardFromPathPart(nextP[n]);
+          const newCard = cardFromPathPart(nextP[n]);
+          
+          // Check for duplicates in:
+          // 1. Already-processed cards in nextCards (from earlier in this loop)
+          // 2. Current cards from the existing state
+          // 3. Upcoming cards in nextP that match this path segment
+          const existingCard = [
+            ...nextCards.filter((c): c is Card => c !== undefined).slice(0, n), // Already processed in this loop
+            ...currentCards, // Existing cards
+            ...nextCards.filter((c): c is Card => c !== undefined).slice(n + 1) // Already processed later in the array
+          ].find(
+            (existing) => {
+              // For article cards, check by data (dTag * pubkey) - BOTH must match
+              // Articles with same dTag but different pubkeys are NOT duplicates
+              if (existing.type === 'article' && newCard.type === 'article') {
+                const existingData = (existing as ArticleCard).data;
+                const newData = (newCard as ArticleCard).data;
+                return existingData[0] === newData[0] && existingData[1] === newData[1];
+              }
+              // For find cards, check by data (identifier)
+              if (existing.type === 'find' && newCard.type === 'find') {
+                return (existing as SearchCard).data === (newCard as SearchCard).data;
+              }
+              // Don't match article vs find - they're different card types
+              // Same article identifier from different authors should be allowed
+              // For other card types, check by matching path representation
+              return false;
+            }
+          );
+          
+          // First check if the same path segment appears earlier in nextP (exact URL match)
+          const duplicatePathIndex = nextP.slice(0, n).findIndex((path) => path === nextP[n]);
+          if (duplicatePathIndex !== -1 && nextCards[duplicatePathIndex]) {
+            // Same path segment found earlier - reuse that card
+            nextCards[n] = nextCards[duplicatePathIndex];
+          } else if (existingCard) {
+            // Use existing card instead of creating a new one
+            nextCards[n] = existingCard;
+          } else {
+            nextCards[n] = newCard;
+          }
         }
       }
     }

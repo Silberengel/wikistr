@@ -17,6 +17,7 @@ import User from '$cards/User.svelte';
 import Book from '$cards/Book.svelte';
 import Diff from '$cards/Diff.svelte';
 import { highlightedBookCardId } from '$lib/bookSearchLauncher';
+import { highlightedArticleCardId } from '$lib/articleLauncher';
 
   interface Props {
     card: Card;
@@ -197,7 +198,10 @@ import { highlightedBookCardId } from '$lib/bookSearchLauncher';
 <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 <div
   id={`wikicard-${card.id}`}
-  class:highlighted-card={card.type === 'book' && $highlightedBookCardId === card.id}
+  class:highlighted-card={
+    (card.type === 'book' && $highlightedBookCardId === card.id) ||
+    ((card.type === 'article' || card.type === 'find') && $highlightedArticleCardId === card.id)
+  }
   class="wikicard
   overflow-y-auto
   {expanded && isDesktop ? 'overflow-x-visible card-expanded' : card.type === 'diff' ? 'overflow-x-visible' : 'overflow-x-hidden'}

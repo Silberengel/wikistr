@@ -20,6 +20,7 @@
   import { isDiffQuery } from '$lib/diff';
   import { account } from '$lib/nostr';
   import { relayService } from '$lib/relayService';
+  import { openOrCreateArticleCard } from '$lib/articleLauncher';
 
   // Theme configuration
   const theme = getThemeConfig();
@@ -475,8 +476,7 @@
       sig: result.sig
     };
     
-    let articleCard: ArticleCard = {
-      id: next(),
+    const articleCardData: Omit<ArticleCard, 'id'> = {
       type: 'article',
       data: [getTagOr(result, 'd'), result.pubkey],
       relayHints: seenCache[result.id],
@@ -494,11 +494,27 @@
             }))
           : undefined
     };
-    if (ev?.button === 1) createChild(articleCard);
-    else if (direct)
-      // if this is called with 'direct' we won't give it a back button
-      replaceSelf(articleCard);
-    else replaceSelf({ ...articleCard, back: card }); // otherwise we will
+    
+    if (ev?.button === 1) {
+      // Middle-click: open in new card with duplicate checking
+      openOrCreateArticleCard(articleCardData);
+    } else {
+      // Left-click: check for duplicates first, then replace or navigate
+      const existing = openOrCreateArticleCard(articleCardData);
+      
+      if (!existing) {
+        // No duplicate found - replace current card with new article card
+        const articleCard: ArticleCard = {
+          id: next(),
+          ...articleCardData
+        };
+        if (direct)
+          // if this is called with 'direct' we won't give it a back button
+          replaceSelf(articleCard);
+        else replaceSelf({ ...articleCard, back: card }); // otherwise we will
+      }
+      // If existing card was found, openOrCreateArticleCard already navigated to it
+    }
   }
 
   function toggleArticleSelection(eventId: string) {
