@@ -110,10 +110,42 @@
       }
       const userEvent = result.events.find((event: any) => event.pubkey === hexPubkey && event.kind === 0);
       
+      // Also fetch kind 10133 (payto payment targets) - replaceable event
+      let paytoEvent: any = null;
+      try {
+        // Check cache first
+        const cachedPaytoEvent = cachedEvents.find(cached => cached.event.pubkey === hexPubkey && cached.event.kind === 10133);
+        
+        if (cachedPaytoEvent) {
+          paytoEvent = cachedPaytoEvent.event;
+        } else {
+          const paytoResult = await relayService.queryEvents(
+            'anonymous',
+            'metadata-read',
+            [{ kinds: [10133], authors: [hexPubkey], limit: 1 }],
+            { excludeUserContent: false, currentUserPubkey: undefined }
+          );
+          if (paytoResult.events.length > 0) {
+            // Get the latest replaceable event (highest created_at)
+            paytoEvent = paytoResult.events.reduce((latest: any, current: any) => 
+              current.created_at > (latest?.created_at || 0) ? current : latest
+            );
+            // Cache the payto event
+            const eventsToStore = paytoResult.events.map((event: any) => ({
+              event,
+              relays: paytoResult.relays
+            }));
+            await contentCache.storeEvents('metadata', eventsToStore);
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to fetch payto event:', e);
+      }
+      
       if (userEvent) {
         try {
           // Parse profile data from tags (preferred) and content (fallback)
-          const profileData = parseProfileData(userEvent);
+          const profileData = parseProfileData(userEvent, paytoEvent);
           
           // Ensure arrays are always arrays, even if empty
           const websites = Array.isArray(profileData.websites) && profileData.websites.length > 0 
@@ -140,6 +172,7 @@
             lud16s: lud16s,
             nip05: profileData.nip05 || '',
             nip05s: nip05s,
+            payments: profileData.payments || [],
             bot: profileData.bot
           };
           
@@ -163,6 +196,7 @@
           lud16s: [],
           nip05: '',
           nip05s: [],
+          payto: [],
           bot: undefined
         };
       }
@@ -182,6 +216,7 @@
         lud16s: [],
         nip05: '',
         nip05s: [],
+        payto: [],
         bot: undefined
       };
     } finally {
@@ -212,6 +247,7 @@
         lud16s: [],
         nip05: '',
         nip05s: [],
+        payto: [],
         bot: undefined
       };
       loading = true; // Keep loading true until fetchUserData completes
@@ -235,6 +271,7 @@
             lud16s: [],
             nip05: '',
             nip05s: [],
+            payto: [],
             bot: undefined
           };
         }
@@ -444,6 +481,125 @@
     }
   }
 
+  // Handle payto click - open payto:// URI or handle specific types
+  function handlePaytoClick(payto: { type: string; authority: string; uri: string }) {
+    const type = payto.type.toLowerCase();
+    const authority = payto.authority;
+    const uri = payto.uri;
+
+    // Lightning - use existing lightning invoice function
+    if (type === 'lightning' && authority.includes('@')) {
+      openLightningInvoice(authority);
+      return;
+    }
+
+    // Bitcoin - try bitcoin: protocol, fallback to block explorer
+    if (type === 'bitcoin') {
+      try {
+        window.location.href = `bitcoin:${authority}`;
+      } catch (e) {
+        const blockExplorerUrl = `https://blockstream.info/address/${authority}`;
+        window.open(blockExplorerUrl, '_blank', 'noopener,noreferrer');
+      }
+      return;
+    }
+
+    // Ethereum - try ethereum: protocol, fallback to block explorer
+    if (type === 'ethereum') {
+      try {
+        window.location.href = `ethereum:${authority}`;
+      } catch (e) {
+        const blockExplorerUrl = `https://etherscan.io/address/${authority}`;
+        window.open(blockExplorerUrl, '_blank', 'noopener,noreferrer');
+      }
+      return;
+    }
+
+    // Monero - copy to clipboard
+    if (type === 'monero') {
+      navigator.clipboard.writeText(authority);
+      alert(`Monero address copied to clipboard!\n\n${authority}\n\nPaste it into your Monero wallet.`);
+      return;
+    }
+
+    // Nano - try nano: protocol or copy
+    if (type === 'nano') {
+      try {
+        window.location.href = `nano:${authority}`;
+      } catch (e) {
+        navigator.clipboard.writeText(authority);
+        alert(`Nano address copied to clipboard!\n\n${authority}`);
+      }
+      return;
+    }
+
+    // Stablecoins (USDT, USDC, DAI) - usually on Ethereum or Tron
+    if (type === 'tether' || type === 'usdt' || type === 'usdc' || type === 'dai') {
+      // Check if authority looks like an Ethereum address (starts with 0x)
+      if (authority.startsWith('0x') && authority.length === 42) {
+        // Ethereum-based stablecoin
+        try {
+          window.location.href = `ethereum:${authority}`;
+        } catch (e) {
+          const blockExplorerUrl = `https://etherscan.io/address/${authority}`;
+          window.open(blockExplorerUrl, '_blank', 'noopener,noreferrer');
+        }
+      } else if (authority.startsWith('T') && authority.length === 34) {
+        // Tron-based USDT
+        const blockExplorerUrl = `https://tronscan.org/#/address/${authority}`;
+        window.open(blockExplorerUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        // Generic: copy to clipboard
+        navigator.clipboard.writeText(authority);
+        alert(`${type.toUpperCase()} address copied to clipboard!\n\n${authority}`);
+      }
+      return;
+    }
+
+    // PayPal - handle email addresses or PayPal.me links
+    if (type === 'paypal') {
+      if (authority.startsWith('http')) {
+        window.open(authority, '_blank', 'noopener,noreferrer');
+      } else if (authority.includes('@')) {
+        // Email address - open PayPal.me with username
+        const username = authority.split('@')[0];
+        window.open(`https://paypal.me/${username}`, '_blank', 'noopener,noreferrer');
+      } else if (authority.startsWith('paypal.me/')) {
+        // Already a PayPal.me link
+        window.open(`https://${authority}`, '_blank', 'noopener,noreferrer');
+      } else {
+        // Assume it's a PayPal.me username
+        window.open(`https://paypal.me/${authority}`, '_blank', 'noopener,noreferrer');
+      }
+      return;
+    }
+
+    // Cash App, Venmo, Revolut - open web links
+    if (type === 'cashme' || type === 'venmo' || type === 'revolut') {
+      if (authority.startsWith('http')) {
+        window.open(authority, '_blank', 'noopener,noreferrer');
+      } else {
+        // Try to construct URL
+        if (type === 'cashme') {
+          window.open(`https://cash.app/$${authority}`, '_blank', 'noopener,noreferrer');
+        } else if (type === 'venmo') {
+          window.open(`https://venmo.com/${authority}`, '_blank', 'noopener,noreferrer');
+        } else if (type === 'revolut') {
+          window.open(`https://revolut.me/${authority}`, '_blank', 'noopener,noreferrer');
+        }
+      }
+      return;
+    }
+
+    // Generic: try payto:// protocol, fallback to copy
+    try {
+      window.location.href = uri;
+    } catch (e) {
+      navigator.clipboard.writeText(authority);
+      alert(`${type} address copied to clipboard!\n\n${authority}`);
+    }
+  }
+
   // Open lightning invoice for a lightning address
   async function openLightningInvoice(lud16: string) {
     if (!lud16 || !lud16.includes('@')) {
@@ -514,7 +670,7 @@
   }
 
   // Parse profile data from tags (preferred) and content (fallback)
-  function parseProfileData(event: any): any {
+  function parseProfileData(event: any, paytoEvent?: any): any {
     const result: any = {
       display_name: [],
       name: [],
@@ -527,10 +683,31 @@
       lud16s: [],
       nip05: [],
       nip05s: [],
+      payto: [], // Array of {type, authority, uri}
       bot: undefined // undefined means not present, true/false means explicitly set
     };
     
-    // First, parse from tags (preferred)
+    // First, parse payto tags from kind 10133 event (NIP-A3) - primary source
+    if (paytoEvent && paytoEvent.tags && Array.isArray(paytoEvent.tags)) {
+      for (const tag of paytoEvent.tags) {
+        if (!Array.isArray(tag) || tag.length < 3) continue;
+        const tagName = tag[0];
+        if (tagName.toLowerCase() === 'payto') {
+          const type = (tag[1] || '').toLowerCase().trim();
+          const authority = tag[2] || '';
+          if (type && authority) {
+            const uri = `payto://${type}/${encodeURIComponent(authority)}`;
+            result.payto.push({
+              type: type,
+              authority: authority.trim(),
+              uri: uri
+            });
+          }
+        }
+      }
+    }
+    
+    // Then, parse from kind 0 event tags (preferred for profile data)
     if (event.tags && Array.isArray(event.tags)) {
       for (const tag of event.tags) {
         if (!Array.isArray(tag) || tag.length < 2) continue;
@@ -543,6 +720,21 @@
           // Default to true if present, only false if value is explicitly "false"
           const botValue = Array.isArray(tagValue) ? tagValue[0] : tagValue;
           result.bot = botValue !== 'false' && botValue !== false;
+          continue;
+        }
+        
+        // Special handling for payto tags: ["payto", type, authority, ...]
+        if (tagName.toLowerCase() === 'payto' && Array.isArray(tag) && tag.length >= 3) {
+          const type = (tag[1] || '').toLowerCase().trim();
+          const authority = tag[2] || '';
+          if (type && authority) {
+            const uri = `payto://${type}/${encodeURIComponent(authority)}`;
+            result.payto.push({
+              type: type,
+              authority: authority.trim(),
+              uri: uri
+            });
+          }
           continue;
         }
         
@@ -616,6 +808,9 @@
     normalized.lud16s = deduplicateArray(result.lud16.concat(result.lud16s));
     normalized.nip05s = deduplicateArray(result.nip05.concat(result.nip05s));
     
+    // Deduplicate payto targets
+    normalized.payto = deduplicatePayto(result.payto);
+    
     // Also set single-value versions for backward compatibility
     normalized.website = normalized.websites[0] || '';
     normalized.lud16 = normalized.lud16s[0] || '';
@@ -670,17 +865,68 @@
   }
   
   function deduplicateArray(values: string[]): string[] {
-    // Remove duplicates and empty values, preserve order
+    // Normalize, remove duplicates and empty values, preserve order
     const seen = new Set<string>();
     const result: string[] = [];
     for (const value of values) {
-      const normalized = value.trim().toLowerCase();
+      // Normalize: trim whitespace and convert to lowercase for comparison
+      const normalized = (value || '').trim().toLowerCase();
       if (normalized && !seen.has(normalized)) {
         seen.add(normalized);
-        result.push(value.trim());
+        // Keep original trimmed value for display (preserve case)
+        result.push((value || '').trim());
       }
     }
     return result;
+  }
+
+  function deduplicatePayto(payto: any[]): any[] {
+    // Normalize and remove duplicate payto targets (same type and authority)
+    const seen = new Set<string>();
+    const result: any[] = [];
+    for (const target of payto) {
+      // Normalize: trim and lowercase type and authority
+      const normalizedType = (target.type || '').trim().toLowerCase();
+      const normalizedAuthority = (target.authority || '').trim().toLowerCase();
+      
+      if (!normalizedType || !normalizedAuthority) {
+        continue; // Skip invalid entries
+      }
+      
+      const key = `${normalizedType}-${normalizedAuthority}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        // Store normalized values but keep original formatting for display
+        result.push({
+          type: normalizedType,
+          authority: target.authority.trim(), // Keep original case for display
+          uri: target.uri || `payto://${normalizedType}/${encodeURIComponent(target.authority.trim())}`
+        });
+      }
+    }
+    return result;
+  }
+
+  // Payment type metadata from NIP-A3
+  const paytoTypes: Record<string, { long: string; short: string; symbol: string }> = {
+    bitcoin: { long: 'Bitcoin', short: 'BTC', symbol: '₿' },
+    cashme: { long: 'Cash App', short: 'Cash App', symbol: '$' },
+    ethereum: { long: 'Ethereum', short: 'ETH', symbol: 'Ξ' },
+    lightning: { long: 'Lightning Network', short: 'LBTC', symbol: '丰' },
+    monero: { long: 'Monero', short: 'XMR', symbol: 'ɱ' },
+    nano: { long: 'Nano', short: 'XNO', symbol: 'Ӿ' },
+    paypal: { long: 'PayPal', short: 'PayPal', symbol: '$' },
+    revolut: { long: 'Revolut', short: 'Revolut', symbol: '' },
+    tether: { long: 'Tether', short: 'USDT', symbol: '$' },
+    usdt: { long: 'Tether', short: 'USDT', symbol: '$' },
+    usdc: { long: 'USD Coin', short: 'USDC', symbol: '$' },
+    dai: { long: 'Dai', short: 'DAI', symbol: '$' },
+    venmo: { long: 'Venmo', short: 'Venmo', symbol: '$' }
+  };
+
+  function getPaytoTypeInfo(type: string) {
+    const normalized = type.toLowerCase();
+    return paytoTypes[normalized] || { long: type, short: type.toUpperCase(), symbol: '' };
   }
 
   // Process links when userData changes
@@ -900,6 +1146,56 @@
                         <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z"/>
                       </svg>
                     </button>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/if}
+
+          <!-- Payment Targets (NIP-A3 payto) -->
+          {#if userData.payto && userData.payto.length > 0}
+            <div class="mb-6">
+              <h4 class="font-semibold mb-2" style="color: var(--text-primary);">Payment Methods</h4>
+              <div class="space-y-2">
+                {#each userData.payto as payto}
+                  {@const typeInfo = getPaytoTypeInfo(payto.type)}
+                  <div class="flex items-center justify-between p-2 rounded" style="background-color: var(--bg-secondary); border: 1px solid var(--border);">
+                    <div class="flex-1">
+                      <div class="flex items-center space-x-2">
+                        {#if typeInfo.symbol}
+                          <span class="text-lg" style="color: var(--text-primary);">{typeInfo.symbol}</span>
+                        {/if}
+                        <span class="font-semibold" style="color: var(--text-primary);">{typeInfo.long}</span>
+                        <span class="text-sm" style="color: var(--text-secondary);">({typeInfo.short})</span>
+                      </div>
+                      <div class="font-mono text-sm mt-1 break-all" style="color: var(--text-primary);">
+                        {payto.authority}
+                      </div>
+                    </div>
+                    <div class="flex items-center space-x-1 ml-2">
+                      <button
+                        onclick={() => handlePaytoClick(payto)}
+                        class="px-3 py-1 rounded text-sm transition-colors"
+                        style="background-color: var(--accent); color: white;"
+                        title="Open payment"
+                      >
+                        Pay
+                      </button>
+                      <button
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          navigator.clipboard.writeText(payto.authority);
+                        }}
+                        class="p-1 rounded transition-colors"
+                        style="background-color: var(--bg-tertiary);"
+                        title="Copy address"
+                      >
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" style="color: var(--text-secondary);">
+                          <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z"/>
+                          <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z"/>
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 {/each}
               </div>
