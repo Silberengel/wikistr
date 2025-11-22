@@ -4,8 +4,24 @@
  */
 
 // Use relative path if not set (works with Apache proxy), otherwise use full URL
-const ASCIIDOCTOR_SERVER_URL = import.meta.env.VITE_ASCIIDOCTOR_SERVER_URL || 
-  (typeof window !== 'undefined' ? '/asciidoctor' : 'http://localhost:8091');
+// In test environment, always use absolute URL
+const getAsciiDoctorServerUrl = () => {
+  if (import.meta.env.VITE_ASCIIDOCTOR_SERVER_URL) {
+    return import.meta.env.VITE_ASCIIDOCTOR_SERVER_URL;
+  }
+  // In test environment (vitest), use absolute URL
+  if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') {
+    return 'http://localhost:8091';
+  }
+  // In browser, use relative path (works with Apache proxy)
+  if (typeof window !== 'undefined') {
+    return '/asciidoctor';
+  }
+  // Default fallback
+  return 'http://localhost:8091';
+};
+
+const ASCIIDOCTOR_SERVER_URL = getAsciiDoctorServerUrl();
 
 export interface ExportOptions {
   content: string;
@@ -30,11 +46,35 @@ export async function exportToPDF(options: ExportOptions): Promise<Blob> {
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(error.error || `Failed to generate PDF: ${response.statusText}`);
+    // Try to read error message
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(error.error || error.message || `Failed to generate PDF: ${response.statusText}`);
+    }
+    throw new Error(`Failed to generate PDF: ${response.status} ${response.statusText}`);
   }
 
-  return await response.blob();
+  // Verify we got a PDF response
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/pdf')) {
+    // Might be an error response, try to read as JSON
+    const text = await response.text();
+    try {
+      const error = JSON.parse(text);
+      throw new Error(error.error || error.message || 'Server returned non-PDF response');
+    } catch {
+      throw new Error(`Server returned unexpected content type: ${contentType}`);
+    }
+  }
+
+  const blob = await response.blob();
+  
+  if (!blob || blob.size === 0) {
+    throw new Error('Server returned empty PDF file');
+  }
+  
+  return blob;
 }
 
 /**
@@ -54,11 +94,35 @@ export async function exportToEPUB(options: ExportOptions): Promise<Blob> {
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(error.error || `Failed to generate EPUB: ${response.statusText}`);
+    // Try to read error message
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(error.error || error.message || `Failed to generate EPUB: ${response.statusText}`);
+    }
+    throw new Error(`Failed to generate EPUB: ${response.status} ${response.statusText}`);
   }
 
-  return await response.blob();
+  // Verify we got an EPUB response
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/epub') && !contentType.includes('application/zip')) {
+    // Might be an error response, try to read as JSON
+    const text = await response.text();
+    try {
+      const error = JSON.parse(text);
+      throw new Error(error.error || error.message || 'Server returned non-EPUB response');
+    } catch {
+      throw new Error(`Server returned unexpected content type: ${contentType}`);
+    }
+  }
+
+  const blob = await response.blob();
+  
+  if (!blob || blob.size === 0) {
+    throw new Error('Server returned empty EPUB file');
+  }
+  
+  return blob;
 }
 
 /**

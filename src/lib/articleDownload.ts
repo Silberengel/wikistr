@@ -43,7 +43,7 @@ function convertMarkdownToAsciiDoc(markdown: string): string {
 /**
  * Prepare content for AsciiDoc conversion
  */
-function prepareAsciiDocContent(event: NostrEvent): string {
+export function prepareAsciiDocContent(event: NostrEvent): string {
   if (!event.content || event.content.trim().length === 0) {
     const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
     return `= ${title}\n\nNo content available.`;
