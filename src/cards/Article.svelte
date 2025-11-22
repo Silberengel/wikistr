@@ -25,6 +25,8 @@
     downloadAsAsciiDoc,
     downloadAsPDF,
     downloadAsEPUB,
+    downloadAsHTML5,
+    downloadAsRevealJS,
     downloadBookAsAsciiDoc,
     downloadBookAsPDF,
     downloadBookAsEPUB
@@ -855,79 +857,220 @@
                         {/if}
                       </button>
                     {:else if event}
-                      <!-- Regular articles -->
+                      <!-- Markdown events (30023, 30817): Markdown, PDF, HTML5, ODT -->
                       {#if event.kind === 30023 || event.kind === 30817}
                         <button
                           onclick={async () => {
                             if (!event) return;
                             showDownloadMenu = false;
-                            downloadAsMarkdown(event);
+                            isDownloading = true;
+                            try {
+                              await downloadAsMarkdown(event);
+                            } catch (error) {
+                              console.error('Failed to download Markdown:', error);
+                            } finally {
+                              isDownloading = false;
+                            }
                           }}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          disabled={isDownloading}
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                           style="color: var(--text-primary);"
                         >
-                          📄 Download as Markdown
+                          {#if isDownloading}
+                            ⏳ Preparing...
+                          {:else}
+                            📄 Download as Markdown
+                          {/if}
                         </button>
-                      {/if}
-                      {#if event.kind === 30023 || event.kind === 30817 || event.kind === 30818 || event.kind === 30041}
                         <button
                           onclick={async () => {
                             if (!event) return;
                             showDownloadMenu = false;
-                            downloadAsAsciiDoc(event);
+                            isDownloading = true;
+                            try {
+                              await downloadAsPDF(event);
+                            } catch (error) {
+                              alert('Failed to download PDF. Make sure the AsciiDoctor server is running.');
+                            } finally {
+                              isDownloading = false;
+                            }
                           }}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          disabled={isDownloading}
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                           style="color: var(--text-primary);"
                         >
-                          📝 Download as AsciiDoc
+                          {#if isDownloading}
+                            ⏳ Generating PDF...
+                          {:else}
+                            📕 Download as PDF
+                          {/if}
+                        </button>
+                        <button
+                          onclick={async () => {
+                            if (!event) return;
+                            showDownloadMenu = false;
+                            isDownloading = true;
+                            try {
+                              await downloadAsHTML5(event);
+                            } catch (error) {
+                              alert('Failed to download HTML5. Make sure the AsciiDoctor server is running.');
+                            } finally {
+                              isDownloading = false;
+                            }
+                          }}
+                          disabled={isDownloading}
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                          style="color: var(--text-primary);"
+                        >
+                          {#if isDownloading}
+                            ⏳ Generating HTML5...
+                          {:else}
+                            🌐 Download as HTML5
+                          {/if}
                         </button>
                       {/if}
-                      <button
-                        onclick={async () => {
-                          if (!event) return;
-                          showDownloadMenu = false;
-                          isDownloading = true;
-                          try {
-                            await downloadAsPDF(event);
-                          } catch (error) {
-                            alert('Failed to download PDF. Make sure the AsciiDoctor server is running.');
-                          } finally {
-                            isDownloading = false;
-                          }
-                        }}
-                        disabled={isDownloading}
-                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                        style="color: var(--text-primary);"
-                      >
-                        {#if isDownloading}
-                          ⏳ Generating PDF...
-                        {:else}
-                          📕 Download as PDF
-                        {/if}
-                      </button>
-                      <button
-                        onclick={async () => {
-                          if (!event) return;
-                          showDownloadMenu = false;
-                          isDownloading = true;
-                          try {
-                            await downloadAsEPUB(event);
-                          } catch (error) {
-                            alert('Failed to download EPUB. Make sure the AsciiDoctor server is running.');
-                          } finally {
-                            isDownloading = false;
-                          }
-                        }}
-                        disabled={isDownloading}
-                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                        style="color: var(--text-primary);"
-                      >
-                        {#if isDownloading}
-                          ⏳ Generating EPUB...
-                        {:else}
-                          📚 Download as EPUB
-                        {/if}
-                      </button>
+                      
+                      <!-- AsciiDoc events (30040, 30041, 30818): Markdown, PDF, AsciiDoc, EPUB -->
+                      {#if event.kind === 30040 || event.kind === 30041 || event.kind === 30818}
+                        <button
+                          onclick={async () => {
+                            if (!event) return;
+                            showDownloadMenu = false;
+                            isDownloading = true;
+                            try {
+                              await downloadAsMarkdown(event);
+                            } catch (error) {
+                              console.error('Failed to download Markdown:', error);
+                            } finally {
+                              isDownloading = false;
+                            }
+                          }}
+                          disabled={isDownloading}
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                          style="color: var(--text-primary);"
+                        >
+                          {#if isDownloading}
+                            ⏳ Preparing...
+                          {:else}
+                            📄 Download as Markdown
+                          {/if}
+                        </button>
+                        <button
+                          onclick={async () => {
+                            if (!event) return;
+                            showDownloadMenu = false;
+                            isDownloading = true;
+                            try {
+                              await downloadAsAsciiDoc(event);
+                            } catch (error) {
+                              console.error('Failed to download AsciiDoc:', error);
+                            } finally {
+                              isDownloading = false;
+                            }
+                          }}
+                          disabled={isDownloading}
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                          style="color: var(--text-primary);"
+                        >
+                          {#if isDownloading}
+                            ⏳ Preparing...
+                          {:else}
+                            📝 Download as AsciiDoc
+                          {/if}
+                        </button>
+                        <button
+                          onclick={async () => {
+                            if (!event) return;
+                            showDownloadMenu = false;
+                            isDownloading = true;
+                            try {
+                              await downloadAsPDF(event);
+                            } catch (error) {
+                              alert('Failed to download PDF. Make sure the AsciiDoctor server is running.');
+                            } finally {
+                              isDownloading = false;
+                            }
+                          }}
+                          disabled={isDownloading}
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                          style="color: var(--text-primary);"
+                        >
+                          {#if isDownloading}
+                            ⏳ Generating PDF...
+                          {:else}
+                            📕 Download as PDF
+                          {/if}
+                        </button>
+                        <button
+                          onclick={async () => {
+                            if (!event) return;
+                            showDownloadMenu = false;
+                            isDownloading = true;
+                            try {
+                              await downloadAsEPUB(event);
+                            } catch (error) {
+                              alert('Failed to download EPUB. Make sure the AsciiDoctor server is running.');
+                            } finally {
+                              isDownloading = false;
+                            }
+                          }}
+                          disabled={isDownloading}
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                          style="color: var(--text-primary);"
+                        >
+                          {#if isDownloading}
+                            ⏳ Generating EPUB...
+                          {:else}
+                            📚 Download as EPUB
+                          {/if}
+                        </button>
+                        <button
+                          onclick={async () => {
+                            if (!event) return;
+                            showDownloadMenu = false;
+                            isDownloading = true;
+                            try {
+                              await downloadAsHTML5(event);
+                            } catch (error) {
+                              alert('Failed to download HTML5. Make sure the AsciiDoctor server is running.');
+                            } finally {
+                              isDownloading = false;
+                            }
+                          }}
+                          disabled={isDownloading}
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                          style="color: var(--text-primary);"
+                        >
+                          {#if isDownloading}
+                            ⏳ Generating HTML5...
+                          {:else}
+                            🌐 Download as HTML5
+                          {/if}
+                        </button>
+                        <button
+                          onclick={async () => {
+                            if (!event) return;
+                            showDownloadMenu = false;
+                            isDownloading = true;
+                            try {
+                              await downloadAsRevealJS(event);
+                            } catch (error) {
+                              alert('Failed to download Reveal.js. Make sure the AsciiDoctor server is running.');
+                            } finally {
+                              isDownloading = false;
+                            }
+                          }}
+                          disabled={isDownloading}
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                          style="color: var(--text-primary);"
+                        >
+                          {#if isDownloading}
+                            ⏳ Generating Reveal.js...
+                          {:else}
+                            🎯 Download as Reveal.js
+                          {/if}
+                        </button>
+                      {/if}
                     {/if}
                   </div>
                 </div>

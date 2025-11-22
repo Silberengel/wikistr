@@ -4,6 +4,7 @@ require 'puma'
 require 'asciidoctor'
 require 'asciidoctor-pdf'
 require 'asciidoctor-epub3'
+require 'asciidoctor-revealjs'
 require 'json'
 require 'tempfile'
 require 'fileutils'
@@ -38,7 +39,9 @@ get '/healthz' do
     status: 'ok',
     endpoints: {
       pdf: '/convert/pdf',
-      epub: '/convert/epub'
+      epub: '/convert/epub',
+      html5: '/convert/html5',
+      revealjs: '/convert/revealjs'
     },
     port: settings.port
   }.to_json
@@ -68,7 +71,7 @@ post '/convert/pdf' do
     temp_pdf.close
     
     begin
-      # Convert to PDF
+      # Convert to PDF with enhanced attributes for better rendering
       Asciidoctor.convert_file temp_adoc.path,
         backend: 'pdf',
         safe: 'unsafe',
@@ -76,7 +79,15 @@ post '/convert/pdf' do
         attributes: {
           'title' => title,
           'author' => author,
-          'doctype' => 'article'
+          'doctype' => 'article',
+          'imagesdir' => '.',  # Allow images from any location
+          'allow-uri-read' => '',  # Allow reading images from URLs
+          'pdf-page-size' => 'Letter',
+          'pdf-page-margin' => '[0.75in, 0.75in, 0.75in, 0.75in]',
+          'pdf-page-layout' => 'portrait',
+          'pdf-fontsdir' => '/usr/share/fonts',
+          'pdf-theme' => 'default',
+          'pdf-themesdir' => '/usr/share/asciidoctor-pdf/data/themes'
         }
       
       # Read PDF content
@@ -124,7 +135,7 @@ post '/convert/epub' do
     epub_file = File.join(temp_dir, 'document.epub')
     
     begin
-      # Convert to EPUB
+      # Convert to EPUB with enhanced attributes for better rendering
       Asciidoctor.convert_file temp_adoc.path,
         backend: 'epub3',
         safe: 'unsafe',
@@ -132,7 +143,11 @@ post '/convert/epub' do
         attributes: {
           'title' => title,
           'author' => author,
-          'doctype' => 'book'
+          'doctype' => 'book',
+          'imagesdir' => '.',  # Allow images from any location
+          'allow-uri-read' => '',  # Allow reading images from URLs
+          'epub3-cover-image' => '',  # Will be set from [cover] attribute in AsciiDoc
+          'epub3-cover-image-format' => 'jpg'
         }
       
       # Read EPUB content
@@ -156,6 +171,110 @@ post '/convert/epub' do
   end
 end
 
+# Convert to HTML5
+post '/convert/html5' do
+  begin
+    request.body.rewind
+    data = JSON.parse(request.body.read)
+    content = data['content'] || data['asciidoc']
+    title = data['title'] || 'Document'
+    author = data['author'] || ''
+    
+    unless content
+      status 400
+      return { error: 'Missing content or asciidoc field' }.to_json
+    end
+    
+    # Create temporary file for AsciiDoc content
+    temp_adoc = Tempfile.new(['document', '.adoc'])
+    temp_adoc.write(content)
+    temp_adoc.close
+    
+    begin
+      # Convert to HTML5
+      html_content = Asciidoctor.convert content,
+        backend: 'html5',
+        safe: 'unsafe',
+        attributes: {
+          'title' => title,
+          'author' => author,
+          'doctype' => 'article',
+          'imagesdir' => '.',
+          'allow-uri-read' => '',
+          'stylesheet' => 'default',
+          'linkcss' => '',
+          'copycss' => ''
+        }
+      
+      # Set headers
+      content_type 'text/html; charset=utf-8'
+      headers 'Content-Disposition' => "attachment; filename=\"#{title.gsub(/[^a-z0-9]/i, '_')}.html\""
+      
+      html_content
+    ensure
+      temp_adoc.unlink
+    end
+  rescue JSON::ParserError => e
+    status 400
+    { error: 'Invalid JSON', message: e.message }.to_json
+  rescue => e
+    status 500
+    { error: 'Conversion failed', message: e.message }.to_json
+  end
+end
+
+# Convert to Reveal.js presentation
+post '/convert/revealjs' do
+  begin
+    request.body.rewind
+    data = JSON.parse(request.body.read)
+    content = data['content'] || data['asciidoc']
+    title = data['title'] || 'Document'
+    author = data['author'] || ''
+    
+    unless content
+      status 400
+      return { error: 'Missing content or asciidoc field' }.to_json
+    end
+    
+    # Create temporary file for AsciiDoc content
+    temp_adoc = Tempfile.new(['document', '.adoc'])
+    temp_adoc.write(content)
+    temp_adoc.close
+    
+    begin
+      # Convert to Reveal.js
+      html_content = Asciidoctor.convert content,
+        backend: 'revealjs',
+        safe: 'unsafe',
+        attributes: {
+          'title' => title,
+          'author' => author,
+          'doctype' => 'article',
+          'imagesdir' => '.',
+          'allow-uri-read' => '',
+          'revealjsdir' => 'https://cdn.jsdelivr.net/npm/reveal.js@4.3.1',
+          'revealjs_theme' => 'white',
+          'revealjs_transition' => 'slide'
+        }
+      
+      # Set headers
+      content_type 'text/html; charset=utf-8'
+      headers 'Content-Disposition' => "attachment; filename=\"#{title.gsub(/[^a-z0-9]/i, '_')}.html\""
+      
+      html_content
+    ensure
+      temp_adoc.unlink
+    end
+  rescue JSON::ParserError => e
+    status 400
+    { error: 'Invalid JSON', message: e.message }.to_json
+  rescue => e
+    status 500
+    { error: 'Conversion failed', message: e.message }.to_json
+  end
+end
+
 # Root endpoint
 get '/' do
   content_type :json
@@ -166,6 +285,8 @@ get '/' do
     endpoints: {
       pdf: '/convert/pdf',
       epub: '/convert/epub',
+      html5: '/convert/html5',
+      revealjs: '/convert/revealjs',
       health: '/healthz'
     }
   }.to_json

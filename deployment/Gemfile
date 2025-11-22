@@ -5,4 +5,5 @@ gem 'puma', '~> 6.0'
 gem 'asciidoctor', '~> 2.0'
 gem 'asciidoctor-pdf', '~> 2.0'
 gem 'asciidoctor-epub3', '~> 1.5'
+gem 'asciidoctor-revealjs', '~> 5.0'
 

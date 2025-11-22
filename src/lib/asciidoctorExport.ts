@@ -78,6 +78,102 @@ export async function exportToPDF(options: ExportOptions): Promise<Blob> {
 }
 
 /**
+ * Convert AsciiDoc content to HTML5
+ */
+export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
+  const response = await fetch(`${ASCIIDOCTOR_SERVER_URL}/convert/html5`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      content: options.content,
+      title: options.title,
+      author: options.author || '',
+    }),
+  });
+
+  if (!response.ok) {
+    // Try to read error message
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(error.error || error.message || `Failed to generate HTML5: ${response.statusText}`);
+    }
+    throw new Error(`Failed to generate HTML5: ${response.status} ${response.statusText}`);
+  }
+
+  // Verify we got an HTML response
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('text/html')) {
+    // Might be an error response, try to read as JSON
+    const text = await response.text();
+    try {
+      const error = JSON.parse(text);
+      throw new Error(error.error || error.message || 'Server returned non-HTML response');
+    } catch {
+      throw new Error(`Server returned unexpected content type: ${contentType}`);
+    }
+  }
+
+  const blob = await response.blob();
+  
+  if (!blob || blob.size === 0) {
+    throw new Error('Server returned empty HTML file');
+  }
+  
+  return blob;
+}
+
+/**
+ * Convert AsciiDoc content to Reveal.js presentation
+ */
+export async function exportToRevealJS(options: ExportOptions): Promise<Blob> {
+  const response = await fetch(`${ASCIIDOCTOR_SERVER_URL}/convert/revealjs`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      content: options.content,
+      title: options.title,
+      author: options.author || '',
+    }),
+  });
+
+  if (!response.ok) {
+    // Try to read error message
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(error.error || error.message || `Failed to generate Reveal.js: ${response.statusText}`);
+    }
+    throw new Error(`Failed to generate Reveal.js: ${response.status} ${response.statusText}`);
+  }
+
+  // Verify we got an HTML response
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('text/html')) {
+    // Might be an error response, try to read as JSON
+    const text = await response.text();
+    try {
+      const error = JSON.parse(text);
+      throw new Error(error.error || error.message || 'Server returned non-HTML response');
+    } catch {
+      throw new Error(`Server returned unexpected content type: ${contentType}`);
+    }
+  }
+
+  const blob = await response.blob();
+  
+  if (!blob || blob.size === 0) {
+    throw new Error('Server returned empty HTML file');
+  }
+  
+  return blob;
+}
+
+/**
  * Convert AsciiDoc content to EPUB
  */
 export async function exportToEPUB(options: ExportOptions): Promise<Blob> {

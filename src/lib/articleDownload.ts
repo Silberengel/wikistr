@@ -5,26 +5,135 @@
 
 import type { NostrEvent } from '@nostr/tools/pure';
 import { relayService } from '$lib/relayService';
-import { exportToPDF, exportToEPUB, downloadBlob } from './asciidoctorExport';
+import { exportToPDF, exportToEPUB, exportToHTML5, exportToRevealJS, downloadBlob } from './asciidoctorExport';
 
 /**
- * Download article as markdown
+ * Download article as markdown (with YAML frontmatter metadata)
  */
-export function downloadAsMarkdown(event: NostrEvent, filename?: string): void {
-  const content = event.content;
+export async function downloadAsMarkdown(event: NostrEvent, filename?: string): Promise<void> {
+  const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
+  const author = await getAuthorName(event);
+  const description = event.tags.find(([k]) => k === 'description')?.[1];
+  const summary = event.tags.find(([k]) => k === 'summary')?.[1];
+  const image = event.tags.find(([k]) => k === 'image')?.[1];
+  const version = event.tags.find(([k]) => k === 'version')?.[1];
+  const source = event.tags.find(([k]) => k === 'source')?.[1];
+  const publishedOn = event.tags.find(([k]) => k === 'published_on')?.[1];
+  const topicTags = event.tags.filter(([k]) => k === 't').map(([, v]) => v);
+  
+  // Build YAML frontmatter
+  let frontmatter = '---\n';
+  frontmatter += `title: ${JSON.stringify(title)}\n`;
+  frontmatter += `author: ${JSON.stringify(author)}\n`;
+  
+  if (description) frontmatter += `description: ${JSON.stringify(description)}\n`;
+  if (summary) frontmatter += `summary: ${JSON.stringify(summary)}\n`;
+  if (image) frontmatter += `image: ${JSON.stringify(image)}\n`;
+  if (version) frontmatter += `version: ${JSON.stringify(version)}\n`;
+  if (source) frontmatter += `source: ${JSON.stringify(source)}\n`;
+  if (publishedOn) frontmatter += `published_on: ${JSON.stringify(publishedOn)}\n`;
+  if (topicTags.length > 0) frontmatter += `tags: ${JSON.stringify(topicTags)}\n`;
+  
+  frontmatter += `event_id: ${event.id}\n`;
+  frontmatter += `event_kind: ${event.kind}\n`;
+  frontmatter += `---\n\n`;
+  
+  const content = frontmatter + event.content;
   const blob = new Blob([content], { type: 'text/markdown' });
-  const name = filename || `${event.id.slice(0, 8)}.md`;
+  const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.md`;
   downloadBlob(blob, name);
 }
 
 /**
  * Download article as AsciiDoc
  */
-export function downloadAsAsciiDoc(event: NostrEvent, filename?: string): void {
-  const content = event.content;
-  const blob = new Blob([content], { type: 'text/asciidoc' });
-  const name = filename || `${event.id.slice(0, 8)}.adoc`;
+export async function downloadAsAsciiDoc(event: NostrEvent, filename?: string): Promise<void> {
+  const contentWithMetadata = await prepareAsciiDocContent(event, true);
+  const blob = new Blob([contentWithMetadata], { type: 'text/asciidoc' });
+  const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
+  const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.adoc`;
   downloadBlob(blob, name);
+}
+
+/**
+ * Get author name from event (tag or user handle)
+ */
+async function getAuthorName(event: NostrEvent): Promise<string> {
+  const authorTag = event.tags.find(([k]) => k === 'author')?.[1];
+  if (authorTag) {
+    return authorTag;
+  }
+  
+  // Try to get user handle from metadata
+  try {
+    const handle = await getUserHandle(event.pubkey);
+    if (handle && handle !== event.pubkey.slice(0, 8) + '...') {
+      return handle;
+    }
+  } catch (e) {
+    // Fallback to truncated pubkey
+  }
+  
+  return event.pubkey.slice(0, 8) + '...';
+}
+
+/**
+ * Build AsciiDoc document with metadata header
+ */
+async function buildAsciiDocWithMetadata(event: NostrEvent, content: string): Promise<string> {
+  const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
+  const author = await getAuthorName(event);
+  const description = event.tags.find(([k]) => k === 'description')?.[1];
+  const summary = event.tags.find(([k]) => k === 'summary')?.[1];
+  const image = event.tags.find(([k]) => k === 'image')?.[1];
+  const version = event.tags.find(([k]) => k === 'version')?.[1];
+  const source = event.tags.find(([k]) => k === 'source')?.[1];
+  const publishedOn = event.tags.find(([k]) => k === 'published_on')?.[1];
+  const topicTags = event.tags.filter(([k]) => k === 't').map(([, v]) => v);
+  
+  // Build AsciiDoc document with metadata
+  let doc = `= ${title}\n`;
+  doc += `:author: ${author}\n`;
+  
+  if (version) {
+    doc += `:version: ${version}\n`;
+  }
+  if (publishedOn) {
+    doc += `:pubdate: ${publishedOn}\n`;
+  }
+  if (source) {
+    doc += `:source: ${source}\n`;
+  }
+  if (topicTags.length > 0) {
+    doc += `:keywords: ${topicTags.join(', ')}\n`;
+  }
+  
+  // Add summary as custom field if both description and summary exist
+  if (summary && description) {
+    doc += `:summary: ${summary}\n`;
+  }
+  
+  doc += `\n`;
+  
+  // Add cover image if available (for PDF/EPUB)
+  if (image) {
+    doc += `[cover]\n`;
+    doc += `image::${image}[]\n\n`;
+  }
+  
+  // Add description as abstract if available
+  if (description) {
+    doc += `[abstract]\n`;
+    doc += `${description}\n\n`;
+  } else if (summary) {
+    doc += `[abstract]\n`;
+    doc += `${summary}\n\n`;
+  }
+  
+  // Add content
+  doc += content;
+  
+  return doc;
 }
 
 /**
@@ -41,36 +150,96 @@ function convertMarkdownToAsciiDoc(markdown: string): string {
 }
 
 /**
- * Prepare content for AsciiDoc conversion
+ * Prepare content for AsciiDoc conversion (with metadata)
  */
-export function prepareAsciiDocContent(event: NostrEvent): string {
+export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata: boolean = true): Promise<string> {
   if (!event.content || event.content.trim().length === 0) {
     const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
+    if (includeMetadata) {
+      return await buildAsciiDocWithMetadata(event, 'No content available.');
+    }
     return `= ${title}\n\nNo content available.`;
   }
   
+  let content = event.content;
+  
   // For 30817 (Markdown), convert to AsciiDoc format
   if (event.kind === 30817 || event.kind === 30023) {
-    return convertMarkdownToAsciiDoc(event.content);
+    content = convertMarkdownToAsciiDoc(event.content);
   }
   
   // For 30818 (AsciiDoc), use directly
-  return event.content;
+  // If content already has a title, we might want to preserve it
+  // But if includeMetadata is true, we'll wrap it with metadata
+  
+  if (includeMetadata) {
+    // Check if content already starts with a title
+    const hasTitle = /^=+\s+.+/.test(content.trim());
+    if (hasTitle) {
+      // Content already has AsciiDoc structure, add metadata before it
+      const lines = content.split('\n');
+      const titleLineIndex = lines.findIndex(line => /^=+\s+/.test(line));
+      if (titleLineIndex >= 0) {
+        // Extract existing title and content
+        const existingTitle = lines[titleLineIndex].replace(/^=+\s+/, '');
+        const restContent = lines.slice(titleLineIndex + 1).join('\n');
+        
+        // Build with metadata, using existing title
+        const title = existingTitle || event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
+        const author = await getAuthorName(event);
+        const description = event.tags.find(([k]) => k === 'description')?.[1];
+        const summary = event.tags.find(([k]) => k === 'summary')?.[1];
+        const image = event.tags.find(([k]) => k === 'image')?.[1];
+        const version = event.tags.find(([k]) => k === 'version')?.[1];
+        const source = event.tags.find(([k]) => k === 'source')?.[1];
+        const publishedOn = event.tags.find(([k]) => k === 'published_on')?.[1];
+        const topicTags = event.tags.filter(([k]) => k === 't').map(([, v]) => v);
+        
+        let doc = `= ${title}\n`;
+        doc += `:author: ${author}\n`;
+        
+        if (version) doc += `:version: ${version}\n`;
+        if (publishedOn) doc += `:pubdate: ${publishedOn}\n`;
+        if (source) doc += `:source: ${source}\n`;
+        if (topicTags.length > 0) doc += `:keywords: ${topicTags.join(', ')}\n`;
+        if (summary && description) doc += `:summary: ${summary}\n`;
+        
+        doc += `\n`;
+        if (image) {
+          doc += `[cover]\nimage::${image}[]\n\n`;
+        }
+        if (description) {
+          doc += `[abstract]\n${description}\n\n`;
+        } else if (summary) {
+          doc += `[abstract]\n${summary}\n\n`;
+        }
+        
+        doc += restContent;
+        return doc;
+      }
+    }
+    
+    // No existing title, build with metadata
+    return await buildAsciiDocWithMetadata(event, content);
+  }
+  
+  return content;
 }
 
 /**
  * Download article as PDF
  */
 export async function downloadAsPDF(event: NostrEvent, filename?: string): Promise<void> {
-  const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
-  const author = event.pubkey.slice(0, 8) + '...';
-  
   if (!event.content || event.content.trim().length === 0) {
     throw new Error('Cannot download PDF: article content is empty');
   }
   
   try {
-    const asciiDocContent = prepareAsciiDocContent(event);
+    // Prepare AsciiDoc content with metadata (includes cover image, abstract, etc.)
+    const asciiDocContent = await prepareAsciiDocContent(event, true);
+    const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
+    const author = await getAuthorName(event);
+    
     const blob = await exportToPDF({
       content: asciiDocContent,
       title,
@@ -93,15 +262,16 @@ export async function downloadAsPDF(event: NostrEvent, filename?: string): Promi
  * Download article as EPUB
  */
 export async function downloadAsEPUB(event: NostrEvent, filename?: string): Promise<void> {
-  const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
-  const author = event.pubkey.slice(0, 8) + '...';
-  
   if (!event.content || event.content.trim().length === 0) {
     throw new Error('Cannot download EPUB: article content is empty');
   }
   
   try {
-    const asciiDocContent = prepareAsciiDocContent(event);
+    // Prepare AsciiDoc content with metadata (includes cover image, abstract, etc.)
+    const asciiDocContent = await prepareAsciiDocContent(event, true);
+    const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
+    const author = await getAuthorName(event);
+    
     const blob = await exportToEPUB({
       content: asciiDocContent,
       title,
@@ -116,6 +286,70 @@ export async function downloadAsEPUB(event: NostrEvent, filename?: string): Prom
     downloadBlob(blob, name);
   } catch (error) {
     console.error('Failed to download EPUB:', error);
+    throw error;
+  }
+}
+
+/**
+ * Download article as HTML5
+ */
+export async function downloadAsHTML5(event: NostrEvent, filename?: string): Promise<void> {
+  if (!event.content || event.content.trim().length === 0) {
+    throw new Error('Cannot download HTML5: article content is empty');
+  }
+  
+  try {
+    // Prepare AsciiDoc content with metadata
+    const asciiDocContent = await prepareAsciiDocContent(event, true);
+    const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
+    const author = await getAuthorName(event);
+    
+    const blob = await exportToHTML5({
+      content: asciiDocContent,
+      title,
+      author
+    });
+    
+    if (!blob || blob.size === 0) {
+      throw new Error('Server returned empty HTML file');
+    }
+    
+    const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.html`;
+    downloadBlob(blob, name);
+  } catch (error) {
+    console.error('Failed to download HTML5:', error);
+    throw error;
+  }
+}
+
+/**
+ * Download article as Reveal.js presentation (AsciiDoc events only)
+ */
+export async function downloadAsRevealJS(event: NostrEvent, filename?: string): Promise<void> {
+  if (!event.content || event.content.trim().length === 0) {
+    throw new Error('Cannot download Reveal.js: article content is empty');
+  }
+  
+  try {
+    // Prepare AsciiDoc content with metadata
+    const asciiDocContent = await prepareAsciiDocContent(event, true);
+    const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
+    const author = await getAuthorName(event);
+    
+    const blob = await exportToRevealJS({
+      content: asciiDocContent,
+      title,
+      author
+    });
+    
+    if (!blob || blob.size === 0) {
+      throw new Error('Server returned empty HTML file');
+    }
+    
+    const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.html`;
+    downloadBlob(blob, name);
+  } catch (error) {
+    console.error('Failed to download Reveal.js:', error);
     throw error;
   }
 }
