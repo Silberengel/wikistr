@@ -1070,7 +1070,7 @@
                               onclick={(e) => e.stopPropagation()}
                             >
                               <div class="py-1">
-                                {#each ['classic', 'antique', 'modern', 'documentation', 'scientific', 'pop'] as style}
+                                {#each ['classic', 'antique', 'modern', 'documentation', 'scientific', 'pop', 'bible-paragraph', 'bible-versed', 'poster'] as style}
                         <button
                           onclick={async () => {
                             if (!event) return;
@@ -1115,7 +1115,7 @@
                               onclick={(e) => e.stopPropagation()}
                             >
                               <div class="py-1">
-                                {#each ['classic', 'antique', 'modern', 'documentation', 'scientific', 'pop'] as style}
+                                {#each ['classic', 'antique', 'modern', 'documentation', 'scientific', 'pop', 'bible-paragraph', 'bible-versed', 'poster'] as style}
                         <button
                           onclick={async () => {
                             if (!event) return;

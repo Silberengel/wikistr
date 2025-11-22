@@ -95,21 +95,32 @@ async function getAuthorName(event: NostrEvent): Promise<string> {
 /**
  * Build AsciiDoc document with metadata header
  */
-async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, theme: PDFTheme = 'classic'): Promise<string> {
+async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, theme: PDFTheme = 'classic', providedImage?: string): Promise<string> {
   const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
   const author = await getAuthorName(event);
   const description = event.tags.find(([k]) => k === 'description')?.[1];
   const summary = event.tags.find(([k]) => k === 'summary')?.[1];
-  const image = event.tags.find(([k]) => k === 'image')?.[1];
+  const image = providedImage || event.tags.find(([k]) => k === 'image')?.[1];
   const version = event.tags.find(([k]) => k === 'version')?.[1];
   const source = event.tags.find(([k]) => k === 'source')?.[1];
   const publishedOn = event.tags.find(([k]) => k === 'published_on')?.[1];
   const topicTags = event.tags.filter(([k]) => k === 't').map(([, v]) => v);
   
   // Build AsciiDoc document with metadata
+  const themeMap: Record<PDFTheme, string> = {
+    'classic': 'classic-novel',
+    'antique': 'antique-novel',
+    'modern': 'modern-book',
+    'documentation': 'documentation',
+    'scientific': 'scientific',
+    'pop': 'pop-book',
+    'bible-paragraph': 'bible-paragraph',
+    'bible-versed': 'bible-versed',
+    'poster': 'poster'
+  };
   let doc = `= ${title}\n`;
   doc += `:author: ${author}\n`;
-  doc += `:pdf-theme: ${theme}\n`;
+  doc += `:pdf-theme: ${themeMap[theme]}\n`;
   doc += `:pdf-themesdir: /app/deployment\n`;
   
   if (version) {
@@ -130,8 +141,13 @@ async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, the
     doc += `:summary: ${summary}\n`;
   }
   
-  // Set cover image if available (for PDF/EPUB title page)
-  if (image) {
+  // For poster theme, display image prominently with text wrapping
+  if (theme === 'poster' && image) {
+    doc += `\n`;
+    doc += `[.poster-image,float=left,width=40%]\n`;
+    doc += `image::${image}[]\n\n`;
+  } else if (image) {
+    // Other themes: set as cover image for title page
     doc += `:front-cover-image: ${image}\n`;
   }
   
@@ -241,7 +257,8 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
     }
     
     // No existing title, build with metadata
-    return await buildAsciiDocWithMetadata(event, content, theme);
+    const eventImage = event.tags.find(([k]) => k === 'image')?.[1];
+    return await buildAsciiDocWithMetadata(event, content, theme, eventImage);
   }
   
   return content;
@@ -250,7 +267,7 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
 /**
  * Download article as PDF
  */
-export type PDFTheme = 'classic' | 'antique' | 'modern' | 'documentation' | 'scientific' | 'pop';
+export type PDFTheme = 'classic' | 'antique' | 'modern' | 'documentation' | 'scientific' | 'pop' | 'bible-paragraph' | 'bible-versed' | 'poster';
 
 export async function downloadAsPDF(event: NostrEvent, filename?: string, theme: PDFTheme = 'classic'): Promise<void> {
   if (!event.content || event.content.trim().length === 0) {
@@ -811,13 +828,21 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     'modern': 'modern-book',
     'documentation': 'documentation',
     'scientific': 'scientific',
-    'pop': 'pop-book'
+    'pop': 'pop-book',
+    'bible-paragraph': 'bible-paragraph',
+    'bible-versed': 'bible-versed',
+    'poster': 'poster'
   };
   doc += `:pdf-theme: ${themeMap[theme]}\n`;
   doc += `:pdf-themesdir: /app/deployment\n`;
   
-  // Set cover image if available (will appear on title page)
-  if (image) {
+  // For poster theme, display image prominently with text wrapping
+  if (theme === 'poster' && image) {
+    doc += `\n`;
+    doc += `[.poster-image,float=left,width=40%]\n`;
+    doc += `image::${image}[]\n\n`;
+  } else if (image) {
+    // Other themes: set as cover image for title page
     doc += `:front-cover-image: ${image}\n`;
   }
   
@@ -876,8 +901,26 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
 
     // Add content, adjusting heading levels to ensure proper nesting
     // Content headings need to be at least one level deeper than the section header
-    const adjustedContent = adjustHeadingLevels(event.content, headingLevel);
-    doc += adjustedContent;
+    let adjustedContent = adjustHeadingLevels(event.content, headingLevel);
+    
+    // For bible themes, format verse numbers
+    if ((theme === 'bible-paragraph' || theme === 'bible-versed') && sectionTags.length > 0) {
+      // Format verses: Add verse numbers at the start of each verse
+      // Filter for numeric verse numbers (verses are typically numbers)
+      const verseNumbers = sectionTags.filter(s => /^\d+$/.test(s)); // Only numeric verse numbers
+      if (verseNumbers.length > 0) {
+        // For single verse, add verse number as superscript
+        // For multiple verses, show all verse numbers
+        const versePrefix = verseNumbers.length === 1 
+          ? `[verse]#${verseNumbers[0]}# `
+          : `[verse]#${verseNumbers.join(',')}# `;
+        adjustedContent = versePrefix + adjustedContent.trim();
+      }
+    }
+    
+    if (theme !== 'bible-versed') {
+      doc += adjustedContent;
+    }
     doc += `\n\n`;
   }
 
@@ -1024,7 +1067,10 @@ async function combineBookSearchResults(
     'modern': 'modern-book',
     'documentation': 'documentation',
     'scientific': 'scientific',
-    'pop': 'pop-book'
+    'pop': 'pop-book',
+    'bible-paragraph': 'bible-paragraph',
+    'bible-versed': 'bible-versed',
+    'poster': 'poster'
   };
   let doc = `= ${title}\n`;
   doc += `:author: ${author}\n`;
@@ -1082,8 +1128,38 @@ async function combineBookSearchResults(
       
       // Add content, adjusting heading levels to ensure proper nesting
       // Content headings need to be at least one level deeper than the section header
-      const adjustedContent = adjustHeadingLevels(event.content, headingLevel);
+      let adjustedContent = adjustHeadingLevels(event.content, headingLevel);
+      
+      // For bible themes, format verse numbers
+      if ((theme === 'bible-paragraph' || theme === 'bible-versed') && sectionTags.length > 0) {
+        // Filter for numeric verse numbers (verses are typically numbers)
+        const verseNumbers = sectionTags.filter(s => /^\d+$/.test(s)); // Only numeric verse numbers
+        if (verseNumbers.length > 0) {
+          if (theme === 'bible-paragraph') {
+            // Paragraph style: verse numbers inline as superscript in prose
+            const versePrefix = verseNumbers.length === 1 
+              ? `[verse]#${verseNumbers[0]}# `
+              : `[verse]#${verseNumbers.join(',')}# `;
+            adjustedContent = versePrefix + adjustedContent.trim();
+          } else if (theme === 'bible-versed') {
+            // Versed style: each verse on its own line with verse number
+            // Split content by sentences/periods to create verse-per-line format
+            const versePrefix = verseNumbers.length === 1 
+              ? `[verse]#${verseNumbers[0]}# `
+              : `[verse]#${verseNumbers.join(',')}# `;
+            // In versed style, each verse should be on its own line
+            // Replace periods with period + newline (but be careful not to break abbreviations)
+            const versedContent = adjustedContent.trim().replace(/([.!?])\s+/g, '$1 +\n');
+            adjustedContent = versePrefix + versedContent;
+          }
+        }
+      }
+      
       doc += adjustedContent;
+      // For versed style, add extra spacing after each verse
+      if (theme === 'bible-versed') {
+        doc += `\n`;
+      }
       doc += `\n\n`;
     }
   }
