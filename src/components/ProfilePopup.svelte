@@ -533,7 +533,34 @@
 
     try {
       const receipts = await fetchZapReceipts(userData.pubkey);
-      zapReceipts = receipts;
+      // Sort by created_at descending and enrich with amount and sender info
+      zapReceipts = receipts.map(receipt => {
+        let amountMillisats = 0;
+        let senderPubkey = receipt.pubkey;
+        
+        try {
+          const descTag = receipt.tags.find(tag => tag[0] === 'description');
+          if (descTag && descTag[1]) {
+            const zapRequest = JSON.parse(descTag[1]);
+            const amountTag = zapRequest.tags?.find((tag: any) => tag[0] === 'amount');
+            if (amountTag && amountTag[1]) {
+              amountMillisats = parseInt(amountTag[1]);
+            }
+            // Get sender pubkey from zap request
+            if (zapRequest.pubkey) {
+              senderPubkey = zapRequest.pubkey;
+            }
+          }
+        } catch (e) {
+          // Ignore parse errors
+        }
+        
+        return {
+          ...receipt,
+          amountMillisats,
+          senderPubkey
+        };
+      }).sort((a, b) => b.created_at - a.created_at);
     } catch (error) {
       console.error('Failed to load zap receipts:', error);
     }
@@ -1804,22 +1831,41 @@
 
           <!-- Zap Receipts -->
           {#if zapReceipts.length > 0}
+            {@const sortedReceipts = zapReceipts.slice(0, 5)}
+            {@const totalAmount = sortedReceipts.reduce((sum, receipt) => {
+              return sum + (receipt.amountMillisats || 0);
+            }, 0)}
+            {@const totalSats = Math.round(totalAmount / 1000)}
             <div class="mb-6 pt-4 border-t" style="border-color: var(--border);">
-              <h4 class="font-semibold mb-2" style="color: var(--text-primary);">Zaps Received ({zapReceipts.length})</h4>
+              <div class="flex items-center justify-between mb-2">
+                <h4 class="font-semibold" style="color: var(--text-primary);">Zaps Received ({zapReceipts.length})</h4>
+                {#if totalSats > 0}
+                  <span class="text-sm font-semibold" style="color: var(--accent);">{totalSats.toLocaleString()} sats</span>
+                {/if}
+              </div>
               <div class="space-y-2 text-sm" style="color: var(--text-secondary);">
-                {#each zapReceipts.slice(0, 5) as receipt}
-                  <div class="flex items-center space-x-2">
-                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" style="color: #f59e0b;">
-                      <path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"/>
-                    </svg>
-                    <span class="font-mono text-xs">
-                      {new Date(receipt.created_at * 1000).toLocaleDateString()}
-                    </span>
+                {#each sortedReceipts as receipt}
+                  {@const amountSats = Math.round((receipt.amountMillisats || 0) / 1000)}
+                  {@const senderNpub = (() => {
+                    try {
+                      return nip19.npubEncode(receipt.senderPubkey || receipt.pubkey);
+                    } catch (e) {
+                      const pubkey = receipt.senderPubkey || receipt.pubkey;
+                      return pubkey.slice(0, 8) + '...';
+                    }
+                  })()}
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-2 flex-1 min-w-0">
+                      <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20" style="color: #f59e0b;">
+                        <path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"/>
+                      </svg>
+                      <span class="font-mono text-xs truncate" title={senderNpub}>{senderNpub.slice(0, 16) + '...'}</span>
+                    </div>
+                    {#if amountSats > 0}
+                      <span class="text-xs font-semibold ml-2 flex-shrink-0" style="color: var(--accent);">{amountSats.toLocaleString()} sats</span>
+                    {/if}
                   </div>
                 {/each}
-                {#if zapReceipts.length > 5}
-                  <p class="text-xs" style="color: var(--text-secondary);">+{zapReceipts.length - 5} more</p>
-                {/if}
               </div>
             </div>
           {/if}
