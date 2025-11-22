@@ -29,6 +29,9 @@
   let editing = $state(false);
   let editFormData = $state<any>(null);
   let saving = $state(false);
+  let showInvoiceModal = $state(false);
+  let invoiceData = $state<{ invoice: string; amountSats: number } | null>(null);
+  let showNpubQRModal = $state(false);
 
   // Detect if we're on mobile
   onMount(() => {
@@ -114,38 +117,14 @@
       }
       const userEvent = result.events.find((event: any) => event.pubkey === hexPubkey && event.kind === 0);
       
-      // Also fetch kind 10133 (payto payment targets) - replaceable event
+      // Check cache for payto event first (fast path)
       let paytoEvent: any = null;
-      try {
-        // Check cache first
-        const cachedPaytoEvent = cachedEvents.find(cached => cached.event.pubkey === hexPubkey && cached.event.kind === 10133);
-        
-        if (cachedPaytoEvent) {
-          paytoEvent = cachedPaytoEvent.event;
-        } else {
-          const paytoResult = await relayService.queryEvents(
-            'anonymous',
-            'metadata-read',
-            [{ kinds: [10133], authors: [hexPubkey], limit: 1 }],
-            { excludeUserContent: false, currentUserPubkey: undefined }
-          );
-          if (paytoResult.events.length > 0) {
-            // Get the latest replaceable event (highest created_at)
-            paytoEvent = paytoResult.events.reduce((latest: any, current: any) => 
-              current.created_at > (latest?.created_at || 0) ? current : latest
-            );
-            // Cache the payto event
-            const eventsToStore = paytoResult.events.map((event: any) => ({
-              event,
-              relays: paytoResult.relays
-            }));
-            await contentCache.storeEvents('metadata', eventsToStore);
-          }
-        }
-      } catch (e) {
-        console.warn('Failed to fetch payto event:', e);
+      const cachedPaytoEvent = cachedEvents.find(cached => cached.event.pubkey === hexPubkey && cached.event.kind === 10133);
+      if (cachedPaytoEvent) {
+        paytoEvent = cachedPaytoEvent.event;
       }
       
+      // Display profile immediately with cached data (or without payto if not cached)
       if (userEvent) {
         try {
           // Parse profile data from tags (preferred) and content (fallback)
@@ -177,8 +156,12 @@
             nip05: profileData.nip05 || '',
             nip05s: nip05s,
             payments: profileData.payments || [],
+            payto: profileData.payto || [],
             bot: profileData.bot
           };
+          
+          // Mark loading as false early so UI updates immediately
+          loading = false;
           
         } catch (e) {
           console.error('Failed to parse user metadata:', e);
@@ -203,6 +186,63 @@
           payto: [],
           bot: undefined
         };
+        loading = false;
+      }
+      
+      // Fetch payto events in background if not already cached (non-blocking)
+      if (!cachedPaytoEvent && userEvent) {
+        // Don't await - let it run in background and update profile when done
+        (async () => {
+          try {
+            const paytoResult = await relayService.queryEvents(
+              'anonymous',
+              'metadata-read',
+              [{ kinds: [10133], authors: [hexPubkey], limit: 1 }],
+              { excludeUserContent: false, currentUserPubkey: undefined }
+            );
+            if (paytoResult.events.length > 0) {
+              // Get the latest replaceable event (highest created_at)
+              const newPaytoEvent = paytoResult.events.reduce((latest: any, current: any) => 
+                current.created_at > (latest?.created_at || 0) ? current : latest
+              );
+              // Cache the payto event
+              const eventsToStore = paytoResult.events.map((event: any) => ({
+                event,
+                relays: paytoResult.relays
+              }));
+              await contentCache.storeEvents('metadata', eventsToStore);
+              
+              // Update profile with payto data if userData still exists and matches
+              if (userData && userData.pubkey === hexPubkey) {
+                const updatedProfileData = parseProfileData(userEvent, newPaytoEvent);
+                const websites = Array.isArray(updatedProfileData.websites) && updatedProfileData.websites.length > 0 
+                  ? updatedProfileData.websites 
+                  : (updatedProfileData.website ? [updatedProfileData.website] : []);
+                const nip05s = Array.isArray(updatedProfileData.nip05s) && updatedProfileData.nip05s.length > 0 
+                  ? updatedProfileData.nip05s 
+                  : (updatedProfileData.nip05 ? [updatedProfileData.nip05] : []);
+                const lud16s = Array.isArray(updatedProfileData.lud16s) && updatedProfileData.lud16s.length > 0 
+                  ? updatedProfileData.lud16s 
+                  : (updatedProfileData.lud16 ? [updatedProfileData.lud16] : []);
+                
+                userData = {
+                  ...userData,
+                  website: updatedProfileData.website || '',
+                  websites: websites,
+                  lud16: updatedProfileData.lud16 || '',
+                  lud16s: lud16s,
+                  nip05: updatedProfileData.nip05 || '',
+                  nip05s: nip05s,
+                  payments: updatedProfileData.payments || [],
+                  payto: updatedProfileData.payto || []
+                };
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to fetch payto event in background:', e);
+            // Silently fail - profile already displayed
+          }
+        })();
       }
     } catch (e) {
       console.error('ProfilePopup: Failed to fetch user data:', e);
@@ -223,7 +263,6 @@
         payto: [],
         bot: undefined
       };
-    } finally {
       loading = false;
     }
   }
@@ -256,9 +295,18 @@
       };
       loading = true; // Keep loading true until fetchUserData completes
       
+      // Track if we've successfully loaded data to prevent timeout from overriding cached data
+      let dataLoaded = false;
+      
       // Try to load real profile data in background with a safety timeout
       const safetyTimeout = setTimeout(() => {
-        if (loading) {
+        // Only show timeout fallback if we haven't successfully loaded data yet
+        // Check that userData is still the loading placeholder to avoid overwriting cached/loaded data
+        const isStillLoadingPlaceholder = userData && 
+          userData.display_name === 'Loading...' && 
+          userData.about === 'Loading profile data...';
+        
+        if (loading && !dataLoaded && isStillLoadingPlaceholder) {
           console.warn('ProfilePopup: Safety timeout reached, showing fallback profile');
           loading = false;
           userData = {
@@ -281,7 +329,10 @@
         }
       }, 15000); // 15 second safety timeout
       
-      fetchUserData().finally(() => {
+      fetchUserData().then(() => {
+        // Mark that we've successfully loaded data (even if it's empty/fallback profile)
+        dataLoaded = true;
+      }).finally(() => {
         clearTimeout(safetyTimeout);
       });
     } else if (!isOpen) {
@@ -456,15 +507,12 @@
       });
 
       if (result) {
-        // Open invoice in lightning wallet
-        const lightningUrl = `lightning:${result.invoice}`;
-        try {
-          window.location.href = lightningUrl;
-        } catch (e) {
-          // Fallback: copy to clipboard
-          await navigator.clipboard.writeText(result.invoice);
-          alert(`Zap invoice copied to clipboard!\n\n${result.invoice}\n\nPaste it into your lightning wallet.`);
-        }
+        // Show invoice modal with QR code
+        invoiceData = {
+          invoice: result.invoice,
+          amountSats: amountSats
+        };
+        showInvoiceModal = true;
 
         // Refresh zap receipts after a delay
         setTimeout(() => {
@@ -1609,7 +1657,7 @@
                   <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"/>
                   </svg>
-                  <span>⚡ Zap</span>
+                  <span>Zap</span>
                 {/if}
               </button>
             </div>
@@ -1780,20 +1828,299 @@
           <div class="pt-4 border-t" style="border-color: var(--border);">
             <h4 class="font-semibold mb-2" style="color: var(--text-primary);">Technical Info</h4>
             <div class="text-sm space-y-1" style="color: var(--text-secondary);">
-              <p><span class="font-medium">Npub:</span>
-                <a
-                  href="https://jumble.imwald.eu/users/{userData.npub}"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="font-mono break-all underline ml-1"
-                  style="color: var(--accent);"
+              <div class="flex items-center justify-between">
+                <p><span class="font-medium">Npub:</span>
+                  <a
+                    href="https://jumble.imwald.eu/users/{userData.npub}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="font-mono break-all underline ml-1"
+                    style="color: var(--accent);"
+                  >
+                    {userData.npub}
+                  </a>
+                </p>
+                <button
+                  onclick={() => showNpubQRModal = true}
+                  class="ml-2 p-2 rounded transition-colors hover:opacity-80"
+                  style="background-color: var(--bg-secondary); color: var(--accent); border: 1px solid var(--border);"
+                  title="Show QR code for npub"
                 >
-                  {userData.npub}
-                </a>
-              </p>
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         {/if}
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Invoice Modal -->
+{#if showInvoiceModal && invoiceData}
+  <div
+    class="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50"
+    onclick={(e) => {
+      if (e.target === e.currentTarget) {
+        showInvoiceModal = false;
+      }
+    }}
+    onkeydown={(e) => {
+      if (e.key === 'Escape') {
+        showInvoiceModal = false;
+      }
+    }}
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+    aria-label="Lightning invoice"
+  >
+    <div
+      class="rounded-lg shadow-xl max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto"
+      style="background-color: var(--bg-primary); border: 1px solid var(--border);"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
+      role="dialog"
+      tabindex="-1"
+    >
+      <!-- Header -->
+      <div class="flex items-center justify-between p-4" style="border-bottom: 1px solid var(--border);">
+        <h3 class="text-lg font-semibold" style="color: var(--text-primary);">Lightning Invoice</h3>
+        <button
+          onclick={() => showInvoiceModal = false}
+          class="transition-colors hover:opacity-70"
+          style="color: var(--text-secondary);"
+          aria-label="Close invoice"
+        >
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Content -->
+      <div class="p-4">
+        <div class="text-center mb-4">
+          <p class="text-sm mb-2" style="color: var(--text-secondary);">Amount: {invoiceData.amountSats} sats</p>
+        </div>
+
+        <!-- QR Code -->
+        <div class="flex justify-center mb-4">
+          <div class="p-4 rounded" style="background-color: white;">
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(invoiceData.invoice)}`}
+              alt="Lightning invoice QR code"
+              class="w-64 h-64"
+            />
+          </div>
+        </div>
+
+        <!-- Invoice Text (Copyable) -->
+        <div class="mb-4">
+          <div class="block text-sm font-medium mb-2" style="color: var(--text-primary);">Invoice (click to copy):</div>
+          <button
+            type="button"
+            class="w-full p-3 rounded border break-all font-mono text-xs cursor-pointer hover:opacity-80 transition-opacity text-left"
+            style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+            onclick={async (e) => {
+              if (!invoiceData) return;
+              try {
+                await navigator.clipboard.writeText(invoiceData.invoice);
+                // Show temporary feedback
+                const target = e.target as HTMLElement;
+                if (target) {
+                  const originalText = target.textContent;
+                  target.textContent = 'Copied!';
+                  setTimeout(() => {
+                    if (target && originalText) {
+                      target.textContent = originalText;
+                    }
+                  }, 2000);
+                }
+              } catch (err) {
+                console.error('Failed to copy invoice:', err);
+              }
+            }}
+            onkeydown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                if (invoiceData) {
+                  navigator.clipboard.writeText(invoiceData.invoice);
+                }
+              }
+            }}
+            title="Click to copy invoice"
+          >
+            {invoiceData.invoice}
+          </button>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex flex-col space-y-2">
+          <button
+            onclick={async () => {
+              if (!invoiceData) return;
+              try {
+                const lightningUrl = `lightning:${invoiceData.invoice}`;
+                window.location.href = lightningUrl;
+              } catch (e) {
+                console.error('Failed to open lightning URL:', e);
+              }
+            }}
+            class="w-full px-4 py-2 rounded transition-colors font-semibold flex items-center justify-center space-x-2"
+            style="background-color: var(--accent); color: white;"
+            title="Open in lightning wallet"
+          >
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"/>
+            </svg>
+            <span>Open in Lightning Wallet</span>
+          </button>
+          <button
+            onclick={async () => {
+              if (!invoiceData) return;
+              try {
+                await navigator.clipboard.writeText(invoiceData.invoice);
+                alert('Invoice copied to clipboard!');
+              } catch (e) {
+                console.error('Failed to copy invoice:', e);
+                alert('Failed to copy invoice. Please select and copy manually.');
+              }
+            }}
+            class="w-full px-4 py-2 rounded transition-colors font-semibold"
+            style="background-color: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border);"
+            title="Copy invoice to clipboard"
+          >
+            Copy Invoice
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Npub QR Code Modal -->
+{#if showNpubQRModal && userData}
+  <div
+    class="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50"
+    onclick={(e) => {
+      if (e.target === e.currentTarget) {
+        showNpubQRModal = false;
+      }
+    }}
+    onkeydown={(e) => {
+      if (e.key === 'Escape') {
+        showNpubQRModal = false;
+      }
+    }}
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+    aria-label="Npub QR code"
+  >
+    <div
+      class="rounded-lg shadow-xl max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto"
+      style="background-color: var(--bg-primary); border: 1px solid var(--border);"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
+      role="dialog"
+      tabindex="-1"
+    >
+      <!-- Header -->
+      <div class="flex items-center justify-between p-4" style="border-bottom: 1px solid var(--border);">
+        <h3 class="text-lg font-semibold" style="color: var(--text-primary);">Nostr Public Key (npub)</h3>
+        <button
+          onclick={() => showNpubQRModal = false}
+          class="transition-colors hover:opacity-70"
+          style="color: var(--text-secondary);"
+          aria-label="Close QR code"
+        >
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Content -->
+      <div class="p-4">
+        <div class="text-center mb-4">
+          <p class="text-sm mb-2" style="color: var(--text-secondary);">{userData.display_name || userData.name || 'User'}</p>
+        </div>
+
+        <!-- QR Code -->
+        <div class="flex justify-center mb-4">
+          <div class="p-4 rounded" style="background-color: white;">
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(userData.npub)}`}
+              alt="Npub QR code"
+              class="w-64 h-64"
+            />
+          </div>
+        </div>
+
+        <!-- Npub Text (Copyable) -->
+        <div class="mb-4">
+          <div class="block text-sm font-medium mb-2" style="color: var(--text-primary);">Npub (click to copy):</div>
+          <button
+            type="button"
+            class="w-full p-3 rounded border break-all font-mono text-xs cursor-pointer hover:opacity-80 transition-opacity text-left"
+            style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--text-primary);"
+            onclick={async (e) => {
+              if (!userData) return;
+              try {
+                await navigator.clipboard.writeText(userData.npub);
+                // Show temporary feedback
+                const target = e.target as HTMLElement;
+                if (target) {
+                  const originalText = target.textContent;
+                  target.textContent = 'Copied!';
+                  setTimeout(() => {
+                    if (target && originalText) {
+                      target.textContent = originalText;
+                    }
+                  }, 2000);
+                }
+              } catch (err) {
+                console.error('Failed to copy npub:', err);
+              }
+            }}
+            onkeydown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                if (userData) {
+                  navigator.clipboard.writeText(userData.npub);
+                }
+              }
+            }}
+            title="Click to copy npub"
+          >
+            {userData.npub}
+          </button>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex flex-col space-y-2">
+          <button
+            onclick={async () => {
+              if (!userData) return;
+              try {
+                await navigator.clipboard.writeText(userData.npub);
+                alert('Npub copied to clipboard!');
+              } catch (e) {
+                console.error('Failed to copy npub:', e);
+                alert('Failed to copy npub. Please select and copy manually.');
+              }
+            }}
+            class="w-full px-4 py-2 rounded transition-colors font-semibold"
+            style="background-color: var(--accent); color: white;"
+            title="Copy npub to clipboard"
+          >
+            Copy Npub
+          </button>
+        </div>
       </div>
     </div>
   </div>

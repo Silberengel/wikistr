@@ -24,7 +24,7 @@
       return;
     }
 
-    // Set immediate fallback user
+    // Set immediate fallback user - this displays instantly
     user = {
       pubkey: pubkey,
       npub: pubkey,
@@ -34,130 +34,135 @@
       lastUpdated: Date.now()
     };
     
-    try {
-      // Check IndexedDB cache first
-      const { contentCache } = await import('$lib/contentCache');
-      const cachedEvents = await contentCache.getEvents('metadata');
-      const cachedUserEvent = cachedEvents.find(cached => cached.event.pubkey === pubkey && cached.event.kind === 0);
-      
-      if (cachedUserEvent) {
-        try {
-          // Try to parse from tags first, then content
-          let content: any = {};
-          if (cachedUserEvent.event.tags && Array.isArray(cachedUserEvent.event.tags)) {
-            // Parse from tags
-            for (const tag of cachedUserEvent.event.tags) {
-              if (Array.isArray(tag) && tag.length >= 2) {
-                const key = tag[0].toLowerCase();
-                const value = Array.isArray(tag[1]) ? tag[1][0] : tag[1];
-                if (value && typeof value === 'string') {
-                  if (key === 'display_name' || key === 'displayname') content.display_name = value;
-                  else if (key === 'name') content.name = value;
-                  else if (key === 'picture' || key === 'avatar') content.picture = value;
+    // Load cached data in background (non-blocking)
+    (async () => {
+      try {
+        // Check IndexedDB cache first
+        const { contentCache } = await import('$lib/contentCache');
+        const cachedEvents = await contentCache.getEvents('metadata');
+        const cachedUserEvent = cachedEvents.find(cached => cached.event.pubkey === pubkey && cached.event.kind === 0);
+        
+        if (cachedUserEvent) {
+          try {
+            // Try to parse from tags first, then content
+            let content: any = {};
+            if (cachedUserEvent.event.tags && Array.isArray(cachedUserEvent.event.tags)) {
+              // Parse from tags
+              for (const tag of cachedUserEvent.event.tags) {
+                if (Array.isArray(tag) && tag.length >= 2) {
+                  const key = tag[0].toLowerCase();
+                  const value = Array.isArray(tag[1]) ? tag[1][0] : tag[1];
+                  if (value && typeof value === 'string') {
+                    if (key === 'display_name' || key === 'displayname') content.display_name = value;
+                    else if (key === 'name') content.name = value;
+                    else if (key === 'picture' || key === 'avatar') content.picture = value;
+                  }
                 }
               }
             }
+            // Fallback to content if tags didn't provide values
+            if (!content.display_name && !content.name && !content.picture) {
+              content = JSON.parse(cachedUserEvent.event.content);
+            }
+            // Update user with cached data
+            user = {
+              pubkey: pubkey,
+              npub: pubkey,
+              shortName: content.display_name || content.name || pubkey.slice(0, 8) + '...',
+              image: content.picture || undefined,
+              metadata: content,
+              lastUpdated: Date.now()
+            };
+            return; // Exit early since we found cached data
+          } catch (e) {
+            console.warn('UserBadge: Failed to parse cached user metadata:', e);
           }
-          // Fallback to content if tags didn't provide values
-          if (!content.display_name && !content.name && !content.picture) {
-            content = JSON.parse(cachedUserEvent.event.content);
-          }
-          user = {
-            pubkey: pubkey,
-            npub: pubkey,
-            shortName: content.display_name || content.name || pubkey.slice(0, 8) + '...',
-            image: content.picture || undefined,
-            metadata: content,
-            lastUpdated: Date.now()
-          };
-          return; // Exit early since we found cached data
-        } catch (e) {
-          console.warn('UserBadge: Failed to parse cached user metadata:', e);
         }
-      }
-      
-      // If user not found in cache, try to load metadata
-      // Add a small random delay to stagger requests and avoid queue overflow
-      const delay = Math.random() * 200; // 0-200ms random delay
-      await new Promise(resolve => setTimeout(resolve, delay));
-      
-      const { relayService } = await import('$lib/relayService');
-      
-      // Retry logic for queue full errors
-      let retries = 3;
-      let metadataResult: { events: any[]; relays: string[] } | null = null;
-      while (retries > 0) {
-        try {
-          metadataResult = await relayService.queryEvents(
-            'anonymous',
-            'metadata-read',
-            [{ kinds: [0], authors: [pubkey], limit: 1 }],
-            { excludeUserContent: false, currentUserPubkey: undefined }
-          );
-          break; // Success, exit retry loop
-        } catch (e: any) {
-          if (e.message && e.message.includes('Request queue is full')) {
-            retries--;
-            if (retries > 0) {
-              // Wait a bit longer before retrying
-              await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 500));
+        
+        // If user not found in cache, try to load metadata
+        // Add a small random delay to stagger requests and avoid queue overflow
+        const delay = Math.random() * 200; // 0-200ms random delay
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+        const { relayService } = await import('$lib/relayService');
+        
+        // Retry logic for queue full errors
+        let retries = 3;
+        let metadataResult: { events: any[]; relays: string[] } | null = null;
+        while (retries > 0) {
+          try {
+            metadataResult = await relayService.queryEvents(
+              'anonymous',
+              'metadata-read',
+              [{ kinds: [0], authors: [pubkey], limit: 1 }],
+              { excludeUserContent: false, currentUserPubkey: undefined }
+            );
+            break; // Success, exit retry loop
+          } catch (e: any) {
+            if (e.message && e.message.includes('Request queue is full')) {
+              retries--;
+              if (retries > 0) {
+                // Wait a bit longer before retrying
+                await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 500));
+              } else {
+                // Give up after retries - just use fallback user
+                return;
+              }
             } else {
-              // Give up after retries - just use fallback user
-              return;
+              // Not a queue error, throw immediately
+              throw e;
             }
-          } else {
-            // Not a queue error, throw immediately
-            throw e;
           }
         }
-      }
-      
-      if (metadataResult && metadataResult.events.length > 0) {
-        const event = metadataResult.events[0];
-        try {
-          // Try to parse from tags first, then content
-          let content: any = {};
-          if (event.tags && Array.isArray(event.tags)) {
-            for (const tag of event.tags) {
-              if (Array.isArray(tag) && tag.length >= 2) {
-                const key = tag[0].toLowerCase();
-                const value = Array.isArray(tag[1]) ? tag[1][0] : tag[1];
-                if (value && typeof value === 'string') {
-                  if (key === 'display_name' || key === 'displayname') content.display_name = value;
-                  else if (key === 'name') content.name = value;
-                  else if (key === 'picture' || key === 'avatar') content.picture = value;
+        
+        if (metadataResult && metadataResult.events.length > 0) {
+          const event = metadataResult.events[0];
+          try {
+            // Try to parse from tags first, then content
+            let content: any = {};
+            if (event.tags && Array.isArray(event.tags)) {
+              for (const tag of event.tags) {
+                if (Array.isArray(tag) && tag.length >= 2) {
+                  const key = tag[0].toLowerCase();
+                  const value = Array.isArray(tag[1]) ? tag[1][0] : tag[1];
+                  if (value && typeof value === 'string') {
+                    if (key === 'display_name' || key === 'displayname') content.display_name = value;
+                    else if (key === 'name') content.name = value;
+                    else if (key === 'picture' || key === 'avatar') content.picture = value;
+                  }
                 }
               }
             }
+            // Fallback to content if tags didn't provide values
+            if (!content.display_name && !content.name && !content.picture) {
+              content = JSON.parse(event.content);
+            }
+            // Update user with fetched data
+            user = {
+              pubkey: pubkey,
+              npub: pubkey,
+              shortName: content.display_name || content.name || pubkey.slice(0, 8) + '...',
+              image: content.picture || undefined,
+              metadata: content,
+              lastUpdated: Date.now()
+            };
+            
+            // Store the metadata in cache for future use
+            const eventsToStore = [{
+              event,
+              relays: metadataResult.relays
+            }];
+            await contentCache.storeEvents('metadata', eventsToStore);
+          } catch (e) {
+            console.warn('UserBadge: Failed to parse user metadata:', e);
           }
-          // Fallback to content if tags didn't provide values
-          if (!content.display_name && !content.name && !content.picture) {
-            content = JSON.parse(event.content);
-          }
-          user = {
-            pubkey: pubkey,
-            npub: pubkey,
-            shortName: content.display_name || content.name || pubkey.slice(0, 8) + '...',
-            image: content.picture || undefined,
-            metadata: content,
-            lastUpdated: Date.now()
-          };
-          
-          // Store the metadata in cache for future use
-          const eventsToStore = [{
-            event,
-            relays: metadataResult.relays
-          }];
-          await contentCache.storeEvents('metadata', eventsToStore);
-        } catch (e) {
-          console.warn('UserBadge: Failed to parse user metadata:', e);
         }
+        
+      } catch (e) {
+        // Keep fallback user if loading fails
+        console.warn('UserBadge: Failed to load metadata for', pubkey.slice(0, 8) + '...', e);
       }
-      
-    } catch (e) {
-      // Keep fallback user if loading fails
-      console.warn('UserBadge: Failed to load metadata for', pubkey.slice(0, 8) + '...', e);
-    }
+    })();
   });
 
   function handleProfileClick() {
