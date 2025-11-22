@@ -3,7 +3,7 @@
   import { relayService } from '$lib/relayService';
   import { nip19 } from '@nostr/tools';
   import { account, signer } from '$lib/nostr';
-  import { sendZap, fetchZapReceipts, fetchLNURLPay } from '$lib/zaps';
+  import { fetchLNURLPay } from '$lib/zaps';
   import UserBadge from './UserBadge.svelte';
   import ProfileWebsiteOG from './ProfileWebsiteOG.svelte';
   import QRCode from 'qrcode';
@@ -24,14 +24,11 @@
   let nip05Verified = $state(false);
   let nip05Verifying = $state(false);
   let nip05RetryCount = $state(0);
-  let zapReceipts = $state<any[]>([]);
-  let zapLoading = $state(false);
-  let lnurlPayInfo = $state<{ allowsNostr?: boolean; nostrPubkey?: string } | null>(null);
   let editing = $state(false);
   let editFormData = $state<any>(null);
   let saving = $state(false);
   let showInvoiceModal = $state(false);
-  let invoiceData = $state<{ invoice: string; amountSats: number } | null>(null);
+  let invoiceData = $state<{ invoice: string; amountSats: number; comment?: string } | null>(null);
   let showNpubQRModal = $state(false);
   let invoiceQRCode = $state<string | null>(null);
   let npubQRCode = $state<string | null>(null);
@@ -446,142 +443,6 @@
     window.open(wellKnownUrl, '_blank', 'noopener,noreferrer');
   }
 
-  // Check if user supports nostr zaps
-  async function checkZapSupport() {
-    if (!userData || !userData.lud16s || userData.lud16s.length === 0) {
-      lnurlPayInfo = null;
-      return;
-    }
-
-    // Check the first lightning address for zap support
-    const lud16 = userData.lud16s[0];
-    try {
-      const lnurlPay = await fetchLNURLPay(lud16);
-      if (lnurlPay) {
-        lnurlPayInfo = {
-          allowsNostr: lnurlPay.allowsNostr || false,
-          nostrPubkey: lnurlPay.nostrPubkey
-        };
-      } else {
-        lnurlPayInfo = null;
-      }
-    } catch (error) {
-      console.error('Failed to check zap support:', error);
-      lnurlPayInfo = null;
-    }
-  }
-
-  // Send a zap to the user
-  async function sendZapToUser() {
-    if (!userData || !$account) {
-      alert('Please log in to send zaps');
-      return;
-    }
-
-    if (!lnurlPayInfo?.allowsNostr) {
-      alert('This user does not support nostr zaps. Use the lightning address directly.');
-      return;
-    }
-
-    try {
-      // Prompt for amount
-      const amountInput = prompt('Enter zap amount in sats (default: 1000):', '1000');
-      if (amountInput === null) {
-        return; // User cancelled
-      }
-
-      const amountSats = parseInt(amountInput) || 1000;
-      const amountMillisats = amountSats * 1000;
-
-      // Prompt for optional message
-      const message = prompt('Enter optional zap message (or leave empty):', '');
-
-      zapLoading = true;
-
-      // Get relays from relay service
-      const relays = await relayService.getRelaysForOperation($account.pubkey, 'social-write');
-      
-      // Send zap
-      const result = await sendZap({
-        recipientPubkey: userData.pubkey,
-        amountMillisats,
-        relays: relays.length > 0 ? relays : ['wss://relay.damus.io'], // Fallback relay
-        content: message || undefined
-      });
-
-      if (result) {
-        // Show invoice modal with QR code
-        invoiceData = {
-          invoice: result.invoice,
-          amountSats: amountSats
-        };
-        // Generate QR code for invoice
-        try {
-          invoiceQRCode = await QRCode.toDataURL(result.invoice, {
-            width: 300,
-            margin: 2,
-            color: {
-              dark: '#000000',
-              light: '#FFFFFF'
-            }
-          });
-        } catch (e) {
-          console.error('Failed to generate invoice QR code:', e);
-          invoiceQRCode = null;
-        }
-        showInvoiceModal = true;
-
-        // Refresh zap receipts after a delay
-        setTimeout(() => {
-          loadZapReceipts();
-        }, 3000);
-      }
-    } catch (error) {
-      console.error('Failed to send zap:', error);
-      alert(`Failed to send zap: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      zapLoading = false;
-    }
-  }
-
-  // Load zap receipts for this user
-  async function loadZapReceipts() {
-    if (!userData) return;
-
-    try {
-      const receipts = await fetchZapReceipts(userData.pubkey);
-      // Sort by created_at descending and enrich with amount and sender info
-      zapReceipts = receipts.map(receipt => {
-        let amountMillisats = 0;
-        let senderPubkey = receipt.pubkey;
-        
-        try {
-          const descTag = receipt.tags.find(tag => tag[0] === 'description');
-          if (descTag && descTag[1]) {
-            const zapRequest = JSON.parse(descTag[1]);
-            const amountTag = zapRequest.tags?.find((tag: any) => tag[0] === 'amount');
-            if (amountTag && amountTag[1]) {
-              amountMillisats = parseInt(amountTag[1]);
-            }
-            // Get sender pubkey from zap request
-            if (zapRequest.pubkey) {
-              senderPubkey = zapRequest.pubkey;
-            }
-          }
-        } catch (e) {
-          // Ignore parse errors
-        }
-        
-        return {
-          ...receipt,
-          amountMillisats,
-          senderPubkey
-        };
-      }).sort((a, b) => b.created_at - a.created_at);
-    } catch (error) {
-      console.error('Failed to load zap receipts:', error);
-    }
-  }
 
   // Handle payto click - open payto:// URI or handle specific types
   function handlePaytoClick(payto: { type: string; authority: string; uri: string }) {
@@ -726,7 +587,7 @@
         throw new Error('No callback URL in LNURL response');
       }
       
-      // Step 2: Prompt for amount (default to 1000 sats = 100000 millisats)
+      // Step 2: Prompt for amount (default: 1000 sats = 100000 millisats)
       const amountInput = prompt('Enter amount in sats (default: 1000):', '1000');
       if (amountInput === null) {
         return; // User cancelled
@@ -735,9 +596,18 @@
       const amountSats = parseInt(amountInput) || 1000;
       const amountMillisats = amountSats * 1000;
       
+      // Step 2.5: Prompt for optional comment/message
+      const comment = prompt('Enter optional payment message/comment (or leave empty):', '');
+      // If user cancels the comment prompt, treat it as empty string (not null)
+      const paymentComment = comment === null ? '' : comment.trim();
+      
       // Step 3: Fetch invoice from callback
       const callbackUrl = new URL(lnurlData.callback);
       callbackUrl.searchParams.set('amount', amountMillisats.toString());
+      // Add comment if provided (LNURL-Pay supports comment parameter)
+      if (paymentComment) {
+        callbackUrl.searchParams.set('comment', paymentComment);
+      }
       
       const invoiceResponse = await fetch(callbackUrl.toString());
       
@@ -745,25 +615,38 @@
         throw new Error(`Failed to fetch invoice: ${invoiceResponse.statusText}`);
       }
       
-      const invoiceData = await invoiceResponse.json();
+      const invoiceResponseData = await invoiceResponse.json();
       
-      if (!invoiceData.pr) {
+      if (!invoiceResponseData.pr) {
         throw new Error('No invoice (pr) in response');
       }
       
-      // Step 4: Open invoice in lightning wallet
-      // Try lightning: protocol first, then fallback to copying to clipboard
-      const invoice = invoiceData.pr;
-      const lightningUrl = `lightning:${invoice}`;
+      // Step 4: Show invoice modal with QR code and copyable text
+      const invoice = invoiceResponseData.pr;
       
-      // Try to open with lightning: protocol
+      // Generate QR code for invoice first
       try {
-        window.location.href = lightningUrl;
+        invoiceQRCode = await QRCode.toDataURL(invoice, {
+          width: 300,
+          margin: 2,
+          color: {
+            dark: '#000000',
+            light: '#FFFFFF'
+          }
+        });
       } catch (e) {
-        // If lightning: protocol doesn't work, copy to clipboard and show QR code option
-        await navigator.clipboard.writeText(invoice);
-        alert(`Invoice copied to clipboard!\n\n${invoice}\n\nPaste it into your lightning wallet.`);
+        console.error('Failed to generate invoice QR code:', e);
+        invoiceQRCode = null;
       }
+      
+      // Store invoice data and show modal after QR code is generated
+      invoiceData = {
+        invoice: invoice,
+        amountSats: amountSats,
+        comment: paymentComment || undefined
+      };
+      
+      showInvoiceModal = true;
       
     } catch (error) {
       console.error('Failed to open lightning invoice:', error);
@@ -1216,11 +1099,6 @@
       verifyNip05();
     }
 
-    // Check zap support and load zap receipts
-    if (userData) {
-      checkZapSupport();
-      loadZapReceipts();
-    }
   });
 </script>
 
@@ -1684,28 +1562,6 @@
             </div>
           </div>
 
-          <!-- Zap Button -->
-          {#if $account && lnurlPayInfo?.allowsNostr}
-            <div class="mb-6">
-              <button
-                onclick={sendZapToUser}
-                disabled={zapLoading}
-                class="w-full px-4 py-2 rounded transition-colors font-semibold flex items-center justify-center space-x-2"
-                style="background-color: var(--accent); color: white;"
-                title="Send a lightning zap"
-              >
-                {#if zapLoading}
-                  <div class="w-4 h-4 border-2 rounded-full animate-spin" style="border-color: white; border-top-color: transparent;"></div>
-                  <span>Sending zap...</span>
-                {:else}
-                  <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"/>
-                  </svg>
-                  <span>Zap</span>
-                {/if}
-              </button>
-            </div>
-          {/if}
 
           <!-- About Section -->
           {#if userData.about}
@@ -1846,46 +1702,6 @@
             </div>
           {/if}
 
-          <!-- Zap Receipts -->
-          {#if zapReceipts.length > 0}
-            {@const sortedReceipts = zapReceipts.slice(0, 5)}
-            {@const totalAmount = sortedReceipts.reduce((sum, receipt) => {
-              return sum + (receipt.amountMillisats || 0);
-            }, 0)}
-            {@const totalSats = Math.round(totalAmount / 1000)}
-            <div class="mb-6 pt-4 border-t" style="border-color: var(--border);">
-              <div class="flex items-center justify-between mb-2">
-                <h4 class="font-semibold" style="color: var(--text-primary);">Zaps Received ({zapReceipts.length})</h4>
-                {#if totalSats > 0}
-                  <span class="text-sm font-semibold" style="color: var(--accent);">{totalSats.toLocaleString()} sats</span>
-                {/if}
-              </div>
-              <div class="space-y-2 text-sm" style="color: var(--text-secondary);">
-                {#each sortedReceipts as receipt}
-                  {@const amountSats = Math.round((receipt.amountMillisats || 0) / 1000)}
-                  {@const senderNpub = (() => {
-                    try {
-                      return nip19.npubEncode(receipt.senderPubkey || receipt.pubkey);
-                    } catch (e) {
-                      const pubkey = receipt.senderPubkey || receipt.pubkey;
-                      return pubkey.slice(0, 8) + '...';
-                    }
-                  })()}
-                  <div class="flex items-center justify-between">
-                    <div class="flex items-center space-x-2 flex-1 min-w-0">
-                      <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20" style="color: #f59e0b;">
-                        <path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"/>
-                      </svg>
-                      <span class="font-mono text-xs truncate" title={senderNpub}>{senderNpub.slice(0, 16) + '...'}</span>
-                    </div>
-                    {#if amountSats > 0}
-                      <span class="text-xs font-semibold ml-2 flex-shrink-0" style="color: var(--accent);">{amountSats.toLocaleString()} sats</span>
-                    {/if}
-                  </div>
-                {/each}
-              </div>
-            </div>
-          {/if}
 
           <!-- Technical Info -->
           <div class="pt-4 border-t" style="border-color: var(--border);">
@@ -1991,6 +1807,9 @@
       <div class="p-4">
         <div class="text-center mb-4">
           <p class="text-sm mb-2" style="color: var(--text-secondary);">Amount: {invoiceData.amountSats} sats</p>
+          {#if invoiceData.comment}
+            <p class="text-sm mt-2 italic" style="color: var(--text-secondary);">"{invoiceData.comment}"</p>
+          {/if}
         </div>
 
         <!-- QR Code -->
