@@ -66,7 +66,8 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
     downloadBookSearchResultsAsMarkdown,
     downloadBookSearchResultsAsAsciiDoc,
     downloadBookSearchResultsAsPDF,
-    downloadBookSearchResultsAsEPUB
+    downloadBookSearchResultsAsEPUB,
+    downloadBookSearchResultsAsLaTeX
   } from '$lib/articleDownload';
 
   interface Props {
@@ -97,6 +98,9 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
   const bibleGatewayUrlForQuery = $derived.by(() => (bookCard.bookType === 'bible' && parsedQuery ? generateBibleGatewayUrl(parsedQuery) : null));
   let showDownloadMenu = $state(false);
   let isDownloading = $state(false);
+  let showPdfStyleMenu = $state(false);
+  let showEpubStyleMenu = $state(false);
+  type PDFTheme = 'classic' | 'antique' | 'modern' | 'documentation' | 'scientific' | 'pop';
 
   const bookCard = card as BookCard;
 
@@ -1523,39 +1527,109 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
                   AsciiDoc
                 {/if}
               </button>
-              <button
-                onclick={async () => {
-                  if (results.length === 0) return;
-                  showDownloadMenu = false;
-                  isDownloading = true;
-                  try {
-                    await downloadBookSearchResultsAsPDF(results, parsedQuery);
-                  } catch (error) {
-                    alert('Failed to download search results as PDF. Make sure the AsciiDoctor server is running.');
-                    console.error('Download error:', error);
-                  } finally {
-                    isDownloading = false;
-                  }
-                }}
-                disabled={isDownloading || results.length === 0}
-                class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                style="color: var(--text-primary);"
-              >
-                {#if isDownloading}
-                  Generating PDF...
-                {:else}
-                  PDF
+              <!-- PDF with style submenu -->
+              <div class="relative">
+                <button
+                  onclick={(e) => { e.stopPropagation(); showPdfStyleMenu = !showPdfStyleMenu; }}
+                  disabled={results.length === 0}
+                  class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 flex items-center justify-between"
+                  style="color: var(--text-primary);"
+                >
+                  <span>PDF</span>
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                  </svg>
+                </button>
+                {#if showPdfStyleMenu}
+                  <div
+                    class="absolute left-full ml-2 top-0 w-48 rounded-lg shadow-lg z-50"
+                    style="background-color: var(--bg-primary); border: 1px solid var(--border);"
+                    onclick={(e) => e.stopPropagation()}
+                  >
+                    <div class="py-1">
+                      {#each ['classic', 'antique', 'modern', 'documentation', 'scientific', 'pop'] as style}
+                        <button
+                          onclick={async () => {
+                            if (results.length === 0) return;
+                            showPdfStyleMenu = false;
+                            showDownloadMenu = false;
+                            isDownloading = true;
+                            try {
+                              await downloadBookSearchResultsAsPDF(results, parsedQuery, style as PDFTheme);
+                            } catch (error) {
+                              alert('Failed to download search results as PDF. Make sure the AsciiDoctor server is running.');
+                              console.error('Download error:', error);
+                            } finally {
+                              isDownloading = false;
+                            }
+                          }}
+                          disabled={isDownloading || results.length === 0}
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 capitalize"
+                          style="color: var(--text-primary);"
+                        >
+                          {style}
+                        </button>
+                      {/each}
+                    </div>
+                  </div>
                 {/if}
-              </button>
+              </div>
+              <!-- EPUB with style submenu -->
+              <div class="relative">
+                <button
+                  onclick={(e) => { e.stopPropagation(); showEpubStyleMenu = !showEpubStyleMenu; }}
+                  disabled={results.length === 0}
+                  class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 flex items-center justify-between"
+                  style="color: var(--text-primary);"
+                >
+                  <span>EPUB</span>
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                  </svg>
+                </button>
+                {#if showEpubStyleMenu}
+                  <div
+                    class="absolute left-full ml-2 top-0 w-48 rounded-lg shadow-lg z-50"
+                    style="background-color: var(--bg-primary); border: 1px solid var(--border);"
+                    onclick={(e) => e.stopPropagation()}
+                  >
+                    <div class="py-1">
+                      {#each ['classic', 'antique', 'modern', 'documentation', 'scientific', 'pop'] as style}
+                        <button
+                          onclick={async () => {
+                            if (results.length === 0) return;
+                            showEpubStyleMenu = false;
+                            showDownloadMenu = false;
+                            isDownloading = true;
+                            try {
+                              await downloadBookSearchResultsAsEPUB(results, parsedQuery, style as PDFTheme);
+                            } catch (error) {
+                              alert('Failed to download search results as EPUB. Make sure the AsciiDoctor server is running.');
+                              console.error('Download error:', error);
+                            } finally {
+                              isDownloading = false;
+                            }
+                          }}
+                          disabled={isDownloading || results.length === 0}
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 capitalize"
+                          style="color: var(--text-primary);"
+                        >
+                          {style}
+                        </button>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+              </div>
               <button
                 onclick={async () => {
                   if (results.length === 0) return;
                   showDownloadMenu = false;
                   isDownloading = true;
                   try {
-                    await downloadBookSearchResultsAsEPUB(results, parsedQuery);
+                    await downloadBookSearchResultsAsLaTeX(results, parsedQuery);
                   } catch (error) {
-                    alert('Failed to download search results as EPUB. Make sure the AsciiDoctor server is running.');
+                    alert('Failed to download search results as LaTeX. Make sure the AsciiDoctor server is running.');
                     console.error('Download error:', error);
                   } finally {
                     isDownloading = false;
@@ -1566,9 +1640,9 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
                 style="color: var(--text-primary);"
               >
                 {#if isDownloading}
-                  Generating EPUB...
+                  Generating LaTeX...
                 {:else}
-                  EPUB
+                  LaTeX
                 {/if}
               </button>
             </div>

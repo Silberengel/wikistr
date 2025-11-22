@@ -12,8 +12,10 @@ COPY deployment/Gemfile deployment/Gemfile.lock* ./deployment/
 WORKDIR /app/deployment
 RUN bundle install --without development test
 
-# Copy server script
+# Copy server script, themes, and EPUB stylesheet
 COPY deployment/asciidoctor-server.rb ./
+COPY deployment/*-theme.yml ./
+COPY deployment/epub-classic.css ./
 
 # Expose port
 EXPOSE 8091

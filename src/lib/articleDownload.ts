@@ -6,7 +6,7 @@
 import type { NostrEvent } from '@nostr/tools/pure';
 import { nip19 } from '@nostr/tools';
 import { relayService } from '$lib/relayService';
-import { exportToPDF, exportToEPUB, exportToHTML5, exportToRevealJS, downloadBlob } from './asciidoctorExport';
+import { exportToPDF, exportToEPUB, exportToHTML5, exportToRevealJS, exportToLaTeX, downloadBlob } from './asciidoctorExport';
 
 /**
  * Download article as markdown (with YAML frontmatter metadata)
@@ -63,7 +63,7 @@ export async function downloadAsMarkdown(event: NostrEvent, filename?: string): 
  * Download article as AsciiDoc
  */
 export async function downloadAsAsciiDoc(event: NostrEvent, filename?: string): Promise<void> {
-  const contentWithMetadata = await prepareAsciiDocContent(event, true);
+  const contentWithMetadata = await prepareAsciiDocContent(event, true, 'classic');
   const blob = new Blob([contentWithMetadata], { type: 'text/asciidoc' });
   const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
   const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.adoc`;
@@ -95,7 +95,7 @@ async function getAuthorName(event: NostrEvent): Promise<string> {
 /**
  * Build AsciiDoc document with metadata header
  */
-async function buildAsciiDocWithMetadata(event: NostrEvent, content: string): Promise<string> {
+async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, theme: PDFTheme = 'classic'): Promise<string> {
   const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
   const author = await getAuthorName(event);
   const description = event.tags.find(([k]) => k === 'description')?.[1];
@@ -109,6 +109,8 @@ async function buildAsciiDocWithMetadata(event: NostrEvent, content: string): Pr
   // Build AsciiDoc document with metadata
   let doc = `= ${title}\n`;
   doc += `:author: ${author}\n`;
+  doc += `:pdf-theme: ${theme}\n`;
+  doc += `:pdf-themesdir: /app/deployment\n`;
   
   if (version) {
     doc += `:version: ${version}\n`;
@@ -128,13 +130,12 @@ async function buildAsciiDocWithMetadata(event: NostrEvent, content: string): Pr
     doc += `:summary: ${summary}\n`;
   }
   
-  doc += `\n`;
-  
-  // Add cover image if available (for PDF/EPUB)
+  // Set cover image if available (for PDF/EPUB title page)
   if (image) {
-    doc += `[cover]\n`;
-    doc += `image::${image}[]\n\n`;
+    doc += `:front-cover-image: ${image}\n`;
   }
+  
+  doc += `\n`;
   
   // Add description as abstract if available
   if (description) {
@@ -167,11 +168,11 @@ function convertMarkdownToAsciiDoc(markdown: string): string {
 /**
  * Prepare content for AsciiDoc conversion (with metadata)
  */
-export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata: boolean = true): Promise<string> {
+export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata: boolean = true, theme: PDFTheme = 'classic'): Promise<string> {
   if (!event.content || event.content.trim().length === 0) {
     const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
     if (includeMetadata) {
-      return await buildAsciiDocWithMetadata(event, 'No content available.');
+      return await buildAsciiDocWithMetadata(event, 'No content available.', theme);
     }
     return `= ${title}\n\nNo content available.`;
   }
@@ -214,6 +215,8 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
         
         let doc = `= ${title}\n`;
         doc += `:author: ${author}\n`;
+        doc += `:pdf-theme: ${theme}\n`;
+        doc += `:pdf-themesdir: /app/deployment\n`;
         
         if (version) doc += `:version: ${version}\n`;
         if (publishedOn) doc += `:pubdate: ${publishedOn}\n`;
@@ -223,8 +226,9 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
         
         doc += `\n`;
         if (image) {
-          doc += `[cover]\nimage::${image}[]\n\n`;
+          doc += `:front-cover-image: ${image}\n`;
         }
+        doc += `\n`;
         if (description) {
           doc += `[abstract]\n${description}\n\n`;
         } else if (summary) {
@@ -237,7 +241,7 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
     }
     
     // No existing title, build with metadata
-    return await buildAsciiDocWithMetadata(event, content);
+    return await buildAsciiDocWithMetadata(event, content, theme);
   }
   
   return content;
@@ -246,14 +250,16 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
 /**
  * Download article as PDF
  */
-export async function downloadAsPDF(event: NostrEvent, filename?: string): Promise<void> {
+export type PDFTheme = 'classic' | 'antique' | 'modern' | 'documentation' | 'scientific' | 'pop';
+
+export async function downloadAsPDF(event: NostrEvent, filename?: string, theme: PDFTheme = 'classic'): Promise<void> {
   if (!event.content || event.content.trim().length === 0) {
     throw new Error('Cannot download PDF: article content is empty');
   }
   
   try {
     // Prepare AsciiDoc content with metadata (includes cover image, abstract, etc.)
-    const asciiDocContent = await prepareAsciiDocContent(event, true);
+    const asciiDocContent = await prepareAsciiDocContent(event, true, theme);
     const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
     const author = await getAuthorName(event);
     
@@ -278,14 +284,14 @@ export async function downloadAsPDF(event: NostrEvent, filename?: string): Promi
 /**
  * Download article as EPUB
  */
-export async function downloadAsEPUB(event: NostrEvent, filename?: string): Promise<void> {
+export async function downloadAsEPUB(event: NostrEvent, filename?: string, theme: PDFTheme = 'classic'): Promise<void> {
   if (!event.content || event.content.trim().length === 0) {
     throw new Error('Cannot download EPUB: article content is empty');
   }
   
   try {
     // Prepare AsciiDoc content with metadata (includes cover image, abstract, etc.)
-    const asciiDocContent = await prepareAsciiDocContent(event, true);
+    const asciiDocContent = await prepareAsciiDocContent(event, true, theme);
     const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
     const author = await getAuthorName(event);
     
@@ -318,7 +324,7 @@ export async function downloadAsHTML5(event: NostrEvent, filename?: string): Pro
   try {
     // Prepare AsciiDoc content with metadata
     // This converts Markdown (30817, 30023) to AsciiDoc and wraps with metadata
-    const asciiDocContent = await prepareAsciiDocContent(event, true);
+    const asciiDocContent = await prepareAsciiDocContent(event, true, 'classic');
     const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
     const author = await getAuthorName(event);
     
@@ -350,6 +356,38 @@ export async function downloadAsHTML5(event: NostrEvent, filename?: string): Pro
 }
 
 /**
+ * Download article as LaTeX
+ */
+export async function downloadAsLaTeX(event: NostrEvent, filename?: string): Promise<void> {
+  if (!event.content || event.content.trim().length === 0) {
+    throw new Error('Cannot download LaTeX: article content is empty');
+  }
+  
+  try {
+    // Prepare AsciiDoc content with metadata
+    const asciiDocContent = await prepareAsciiDocContent(event, true, 'classic');
+    const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
+    const author = await getAuthorName(event);
+    
+    const blob = await exportToLaTeX({
+      content: asciiDocContent,
+      title,
+      author
+    });
+    
+    if (!blob || blob.size === 0) {
+      throw new Error('Server returned empty LaTeX file');
+    }
+    
+    const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.tex`;
+    downloadBlob(blob, name);
+  } catch (error) {
+    console.error('Failed to download LaTeX:', error);
+    throw error;
+  }
+}
+
+/**
  * Download article as Reveal.js presentation (AsciiDoc events only)
  */
 export async function downloadAsRevealJS(event: NostrEvent, filename?: string): Promise<void> {
@@ -359,7 +397,7 @@ export async function downloadAsRevealJS(event: NostrEvent, filename?: string): 
   
   try {
     // Prepare AsciiDoc content with metadata
-    const asciiDocContent = await prepareAsciiDocContent(event, true);
+    const asciiDocContent = await prepareAsciiDocContent(event, true, 'classic');
     const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
     const author = await getAuthorName(event);
     
@@ -565,10 +603,72 @@ async function getUserHandle(pubkey: string): Promise<string> {
 }
 
 /**
+ * Determine heading level from event structure
+ * Hierarchy:
+ * - Level 1: Book (main 30040 index)
+ * - Level 2: Chapter (if chapter tag exists in main index)
+ * - Level 3: Subchapter (30040 nested) or Section (30041 with chapter but no sections)
+ * - Level 4: Sub-section (30041 with section tags)
+ * - Level 5+: Deeper nesting
+ */
+function getHeadingLevel(event: NostrEvent): number {
+  // 30040 and 30041 events should be minimum level 3
+  const is30040 = event.kind === 30040;
+  const is30041 = event.kind === 30041;
+  
+  if (!is30040 && !is30041) {
+    return 3; // Default for other content
+  }
+  
+  // Extract tags
+  const chapterTag = event.tags.find(([k]) => k === 'c')?.[1];
+  const sectionTags = event.tags.filter(([k]) => k === 's');
+  
+  // If it's a 30040 subchapter, it's level 3
+  if (is30040) {
+    return 3;
+  }
+  
+  // For 30041 events, determine level based on structure
+  if (is30041) {
+    // If it has section tags, it's a sub-section (level 4)
+    if (sectionTags.length > 0) {
+      return 4;
+    }
+    // If it has a chapter tag but no sections, it's a section (level 3)
+    if (chapterTag) {
+      return 3;
+    }
+    // Default: level 3
+    return 3;
+  }
+  
+  return 3; // Fallback
+}
+
+/**
+ * Adjust heading levels in AsciiDoc content to ensure proper nesting
+ * Increments all headings by at least 1 level, ensuring minimum level matches the section level
+ */
+function adjustHeadingLevels(content: string, sectionLevel: number): string {
+  // Match AsciiDoc headings: lines starting with = followed by optional spaces and text
+  // Captures: the equals signs, optional spaces, and the heading text
+  return content.replace(/^(={1,6})\s+(.+)$/gm, (match, equals, text) => {
+    const currentLevel = equals.length;
+    // Increment by 1, but ensure minimum level is sectionLevel + 1
+    const minLevel = sectionLevel + 1;
+    const newLevel = Math.max(currentLevel + 1, minLevel);
+    // AsciiDoc supports up to 6 levels, so cap at 6
+    const finalLevel = Math.min(newLevel, 6);
+    return '='.repeat(finalLevel) + ' ' + text;
+  });
+}
+
+/**
  * Combine book events into a single AsciiDoc document
  * Uses metadata from NKBIP-01 and NKBIP-08
  */
-export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: NostrEvent[]): Promise<string> {
+export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: NostrEvent[], theme: PDFTheme = 'classic'): Promise<string> {
   // Extract metadata from NKBIP-01 (Publication Index - kind 30040)
   const title = indexEvent.tags.find(([k]) => k === 'title')?.[1] || 
                 indexEvent.tags.find(([k]) => k === 'T')?.[1] ||
@@ -704,21 +804,30 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     doc += `:summary: ${summary}\n`;
   }
   
-  doc += `\n`;
+  // PDF theme configuration
+  const themeMap: Record<PDFTheme, string> = {
+    'classic': 'classic-novel',
+    'antique': 'antique-novel',
+    'modern': 'modern-book',
+    'documentation': 'documentation',
+    'scientific': 'scientific',
+    'pop': 'pop-book'
+  };
+  doc += `:pdf-theme: ${themeMap[theme]}\n`;
+  doc += `:pdf-themesdir: /app/deployment\n`;
   
-  // Add cover image if available
+  // Set cover image if available (will appear on title page)
   if (image) {
-    doc += `[cover]\n`;
-    doc += `image::${image}[]\n\n`;
+    doc += `:front-cover-image: ${image}\n`;
   }
   
-  // Add description as abstract if available (preferred over summary)
-  // If both description and summary exist, use description for abstract
+  doc += `\n`;
+  
+  // Add abstract/description after title page
   if (description) {
     doc += `[abstract]\n`;
     doc += `${description}\n\n`;
   } else if (summary) {
-    // Fallback to summary if no description
     doc += `[abstract]\n`;
     doc += `${summary}\n\n`;
   }
@@ -732,6 +841,10 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     const sectionTags = event.tags.filter(([k]) => k === 's').map(([, v]) => v);
     const eventVersionTag = event.tags.find(([k]) => k === 'v')?.[1];
     
+    // Determine heading level from event structure
+    const headingLevel = getHeadingLevel(event);
+    const headingMarkup = '='.repeat(headingLevel);
+    
     // Create section header
     // Prefer section title from NKBIP-01 'title' tag, fallback to NKBIP-08 structure
     if (sectionTitle) {
@@ -740,7 +853,7 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
       if (eventVersionTag && eventVersionTag !== (version || versionTag)) {
         header += ` (${eventVersionTag})`;
       }
-      doc += `== ${header}\n\n`;
+      doc += `${headingMarkup} ${header}\n\n`;
     } else if (bookTag && chapterTag) {
       // Use NKBIP-08 structure
       const sectionLabel = sectionTags.length > 0 ? sectionTags.join(', ') : '';
@@ -748,21 +861,23 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
       if (eventVersionTag && eventVersionTag !== (version || versionTag)) {
         header += ` (${eventVersionTag})`;
       }
-      doc += `== ${header}\n\n`;
+      doc += `${headingMarkup} ${header}\n\n`;
     } else if (bookTag) {
       let header = bookTag;
       if (eventVersionTag && eventVersionTag !== (version || versionTag)) {
         header += ` (${eventVersionTag})`;
       }
-      doc += `== ${header}\n\n`;
+      doc += `${headingMarkup} ${header}\n\n`;
     } else {
       // Fallback: use event ID or content preview
       const contentPreview = event.content.slice(0, 50).replace(/\n/g, ' ');
-      doc += `== ${contentPreview}...\n\n`;
+      doc += `${headingMarkup} ${contentPreview}...\n\n`;
     }
 
-    // Add content
-    doc += event.content;
+    // Add content, adjusting heading levels to ensure proper nesting
+    // Content headings need to be at least one level deeper than the section header
+    const adjustedContent = adjustHeadingLevels(event.content, headingLevel);
+    doc += adjustedContent;
     doc += `\n\n`;
   }
 
@@ -786,9 +901,9 @@ export async function downloadBookAsAsciiDoc(indexEvent: NostrEvent, filename?: 
 /**
  * Download book (30040) as PDF with all branches and leaves
  */
-export async function downloadBookAsPDF(indexEvent: NostrEvent, filename?: string): Promise<void> {
+export async function downloadBookAsPDF(indexEvent: NostrEvent, filename?: string, theme: PDFTheme = 'classic'): Promise<void> {
   const contentEvents = await fetchBookContentEvents(indexEvent);
-  const combined = await combineBookEvents(indexEvent, contentEvents);
+  const combined = await combineBookEvents(indexEvent, contentEvents, theme);
   
   if (!combined || combined.trim().length === 0) {
     throw new Error('Cannot download PDF: book content is empty');
@@ -826,9 +941,9 @@ export async function downloadBookAsPDF(indexEvent: NostrEvent, filename?: strin
 /**
  * Download book (30040) as EPUB with all branches and leaves
  */
-export async function downloadBookAsEPUB(indexEvent: NostrEvent, filename?: string): Promise<void> {
+export async function downloadBookAsEPUB(indexEvent: NostrEvent, filename?: string, theme: PDFTheme = 'classic'): Promise<void> {
   const contentEvents = await fetchBookContentEvents(indexEvent);
-  const combined = await combineBookEvents(indexEvent, contentEvents);
+  const combined = await combineBookEvents(indexEvent, contentEvents, theme);
   
   if (!combined || combined.trim().length === 0) {
     throw new Error('Cannot download EPUB: book content is empty');
@@ -868,7 +983,8 @@ export async function downloadBookAsEPUB(indexEvent: NostrEvent, filename?: stri
  */
 async function combineBookSearchResults(
   results: NostrEvent[],
-  parsedQuery: { references: any[]; version?: string; versions?: string[] } | null
+  parsedQuery: { references: any[]; version?: string; versions?: string[] } | null,
+  theme: PDFTheme = 'classic'
 ): Promise<string> {
   // Build title from query
   const queryTitle = parsedQuery 
@@ -901,10 +1017,27 @@ async function combineBookSearchResults(
     }
   }
   
-  // Build AsciiDoc document
+  // Build AsciiDoc document with theme styling
+  const themeMap: Record<PDFTheme, string> = {
+    'classic': 'classic-novel',
+    'antique': 'antique-novel',
+    'modern': 'modern-book',
+    'documentation': 'documentation',
+    'scientific': 'scientific',
+    'pop': 'pop-book'
+  };
   let doc = `= ${title}\n`;
   doc += `:author: ${author}\n`;
   doc += `:doctype: book\n`;
+  doc += `:pdf-theme: ${themeMap[theme]}\n`;
+  doc += `:pdf-themesdir: /app/deployment\n`;
+  doc += `\n`;
+  
+  // Create styled title page
+  doc += `[.title-page]\n`;
+  doc += `== ${title}\n\n`;
+  doc += `[.author]\n`;
+  doc += `${author}\n\n`;
   doc += `\n`;
   
   // Group results by version for better organization
@@ -931,20 +1064,26 @@ async function combineBookSearchResults(
       const chapterTag = event.tags.find(([k]) => k === 'c')?.[1];
       const sectionTags = event.tags.filter(([k]) => k === 's').map(([, v]) => v);
       
+      // Determine heading level from event structure
+      const headingLevel = getHeadingLevel(event);
+      const headingMarkup = '='.repeat(headingLevel);
+      
       // Create section header
       if (sectionTitle) {
-        doc += `=== ${sectionTitle}\n\n`;
+        doc += `${headingMarkup} ${sectionTitle}\n\n`;
       } else if (bookTag && chapterTag) {
         const sectionLabel = sectionTags.length > 0 ? sectionTags.join(', ') : '';
         let header = `${bookTag} ${chapterTag}${sectionLabel ? ':' + sectionLabel : ''}`;
-        doc += `=== ${header}\n\n`;
+        doc += `${headingMarkup} ${header}\n\n`;
       } else {
         const contentPreview = event.content.slice(0, 50).replace(/\n/g, ' ');
-        doc += `=== ${contentPreview}...\n\n`;
+        doc += `${headingMarkup} ${contentPreview}...\n\n`;
       }
       
-      // Add content
-      doc += event.content;
+      // Add content, adjusting heading levels to ensure proper nesting
+      // Content headings need to be at least one level deeper than the section header
+      const adjustedContent = adjustHeadingLevels(event.content, headingLevel);
+      doc += adjustedContent;
       doc += `\n\n`;
     }
   }
@@ -1064,13 +1203,14 @@ export async function downloadBookSearchResultsAsAsciiDoc(
  */
 export async function downloadBookSearchResultsAsPDF(
   results: NostrEvent[],
-  parsedQuery: { references: any[]; version?: string; versions?: string[] } | null
+  parsedQuery: { references: any[]; version?: string; versions?: string[] } | null,
+  theme: PDFTheme = 'classic'
 ): Promise<void> {
   if (results.length === 0) {
     throw new Error('No results to download');
   }
   
-  const combined = await combineBookSearchResults(results, parsedQuery);
+  const combined = await combineBookSearchResults(results, parsedQuery, theme);
   
   const queryTitle = parsedQuery 
     ? parsedQuery.references.map(ref => {
@@ -1116,13 +1256,14 @@ export async function downloadBookSearchResultsAsPDF(
  */
 export async function downloadBookSearchResultsAsEPUB(
   results: NostrEvent[],
-  parsedQuery: { references: any[]; version?: string; versions?: string[] } | null
+  parsedQuery: { references: any[]; version?: string; versions?: string[] } | null,
+  theme: PDFTheme = 'classic'
 ): Promise<void> {
   if (results.length === 0) {
     throw new Error('No results to download');
   }
   
-  const combined = await combineBookSearchResults(results, parsedQuery);
+  const combined = await combineBookSearchResults(results, parsedQuery, theme);
   
   const queryTitle = parsedQuery 
     ? parsedQuery.references.map(ref => {
@@ -1159,6 +1300,98 @@ export async function downloadBookSearchResultsAsEPUB(
     downloadBlob(blob, name);
   } catch (error) {
     console.error('Failed to download book search results EPUB:', error);
+    throw error;
+  }
+}
+
+/**
+ * Download book search results as LaTeX
+ */
+export async function downloadBookSearchResultsAsLaTeX(
+  results: NostrEvent[],
+  parsedQuery: { references: any[]; version?: string; versions?: string[] } | null
+): Promise<void> {
+  if (results.length === 0) {
+    throw new Error('No results to download');
+  }
+  
+  const combined = await combineBookSearchResults(results, parsedQuery, 'classic');
+  
+  const queryTitle = parsedQuery 
+    ? parsedQuery.references.map(ref => {
+        const parts: string[] = [];
+        if (ref.book) parts.push(ref.book);
+        if (ref.chapter) parts.push(String(ref.chapter));
+        if (ref.verse) parts.push(ref.verse);
+        return parts.join(' ');
+      }).join('; ')
+    : 'Book Search Results';
+  
+  const versions = parsedQuery?.versions || (parsedQuery?.version ? [parsedQuery.version] : []);
+  const versionStr = versions.length > 0 ? ` (${versions.join(', ')})` : '';
+  const title = `${queryTitle}${versionStr}`;
+  
+  const firstEvent = results[0];
+  let author = firstEvent.tags.find(([k]) => k === 'author')?.[1];
+  if (!author) {
+    author = await getUserHandle(firstEvent.pubkey);
+  }
+  
+  try {
+    const blob = await exportToLaTeX({
+      content: combined,
+      title,
+      author
+    });
+    
+    if (!blob || blob.size === 0) {
+      throw new Error('Server returned empty LaTeX file');
+    }
+    
+    const name = `${title.replace(/[^a-z0-9]/gi, '_')}.tex`;
+    downloadBlob(blob, name);
+  } catch (error) {
+    console.error('Failed to download book search results LaTeX:', error);
+    throw error;
+  }
+}
+
+/**
+ * Download book (30040) as LaTeX with all branches and leaves
+ */
+export async function downloadBookAsLaTeX(indexEvent: NostrEvent, filename?: string): Promise<void> {
+  const contentEvents = await fetchBookContentEvents(indexEvent);
+  const combined = await combineBookEvents(indexEvent, contentEvents, 'classic');
+  
+  if (!combined || combined.trim().length === 0) {
+    throw new Error('Cannot download LaTeX: book content is empty');
+  }
+  
+  const title = indexEvent.tags.find(([k]) => k === 'title')?.[1] || 
+                indexEvent.tags.find(([k]) => k === 'T')?.[1] ||
+                indexEvent.id.slice(0, 8);
+  
+  // Get author from the combined document or fetch it
+  let author = indexEvent.tags.find(([k]) => k === 'author')?.[1];
+  if (!author) {
+    author = await getUserHandle(indexEvent.pubkey);
+  }
+
+  try {
+    const blob = await exportToLaTeX({
+      content: combined,
+      title,
+      author
+    });
+    
+    if (!blob || blob.size === 0) {
+      throw new Error('Server returned empty LaTeX file');
+    }
+    
+    const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.tex`;
+    downloadBlob(blob, name);
+  } catch (error) {
+    console.error('Failed to download book LaTeX:', error);
     throw error;
   }
 }

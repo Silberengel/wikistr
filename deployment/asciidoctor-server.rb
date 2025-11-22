@@ -41,7 +41,8 @@ get '/healthz' do
       pdf: '/convert/pdf',
       epub: '/convert/epub',
       html5: '/convert/html5',
-      revealjs: '/convert/revealjs'
+      revealjs: '/convert/revealjs',
+      latex: '/convert/latex'
     },
     port: settings.port
   }.to_json
@@ -72,23 +73,33 @@ post '/convert/pdf' do
     
     begin
       # Convert to PDF with enhanced attributes for better rendering
+      # Use custom classic novel theme if specified, otherwise default
+      theme = content.include?(':pdf-theme:') ? nil : 'classic-novel'
+      themesdir = content.include?(':pdf-themesdir:') ? nil : '/app/deployment'
+      
+      attributes = {
+        'title' => title,
+        'author' => author,
+        'doctype' => 'book',
+        'imagesdir' => '.',  # Allow images from any location
+        'allow-uri-read' => '',  # Allow reading images from URLs
+        'pdf-page-size' => 'Letter',
+        'pdf-page-margin' => '[0.75in, 0.75in, 0.75in, 0.75in]',
+        'pdf-page-layout' => 'portrait',
+        'pdf-fontsdir' => '/usr/share/fonts',
+      }
+      
+      # Only set theme if not already specified in content
+      if theme
+        attributes['pdf-theme'] = theme
+        attributes['pdf-themesdir'] = themesdir
+      end
+      
       Asciidoctor.convert_file temp_adoc.path,
         backend: 'pdf',
         safe: 'unsafe',
         to_file: temp_pdf.path,
-        attributes: {
-          'title' => title,
-          'author' => author,
-          'doctype' => 'article',
-          'imagesdir' => '.',  # Allow images from any location
-          'allow-uri-read' => '',  # Allow reading images from URLs
-          'pdf-page-size' => 'Letter',
-          'pdf-page-margin' => '[0.75in, 0.75in, 0.75in, 0.75in]',
-          'pdf-page-layout' => 'portrait',
-          'pdf-fontsdir' => '/usr/share/fonts',
-          'pdf-theme' => 'default',
-          'pdf-themesdir' => '/usr/share/asciidoctor-pdf/data/themes'
-        }
+        attributes: attributes
       
       # Read PDF content
       pdf_content = File.read(temp_pdf.path)
@@ -135,20 +146,35 @@ post '/convert/epub' do
     epub_file = File.join(temp_dir, 'document.epub')
     
     begin
+      # Extract cover image from content if present
+      cover_image = nil
+      if content.include?('[cover]') || content.include?('image::')
+        # Try to extract image URL from content
+        image_match = content.match(/image::([^\[]+)\[/)
+        cover_image = image_match[1] if image_match
+      end
+      
       # Convert to EPUB with enhanced attributes for better rendering
+      epub_attributes = {
+        'title' => title,
+        'author' => author,
+        'doctype' => 'book',
+        'imagesdir' => '.',  # Allow images from any location
+        'allow-uri-read' => '',  # Allow reading images from URLs
+        'epub3-cover-image-format' => 'jpg',
+        'epub3-stylesdir' => '/app/deployment',
+        'stylesheet' => 'epub-classic.css'
+      }
+      
+      if cover_image
+        epub_attributes['epub3-cover-image'] = cover_image
+      end
+      
       Asciidoctor.convert_file temp_adoc.path,
         backend: 'epub3',
         safe: 'unsafe',
         to_file: epub_file,
-        attributes: {
-          'title' => title,
-          'author' => author,
-          'doctype' => 'book',
-          'imagesdir' => '.',  # Allow images from any location
-          'allow-uri-read' => '',  # Allow reading images from URLs
-          'epub3-cover-image' => '',  # Will be set from [cover] attribute in AsciiDoc
-          'epub3-cover-image-format' => 'jpg'
-        }
+        attributes: epub_attributes
       
       # Read EPUB content
       epub_content = File.read(epub_file)
@@ -295,8 +321,58 @@ get '/' do
       epub: '/convert/epub',
       html5: '/convert/html5',
       revealjs: '/convert/revealjs',
+      latex: '/convert/latex',
       health: '/healthz'
     }
   }.to_json
+end
+
+# Convert to LaTeX
+post '/convert/latex' do
+  begin
+    request.body.rewind
+    data = JSON.parse(request.body.read)
+    content = data['content'] || data['asciidoc']
+    title = data['title'] || 'Document'
+    author = data['author'] || ''
+    
+    unless content
+      status 400
+      return { error: 'Missing content or asciidoc field' }.to_json
+    end
+    
+    # Create temporary file for AsciiDoc content
+    temp_adoc = Tempfile.new(['document', '.adoc'])
+    temp_adoc.write(content)
+    temp_adoc.close
+    
+    begin
+      # Convert to LaTeX
+      latex_content = Asciidoctor.convert content,
+        backend: 'latex',
+        safe: 'unsafe',
+        attributes: {
+          'title' => title,
+          'author' => author,
+          'doctype' => 'article',
+          'imagesdir' => '.',
+          'allow-uri-read' => ''
+        }
+      
+      # Set headers
+      content_type 'text/x-latex; charset=utf-8'
+      headers 'Content-Disposition' => "attachment; filename=\"#{title.gsub(/[^a-z0-9]/i, '_')}.tex\""
+      
+      latex_content
+    ensure
+      temp_adoc.unlink
+    end
+  rescue JSON::ParserError => e
+    status 400
+    { error: 'Invalid JSON', message: e.message }.to_json
+  rescue => e
+    status 500
+    { error: 'Conversion failed', message: e.message }.to_json
+  end
 end
 

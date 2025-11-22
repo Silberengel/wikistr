@@ -1,0 +1,26 @@
+extends: classic-novel
+base:
+  font_color: #3a2e1f
+  margin: [1in, 0.75in, 0.75in, 0.75in]
+title_page:
+  title:
+    font_size: 44
+    font_color: #2a1f12
+  author:
+    font_size: 22
+    font_color: #3a2e1f
+  publisher:
+    font_color: #6b5d4a
+heading:
+  font_color: #2a1f12
+  h1:
+    font_color: #2a1f12
+    border_bottom_color: #8b7355
+  h2:
+    font_color: #3a2e1f
+  h3:
+    font_color: #4a3e2f
+paragraph:
+  font_color: #3a2e1f
+  text_indent: 0.3in
+  line_height: 1.65
