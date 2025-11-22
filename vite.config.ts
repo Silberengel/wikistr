@@ -9,6 +9,13 @@ const config: UserConfig = {
       awaitWriteFinish: {
         stabilityThreshold: 700
       }
+    },
+    proxy: {
+      '/sites': {
+        target: 'http://localhost:8090',
+        changeOrigin: true,
+        rewrite: (path) => path // Keep /sites/ prefix
+      }
     }
   },
   define: {

@@ -1,67 +1,44 @@
-# Run all themes locally using pre-built images
-# To build images first, use: docker-compose -f docker-compose.build.yml build
+# Build all themes
+# Usage: docker-compose -f docker-compose.yml build
+# After building, tag as latest:
+#   docker tag silberengel/wikistr:v4.2-wikistr silberengel/wikistr:latest-wikistr
+#   docker tag silberengel/wikistr:v4.2-biblestr silberengel/wikistr:latest-biblestr
+#   docker tag silberengel/wikistr:v4.2-quranstr silberengel/wikistr:latest-quranstr
+#   docker tag silberengel/wikistr:v4.2-torahstr silberengel/wikistr:latest-torahstr
 
 services:
   wikistr:
-    image: silberengel/wikistr:latest-wikistr
-    container_name: wikistr
-    ports:
-      - "3000:80"
-    environment:
-      - NODE_ENV=production
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile.wikistr
+    image: silberengel/wikistr:v4.2-wikistr
 
   biblestr:
-    image: silberengel/wikistr:latest-biblestr
-    container_name: biblestr
-    ports:
-      - "4000:80"
-    environment:
-      - NODE_ENV=production
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile.biblestr
+    image: silberengel/wikistr:v4.2-biblestr
 
   quranstr:
-    image: silberengel/wikistr:latest-quranstr
-    container_name: quranstr
-    ports:
-      - "4050:80"
-    environment:
-      - NODE_ENV=production
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile.quranstr
+    image: silberengel/wikistr:v4.2-quranstr
 
   torahstr:
-    image: silberengel/wikistr:latest-torahstr
-    container_name: torahstr
-    ports:
-      - "4080:80"
-    environment:
-      - NODE_ENV=production
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile.torahstr
+    image: silberengel/wikistr:v4.2-torahstr
 
-networks:
-  default:
-    name: wikistr-network
+  og-proxy:
+    image: node:20-alpine
+    command: node /app/deployment/proxy-server.js
+    volumes:
+      - ..:/app:ro
+    working_dir: /app
+    ports:
+      - "8090:8090"
+    environment:
+      PROXY_ALLOW_ORIGIN: https://*.imwald.eu
+    restart: unless-stopped

@@ -6,6 +6,8 @@
   import type { Card, BookCard, ArticleCard } from '$lib/types';
   import { next, getTagOr } from '$lib/utils';
   import { normalizeIdentifier } from '@nostr/tools/nip54';
+  import { generateBibleGatewayUrl } from '$lib/bibleGatewayUtils';
+  import type { BookReference } from '$lib/books';
 
   interface Props {
     bookstrContent: string;
@@ -21,43 +23,8 @@
   let parsedReference = $state<ParsedBookWikilink | null>(null);
 
   /**
-   * Format a reference for Bible Gateway search
-   * Examples:
-   * - "romans 3:16,17,18" for multiple verses
-   * - "romans 3:16-18" for a range
-   * - "1 Macc 1:2,4" for multiple verses in a book with number
-   */
-  function formatReferenceForBibleGateway(ref: ParsedBookReference): string {
-    let formatted = capitalizeWords(ref.title);
-    
-    if (ref.chapter) {
-      formatted += ` ${ref.chapter}`;
-      if (ref.section && ref.section.length > 0) {
-        // Check if sections form a range (consecutive numbers)
-        if (ref.section.length > 1 && ref.section.every((s: string) => /^\d+$/.test(s))) {
-          const nums = ref.section.map((s: string) => parseInt(s, 10)).sort((a, b) => a - b);
-          const isConsecutive = nums.every((n, i) => i === 0 || n === nums[i - 1] + 1);
-          
-          if (isConsecutive) {
-            // Format as range: "16-18"
-            formatted += `:${nums[0]}-${nums[nums.length - 1]}`;
-          } else {
-            // Format as comma-separated: "16,17,18"
-            formatted += `:${ref.section.join(',')}`;
-          }
-        } else {
-          // Non-numeric or mixed: use comma-separated
-          formatted += `:${ref.section.join(',')}`;
-        }
-      }
-    }
-    
-    return formatted;
-  }
-
-  /**
    * Generate Bible Gateway URL for all references in a wikilink
-   * One URL with all references and all versions (semicolon-separated)
+   * Uses shared utility to avoid duplication
    */
   function generateBibleGatewayUrlForWikilink(
     parsed: ParsedBookWikilink
@@ -66,18 +33,16 @@
     const hasBible = parsed.references.some(ref => ref.collection === 'bible' || !ref.collection);
     if (!hasBible) return null;
 
-    // Map version codes (e.g., "drb" -> "DRA" for Bible Gateway)
-    const versionMap: Record<string, string> = {
-      'drb': 'DRA',
-      'kjv': 'KJV',
-      'niv': 'NIV',
-      'esv': 'ESV',
-      'nasb': 'NASB',
-      'nlt': 'NLT',
-      'rsv': 'RSV',
-      'asv': 'ASV',
-      'web': 'WEB'
-    };
+    // Convert ParsedBookReference to BookReference format for shared utility
+    const references: BookReference[] = parsed.references
+      .filter((ref: ParsedBookReference) => ref.collection === 'bible' || !ref.collection)
+      .map((ref: ParsedBookReference) => ({
+        book: ref.title,
+        chapter: ref.chapter ? parseInt(ref.chapter, 10) : undefined,
+        verse: ref.section ? (ref.section.length === 1 ? ref.section[0] : ref.section.join(',')) : undefined
+      }));
+
+    if (references.length === 0) return null;
 
     // Collect all unique versions from all references
     const allVersions = new Set<string>();
@@ -89,33 +54,17 @@
       }
     }
 
-    // Map versions to Bible Gateway codes, default to DRA if none specified
-    const bgVersions: string[] = [];
-    if (allVersions.size > 0) {
-      for (const v of allVersions) {
-        const bgVersion = versionMap[v] || v.toUpperCase();
-        bgVersions.push(bgVersion);
-      }
-    } else {
-      // Default to DRA if no version specified
-      bgVersions.push('DRA');
-    }
+    // Convert to format expected by generateBibleGatewayUrl
+    const versions = allVersions.size > 0 ? Array.from(allVersions) : ['drb'];
+    
+    const parsedQuery = {
+      references,
+      versions: versions.length > 0 ? versions : undefined
+    };
 
-    // Format all Bible references
-    const bibleRefs = parsed.references
-      .filter((ref: ParsedBookReference) => ref.collection === 'bible' || !ref.collection)
-      .map((ref: ParsedBookReference) => formatReferenceForBibleGateway(ref));
-    
-    if (bibleRefs.length === 0) return null;
-
-    // Join multiple references with ", "
-    const search = bibleRefs.join(', ');
-    const encodedSearch = encodeURIComponent(search);
-    
-    // Join versions with semicolons: DRA;NIV;KJV
-    const versionParam = bgVersions.join(';');
-    
-    return `https://www.biblegateway.com/passage/?search=${encodedSearch}&version=${versionParam}`;
+    // Use shared utility - for multiple versions, generate URL with first version
+    // (Bible Gateway doesn't support multiple versions in one URL, so we use the first)
+    return generateBibleGatewayUrl(parsedQuery, versions[0] || 'drb');
   }
 
   /**
@@ -138,14 +87,6 @@
     return formatted;
   }
 
-  /**
-   * Capitalize first letter of each word for display
-   */
-  function capitalizeWords(text: string): string {
-    return text.split(' ').map(word => 
-      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-    ).join(' ');
-  }
 
   // Parse immediately for fallback display
   const fullWikilink = `[[book::${bookstrContent}]]`;

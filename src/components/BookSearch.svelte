@@ -24,6 +24,8 @@
     BOOK_TYPES
   } from '$lib/books';
   import { parseBookWikilink as parseBookWikilinkNKBIP08, bookReferenceToTags, type ParsedBookReference } from '$lib/bookWikilinkParser';
+  import { generateBibleGatewayUrl, fetchBibleGatewayOg } from '$lib/bibleGatewayUtils';
+  import BookSearchFallback from '$components/BookSearchFallback.svelte';
 
   interface Props {
     query: string;
@@ -41,6 +43,11 @@
   let parsedQuery = $state<{ references: BookReference[], version?: string, versions?: string[] } | null>(null);
   let versionNotFound = $state(false);
   let fallbackResults = $state<BookEvent[]>([]);
+  let ogPreview = $state<{ title?: string; description?: string; image?: string } | null>(null);
+  let ogLoading = $state(false);
+  let ogError = $state<string | null>(null);
+  let ogLoadedQuery = $state('');
+  const bibleGatewayUrlForQuery = $derived.by(() => (bookType === 'bible' && parsedQuery ? generateBibleGatewayUrl(parsedQuery) : null));
 
   // close handlers
   let uwrcancel: () => void;
@@ -90,6 +97,54 @@
     subs.forEach((sub) => sub.close());
     // search is now handled by relayService
   }
+
+  async function loadBibleGatewayPreview() {
+    const targetUrl = generateBibleGatewayUrl(parsedQuery);
+    console.log('BookSearch: loadBibleGatewayPreview', { query, targetUrl, bookType, tried, resultsLength: results.length, versionNotFound });
+    
+    if (!targetUrl) {
+      console.log('BookSearch: No BibleGateway URL generated for query:', query);
+      ogPreview = null;
+      ogError = null;
+      ogLoadedQuery = query;
+      return;
+    }
+
+    if (ogLoadedQuery === query || ogLoading) {
+      console.log('BookSearch: Skipping OG load - already loaded or loading', { ogLoadedQuery, query, ogLoading });
+      return;
+    }
+
+    console.log('BookSearch: Loading OG preview from:', targetUrl);
+    ogLoading = true;
+    ogError = null;
+
+    try {
+      ogPreview = await fetchBibleGatewayOg(targetUrl);
+      console.log('BookSearch: OG preview loaded:', ogPreview);
+      ogLoadedQuery = query;
+    } catch (error) {
+      console.error('BookSearch: Failed to load OG preview:', error);
+      ogError = (error as Error).message;
+    } finally {
+      ogLoading = false;
+    }
+  }
+
+  $effect(() => {
+    if (query && ogLoadedQuery !== query) {
+      ogPreview = null;
+      ogError = null;
+    }
+  });
+
+  $effect(() => {
+    const shouldLoad = query && ogLoadedQuery !== query && !ogLoading && bookType === 'bible' && tried && (results.length === 0 || versionNotFound);
+    console.log('BookSearch: OG preview effect', { query, ogLoadedQuery, ogLoading, bookType, tried, resultsLength: results.length, versionNotFound, shouldLoad });
+    if (shouldLoad) {
+      loadBibleGatewayPreview();
+    }
+  });
 
   async function performBookSearch() {
     if (!parsedQuery) return;
@@ -346,21 +401,31 @@
 
 <div class="book-search-results">
   {#if tried && results.length === 0 && !versionNotFound}
-    <div class="italic" style="color: var(--text-secondary);">
-      No {bookTypeDisplayName.toLowerCase()} passages found for "{query}"
-    </div>
+    <BookSearchFallback
+      {query}
+      {bookType}
+      {parsedQuery}
+      {tried}
+      resultsLength={results.length}
+      {versionNotFound}
+      bibleGatewayUrl={bibleGatewayUrlForQuery}
+      {ogPreview}
+      {ogLoading}
+      {ogError}
+    />
   {:else if versionNotFound && results.length === 0}
-    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-      <div class="flex items-center space-x-2 text-yellow-800">
-        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
-        </svg>
-        <span class="font-medium">Version not found</span>
-      </div>
-      <div class="mt-2 text-sm text-yellow-700">
-        The requested version "{parsedQuery?.version}" was not found. Searching for all available versions...
-      </div>
-    </div>
+    <BookSearchFallback
+      {query}
+      {bookType}
+      {parsedQuery}
+      {tried}
+      resultsLength={results.length}
+      {versionNotFound}
+      bibleGatewayUrl={bibleGatewayUrlForQuery}
+      {ogPreview}
+      {ogLoading}
+      {ogError}
+    />
   {:else if results.length > 0}
     {#if versionNotFound}
       <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
@@ -429,5 +494,15 @@
 
   .book-search-results h3 {
     font-family: var(--font-family-heading);
+  }
+
+
+  @keyframes spin {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
   }
 </style>

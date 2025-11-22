@@ -12,7 +12,8 @@
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
     "themes": "node scripts/list-themes.js",
-    "publish-book-config": "node scripts/publish-book-config.js"
+    "publish-book-config": "node scripts/publish-book-config.js",
+    "proxy": "node deployment/proxy-server.js"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.8",

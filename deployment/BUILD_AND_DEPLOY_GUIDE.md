@@ -137,29 +137,56 @@ docker-compose -f docker-compose.all-apps.yml up -d
 
 For production, you'll want to set up a reverse proxy (nginx/Apache) to handle SSL and routing:
 
-#### Nginx Configuration Example
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
+#### Apache Configuration Example
+
+Add the OG proxy configuration to each theme's SSL virtual host (e.g., `biblestr.imwald.eu-le-ssl.conf`):
+
+```apache
+<VirtualHost 217.154.126.125:443>
+    ServerName biblestr.imwald.eu
+    ServerAlias www.biblestr.imwald.eu
     
-    location /wikistr/ {
-        proxy_pass http://localhost:8080/;
-    }
+    # SSL Configuration
+    SSLEngine on
+    SSLCertificateFile /etc/letsencrypt/live/biblestr.imwald.eu/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/biblestr.imwald.eu/privkey.pem
     
-    location /biblestr/ {
-        proxy_pass http://localhost:8081/;
-    }
+    # Reverse Proxy Configuration
+    ProxyPreserveHost On
+    ProxyPass / http://127.0.0.1:4000/
+    ProxyPassReverse / http://127.0.0.1:4000/
     
-    location /quranstr/ {
-        proxy_pass http://localhost:8082/;
-    }
+    # OG Proxy for BibleGateway previews
+    ProxyPass /sites/ http://127.0.0.1:8090/sites/
+    ProxyPassReverse /sites/ http://127.0.0.1:8090/sites/
     
-    location /torahstr/ {
-        proxy_pass http://localhost:8083/;
-    }
-}
+    # Headers for proper proxying
+    Header always set X-Forwarded-Proto https
+    Header always set X-Forwarded-Port 443
+</VirtualHost>
 ```
+
+#### OG Proxy Service
+
+The OG proxy service runs alongside the theme containers. It's configured in `docker-compose.yml` and `docker-compose.build.yml`. The proxy:
+
+- Listens on port 8090 (configurable via `PROXY_PORT` environment variable)
+- Handles CORS for `*.imwald.eu` domains (configurable via `PROXY_ALLOW_ORIGIN`)
+- Proxies requests to external sites (like BibleGateway) for OpenGraph metadata fetching
+
+#### Environment Variables
+
+To configure the OG proxy URL in the frontend, set the `VITE_OG_PROXY_URL` environment variable when building:
+
+```bash
+# Use relative path (default, works with Apache proxy)
+VITE_OG_PROXY_URL=/sites/
+
+# Or use absolute URL
+VITE_OG_PROXY_URL=https://your-domain.com/sites/
+```
+
+This variable is used at build time, so rebuild the Docker images after changing it.
 
 ## 🔧 Management Commands
 
