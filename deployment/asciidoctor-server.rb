@@ -71,7 +71,7 @@ get '/api' do
   {
     name: 'wikistr-asciidoctor',
     version: '1.0.0',
-    description: 'AsciiDoctor REST API for converting AsciiDoc content to various formats',
+    description: 'AsciiDoctor REST API for converting AsciiDoc content to various formats. All formats support automatic table of contents generation and LaTeX math rendering via stem blocks.',
     base_url: "#{request.scheme}://#{request.host_with_port}/asciidoctor",
     endpoints: {
       health: {
@@ -91,11 +91,11 @@ get '/api' do
       convert_pdf: {
         method: 'POST',
         path: '/asciidoctor/convert/pdf',
-        description: 'Convert AsciiDoc content to PDF',
+        description: 'Convert AsciiDoc content to PDF with automatic table of contents and LaTeX math support',
         request: {
           type: 'application/json',
           body: {
-            content: 'string (required) - AsciiDoc content',
+            content: 'string (required) - AsciiDoc content. Supports LaTeX math via stem:[] for inline and [stem] blocks for display math',
             title: 'string (required) - Document title',
             author: 'string (optional) - Document author',
             theme: 'string (optional) - PDF theme. Valid values: classic, antique, modern, documentation, scientific, pop, bible-paragraph, bible-versed, poster. Default: classic (maps to classic-novel theme)'
@@ -104,6 +104,14 @@ get '/api' do
         response: {
           type: 'application/pdf',
           disposition: 'attachment'
+        },
+        features: {
+          table_of_contents: 'Automatic table of contents is generated when :toc: attribute is set (enabled by default)',
+          latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks. Use stem:[E = mc^2] for inline math or [stem] blocks for display math',
+          math_examples: {
+            inline: 'stem:[E = mc^2]',
+            display: '[stem]\n----\n\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}\n----'
+          }
         },
         themes: {
           classic: 'Classic novel style (default)',
@@ -128,17 +136,23 @@ get '/api' do
             title: 'Bible Passage',
             author: 'KJV',
             theme: 'bible-paragraph'
+          },
+          with_math: {
+            content: '= Math Document\n\nInline: stem:[E = mc^2]\n\nDisplay:\n[stem]\n----\n\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}\n----',
+            title: 'Math Document',
+            author: 'Author',
+            theme: 'scientific'
           }
         }
       },
       convert_epub: {
         method: 'POST',
         path: '/asciidoctor/convert/epub',
-        description: 'Convert AsciiDoc content to EPUB',
+        description: 'Convert AsciiDoc content to EPUB with automatic table of contents and LaTeX math support',
         request: {
           type: 'application/json',
           body: {
-            content: 'string (required) - AsciiDoc content',
+            content: 'string (required) - AsciiDoc content. Supports LaTeX math via stem:[] for inline and [stem] blocks for display math',
             title: 'string (required) - Document title',
             author: 'string (optional) - Document author',
             theme: 'string (optional) - Theme for styling. Valid values: classic, antique, modern, documentation, scientific, pop, bible-paragraph, bible-versed, poster. Default: classic. Note: EPUB currently uses epub-classic.css for all themes.'
@@ -147,6 +161,10 @@ get '/api' do
         response: {
           type: 'application/epub+zip',
           disposition: 'attachment'
+        },
+        features: {
+          table_of_contents: 'Automatic table of contents is generated when :toc: attribute is set (enabled by default)',
+          latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks'
         },
         example: {
           request: {
@@ -160,11 +178,11 @@ get '/api' do
       convert_html5: {
         method: 'POST',
         path: '/asciidoctor/convert/html5',
-        description: 'Convert AsciiDoc content to HTML5',
+        description: 'Convert AsciiDoc content to HTML5 with automatic table of contents and LaTeX math support',
         request: {
           type: 'application/json',
           body: {
-            content: 'string (required) - AsciiDoc content',
+            content: 'string (required) - AsciiDoc content. Supports LaTeX math via stem:[] for inline and [stem] blocks for display math',
             title: 'string (required) - Document title',
             author: 'string (optional) - Document author'
           }
@@ -172,6 +190,10 @@ get '/api' do
         response: {
           type: 'text/html',
           disposition: 'attachment'
+        },
+        features: {
+          table_of_contents: 'Automatic table of contents is generated when :toc: attribute is set (enabled by default)',
+          latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks'
         }
       },
       convert_revealjs: {
@@ -194,11 +216,11 @@ get '/api' do
       convert_latex: {
         method: 'POST',
         path: '/asciidoctor/convert/latex',
-        description: 'Convert AsciiDoc content to LaTeX',
+        description: 'Convert AsciiDoc content to LaTeX with automatic table of contents and LaTeX math support',
         request: {
           type: 'application/json',
           body: {
-            content: 'string (required) - AsciiDoc content',
+            content: 'string (required) - AsciiDoc content. Supports LaTeX math via stem:[] for inline and [stem] blocks for display math',
             title: 'string (required) - Document title',
             author: 'string (optional) - Document author'
           }
@@ -206,6 +228,10 @@ get '/api' do
         response: {
           type: 'text/x-latex',
           disposition: 'attachment'
+        },
+        features: {
+          table_of_contents: 'Automatic table of contents is generated when :toc: attribute is set (enabled by default)',
+          latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks. Math is rendered natively in LaTeX output'
         }
       }
     },

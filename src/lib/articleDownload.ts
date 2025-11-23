@@ -7,15 +7,111 @@ import type { NostrEvent } from '@nostr/tools/pure';
 import { nip19 } from '@nostr/tools';
 import { relayService } from '$lib/relayService';
 import { exportToPDF, exportToEPUB, exportToHTML5, exportToRevealJS, exportToLaTeX, downloadBlob } from './asciidoctorExport';
+import {
+  processContentQuality,
+  getTitleFromEvent,
+  fixHeaderSpacing,
+  fixMissingHeadingLevels,
+  ensureDocumentHeader
+} from './contentQualityControl';
+
+/**
+ * Generate table of contents from markdown headings
+ * Supports ATX headers (#), Setext with = (level 1), and Setext with - (level 2)
+ */
+function generateMarkdownTOC(content: string): string {
+  const lines = content.split('\n');
+  const headings: Array<{ level: number; text: string; anchor: string }> = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    
+    // Skip empty lines
+    if (trimmed.length === 0) {
+      continue;
+    }
+    
+    // Check for Setext headers FIRST (before ATX) - they span two lines
+    if (i < lines.length - 1) {
+      const nextLine = lines[i + 1].trim();
+      
+      // Level 1: text followed by === (must be at least 3 = signs)
+      if (/^=+$/.test(nextLine) && nextLine.length >= 3) {
+        // Make sure current line is not already a header
+        if (!trimmed.match(/^#+\s+/) && !trimmed.match(/^=+\s+/)) {
+          const text = trimmed;
+          const anchor = text
+            .toLowerCase()
+            .replace(/[^\w\s-]/g, '')
+            .replace(/\s+/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '');
+          
+          headings.push({ level: 1, text, anchor });
+          i++; // Skip the underline line
+          continue;
+        }
+      }
+      
+      // Level 2: text followed by --- (must be at least 3 - signs)
+      if (/^-+$/.test(nextLine) && nextLine.length >= 3) {
+        // Make sure current line is not already a header
+        if (!trimmed.match(/^#+\s+/) && !trimmed.match(/^=+\s+/)) {
+          const text = trimmed;
+          const anchor = text
+            .toLowerCase()
+            .replace(/[^\w\s-]/g, '')
+            .replace(/\s+/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '');
+          
+          headings.push({ level: 2, text, anchor });
+          i++; // Skip the underline line
+          continue;
+        }
+      }
+    }
+    
+    // Match ATX markdown headings: #, ##, ###, etc.
+    const atxMatch = trimmed.match(/^(#+)\s+(.+)$/);
+    if (atxMatch) {
+      const level = atxMatch[1].length;
+      const text = atxMatch[2].trim();
+      // Generate anchor from heading text
+      const anchor = text
+        .toLowerCase()
+        .replace(/[^\w\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+      
+      headings.push({ level, text, anchor });
+      continue;
+    }
+  }
+  
+  if (headings.length === 0) {
+    return '';
+  }
+  
+  // Generate TOC with proper indentation
+  let toc = '## Table of Contents\n\n';
+  for (const heading of headings) {
+    const indent = '  '.repeat(heading.level - 1);
+    toc += `${indent}- [${heading.text}](#${heading.anchor})\n`;
+  }
+  toc += '\n';
+  
+  return toc;
+}
 
 /**
  * Download article as markdown (with YAML frontmatter metadata)
  */
 export async function downloadAsMarkdown(event: NostrEvent, filename?: string): Promise<void> {
-  // Get title - prefer title tag, then d tag (identifier), then a descriptive fallback
-  const titleTag = event.tags.find(([k]) => k === 'title')?.[1];
-  const dTag = event.tags.find(([k]) => k === 'd')?.[1];
-  const title = titleTag || dTag || `Untitled Document (${event.kind})`;
+  // Get title using QC service
+  const title = getTitleFromEvent(event, true);
   
   const author = await getAuthorName(event);
   const description = event.tags.find(([k]) => k === 'description')?.[1];
@@ -45,6 +141,11 @@ export async function downloadAsMarkdown(event: NostrEvent, filename?: string): 
     // Keep as is - markdown is forgiving
   }
   
+  // Apply quality control for markdown events (30023, 30817)
+  if (event.kind === 30023 || event.kind === 30817) {
+    content = processContentQuality(content, event, false); // false = markdown, not asciidoc
+  }
+  
   // Build YAML frontmatter
   let frontmatter = '---\n';
   frontmatter += `title: ${JSON.stringify(title)}\n`;
@@ -63,47 +164,15 @@ export async function downloadAsMarkdown(event: NostrEvent, filename?: string): 
   frontmatter += `event_kind: ${event.kind}\n`;
   frontmatter += `---\n\n`;
   
-  const finalContent = frontmatter + content;
+  // Generate table of contents from headings
+  const toc = generateMarkdownTOC(content);
+  
+  const finalContent = frontmatter + toc + content;
   const blob = new Blob([finalContent], { type: 'text/markdown' });
   const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.md`;
   downloadBlob(blob, name);
 }
 
-/**
- * Extract title from content (first header or first line)
- */
-function extractTitleFromContent(content: string): string | null {
-  if (!content || content.trim().length === 0) return null;
-  
-  const lines = content.split('\n');
-  
-  // Look for first header (AsciiDoc = or ==, or Markdown # or ##)
-  for (const line of lines) {
-    const trimmed = line.trim();
-    // AsciiDoc header: = Title or == Title
-    const asciidocHeader = trimmed.match(/^=+\s+(.+)$/);
-    if (asciidocHeader) {
-      return asciidocHeader[1].trim();
-    }
-    // Markdown header: # Title or ## Title
-    const markdownHeader = trimmed.match(/^#+\s+(.+)$/);
-    if (markdownHeader) {
-      return markdownHeader[1].trim();
-    }
-  }
-  
-  // If no header found, use first non-empty line
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.length > 0 && !trimmed.match(/^[=#\-\*]/)) {
-      // Not a header, list item, or horizontal rule
-      // Take first 100 chars as title
-      return trimmed.substring(0, 100).trim();
-    }
-  }
-  
-  return null;
-}
 
 /**
  * Download article as AsciiDoc
@@ -117,60 +186,17 @@ export async function downloadAsAsciiDoc(event: NostrEvent, filename?: string): 
     content = convertMarkdownToAsciiDoc(content);
   }
   
-  // Check if content already has a document-level header (=)
-  const hasDocHeader = /^=\s+/.test(content.trim());
+  // Apply quality control
+  content = processContentQuality(content, event, true); // true = asciidoc
   
-  // Get title with priority: title tag -> T tag -> first header in content -> first line -> fallback
-  const titleTag = event.tags.find(([k]) => k === 'title')?.[1];
-  const TTag = event.tags.find(([k]) => k === 'T')?.[1];
-  
-  let title: string;
-  if (titleTag) {
-    title = titleTag;
-  } else if (TTag) {
-    title = TTag;
-  } else if (!hasDocHeader) {
-    // Only extract from content if we don't already have a doc-level header
-    const extractedTitle = extractTitleFromContent(content);
-    title = extractedTitle || `Untitled Document (${event.kind})`;
-  } else {
-    // Has doc header, extract it for filename
-    const extractedTitle = extractTitleFromContent(content);
-    title = extractedTitle || event.tags.find(([k]) => k === 'd')?.[1] || `Untitled Document (${event.kind})`;
-  }
-  
-  // Create a temporary event with converted content for prepareAsciiDocContent
+  // Create a temporary event with processed content for prepareAsciiDocContent
   const tempEvent = { ...event, content };
   const contentWithMetadata = await prepareAsciiDocContent(tempEvent, true, 'classic');
   
-  // Ensure the content has a document-level header (=)
-  let finalContent = contentWithMetadata;
-  const trimmed = finalContent.trim();
+  // Get title for filename
+  const title = getTitleFromEvent(event, true);
   
-  // Check if it starts with a document-level header (=, not == or ===)
-  if (!/^=\s+/.test(trimmed)) {
-    // No document-level header found, add one
-    const lines = finalContent.split('\n');
-    
-    // Find where to insert the title (after metadata attributes if present)
-    let insertIndex = 0;
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      // Skip empty lines and attribute definitions (:key: value)
-      if (line.length === 0 || /^:[a-zA-Z_][a-zA-Z0-9_-]*:\s*/.test(line)) {
-        insertIndex = i + 1;
-        continue;
-      }
-      // Stop at first non-attribute, non-empty line
-      break;
-    }
-    
-    // Insert the title header
-    lines.splice(insertIndex, 0, `= ${title}`);
-    finalContent = lines.join('\n');
-  }
-  
-  const blob = new Blob([finalContent], { type: 'text/asciidoc' });
+  const blob = new Blob([contentWithMetadata], { type: 'text/asciidoc' });
   const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.adoc`;
   downloadBlob(blob, name);
 }
@@ -227,6 +253,8 @@ async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, the
   doc += `:author: ${author}\n`;
   doc += `:pdf-theme: ${themeMap[theme]}\n`;
   doc += `:pdf-themesdir: /app/deployment\n`;
+  doc += `:toc:\n`; // Enable table of contents
+  doc += `:stem:\n`; // Enable STEM (math) support for LaTeX rendering
   
   if (version) {
     doc += `:version: ${version}\n`;
@@ -351,8 +379,22 @@ function convertMarkdownToAsciiDoc(markdown: string): string {
     return `image::${url}[${alt || ''}]`;
   });
   
-  // Convert code blocks: ```language -> [source,language]
+  // Convert LaTeX inline math: $...$ -> stem:[...] (AsciiDoc inline math)
+  // Handle both inline $...$ and display $$...$$
+  asciidoc = asciidoc.replace(/\$\$([^$]+)\$\$/g, (match, math) => {
+    return `[stem]\n++++\n${math}\n++++`;
+  });
+  asciidoc = asciidoc.replace(/\$([^$\n]+)\$/g, (match, math) => {
+    // Only convert if it's not already in a code block or stem block
+    return `stem:[${math}]`;
+  });
+  
+  // Convert code blocks: ```language -> [source,language] or [stem] for math
   asciidoc = asciidoc.replace(/^```(\w*)\n([\s\S]*?)```$/gm, (match, lang, code) => {
+    // Check if it's a math/stem block
+    if (lang && (lang.toLowerCase() === 'math' || lang.toLowerCase() === 'latex' || lang.toLowerCase() === 'stem')) {
+      return `[stem]\n----\n${code}\n----`;
+    }
     if (lang) {
       return `[source,${lang}]\n----\n${code}\n----`;
     }
@@ -464,6 +506,8 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
         doc += `:author: ${author}\n`;
         doc += `:pdf-theme: ${theme}\n`;
         doc += `:pdf-themesdir: /app/deployment\n`;
+        doc += `:toc:\n`; // Enable table of contents
+        doc += `:stem:\n`; // Enable STEM (math) support for LaTeX rendering
         
         if (version) doc += `:version: ${version}\n`;
         if (publishedOn) doc += `:pubdate: ${publishedOn}\n`;
@@ -1022,6 +1066,8 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   let doc = `= ${title}\n`;
   doc += `:author: ${author}\n`;
   doc += `:doctype: ${type}\n`;
+  doc += `:toc:\n`; // Enable table of contents
+  doc += `:stem:\n`; // Enable STEM (math) support for LaTeX rendering
   
   if (version || versionTag) {
     doc += `:version: ${version || versionTag}\n`;
@@ -1318,6 +1364,8 @@ async function combineBookSearchResults(
   doc += `:doctype: book\n`;
   doc += `:pdf-theme: ${themeMap[theme]}\n`;
   doc += `:pdf-themesdir: /app/deployment\n`;
+  doc += `:toc:\n`; // Enable table of contents
+  doc += `:stem:\n`; // Enable STEM (math) support for LaTeX rendering
   doc += `\n`;
   
   // Create styled title page
