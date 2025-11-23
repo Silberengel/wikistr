@@ -32,6 +32,7 @@
     downloadBookAsPDF,
     downloadBookAsEPUB,
     downloadBookAsLaTeX,
+    downloadBookOverview,
     type PDFTheme
   } from '$lib/articleDownload';
 
@@ -789,9 +790,36 @@
                 >
                   <div class="py-1">
                     <div class="px-4 py-2 text-xs font-semibold" style="color: var(--text-secondary);">
-                      Download...
+                      Download the publication as:
                     </div>
                     {#if event && event.kind === 30040}
+                      <!-- Download overview option for 30040 events -->
+                      <button
+                        onclick={async () => {
+                          if (!event) return;
+                          showDownloadMenu = false;
+                          isDownloading = true;
+                          try {
+                            await downloadBookOverview(event);
+                          } catch (error) {
+                            alert('Failed to download overview. Make sure all content events are available.');
+                            console.error('Download overview error:', error);
+                          } finally {
+                            isDownloading = false;
+                          }
+                        }}
+                        disabled={isDownloading}
+                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                        style="color: var(--text-primary);"
+                      >
+                        {#if isDownloading}
+                          Preparing overview...
+                        {:else}
+                          Download the overview
+                        {/if}
+                      </button>
+                      <div class="border-t my-1" style="border-color: var(--border);"></div>
+                      <!-- Book (30040) - download with all branches and leaves -->
                       <!-- Book (30040) - download with all branches and leaves -->
                       <button
                         onclick={async () => {
@@ -830,7 +858,7 @@
                         </button>
                         {#if showPdfStyleMenu}
                           <div
-                            class="absolute left-full ml-2 top-0 w-48 rounded-lg shadow-lg z-50"
+                            class="absolute right-full mr-2 top-0 w-48 rounded-lg shadow-lg z-[60]"
                             style="background-color: var(--bg-primary); border: 1px solid var(--border);"
                             onclick={(e) => e.stopPropagation()}
                           >
@@ -875,7 +903,7 @@
                       </button>
                         {#if showEpubStyleMenu}
                           <div
-                            class="absolute left-full ml-2 top-0 w-48 rounded-lg shadow-lg z-50"
+                            class="absolute right-full mr-2 top-0 w-48 rounded-lg shadow-lg z-[60]"
                             style="background-color: var(--bg-primary); border: 1px solid var(--border);"
                             onclick={(e) => e.stopPropagation()}
                           >
@@ -1065,7 +1093,7 @@
                           </button>
                           {#if showPdfStyleMenu}
                             <div
-                              class="absolute left-full ml-2 top-0 w-48 rounded-lg shadow-lg z-50"
+                              class="absolute right-full mr-2 top-0 w-48 rounded-lg shadow-lg z-[60]"
                               style="background-color: var(--bg-primary); border: 1px solid var(--border);"
                               onclick={(e) => e.stopPropagation()}
                             >
@@ -1110,7 +1138,7 @@
                         </button>
                           {#if showEpubStyleMenu}
                             <div
-                              class="absolute left-full ml-2 top-0 w-48 rounded-lg shadow-lg z-50"
+                              class="absolute right-full mr-2 top-0 w-48 rounded-lg shadow-lg z-[60]"
                               style="background-color: var(--bg-primary); border: 1px solid var(--border);"
                               onclick={(e) => e.stopPropagation()}
                             >

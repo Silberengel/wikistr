@@ -1790,3 +1790,233 @@ export async function downloadBookAsLaTeX(indexEvent: NostrEvent, filename?: str
   }
 }
 
+/**
+ * Fetch all nested 30040 and 30041 events for a 30040 index event
+ * Returns a tree structure with the index event and all nested events
+ */
+async function fetchBookTree(
+  indexEvent: NostrEvent,
+  visitedIds: Set<string> = new Set()
+): Promise<{ index: NostrEvent; branches: Array<{ index: NostrEvent; leaves: NostrEvent[]; branches?: Array<{ index: NostrEvent; leaves: NostrEvent[] }> }>; leaves: NostrEvent[] }> {
+  // Prevent circular references
+  if (visitedIds.has(indexEvent.id)) {
+    return { index: indexEvent, branches: [], leaves: [] };
+  }
+
+  const currentVisited = new Set(visitedIds);
+  currentVisited.add(indexEvent.id);
+
+  // Extract all 'e' tags
+  const eventIds = indexEvent.tags
+    .filter(([tag]) => tag === 'e')
+    .map(([, eventId]) => eventId)
+    .filter(Boolean)
+    .filter(id => id !== indexEvent.id)
+    .filter(id => !visitedIds.has(id));
+
+  if (eventIds.length === 0) {
+    return { index: indexEvent, branches: [], leaves: [] };
+  }
+
+  // Fetch all referenced events
+  const result = await relayService.queryEvents(
+    'anonymous',
+    'wiki-read',
+    [{ kinds: [30040, 30041], ids: eventIds }],
+    { excludeUserContent: false, currentUserPubkey: undefined }
+  );
+
+  // Separate 30040 (branches) and 30041 (leaves)
+  const branches: Array<{ index: NostrEvent; leaves: NostrEvent[]; branches?: Array<{ index: NostrEvent; leaves: NostrEvent[]; branches?: Array<{ index: NostrEvent; leaves: NostrEvent[] }> }> }> = [];
+  const leaves: NostrEvent[] = [];
+
+  for (const event of result.events) {
+    if (event.kind === 30040) {
+      // Recursively fetch nested content (including nested branches)
+      const nested = await fetchBookTree(event, currentVisited);
+      branches.push({ 
+        index: event, 
+        leaves: nested.leaves,
+        branches: nested.branches 
+      });
+    } else if (event.kind === 30041) {
+      leaves.push(event);
+    }
+  }
+
+  // Sort by order in index event's 'e' tags
+  const orderMap = new Map<string, number>();
+  eventIds.forEach((id, index) => {
+    orderMap.set(id, index);
+  });
+
+  branches.sort((a, b) => {
+    const orderA = orderMap.get(a.index.id) ?? 999;
+    const orderB = orderMap.get(b.index.id) ?? 999;
+    return orderA - orderB;
+  });
+
+  leaves.sort((a, b) => {
+    const orderA = orderMap.get(a.id) ?? 999;
+    const orderB = orderMap.get(b.id) ?? 999;
+    return orderA - orderB;
+  });
+
+  return { index: indexEvent, branches, leaves };
+}
+
+/**
+ * Convert event metadata to YAML object
+ */
+function eventToYaml(event: NostrEvent, isTopLevel: boolean = false): any {
+  const obj: any = {};
+
+  // Title (priority: title tag, T tag, d tag, id)
+  const title = event.tags.find(([k]) => k === 'title')?.[1] ||
+                event.tags.find(([k]) => k === 'T')?.[1] ||
+                event.tags.find(([k]) => k === 'd')?.[1] ||
+                event.id.slice(0, 8);
+  obj.title = title;
+
+  // Author (pubkey)
+  obj.author = event.pubkey;
+
+  // Summary
+  const summary = event.tags.find(([k]) => k === 'summary')?.[1];
+  if (summary) obj.summary = summary;
+
+  // For top-level 30040, include C and v and type tags
+  if (isTopLevel) {
+    const collection = event.tags.find(([k]) => k === 'C')?.[1];
+    if (collection) obj.collection = collection;
+
+    const version = event.tags.find(([k]) => k === 'v')?.[1];
+    if (version) obj.version = version;
+
+    const type = event.tags.find(([k]) => k === 'type')?.[1];
+    if (type) obj.type = type;
+  }
+
+  // For all events, include T, c, s tags
+  const titleTag = event.tags.find(([k]) => k === 'T')?.[1];
+  if (titleTag) obj.T = titleTag;
+
+  const chapter = event.tags.find(([k]) => k === 'c')?.[1];
+  if (chapter) obj.c = chapter;
+
+  const sections = event.tags.filter(([k]) => k === 's').map(([, v]) => v);
+  if (sections.length > 0) obj.s = sections;
+
+  return obj;
+}
+
+/**
+ * Convert book tree to YAML structure
+ */
+function treeToYaml(
+  tree: { 
+    index: NostrEvent; 
+    branches: Array<{ 
+      index: NostrEvent; 
+      leaves: NostrEvent[]; 
+      branches?: Array<{ 
+        index: NostrEvent; 
+        leaves: NostrEvent[]; 
+        branches?: Array<{ index: NostrEvent; leaves: NostrEvent[] }> 
+      }> 
+    }>; 
+    leaves: NostrEvent[] 
+  }, 
+  isTopLevel: boolean = false
+): any {
+  const obj = eventToYaml(tree.index, isTopLevel);
+
+  // Add branches (nested 30040s) - recursively process nested branches
+  if (tree.branches.length > 0) {
+    obj.branches = tree.branches.map(branch => {
+      // Recursively process nested branches if they exist
+      const nestedBranches = branch.branches || [];
+      return treeToYaml({ 
+        index: branch.index, 
+        branches: nestedBranches, 
+        leaves: branch.leaves 
+      }, false);
+    });
+  }
+
+  // Add leaves (30041s)
+  if (tree.leaves.length > 0) {
+    obj.leaves = tree.leaves.map(leaf => eventToYaml(leaf, false));
+  }
+
+  return obj;
+}
+
+/**
+ * Download book overview as YAML (30040 events only)
+ * Exports metadata for the index event and all nested 30040 branches and 30041 leaves
+ */
+export async function downloadBookOverview(indexEvent: NostrEvent, filename?: string): Promise<void> {
+  if (indexEvent.kind !== 30040) {
+    throw new Error('downloadBookOverview can only be used with 30040 index events');
+  }
+
+  // Fetch the entire tree structure
+  const tree = await fetchBookTree(indexEvent);
+
+  // Convert to YAML structure
+  const yamlObj = treeToYaml(tree, true);
+
+  // Convert to YAML string (simple implementation)
+  function objToYaml(obj: any, indent: number = 0): string {
+    const spaces = '  '.repeat(indent);
+    let yaml = '';
+
+    for (const [key, value] of Object.entries(obj)) {
+      if (value === null || value === undefined) {
+        continue;
+      }
+
+      if (Array.isArray(value)) {
+        if (value.length === 0) continue;
+        yaml += `${spaces}${key}:\n`;
+        for (const item of value) {
+          if (typeof item === 'object') {
+            yaml += `${spaces}  -\n`;
+            yaml += objToYaml(item, indent + 2).replace(/^/gm, spaces + '    ');
+          } else {
+            yaml += `${spaces}  - ${formatYamlValue(item)}\n`;
+          }
+        }
+      } else if (typeof value === 'object') {
+        yaml += `${spaces}${key}:\n`;
+        yaml += objToYaml(value, indent + 1);
+      } else {
+        yaml += `${spaces}${key}: ${formatYamlValue(value)}\n`;
+      }
+    }
+
+    return yaml;
+  }
+
+  function formatYamlValue(value: any): string {
+    if (typeof value === 'string') {
+      // Escape special characters and wrap in quotes if needed
+      if (value.includes(':') || value.includes('#') || value.includes('|') || value.includes('&') || value.includes('*') || value.includes('!') || value.includes('%') || value.includes('@') || value.includes('`')) {
+        return `"${value.replace(/"/g, '\\"')}"`;
+      }
+      return value;
+    }
+    return String(value);
+  }
+
+  const yamlContent = objToYaml(yamlObj);
+
+  const title = indexEvent.tags.find(([k]) => k === 'title')?.[1] ||
+                indexEvent.tags.find(([k]) => k === 'T')?.[1] ||
+                indexEvent.id.slice(0, 8);
+  const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}_overview.yaml`;
+  const blob = new Blob([yamlContent], { type: 'text/yaml' });
+  downloadBlob(blob, name);
+}
+

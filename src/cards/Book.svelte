@@ -1477,7 +1477,7 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
           >
             <div class="py-1">
               <div class="px-4 py-2 text-xs font-semibold" style="color: var(--text-secondary);">
-                Download...
+                Download the publication as:
               </div>
               <button
                 onclick={async () => {
@@ -1542,7 +1542,7 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
                 </button>
                 {#if showPdfStyleMenu}
                   <div
-                    class="absolute left-full ml-2 top-0 w-48 rounded-lg shadow-lg z-50"
+                    class="absolute right-full mr-2 top-0 w-48 rounded-lg shadow-lg z-[60]"
                     style="background-color: var(--bg-primary); border: 1px solid var(--border);"
                     onclick={(e) => e.stopPropagation()}
                   >
@@ -1589,7 +1589,7 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
                 </button>
                 {#if showEpubStyleMenu}
                   <div
-                    class="absolute left-full ml-2 top-0 w-48 rounded-lg shadow-lg z-50"
+                    class="absolute right-full mr-2 top-0 w-48 rounded-lg shadow-lg z-[60]"
                     style="background-color: var(--bg-primary); border: 1px solid var(--border);"
                     onclick={(e) => e.stopPropagation()}
                   >
