@@ -32,6 +32,7 @@ export interface ExportOptions {
   content: string;
   title: string;
   author?: string;
+  theme?: string;
 }
 
 /**
@@ -112,6 +113,7 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
       content: options.content, // AsciiDoc content
       title: options.title,
       author: options.author || '',
+      theme: options.theme,
     }),
   });
 
@@ -185,6 +187,7 @@ export async function exportToRevealJS(options: ExportOptions): Promise<Blob> {
       content: options.content,
       title: options.title,
       author: options.author || '',
+      theme: options.theme,
     }),
   });
 
@@ -235,6 +238,7 @@ export async function exportToEPUB(options: ExportOptions): Promise<Blob> {
       content: options.content,
       title: options.title,
       author: options.author || '',
+      theme: options.theme,
     }),
   });
 
@@ -324,6 +328,7 @@ export async function exportToLaTeX(options: ExportOptions): Promise<Blob> {
       content: options.content,
       title: options.title,
       author: options.author || '',
+      theme: options.theme,
     }),
   });
 

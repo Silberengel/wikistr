@@ -70,7 +70,7 @@ services:
       - "8091:8091"
     environment:
       ASCIIDOCTOR_PORT: 8091
-      ASCIIDOCTOR_ALLOW_ORIGIN: http://localhost:*
+      ASCIIDOCTOR_ALLOW_ORIGIN: "*"
     restart: unless-stopped
 
 networks:

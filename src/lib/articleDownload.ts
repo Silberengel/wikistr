@@ -283,7 +283,8 @@ export async function downloadAsPDF(event: NostrEvent, filename?: string, theme:
     const blob = await exportToPDF({
       content: asciiDocContent,
       title,
-      author
+      author,
+      theme
     });
     
     if (!blob || blob.size === 0) {
@@ -315,7 +316,8 @@ export async function downloadAsEPUB(event: NostrEvent, filename?: string, theme
     const blob = await exportToEPUB({
       content: asciiDocContent,
       title,
-      author
+      author,
+      theme
     });
     
     if (!blob || blob.size === 0) {
@@ -966,7 +968,8 @@ export async function downloadBookAsPDF(indexEvent: NostrEvent, filename?: strin
     const blob = await exportToPDF({
       content: combined,
       title,
-      author
+      author,
+      theme
     });
     
     if (!blob || blob.size === 0) {
@@ -1006,7 +1009,8 @@ export async function downloadBookAsEPUB(indexEvent: NostrEvent, filename?: stri
     const blob = await exportToEPUB({
       content: combined,
       title,
-      author
+      author,
+      theme
     });
     
     if (!blob || blob.size === 0) {
@@ -1312,7 +1316,8 @@ export async function downloadBookSearchResultsAsPDF(
     const blob = await exportToPDF({
       content: combined,
       title,
-      author
+      author,
+      theme
     });
     
     if (!blob || blob.size === 0) {
@@ -1365,7 +1370,8 @@ export async function downloadBookSearchResultsAsEPUB(
     const blob = await exportToEPUB({
       content: combined,
       title,
-      author
+      author,
+      theme
     });
     
     if (!blob || blob.size === 0) {

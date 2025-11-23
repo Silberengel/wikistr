@@ -14,6 +14,10 @@ set :port, ENV.fetch('ASCIIDOCTOR_PORT', 8091).to_i
 set :bind, '127.0.0.1'
 set :server, 'puma'
 
+# Increase request body size limit to support large documents (e.g., full Bible ~4MB)
+# Default Rack limit is 1MB, we increase to 50MB to handle very large books
+Rack::Utils.key_space_limit = 50 * 1024 * 1024 # 50MB
+
 # CORS configuration
 before do
   origin = request.env['HTTP_ORIGIN']
@@ -49,14 +53,196 @@ get '/healthz' do
   }.to_json
 end
 
+# REST API documentation
+get '/api' do
+  content_type :json
+  {
+    name: 'wikistr-asciidoctor',
+    version: '1.0.0',
+    description: 'AsciiDoctor REST API for converting AsciiDoc content to various formats',
+    base_url: "#{request.scheme}://#{request.host_with_port}/asciidoctor",
+    endpoints: {
+      health: {
+        method: 'GET',
+        path: '/asciidoctor/healthz',
+        description: 'Health check endpoint',
+        response: {
+          type: 'application/json',
+          schema: {
+            name: 'string',
+            status: 'string',
+            endpoints: 'object',
+            port: 'number'
+          }
+        }
+      },
+      convert_pdf: {
+        method: 'POST',
+        path: '/asciidoctor/convert/pdf',
+        description: 'Convert AsciiDoc content to PDF',
+        request: {
+          type: 'application/json',
+          body: {
+            content: 'string (required) - AsciiDoc content',
+            title: 'string (required) - Document title',
+            author: 'string (optional) - Document author',
+            theme: 'string (optional) - PDF theme. Valid values: classic, antique, modern, documentation, scientific, pop, bible-paragraph, bible-versed, poster. Default: classic (maps to classic-novel theme)'
+          }
+        },
+        response: {
+          type: 'application/pdf',
+          disposition: 'attachment'
+        },
+        themes: {
+          classic: 'Classic novel style (default)',
+          antique: 'Antique book style',
+          modern: 'Modern book style',
+          documentation: 'Technical documentation style',
+          scientific: 'Scientific paper style',
+          pop: 'Pop book style',
+          'bible-paragraph': 'Bible in paragraph format',
+          'bible-versed': 'Bible with verse numbers',
+          poster: 'Poster layout style'
+        },
+        example: {
+          request: {
+            content: '= My Document\n\nThis is the content.',
+            title: 'My Document',
+            author: 'John Doe',
+            theme: 'classic'
+          },
+          with_theme: {
+            content: '= Bible Verse\n\nJohn 3:16 content here.',
+            title: 'Bible Passage',
+            author: 'KJV',
+            theme: 'bible-paragraph'
+          }
+        }
+      },
+      convert_epub: {
+        method: 'POST',
+        path: '/asciidoctor/convert/epub',
+        description: 'Convert AsciiDoc content to EPUB',
+        request: {
+          type: 'application/json',
+          body: {
+            content: 'string (required) - AsciiDoc content',
+            title: 'string (required) - Document title',
+            author: 'string (optional) - Document author',
+            theme: 'string (optional) - Theme for styling. Valid values: classic, antique, modern, documentation, scientific, pop, bible-paragraph, bible-versed, poster. Default: classic. Note: EPUB currently uses epub-classic.css for all themes.'
+          }
+        },
+        response: {
+          type: 'application/epub+zip',
+          disposition: 'attachment'
+        },
+        example: {
+          request: {
+            content: '= My Book\n\nChapter 1 content.',
+            title: 'My Book',
+            author: 'Author Name',
+            theme: 'classic'
+          }
+        }
+      },
+      convert_html5: {
+        method: 'POST',
+        path: '/asciidoctor/convert/html5',
+        description: 'Convert AsciiDoc content to HTML5',
+        request: {
+          type: 'application/json',
+          body: {
+            content: 'string (required) - AsciiDoc content',
+            title: 'string (required) - Document title',
+            author: 'string (optional) - Document author'
+          }
+        },
+        response: {
+          type: 'text/html',
+          disposition: 'attachment'
+        }
+      },
+      convert_revealjs: {
+        method: 'POST',
+        path: '/asciidoctor/convert/revealjs',
+        description: 'Convert AsciiDoc content to Reveal.js presentation',
+        request: {
+          type: 'application/json',
+          body: {
+            content: 'string (required) - AsciiDoc content',
+            title: 'string (required) - Document title',
+            author: 'string (optional) - Document author'
+          }
+        },
+        response: {
+          type: 'text/html',
+          disposition: 'attachment'
+        }
+      },
+      convert_latex: {
+        method: 'POST',
+        path: '/asciidoctor/convert/latex',
+        description: 'Convert AsciiDoc content to LaTeX',
+        request: {
+          type: 'application/json',
+          body: {
+            content: 'string (required) - AsciiDoc content',
+            title: 'string (required) - Document title',
+            author: 'string (optional) - Document author'
+          }
+        },
+        response: {
+          type: 'text/x-latex',
+          disposition: 'attachment'
+        }
+      }
+    },
+    cors: {
+      enabled: true,
+      allowed_origins: ENV['ASCIIDOCTOR_ALLOW_ORIGIN'] || '*',
+      allowed_methods: ['POST', 'OPTIONS'],
+      allowed_headers: ['Content-Type', 'Origin', 'Accept']
+    },
+    limits: {
+      max_request_size: '50 MB',
+      max_content_size: '50 MB',
+      recommended_max: '20 MB',
+      note: 'The server can handle documents up to 50MB. The Bible (~4MB) is well within limits. Very large documents may take longer to process.'
+    },
+    examples: {
+      curl_pdf: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/pdf -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\",\"theme\":\"classic\"}' --output document.pdf",
+      curl_pdf_bible: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/pdf -H 'Content-Type: application/json' -d '{\"content\":\"= John 3:16\\n\\nFor God so loved the world...\",\"title\":\"Bible Passage\",\"author\":\"KJV\",\"theme\":\"bible-paragraph\"}' --output bible.pdf",
+      curl_epub: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/epub -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"theme\":\"classic\"}' --output document.epub",
+      javascript_fetch: "fetch('#{request.scheme}://#{request.host_with_port}/asciidoctor/convert/pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: '= Test\\n\\nHello world', title: 'Test Document', theme: 'classic' }) })",
+      javascript_fetch_with_theme: "fetch('#{request.scheme}://#{request.host_with_port}/asciidoctor/convert/pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: '= My Book\\n\\nContent here', title: 'My Book', author: 'Author', theme: 'bible-paragraph' }) }).then(r => r.blob()).then(blob => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'book.pdf'; a.click(); })"
+    }
+  }.to_json
+end
+
+# Alias for /api
+get '/docs' do
+  redirect '/api', 301
+end
+
+# Helper function to log large request sizes
+def log_request_size(content, endpoint)
+  size_mb = content.bytesize / (1024.0 * 1024.0)
+  if size_mb > 5
+    puts "[#{endpoint}] Processing large request: #{size_mb.round(2)} MB"
+  end
+end
+
 # Convert to PDF
 post '/convert/pdf' do
   begin
     request.body.rewind
-    data = JSON.parse(request.body.read)
+    body_content = request.body.read
+    log_request_size(body_content, 'PDF')
+    data = JSON.parse(body_content)
     content = data['content'] || data['asciidoc']
     title = data['title'] || 'Document'
     author = data['author'] || ''
+    theme_param = data['theme']
     
     unless content
       status 400
@@ -74,8 +260,27 @@ post '/convert/pdf' do
     
     begin
       # Convert to PDF with enhanced attributes for better rendering
-      # Use custom classic novel theme if specified, otherwise default
-      theme = content.include?(':pdf-theme:') ? nil : 'classic-novel'
+      # Theme mapping from client theme names to server theme files
+      theme_map = {
+        'classic' => 'classic-novel',
+        'antique' => 'antique-novel',
+        'modern' => 'modern-book',
+        'documentation' => 'documentation',
+        'scientific' => 'scientific',
+        'pop' => 'pop-book',
+        'bible-paragraph' => 'bible-paragraph',
+        'bible-versed' => 'bible-versed',
+        'poster' => 'poster'
+      }
+      
+      # Use theme from parameter if provided, otherwise check if already in content, otherwise default
+      if theme_param && theme_map[theme_param]
+        theme = theme_map[theme_param]
+      elsif content.include?(':pdf-theme:')
+        theme = nil # Content already specifies theme
+      else
+        theme = 'classic-novel' # Default
+      end
       themesdir = content.include?(':pdf-themesdir:') ? nil : '/app/deployment'
       
       attributes = {
@@ -127,10 +332,13 @@ end
 post '/convert/epub' do
   begin
     request.body.rewind
-    data = JSON.parse(request.body.read)
+    body_content = request.body.read
+    log_request_size(body_content, 'EPUB')
+    data = JSON.parse(body_content)
     content = data['content'] || data['asciidoc']
     title = data['title'] || 'Document'
     author = data['author'] || ''
+    theme_param = data['theme']
     
     unless content
       status 400
@@ -155,6 +363,21 @@ post '/convert/epub' do
         cover_image = image_match[1] if image_match
       end
       
+      # EPUB stylesheet selection based on theme
+      # Note: EPUB uses CSS stylesheets, not PDF themes
+      # For now, use classic.css for all themes (could be extended with theme-specific stylesheets)
+      stylesheet = 'epub-classic.css'
+      if theme_param
+        theme_stylesheet_map = {
+          'classic' => 'epub-classic.css',
+          'antique' => 'epub-classic.css',
+          'modern' => 'epub-classic.css',
+          'bible-paragraph' => 'epub-classic.css',
+          'bible-versed' => 'epub-classic.css'
+        }
+        stylesheet = theme_stylesheet_map[theme_param] || 'epub-classic.css'
+      end
+      
       # Convert to EPUB with enhanced attributes for better rendering
       epub_attributes = {
         'title' => title,
@@ -164,7 +387,7 @@ post '/convert/epub' do
         'allow-uri-read' => '',  # Allow reading images from URLs
         'epub3-cover-image-format' => 'jpg',
         'epub3-stylesdir' => '/app/deployment',
-        'stylesheet' => 'epub-classic.css'
+        'stylesheet' => stylesheet
       }
       
       if cover_image
@@ -252,7 +475,9 @@ end
 post '/convert/html5' do
   begin
     request.body.rewind
-    data = JSON.parse(request.body.read)
+    body_content = request.body.read
+    log_request_size(body_content, 'HTML5')
+    data = JSON.parse(body_content)
     content = data['content'] || data['asciidoc']
     title = data['title'] || 'Document'
     author = data['author'] || ''
@@ -312,7 +537,9 @@ end
 post '/convert/revealjs' do
   begin
     request.body.rewind
-    data = JSON.parse(request.body.read)
+    body_content = request.body.read
+    log_request_size(body_content, 'RevealJS')
+    data = JSON.parse(body_content)
     content = data['content'] || data['asciidoc']
     title = data['title'] || 'Document'
     author = data['author'] || ''
@@ -367,13 +594,15 @@ get '/' do
     name: 'wikistr-asciidoctor',
     status: 'ok',
     version: '1.0.0',
+    message: 'Visit /api for REST API documentation',
     endpoints: {
       pdf: '/convert/pdf',
       epub: '/convert/epub',
       html5: '/convert/html5',
       revealjs: '/convert/revealjs',
       latex: '/convert/latex',
-      health: '/healthz'
+      health: '/healthz',
+      api_docs: '/api'
     }
   }.to_json
 end
@@ -382,7 +611,9 @@ end
 post '/convert/latex' do
   begin
     request.body.rewind
-    data = JSON.parse(request.body.read)
+    body_content = request.body.read
+    log_request_size(body_content, 'LaTeX')
+    data = JSON.parse(body_content)
     content = data['content'] || data['asciidoc']
     title = data['title'] || 'Document'
     author = data['author'] || ''
