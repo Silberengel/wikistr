@@ -288,25 +288,88 @@ export function createBookConfigEvent(
  */
 import { writable } from 'svelte/store';
 
+console.log('[nip78] Creating stores...');
 export const bookConfigurations = writable<BookConfiguration[]>([]);
+console.log('[nip78] ✓ bookConfigurations store created:', {
+  isObject: typeof bookConfigurations === 'object',
+  hasSubscribe: 'subscribe' in bookConfigurations,
+  subscribeType: typeof bookConfigurations.subscribe
+});
+
 export const customBookTypes = writable<{ [name: string]: BookType }>({});
+console.log('[nip78] ✓ customBookTypes store created:', {
+  isObject: typeof customBookTypes === 'object',
+  hasSubscribe: 'subscribe' in customBookTypes,
+  subscribeType: typeof customBookTypes.subscribe
+});
 
 /**
  * Load and store book configurations
  */
 export async function loadAndStoreBookConfigurations() {
+  console.log('[nip78] loadAndStoreBookConfigurations called');
   try {
+    console.log('[nip78] Loading book configurations...');
     const configs = await loadBookConfigurations();
-    bookConfigurations.set(configs);
+    console.log('[nip78] Loaded', configs.length, 'configurations');
+    
+    try {
+      console.log('[nip78] Setting bookConfigurations store');
+      console.log('[nip78] bookConfigurations check:', {
+        exists: !!bookConfigurations,
+        isObject: typeof bookConfigurations === 'object',
+        hasSet: 'set' in bookConfigurations,
+        setType: typeof (bookConfigurations as any).set
+      });
+      bookConfigurations.set(configs);
+      console.log('[nip78] ✓ bookConfigurations set successfully');
+    } catch (err) {
+      console.error('[nip78] ✗ Failed to set bookConfigurations:', err);
+      console.error('[nip78] bookConfigurations value:', bookConfigurations);
+      throw err;
+    }
     
     // Convert to BookType format and store
-    const bookTypes: { [name: string]: BookType } = {};
-    configs.forEach(config => {
-      bookTypes[config.name] = convertToBookType(config);
-    });
-    customBookTypes.set(bookTypes);
+    console.log('[nip78] Converting configurations to BookType format');
+    try {
+      const bookTypes: { [name: string]: BookType } = {};
+      configs.forEach(config => {
+        try {
+          bookTypes[config.name] = convertToBookType(config);
+        } catch (err) {
+          console.error('[nip78] ✗ Failed to convert config:', config.name, err);
+        }
+      });
+      console.log('[nip78] Converted', Object.keys(bookTypes).length, 'book types');
+      
+      try {
+        console.log('[nip78] Setting customBookTypes store');
+        console.log('[nip78] customBookTypes check:', {
+          exists: !!customBookTypes,
+          isObject: typeof customBookTypes === 'object',
+          hasSet: 'set' in customBookTypes,
+          setType: typeof (customBookTypes as any).set
+        });
+        customBookTypes.set(bookTypes);
+        console.log('[nip78] ✓ customBookTypes set successfully');
+      } catch (err) {
+        console.error('[nip78] ✗ Failed to set customBookTypes:', err);
+        console.error('[nip78] customBookTypes value:', customBookTypes);
+        throw err;
+      }
+    } catch (err) {
+      console.error('[nip78] ✗ Failed to convert and store book types:', err);
+      throw err;
+    }
     
+    console.log('[nip78] ✓ loadAndStoreBookConfigurations completed successfully');
   } catch (error) {
-    console.error('Failed to load book configurations:', error);
+    console.error('[nip78] ✗ CRITICAL: Failed to load book configurations:', error);
+    console.error('[nip78] Error details:', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      name: error instanceof Error ? error.name : undefined
+    });
+    throw error;
   }
 }

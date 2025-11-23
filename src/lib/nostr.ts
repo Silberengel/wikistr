@@ -190,22 +190,48 @@ export const account = readable<NostrUser | null>(null, (set) => {
 //   }
 // });
 
-// ensure these subscriptions are always on
-account.subscribe(() => {});
-wot.subscribe(() => {});
+// Note: In Svelte 5, stores are automatically reactive when used with runes ($account, $wot)
+// Manual subscriptions are not needed and can cause issues
 
-export const userWikiRelays = derived(
-  account,
-  (account, set) => {
-    if (account) {
-      getBasicUserWikiRelays(account.pubkey).then(set);
-    } else {
-      // Use relayService to get default wiki relays
-      relayService.getRelaysForOperation('anonymous', 'wiki-read').then(set);
+// Create userWikiRelays as a readable store that subscribes to account
+// Using readable instead of derived to avoid potential Svelte 5 compatibility issues
+export const userWikiRelays = readable<string[]>([], (set) => {
+  let cancelled = false;
+  let unsubscribeAccount: (() => void) | null = null;
+  
+  // Subscribe to account store manually
+  unsubscribeAccount = account.subscribe(async (currentAccount) => {
+    if (cancelled) return;
+    
+    try {
+      if (currentAccount) {
+        const relays = await getBasicUserWikiRelays(currentAccount.pubkey);
+        if (!cancelled) set(relays);
+      } else {
+        const relays = await relayService.getRelaysForOperation('anonymous', 'wiki-read');
+        if (!cancelled) set(relays);
+      }
+    } catch (err) {
+      console.error('Failed to get wiki relays:', err);
+      if (!cancelled) {
+        try {
+          const defaultRelays = await relayService.getRelaysForOperation('anonymous', 'wiki-read');
+          if (!cancelled) set(defaultRelays);
+        } catch {
+          if (!cancelled) set([]);
+        }
+      }
     }
-  },
-  [] as string[] // Start with empty array
-);
+  });
+  
+  // Return cleanup function
+  return () => {
+    cancelled = true;
+    if (unsubscribeAccount) {
+      unsubscribeAccount();
+    }
+  };
+});
 
 export async function loadBlockedRelays(pubkey: string, relays: string[]): Promise<string[]> {
   try {

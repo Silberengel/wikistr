@@ -1,6 +1,5 @@
 <script lang="ts">
   import { cards } from '$lib/state';
-  import { page } from '$app/state';
   import type { ArticleCard } from '$lib/types';
   import { nip19 } from '@nostr/tools';
   import { getTagOr } from '$lib/utils';
@@ -8,44 +7,68 @@
   import { getTitleFromEvent } from '$lib/contentQualityControl';
   import type { NostrEvent } from '@nostr/tools/pure';
 
+  console.log('[OpenGraphMeta] Component initializing');
+  try {
+    console.log('[OpenGraphMeta] Checking cards store:', {
+      exists: !!cards,
+      isObject: typeof cards === 'object',
+      hasSubscribe: 'subscribe' in cards,
+      subscribeType: typeof (cards as any).subscribe
+    });
+  } catch (err) {
+    console.error('[OpenGraphMeta] ✗ Failed to check cards store:', err);
+  }
+
   // Get the current article card (last card if it's an article)
   const currentArticle = $derived(() => {
-    if ($cards.length === 0) return null;
-    const lastCard = $cards[$cards.length - 1];
-    if (lastCard?.type === 'article') {
-      return lastCard as ArticleCard;
+    try {
+      if ($cards.length === 0) return null;
+      const lastCard = $cards[$cards.length - 1];
+      if (lastCard?.type === 'article') {
+        return lastCard as ArticleCard;
+      }
+      return null;
+    } catch (err) {
+      console.error('[OpenGraphMeta] ✗ Error in currentArticle derived:', err);
+      return null;
     }
-    return null;
   });
 
   // Get the event for the current article
   const currentEvent = $derived(() => {
-    const article = currentArticle();
-    if (!article) return null;
-    
-    // Check if event is already in the card
-    if (article.actualEvent) {
-      return article.actualEvent;
+    try {
+      const article = currentArticle();
+      if (!article) return null;
+      
+      // Check if event is already in the card
+      if (article.actualEvent) {
+        return article.actualEvent;
+      }
+      
+      // Try to get from cache
+      const cachedEvents = contentCache.getEvents('wiki');
+      const wikiKinds = [30818, 30817, 30040, 30041, 30023];
+      const cached = cachedEvents.find(cached => 
+        cached.event.pubkey === article.data[1] && 
+        getTagOr(cached.event, 'd') === article.data[0] && 
+        wikiKinds.includes(cached.event.kind)
+      );
+      
+      return cached?.event || null;
+    } catch (err) {
+      console.error('[OpenGraphMeta] ✗ Error in currentEvent derived:', err);
+      return null;
     }
-    
-    // Try to get from cache
-    const cachedEvents = contentCache.getEvents('wiki');
-    const wikiKinds = [30818, 30817, 30040, 30041, 30023];
-    const cached = cachedEvents.find(cached => 
-      cached.event.pubkey === article.data[1] && 
-      getTagOr(cached.event, 'd') === article.data[0] && 
-      wikiKinds.includes(cached.event.kind)
-    );
-    
-    return cached?.event || null;
   });
 
   // Generate OG meta tags based on current event
   const ogData = $derived(() => {
-    const event = currentEvent();
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://wikistr.imwald.eu';
-    const currentPath = $page.url.pathname;
-    const fullUrl = `${baseUrl}${currentPath}`;
+    try {
+      const event = currentEvent();
+      const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://wikistr.imwald.eu';
+      // Use window.location instead of $page to avoid potential subscription issues
+      const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+      const fullUrl = `${baseUrl}${currentPath}`;
 
     if (!event) {
       // Default OG tags for the homepage
@@ -95,6 +118,19 @@
       type: articleType,
       naddr
     };
+    } catch (err) {
+      console.error('[OpenGraphMeta] ✗ Error in ogData derived:', err);
+      // Return default OG data on error
+      const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://wikistr.imwald.eu';
+      const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+      return {
+        title: 'Wikistr - A decentralized book study and wiki system built on Nostr',
+        description: 'Biblestr - A decentralized Bible study and wiki system built on Nostr',
+        image: `${baseUrl}/favicon.png`,
+        url: `${baseUrl}${currentPath}`,
+        type: 'website'
+      };
+    }
   });
 </script>
 

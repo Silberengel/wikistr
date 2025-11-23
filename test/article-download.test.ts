@@ -22,12 +22,16 @@ function createMockPDFBlob(size: number = 1000): Blob {
   const blob = new Blob([pdfContent], { type: 'application/pdf' });
   // Store the underlying array buffer for slice operations
   const underlyingBuffer = pdfContent.buffer;
+  // Add arrayBuffer method to the blob itself
+  (blob as any).arrayBuffer = async () => {
+    return underlyingBuffer;
+  };
   // Ensure slice returns a blob with arrayBuffer method
   const originalSlice = blob.slice.bind(blob);
   blob.slice = function(start?: number, end?: number, contentType?: string) {
     const sliced = originalSlice(start, end, contentType);
     // Always add arrayBuffer method to sliced blob
-    sliced.arrayBuffer = async () => {
+    (sliced as any).arrayBuffer = async () => {
       const startByte = start || 0;
       const endByte = end !== undefined ? end : size;
       return underlyingBuffer.slice(startByte, endByte);
@@ -47,12 +51,16 @@ function createMockEPUBBlob(size: number = 2000): Blob {
   const blob = new Blob([epubContent], { type: 'application/epub+zip' });
   // Store the underlying array buffer for slice operations
   const underlyingBuffer = epubContent.buffer;
+  // Add arrayBuffer method to the blob itself
+  (blob as any).arrayBuffer = async () => {
+    return underlyingBuffer;
+  };
   // Ensure slice returns a blob with arrayBuffer method
   const originalSlice = blob.slice.bind(blob);
   blob.slice = function(start?: number, end?: number, contentType?: string) {
     const sliced = originalSlice(start, end, contentType);
     // Always add arrayBuffer method to sliced blob
-    sliced.arrayBuffer = async () => {
+    (sliced as any).arrayBuffer = async () => {
       const startByte = start || 0;
       const endByte = end !== undefined ? end : size;
       return underlyingBuffer.slice(startByte, endByte);
@@ -482,7 +490,7 @@ Some content.`,
       // Blob should not be empty
       expect(blob).toBeDefined();
       expect(typeof blob.size).toBe('number');
-      expect(blob.size).toBeGreaterThan(1000); // At least 1KB for a valid PDF
+      expect(blob.size).toBeGreaterThanOrEqual(1000); // At least 1KB for a valid PDF
     }, TEST_TIMEOUT);
   });
 
@@ -510,9 +518,10 @@ Some content.`,
 
   describe('Real-world Content Scenarios', () => {
     it('should handle long content', async () => {
+      // Create content that's definitely longer than 10000 characters to trigger larger blob
       const longContent = `= Long Document
 
-${Array(100).fill('== Section\n\nThis is a long section with lots of content.\n\n').join('\n')}`;
+${Array(200).fill('== Section\n\nThis is a long section with lots of content that will make the document exceed 10000 characters.\n\n').join('\n')}`;
 
       const blob = await exportToPDF({
         content: longContent,

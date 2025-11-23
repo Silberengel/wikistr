@@ -5,12 +5,14 @@ import { next } from '$lib/utils';
   import { relayService } from '$lib/relayService';
   import { account } from '$lib/nostr';
 
-import type { SearchCard, Card } from '$lib/types';
+import type { SearchCard, Card, ArticleCard } from '$lib/types';
   import { normalizeIdentifier } from '@nostr/tools/nip54';
 import { openBookSearchCard } from '$lib/bookSearchLauncher';
 import ModeToggle from '$components/ModeToggle.svelte';
 import ProfilePopup from '$components/ProfilePopup.svelte';
 import UserBadge from '$components/UserBadge.svelte';
+import BookConfigList from '$components/BookConfigList.svelte';
+import BookConfigForm from '$components/BookConfigForm.svelte';
   import { nip19 } from '@nostr/tools';
   import { decode } from '@nostr/tools/nip19';
   import pkg from '../../package.json';
@@ -27,6 +29,8 @@ import UserBadge from '$components/UserBadge.svelte';
   let query = $state('');
   let showSettings = $state(false);
   let showProfilePopup = $state(false);
+  let showBookConfigList = $state(false);
+  let showBookConfigForm = $state(false);
   
   // Relay information
   let themeRelays = $state<{url: string, hasWiki: boolean, hasSocial: boolean, isUserRelay: boolean}[]>([]);

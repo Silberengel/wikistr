@@ -34,7 +34,7 @@
   let slider: HTMLElement;
 
   // Initialization state to prevent loops
-  let initialized = false;
+  let initialized = $state(false);
   let initializationPromise: Promise<void> | null = null;
   let eventListenersSetup = false;
   let errorHandlersSetup = false;
@@ -54,28 +54,63 @@
   }
 
   async function performInitialization(): Promise<void> {
-    if (initialized) return;
+    console.log('[layout] performInitialization called, initialized:', initialized);
+    if (initialized) {
+      console.log('[layout] Already initialized, skipping');
+      return;
+    }
     
     try {
       // Set up event listeners (only once)
       if (!eventListenersSetup) {
-        setupEventListeners();
-        eventListenersSetup = true;
+        console.log('[layout] Setting up event listeners');
+        try {
+          setupEventListeners();
+          eventListenersSetup = true;
+          console.log('[layout] ✓ Event listeners set up');
+        } catch (err) {
+          console.error('[layout] ✗ Failed to set up event listeners:', err);
+          throw err;
+        }
       }
       
       // Set up error handlers (only once)
       if (!errorHandlersSetup) {
-        setupErrorHandlers();
-        errorHandlersSetup = true;
+        console.log('[layout] Setting up error handlers');
+        try {
+          setupErrorHandlers();
+          errorHandlersSetup = true;
+          console.log('[layout] ✓ Error handlers set up');
+        } catch (err) {
+          console.error('[layout] ✗ Failed to set up error handlers:', err);
+          throw err;
+        }
       }
       
       // Initialize book configurations
-      await initializeBookConfigurations();
+      console.log('[layout] Initializing book configurations');
+      try {
+        await initializeBookConfigurations();
+        console.log('[layout] ✓ Book configurations initialized');
+      } catch (bookConfigError) {
+        console.error('[layout] ✗ Failed to initialize book configurations:', bookConfigError);
+        console.error('[layout] Error details:', {
+          message: bookConfigError instanceof Error ? bookConfigError.message : String(bookConfigError),
+          stack: bookConfigError instanceof Error ? bookConfigError.stack : undefined
+        });
+        // Continue anyway - app should work without custom book configs
+      }
       
       initialized = true;
+      console.log('[layout] ✓ Initialization complete, initialized set to true');
       
     } catch (error) {
-      console.error('❌ Failed to initialize layout:', error);
+      console.error('[layout] ✗ CRITICAL: Failed to initialize layout:', error);
+      console.error('[layout] Error details:', {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        name: error instanceof Error ? error.name : undefined
+      });
       // Don't rethrow - allow app to continue
     }
   }
@@ -190,25 +225,61 @@
 
   // Initialize on mount
   onMount(() => {
-    initializeLayout();
-    
-    // Initialize mode from localStorage
-    const savedMode = localStorage.getItem('wikistr-mode') as 'light' | 'dark' | null;
-    if (savedMode) {
-      currentMode = savedMode;
+    console.log('[layout] onMount called');
+    try {
+      // Initialize layout first, then set up other things
+      console.log('[layout] Starting layout initialization');
+      initializeLayout().catch(err => {
+        console.error('[layout] ✗ Failed to initialize layout:', err);
+        console.error('[layout] Error details:', {
+          message: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined
+        });
+      });
+      
+      // Initialize mode from localStorage
+      try {
+        const savedMode = localStorage.getItem('wikistr-mode') as 'light' | 'dark' | null;
+        if (savedMode) {
+          currentMode = savedMode;
+          console.log('[layout] ✓ Mode initialized from localStorage:', savedMode);
+        }
+      } catch (err) {
+        console.error('[layout] ✗ Failed to load mode from localStorage:', err);
+      }
+      
+      // Listen for mode changes from ModeToggle
+      const handleModeChange = (event: CustomEvent) => {
+        try {
+          currentMode = event.detail.mode;
+        } catch (err) {
+          console.error('[layout] ✗ Failed to handle mode change:', err);
+        }
+      };
+      
+      try {
+        window.addEventListener('mode-change', handleModeChange as EventListener);
+        console.log('[layout] ✓ Mode change listener added');
+      } catch (err) {
+        console.error('[layout] ✗ Failed to add mode change listener:', err);
+      }
+      
+      return () => {
+        try {
+          cleanup();
+          window.removeEventListener('mode-change', handleModeChange as EventListener);
+          console.log('[layout] ✓ Cleanup completed');
+        } catch (err) {
+          console.error('[layout] ✗ Cleanup error:', err);
+        }
+      };
+    } catch (err) {
+      console.error('[layout] ✗ CRITICAL: onMount error:', err);
+      console.error('[layout] Error details:', {
+        message: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined
+      });
     }
-    
-    // Listen for mode changes from ModeToggle
-    const handleModeChange = (event: CustomEvent) => {
-      currentMode = event.detail.mode;
-    };
-    
-    window.addEventListener('mode-change', handleModeChange as EventListener);
-    
-    return () => {
-      cleanup();
-      window.removeEventListener('mode-change', handleModeChange as EventListener);
-    };
   });
 
   // Reactive effect to update CSS variables when mode changes
@@ -286,7 +357,9 @@
   });
 </script>
 
-<OpenGraphMeta />
+{#if initialized}
+  <OpenGraphMeta />
+{/if}
 
 <svelte:head>
   <title>{theme.title}</title>
