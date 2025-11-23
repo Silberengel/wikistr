@@ -4,9 +4,16 @@ WORKDIR /app
 
 # Install system dependencies
 # curl is needed for health checks
+# Java is needed for PlantUML
+# Graphviz is needed for Graphviz diagrams
+# Python3 and pip are needed for some diagram backends
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
+    default-jre-headless \
+    graphviz \
+    python3 \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Gemfile and install dependencies

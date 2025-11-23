@@ -6,6 +6,7 @@ require 'asciidoctor'
 require 'asciidoctor-pdf'
 require 'asciidoctor-epub3'
 require 'asciidoctor-revealjs'
+require 'asciidoctor-diagram'  # For PlantUML, Graphviz, BPMN, Mermaid, TikZ, etc.
 require 'json'
 require 'tempfile'
 require 'fileutils'
@@ -108,9 +109,16 @@ get '/api' do
         features: {
           table_of_contents: 'Automatic table of contents is generated when :toc: attribute is set (enabled by default)',
           latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks. Use stem:[E = mc^2] for inline math or [stem] blocks for display math',
+          diagrams: 'Diagram generation is supported via asciidoctor-diagram extension. Supported formats: PlantUML, Graphviz, Mermaid, BPMN (via PlantUML), TikZ (via LaTeX backend)',
           math_examples: {
             inline: 'stem:[E = mc^2]',
             display: '[stem]\n----\n\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}\n----'
+          },
+          diagram_examples: {
+            plantuml: '[plantuml]\n----\n@startuml\nAlice -> Bob: Hello\n@enduml\n----',
+            graphviz: '[graphviz]\n----\ndigraph G {\n  A -> B\n}\n----',
+            mermaid: '[mermaid]\n----\ngraph TD\n  A --> B\n----',
+            bpmn: '[plantuml]\n----\n@startbpmn\nstart\n:Process;\nstop\n@endbpmn\n----'
           }
         },
         themes: {
@@ -164,7 +172,8 @@ get '/api' do
         },
         features: {
           table_of_contents: 'Automatic table of contents is generated when :toc: attribute is set (enabled by default)',
-          latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks'
+          latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks',
+          diagrams: 'Diagram generation is supported via asciidoctor-diagram extension. Supported formats: PlantUML, Graphviz, Mermaid, BPMN (via PlantUML)'
         },
         example: {
           request: {
@@ -193,7 +202,8 @@ get '/api' do
         },
         features: {
           table_of_contents: 'Automatic table of contents is generated when :toc: attribute is set (enabled by default)',
-          latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks'
+          latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks',
+          diagrams: 'Diagram generation is supported via asciidoctor-diagram extension. Supported formats: PlantUML, Graphviz, Mermaid, BPMN (via PlantUML)'
         }
       },
       convert_revealjs: {
@@ -231,7 +241,8 @@ get '/api' do
         },
         features: {
           table_of_contents: 'Automatic table of contents is generated when :toc: attribute is set (enabled by default)',
-          latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks. Math is rendered natively in LaTeX output'
+          latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks. Math is rendered natively in LaTeX output',
+          diagrams: 'Diagram generation is supported via asciidoctor-diagram extension. TikZ diagrams work best with LaTeX backend. PlantUML, Graphviz, and Mermaid are also supported.'
         }
       }
     },
@@ -338,6 +349,9 @@ post '/convert/pdf' do
         attributes['pdf-theme'] = theme
         attributes['pdf-themesdir'] = themesdir
       end
+      
+      # Diagrams are automatically registered when asciidoctor-diagram is required
+      # Supported: PlantUML, Graphviz, Mermaid, BPMN (via PlantUML), TikZ (via LaTeX)
       
       Asciidoctor.convert_file temp_adoc.path,
         backend: 'pdf',
