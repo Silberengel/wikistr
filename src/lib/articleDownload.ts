@@ -35,6 +35,16 @@ export async function downloadAsMarkdown(event: NostrEvent, filename?: string): 
     npub = event.pubkey;
   }
   
+  // Detect format and convert if needed
+  let content = event.content;
+  if (isAsciiDoc(content)) {
+    // Content is AsciiDoc, convert to Markdown
+    content = convertAsciiDocToMarkdown(content);
+  } else if (!isMarkdown(content) && content.trim().length > 0) {
+    // Content is neither, assume it's plain text or markdown-compatible
+    // Keep as is - markdown is forgiving
+  }
+  
   // Build YAML frontmatter
   let frontmatter = '---\n';
   frontmatter += `title: ${JSON.stringify(title)}\n`;
@@ -53,19 +63,114 @@ export async function downloadAsMarkdown(event: NostrEvent, filename?: string): 
   frontmatter += `event_kind: ${event.kind}\n`;
   frontmatter += `---\n\n`;
   
-  const content = frontmatter + event.content;
-  const blob = new Blob([content], { type: 'text/markdown' });
+  const finalContent = frontmatter + content;
+  const blob = new Blob([finalContent], { type: 'text/markdown' });
   const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.md`;
   downloadBlob(blob, name);
+}
+
+/**
+ * Extract title from content (first header or first line)
+ */
+function extractTitleFromContent(content: string): string | null {
+  if (!content || content.trim().length === 0) return null;
+  
+  const lines = content.split('\n');
+  
+  // Look for first header (AsciiDoc = or ==, or Markdown # or ##)
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // AsciiDoc header: = Title or == Title
+    const asciidocHeader = trimmed.match(/^=+\s+(.+)$/);
+    if (asciidocHeader) {
+      return asciidocHeader[1].trim();
+    }
+    // Markdown header: # Title or ## Title
+    const markdownHeader = trimmed.match(/^#+\s+(.+)$/);
+    if (markdownHeader) {
+      return markdownHeader[1].trim();
+    }
+  }
+  
+  // If no header found, use first non-empty line
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.length > 0 && !trimmed.match(/^[=#\-\*]/)) {
+      // Not a header, list item, or horizontal rule
+      // Take first 100 chars as title
+      return trimmed.substring(0, 100).trim();
+    }
+  }
+  
+  return null;
 }
 
 /**
  * Download article as AsciiDoc
  */
 export async function downloadAsAsciiDoc(event: NostrEvent, filename?: string): Promise<void> {
-  const contentWithMetadata = await prepareAsciiDocContent(event, true, 'classic');
-  const blob = new Blob([contentWithMetadata], { type: 'text/asciidoc' });
-  const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
+  // Prepare content - this already handles format detection and conversion
+  let content = event.content;
+  
+  // If content is Markdown, convert it
+  if (isMarkdown(content) && !isAsciiDoc(content)) {
+    content = convertMarkdownToAsciiDoc(content);
+  }
+  
+  // Check if content already has a document-level header (=)
+  const hasDocHeader = /^=\s+/.test(content.trim());
+  
+  // Get title with priority: title tag -> T tag -> first header in content -> first line -> fallback
+  const titleTag = event.tags.find(([k]) => k === 'title')?.[1];
+  const TTag = event.tags.find(([k]) => k === 'T')?.[1];
+  
+  let title: string;
+  if (titleTag) {
+    title = titleTag;
+  } else if (TTag) {
+    title = TTag;
+  } else if (!hasDocHeader) {
+    // Only extract from content if we don't already have a doc-level header
+    const extractedTitle = extractTitleFromContent(content);
+    title = extractedTitle || `Untitled Document (${event.kind})`;
+  } else {
+    // Has doc header, extract it for filename
+    const extractedTitle = extractTitleFromContent(content);
+    title = extractedTitle || event.tags.find(([k]) => k === 'd')?.[1] || `Untitled Document (${event.kind})`;
+  }
+  
+  // Create a temporary event with converted content for prepareAsciiDocContent
+  const tempEvent = { ...event, content };
+  const contentWithMetadata = await prepareAsciiDocContent(tempEvent, true, 'classic');
+  
+  // Ensure the content has a document-level header (=)
+  let finalContent = contentWithMetadata;
+  const trimmed = finalContent.trim();
+  
+  // Check if it starts with a document-level header (=, not == or ===)
+  if (!/^=\s+/.test(trimmed)) {
+    // No document-level header found, add one
+    const lines = finalContent.split('\n');
+    
+    // Find where to insert the title (after metadata attributes if present)
+    let insertIndex = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      // Skip empty lines and attribute definitions (:key: value)
+      if (line.length === 0 || /^:[a-zA-Z_][a-zA-Z0-9_-]*:\s*/.test(line)) {
+        insertIndex = i + 1;
+        continue;
+      }
+      // Stop at first non-attribute, non-empty line
+      break;
+    }
+    
+    // Insert the title header
+    lines.splice(insertIndex, 0, `= ${title}`);
+    finalContent = lines.join('\n');
+  }
+  
+  const blob = new Blob([finalContent], { type: 'text/asciidoc' });
   const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.adoc`;
   downloadBlob(blob, name);
 }
@@ -155,10 +260,12 @@ async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, the
   
   // Add description as abstract if available
   if (description) {
-    doc += `[abstract]\n`;
+    doc += `[abstract]\n\n`;
+    doc += `== Abstract\n\n`;
     doc += `${description}\n\n`;
   } else if (summary) {
-    doc += `[abstract]\n`;
+    doc += `[abstract]\n\n`;
+    doc += `== Abstract\n\n`;
     doc += `${summary}\n\n`;
   }
   
@@ -169,15 +276,139 @@ async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, the
 }
 
 /**
- * Convert markdown to AsciiDoc format
+ * Detect if content is AsciiDoc format
+ */
+function isAsciiDoc(content: string): boolean {
+  if (!content || content.trim().length === 0) return false;
+  
+  const trimmed = content.trim();
+  
+  // Check for AsciiDoc-specific patterns
+  // AsciiDoc headers: =, ==, ===, etc. (but not markdown #)
+  if (/^=+\s+.+/.test(trimmed) && !/^#+\s+.+/.test(trimmed)) return true;
+  
+  // AsciiDoc image syntax: image::path[] or image:path[]
+  if (/image::?\[/.test(content)) return true;
+  
+  // AsciiDoc block syntax: [source], [NOTE], [WARNING], etc.
+  if (/^\[(source|NOTE|TIP|WARNING|IMPORTANT|CAUTION|INFO|QUOTE|EXAMPLE|SIDEBAR|LITERAL|LISTING|PASSTHROUGH|abstract)\]/i.test(content)) return true;
+  
+  // AsciiDoc attribute references: {attribute}
+  if (/\{[a-zA-Z_][a-zA-Z0-9_]*\}/.test(content)) return true;
+  
+  // AsciiDoc cross-references: <<id,text>> or xref:id[text]
+  if (/<<[^>]+>>|xref:[^\[]+\[/.test(content)) return true;
+  
+  // AsciiDoc attribute definitions: :attribute: value
+  if (/^:[a-zA-Z_][a-zA-Z0-9_-]*:\s*/.test(content)) return true;
+  
+  return false;
+}
+
+/**
+ * Detect if content is Markdown format
+ */
+function isMarkdown(content: string): boolean {
+  if (!content || content.trim().length === 0) return false;
+  
+  // Check for Markdown-specific patterns
+  // Markdown headers: #, ##, ###, etc. (but not AsciiDoc =)
+  if (/^#+\s+.+/.test(content.trim()) && !/^=+\s+.+/.test(content.trim())) return true;
+  
+  // Markdown image syntax: ![alt](url)
+  if (/!\[[^\]]*\]\([^)]+\)/.test(content)) return true;
+  
+  // Markdown link syntax: [text](url) (but not AsciiDoc link:url[])
+  if (/\[[^\]]+\]\([^)]+\)/.test(content) && !/link:[^\[]+\[/.test(content)) return true;
+  
+  // Markdown code blocks: ```language
+  if (/^```/.test(content.trim())) return true;
+  
+  // Markdown horizontal rule: --- or ***
+  if (/^[-*]{3,}$/.test(content.trim())) return true;
+  
+  return false;
+}
+
+/**
+ * Convert Markdown to AsciiDoc
  */
 function convertMarkdownToAsciiDoc(markdown: string): string {
   if (!markdown || markdown.trim().length === 0) {
     return '= Empty Document\n\nNo content available.';
   }
   
-  // Simple conversion: wrap markdown in AsciiDoc format
-  // Most markdown is compatible with AsciiDoc, but we ensure it's valid
+  let asciidoc = markdown;
+  
+  // Convert headers: # Title -> = Title, ## Subtitle -> == Subtitle
+  asciidoc = asciidoc.replace(/^(#{1,6})\s+(.+)$/gm, (match, hashes, text) => {
+    const level = hashes.length;
+    return '='.repeat(level) + ' ' + text;
+  });
+  
+  // Convert images: ![alt](url) -> image::url[alt]
+  asciidoc = asciidoc.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, url) => {
+    return `image::${url}[${alt || ''}]`;
+  });
+  
+  // Convert code blocks: ```language -> [source,language]
+  asciidoc = asciidoc.replace(/^```(\w*)\n([\s\S]*?)```$/gm, (match, lang, code) => {
+    if (lang) {
+      return `[source,${lang}]\n----\n${code}\n----`;
+    }
+    return `[source]\n----\n${code}\n----`;
+  });
+  
+  // Convert inline code: `code` -> `code` (same in both)
+  // Already compatible
+  
+  // Convert horizontal rules: --- -> ''' (or keep as is, both work)
+  // Already compatible
+  
+  return asciidoc;
+}
+
+/**
+ * Convert AsciiDoc to Markdown
+ */
+function convertAsciiDocToMarkdown(asciidoc: string): string {
+  if (!asciidoc || asciidoc.trim().length === 0) {
+    return '# Empty Document\n\nNo content available.';
+  }
+  
+  let markdown = asciidoc;
+  
+  // Convert headers: = Title -> # Title, == Subtitle -> ## Subtitle
+  markdown = markdown.replace(/^(=+)\s+(.+)$/gm, (match, equals, text) => {
+    const level = equals.length;
+    return '#'.repeat(level) + ' ' + text;
+  });
+  
+  // Convert images: image::url[alt] -> ![alt](url) or image:url[alt] -> ![alt](url)
+  markdown = markdown.replace(/image::?([^\[]+)\[([^\]]*)\]/g, (match, url, alt) => {
+    return `![${alt || ''}](${url.trim()})`;
+  });
+  
+  // Convert source blocks: [source,language]...---- -> ```language...```
+  markdown = markdown.replace(/\[source(?:,(\w+))?\]\n----\n([\s\S]*?)----/g, (match, lang, code) => {
+    if (lang) {
+      return `\`\`\`${lang}\n${code}\`\`\``;
+    }
+    return `\`\`\`\n${code}\`\`\``;
+  });
+  
+  // Convert attribute references: {attribute} -> (keep as is or remove)
+  // Markdown doesn't have attributes, so we'll just remove the braces
+  markdown = markdown.replace(/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g, '$1');
+  
+  // Convert cross-references: <<id,text>> -> [text](#id) or xref:id[text] -> [text](#id)
+  markdown = markdown.replace(/<<([^,>]+),([^>]+)>>/g, (match, id, text) => {
+    return `[${text}](#${id})`;
+  });
+  markdown = markdown.replace(/xref:([^\[]+)\[([^\]]+)\]/g, (match, id, text) => {
+    return `[${text}](#${id})`;
+  });
+  
   return markdown;
 }
 
@@ -246,9 +477,13 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
         }
         doc += `\n`;
         if (description) {
-          doc += `[abstract]\n${description}\n\n`;
+          doc += `[abstract]\n\n`;
+          doc += `== Abstract\n\n`;
+          doc += `${description}\n\n`;
         } else if (summary) {
-          doc += `[abstract]\n${summary}\n\n`;
+          doc += `[abstract]\n\n`;
+          doc += `== Abstract\n\n`;
+          doc += `${summary}\n\n`;
         }
         
         doc += restContent;
@@ -852,10 +1087,12 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   
   // Add abstract/description after title page
   if (description) {
-    doc += `[abstract]\n`;
+    doc += `[abstract]\n\n`;
+    doc += `== Abstract\n\n`;
     doc += `${description}\n\n`;
   } else if (summary) {
-    doc += `[abstract]\n`;
+    doc += `[abstract]\n\n`;
+    doc += `== Abstract\n\n`;
     doc += `${summary}\n\n`;
   }
 
