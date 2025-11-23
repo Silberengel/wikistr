@@ -23,7 +23,7 @@
   import { parseBookWikilink } from '$lib/books';
   import { openBookSearchCard } from '$lib/bookSearchLauncher';
   import { openArticleCard } from '$lib/articleLauncher';
-  import { formatBookWikilinkDisplayText } from '$lib/contentQualityControl';
+  import { formatBookWikilinkDisplayTextForGUI } from '$lib/contentQualityControl';
 
   interface Props {
     event: NostrEvent;
@@ -800,7 +800,7 @@
       let finalDisplayText = displayText;
       if (identifier.startsWith('book::')) {
         const bookContent = identifier.replace(/^book::\s*/, '');
-        finalDisplayText = formatBookWikilinkDisplayText(bookContent);
+        finalDisplayText = formatBookWikilinkDisplayTextForGUI(bookContent);
       }
       
       // Escape HTML in display text
@@ -834,7 +834,7 @@
       // If this is a book:: wikilink, format the display text nicely
       if (identifier.startsWith('book::')) {
         const bookContent = identifier.replace(/^book::\s*/, '');
-        displayText = formatBookWikilinkDisplayText(bookContent);
+        displayText = formatBookWikilinkDisplayTextForGUI(bookContent);
         // Escape HTML in the formatted display text
         displayText = displayText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       } else {

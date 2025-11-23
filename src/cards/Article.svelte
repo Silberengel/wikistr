@@ -5,7 +5,7 @@
   import { loadRelayList } from '@nostr/gadgets/lists';
   import { relayService } from '$lib/relayService';
   import { bareNostrUser, type NostrUser } from '@nostr/gadgets/metadata';
-  import { naddrEncode } from '@nostr/tools/nip19';
+  import { naddrEncode, neventEncode } from '@nostr/tools/nip19';
   import { normalizeIdentifier } from '@nostr/tools/nip54';
 
   import { account, reactionKind, wikiKind, signer } from '$lib/nostr';
@@ -70,6 +70,9 @@
   let showPdfStyleMenu = $state(false);
   let showEpubStyleMenu = $state(false);
   let isDownloading = $state(false);
+  let showLevelHigherMenu = $state(false);
+  let parentEvents = $state<NostrEvent[]>([]);
+  let isLoadingParents = $state(false);
 
   const articleCard = card as ArticleCard;
   const dTag = articleCard.data[0];
@@ -175,13 +178,14 @@
   }
 
   function shareCopy() {
+    const naddr = naddrEncode({
+      kind: wikiKind,
+      identifier: dTag,
+      pubkey,
+      relays: seenOn
+    });
     navigator.clipboard.writeText(
-      `https://njump.me/${naddrEncode({
-        kind: wikiKind,
-        identifier: dTag,
-        pubkey,
-        relays: seenOn
-      })}`
+      `https://next-alexandria.gitcitadel.eu/publication/naddr/${naddr}`
     );
     copied = true;
     setTimeout(() => {
@@ -192,10 +196,8 @@
   async function copyNevent() {
     if (event) {
       try {
-        const nevent = naddrEncode({
-          kind: wikiKind,
-          identifier: dTag,
-          pubkey,
+        const nevent = neventEncode({
+          id: event.id,
           relays: seenOn
         });
         
@@ -225,6 +227,46 @@
       }
     }
   }
+
+  // Find parent 30040 events that contain this event
+  async function loadParentEvents() {
+    if (!event || (event.kind !== 30040 && event.kind !== 30041)) {
+      return;
+    }
+
+    isLoadingParents = true;
+    try {
+      // Query for 30040 events that have this event's ID in their 'e' tags
+      const result = await relayService.queryEvents(
+        $account?.pubkey || 'anonymous',
+        'wiki-read',
+        [
+          {
+            kinds: [30040],
+            '#e': [event.id]
+          }
+        ],
+        {
+          excludeUserContent: false,
+          currentUserPubkey: $account?.pubkey
+        }
+      );
+
+      parentEvents = result.events;
+    } catch (error) {
+      console.error('Failed to load parent events:', error);
+      parentEvents = [];
+    } finally {
+      isLoadingParents = false;
+    }
+  }
+
+  // Load parent events when event is loaded and it's a 30040/30041
+  $effect(() => {
+    if (event && (event.kind === 30040 || event.kind === 30041)) {
+      loadParentEvents();
+    }
+  });
 
   function seeOthers(ev: MouseEvent) {
     if (
@@ -1270,6 +1312,53 @@
           </a>
           &nbsp;• &nbsp;
           <a class="cursor-pointer underline transition-colors" style="color: var(--accent);" onmouseup={seeOthers}>{nOthers || ''} Versions</a>
+          {#if event && (event.kind === 30040 || event.kind === 30041)}
+            &nbsp;• &nbsp;
+            <div class="relative inline-block">
+              <button
+                onclick={() => showLevelHigherMenu = !showLevelHigherMenu}
+                disabled={isLoadingParents || parentEvents.length === 0}
+                class="cursor-pointer underline transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style="color: {isLoadingParents || parentEvents.length === 0 ? 'var(--text-secondary)' : 'var(--accent)'};"
+                title={isLoadingParents ? 'Loading...' : parentEvents.length === 0 ? 'No parent events found' : 'Show parent events'}
+              >
+                Level higher
+              </button>
+              {#if showLevelHigherMenu && parentEvents.length > 0}
+                <div
+                  class="absolute left-0 mt-2 w-64 rounded-lg shadow-lg z-50"
+                  style="background-color: var(--bg-primary); border: 1px solid var(--border);"
+                  onclick={(e) => e.stopPropagation()}
+                >
+                  <div class="py-1">
+                    <div class="px-4 py-2 text-xs font-semibold" style="color: var(--text-secondary);">
+                      Parent events ({parentEvents.length})
+                    </div>
+                    {#each parentEvents as parentEvent}
+                      <button
+                        onclick={() => {
+                          showLevelHigherMenu = false;
+                          const parentCard: ArticleCard = {
+                            id: next(),
+                            type: 'article',
+                            data: [getTagOr(parentEvent, 'd') || '', parentEvent.pubkey],
+                            back: undefined,
+                            actualEvent: parentEvent,
+                            relayHints: []
+                          };
+                          createChild(parentCard);
+                        }}
+                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        style="color: var(--text-primary);"
+                      >
+                        {parentEvent.tags.find(([k]) => k === 'title')?.[1] || getTagOr(parentEvent, 'd') || 'Untitled'}
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+            </div>
+          {/if}
           &nbsp;• &nbsp;
           {#if event}
             <button
@@ -1293,6 +1382,14 @@
             {/if}
           {/if}
     </div>
+
+    <!-- Click outside to close Level Higher menu -->
+    {#if showLevelHigherMenu}
+      <div
+        class="fixed inset-0 z-40"
+        onclick={() => showLevelHigherMenu = false}
+      ></div>
+    {/if}
 
     <!-- Content -->
     {#if view === 'raw'}

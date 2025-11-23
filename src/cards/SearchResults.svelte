@@ -67,6 +67,59 @@
       return;
     }
 
+    // Check if query is a nevent identifier
+    const trimmedQuery = query.trim();
+    if (trimmedQuery.startsWith('nevent1')) {
+      (async () => {
+        try {
+          const { decode } = await import('@nostr/tools/nip19');
+          const decoded = decode(trimmedQuery);
+          if (decoded.type === 'nevent' && decoded.data.id) {
+            // Query for the event by ID
+            const result = await relayService.queryEvents(
+              $account?.pubkey || 'anonymous',
+              'wiki-read',
+              [{ ids: [decoded.data.id] }],
+              { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+            );
+
+            if (result.events.length > 0) {
+              const foundEvent = result.events[0];
+              const articleKinds = [30023, 30817, 30041, 30040, 30818];
+              if (articleKinds.includes(foundEvent.kind)) {
+                // It's an article - create article card
+                const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+                openOrCreateArticleCard(
+                  getTagOr(foundEvent, 'd') || '',
+                  foundEvent.pubkey,
+                  foundEvent,
+                  result.relays,
+                  createChild
+                );
+                return;
+              } else {
+                // Not an article kind
+                tried = true;
+                results = [];
+                return;
+              }
+            } else {
+              // Event not found
+              tried = true;
+              results = [];
+              return;
+            }
+          }
+        } catch (error) {
+          console.error('Failed to decode nevent:', error);
+          tried = true;
+          results = [];
+          return;
+        }
+      })();
+      return;
+    }
+
     // Only perform search if we have a meaningful query
     if (query && query.trim() && query.length > 2) {
       performSearch();

@@ -88,44 +88,54 @@ export function isDiffQuery(query: string): boolean {
   return query.startsWith('diff::');
 }
 
+import { diffLines, Change } from 'diff';
+
 /**
- * Simple text diff algorithm
+ * Simple text diff algorithm using the 'diff' library
  * Compares two texts and returns changes
  */
 export function diffText(left: string, right: string): DiffChange[] {
-  const leftLines = left.split('\n');
-  const rightLines = right.split('\n');
   const changes: DiffChange[] = [];
+  const lineDiffs = diffLines(left, right);
   
-  const maxLines = Math.max(leftLines.length, rightLines.length);
+  let leftLineNum = 1;
+  let rightLineNum = 1;
   
-  for (let i = 0; i < maxLines; i++) {
-    const leftLine = leftLines[i];
-    const rightLine = rightLines[i];
+  for (const part of lineDiffs) {
+    const lines = part.value.split('\n');
+    // Remove the last empty line if the string ends with \n
+    if (lines.length > 0 && lines[lines.length - 1] === '') {
+      lines.pop();
+    }
     
-    if (leftLine === undefined) {
-      // Line added in right
-      changes.push({
-        type: 'added',
-        rightLine: i + 1,
-        rightText: rightLine
-      });
-    } else if (rightLine === undefined) {
-      // Line removed from left
-      changes.push({
-        type: 'removed',
-        leftLine: i + 1,
-        leftText: leftLine
-      });
-    } else if (leftLine !== rightLine) {
-      // Line modified
-      changes.push({
-        type: 'modified',
-        leftLine: i + 1,
-        rightLine: i + 1,
-        leftText: leftLine,
-        rightText: rightLine
-      });
+    if (part.added) {
+      // Lines added in right
+      for (const line of lines) {
+        if (line !== '') {
+          changes.push({
+            type: 'added',
+            rightLine: rightLineNum,
+            rightText: line
+          });
+        }
+        rightLineNum++;
+      }
+    } else if (part.removed) {
+      // Lines removed from left
+      for (const line of lines) {
+        if (line !== '') {
+          changes.push({
+            type: 'removed',
+            leftLine: leftLineNum,
+            leftText: line
+          });
+        }
+        leftLineNum++;
+      }
+    } else {
+      // Unchanged lines - just advance line numbers
+      leftLineNum += lines.length;
+      rightLineNum += lines.length;
     }
   }
   

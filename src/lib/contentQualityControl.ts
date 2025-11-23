@@ -562,6 +562,214 @@ export function fixLinkAndMediaFormatting(content: string, isAsciiDoc: boolean):
  * Format book wikilink display text for GUI rendering
  * This is the same formatting used in downloads, extracted for reuse
  */
+/**
+ * Format book wikilink display text for GUI rendering (uses quotes instead of italics)
+ * This is used in the web UI where links are already styled, so quotes are more appropriate
+ */
+export function formatBookWikilinkDisplayTextForGUI(bookContent: string): string {
+  try {
+    const parsed = parseBookWikilink(`[[book::${bookContent}]]`);
+    
+    if (!parsed?.references?.length) {
+      // Fallback: make it human-readable
+      return bookContent
+        .split(' | ')
+        .map((part: string, index: number) => {
+          if (index === 0 && part.includes('::')) {
+            return ''; // Skip collection part
+          }
+          return part
+            .replace(/[-_]/g, ' ')
+            .split(' ')
+            .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join(' ');
+        })
+        .filter(Boolean)
+        .join(' | ');
+    }
+    
+    // Check if this is a Bible collection for special formatting
+    const isBible = parsed.references.some(ref => 
+      ref.collection && ref.collection.toLowerCase() === 'bible'
+    );
+    
+    if (isBible) {
+      // Special Bible citation format: "[Version/Collection]", Title Chapter:Section, Title Chapter:Section, ...
+      // Get version from first reference (all should have same version)
+      const firstRef = parsed.references[0];
+      let bibleName = '';
+      
+      if (firstRef.version && firstRef.version.length > 0) {
+        // Format version in title case
+        let versionText = firstRef.version
+          .map((v: string) => {
+            // Handle common Bible version abbreviations
+            const versionMap: Record<string, string> = {
+              'kjv': 'King James Version',
+              'niv': 'New International Version',
+              'esv': 'English Standard Version',
+              'nasb': 'New American Standard Bible',
+              'nlt': 'New Living Translation',
+              'amp': 'Amplified',
+              'nrsv': 'New Revised Standard Version',
+              'rsv': 'Revised Standard Version',
+              'drb': 'Douay-Rheims',
+              'dra': 'Douay-Rheims (Ammerican)',
+            };
+            
+            const normalized = v.toLowerCase().trim();
+            if (versionMap[normalized]) {
+              return versionMap[normalized];
+            }
+            
+            // Otherwise, humanize normally
+            return v.replace(/[-_]/g, ' ')
+              .split(' ')
+              .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+              .join(' ');
+          })
+          .join(' ');
+        
+        // Check if "bible" is already in the version name (case-insensitive)
+        const hasBible = /\bbible\b/i.test(versionText);
+        const baseName = hasBible ? versionText : `${versionText} Bible`;
+        
+        // Add "The" at the beginning if not already present
+        bibleName = /^the\s+/i.test(baseName) ? baseName : `The ${baseName}`;
+      } else {
+        // No version, use default
+        bibleName = 'The Holy Bible';
+      }
+      
+      // Format all references: Title Chapter:Section, Title Chapter:Section, ...
+      const referenceParts = parsed.references.map((ref: ParsedBookReference) => {
+        const titlePart = ref.title 
+          ? ref.title
+              .replace(/[-_]/g, ' ')
+              .split(' ')
+              .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+              .join(' ')
+          : '';
+        
+        let display = titlePart || '';
+        if (ref.chapter) {
+          display = display ? `${display} ${ref.chapter}` : ref.chapter;
+        }
+        
+        if (ref.section && ref.section.length > 0) {
+          const sectionText = formatSections(ref.section);
+          display += `${display && !display.endsWith(':') ? ':' : ''}${sectionText}`;
+        }
+        
+        return display;
+      });
+      
+      // Return Bible format: "Bible Name", Title Chapter:Section, Title Chapter:Section, ...
+      return `"${bibleName}", ${referenceParts.join(', ')}`;
+    }
+    
+    // Regular book format: "Title" Ch. X:Y, from the [Version] edition of the "[Collection]"
+    // Format each reference nicely
+    const formatted = parsed.references.map((ref: ParsedBookReference) => {
+      // Humanize title (replace hyphens/underscores, title case)
+      const titlePart = ref.title 
+        ? ref.title
+            .replace(/[-_]/g, ' ')
+            .split(' ')
+            .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+            .join(' ')
+        : '';
+      
+      // Format title with quotes (for GUI)
+      let display = titlePart ? `"${titlePart}"` : '';
+      if (ref.chapter) {
+        // Humanize chapter: replace hyphens/underscores with spaces, title case
+        const chapterText = ref.chapter
+          .replace(/[-_]/g, ' ')
+          .split(' ')
+          .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join(' ');
+        
+        // If chapter starts with "chapter" or is just a number, format as "Ch. X"
+        // Otherwise, use the humanized text as-is
+        let formattedChapter: string;
+        if (/^chapter\s+\d+/i.test(chapterText)) {
+          // Already has "chapter" prefix, format as "Ch. X"
+          formattedChapter = chapterText.replace(/^chapter\s+(\d+)/i, 'Ch. $1');
+        } else if (/^\d+$/.test(ref.chapter)) {
+          // Just a number, add "Ch." prefix
+          formattedChapter = `Ch. ${ref.chapter}`;
+        } else {
+          // Has other text, use humanized version
+          formattedChapter = chapterText;
+        }
+        
+        display = display ? `${display}, ${formattedChapter}` : formattedChapter;
+      }
+      
+      if (ref.section && ref.section.length > 0) {
+        // Use formatSections to collapse ranges (e.g., [3, 4, 5, 6] -> "3-6")
+        // This preserves ranges in compact format when publishing
+        const sectionText = formatSections(ref.section);
+        display += `${display && !display.endsWith(':') ? ':' : ''}${sectionText}`;
+      }
+      
+      // Format collection and version at the end: ", from the [Version] edition of the "[Collection]""
+      const parts: string[] = [];
+      
+      // Format version in title case
+      if (ref.version && ref.version.length > 0) {
+        const versionText = ref.version
+          .map((v: string) => 
+            v.replace(/[-_]/g, ' ')
+             .split(' ')
+             .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+             .join(' ')
+          )
+          .join(' ');
+        parts.push(versionText);
+      }
+      
+      // Format collection in title case with quotes (for GUI)
+      if (ref.collection) {
+        const collectionText = ref.collection
+          .replace(/[-_]/g, ' ')
+          .split(' ')
+          .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join(' ');
+        parts.push(`"${collectionText}"`);
+      }
+      
+      // Build the suffix
+      if (parts.length > 0) {
+        let suffix = '';
+        if (ref.version && ref.version.length > 0 && ref.collection) {
+          // Both version and collection: "from the [Version] edition of the "[Collection]""
+          suffix = `, from the ${parts[0]} edition of the ${parts[1]}`;
+        } else if (ref.version && ref.version.length > 0) {
+          // Only version: "from the [Version] edition"
+          suffix = `, from the ${parts[0]} edition`;
+        } else if (ref.collection) {
+          // Only collection: "from the "[Collection]""
+          suffix = `, from the ${parts[0]}`;
+        }
+        display += suffix;
+      }
+      
+      return display || 'Book reference';
+    });
+    
+    return formatted.join(', ');
+  } catch (e) {
+    // Fallback on error
+    return bookContent;
+  }
+}
+
+/**
+ * Format book wikilink display text for downloads (uses italics for PDF/EPUB)
+ * This is used in downloaded documents where italics are appropriate
+ */
 export function formatBookWikilinkDisplayText(bookContent: string): string {
   try {
     const parsed = parseBookWikilink(`[[book::${bookContent}]]`);

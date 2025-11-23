@@ -11,9 +11,7 @@ import { openBookSearchCard } from '$lib/bookSearchLauncher';
 import ModeToggle from '$components/ModeToggle.svelte';
 import ProfilePopup from '$components/ProfilePopup.svelte';
 import UserBadge from '$components/UserBadge.svelte';
-  import { nip19 } from '@nostr/tools';
-  import BookConfigList from '$components/BookConfigList.svelte';
-  import BookConfigForm from '$components/BookConfigForm.svelte';
+  import { nip19, decode } from '@nostr/tools/nip19';
   import pkg from '../../package.json';
 
   // Theme configuration
@@ -26,8 +24,6 @@ import UserBadge from '$components/UserBadge.svelte';
 
   let { replaceNewCard }: Props = $props();
   let query = $state('');
-  let showBookConfigList = $state(false);
-  let showBookConfigForm = $state(false);
   let showSettings = $state(false);
   let showProfilePopup = $state(false);
   
@@ -43,6 +39,56 @@ import UserBadge from '$components/UserBadge.svelte';
       if (query.startsWith('book::')) {
         openBookSearchCard(query);
       } else {
+        // Check if this is a naddr or nevent identifier
+        const trimmedQuery = query.trim();
+        if (trimmedQuery.startsWith('naddr1') || trimmedQuery.startsWith('nevent1')) {
+          // Try to decode the identifier
+          try {
+            const decoded = decode(trimmedQuery);
+            if (decoded.type === 'naddr' || decoded.type === 'nevent') {
+              // Check if it's an article kind
+              const articleKinds = [30023, 30817, 30041, 30040, 30818];
+              if (decoded.type === 'naddr' && decoded.data.kind && articleKinds.includes(decoded.data.kind)) {
+                // It's an article - create an article card
+                const articleCard: ArticleCard = {
+                  id: next(),
+                  type: 'article',
+                  data: [decoded.data.identifier || '', decoded.data.pubkey || ''],
+                  back: undefined,
+                  actualEvent: undefined,
+                  relayHints: decoded.data.relays || []
+                };
+                replaceNewCard(articleCard);
+                query = '';
+                return;
+              } else if (decoded.type === 'nevent' && decoded.data.id) {
+                // For nevent, we need to fetch the event to determine its kind
+                // For now, create a search card that will handle it
+                const newCard: SearchCard = {
+                  id: next(),
+                  type: 'find',
+                  data: decoded.data.id,
+                  preferredAuthors: []
+                };
+                replaceNewCard(newCard);
+                query = '';
+                return;
+              } else {
+                // Not an article kind or couldn't determine
+                alert(`This ${decoded.type} is not an article kind (30023, 30817, 30041, 30040, or 30818). Found kind: ${decoded.type === 'naddr' ? decoded.data.kind : 'unknown'}`);
+                query = '';
+                return;
+              }
+            }
+          } catch (error) {
+            // Invalid naddr/nevent format
+            alert('Invalid naddr or nevent identifier. Could not decode.');
+            query = '';
+            return;
+          }
+        }
+        
+        // Regular search
         const newCard: SearchCard = {
           id: next(),
           type: 'find',
@@ -395,17 +441,6 @@ import UserBadge from '$components/UserBadge.svelte';
 </div>
 {/if}
 
-<!-- Book Configuration Button -->
-<div class="mt-3">
-  <button
-    onclick={openBookConfigList}
-    class="text-sm px-3 py-1 rounded transition-colors"
-    style="background-color: var(--bg-primary); color: var(--accent); border: 1px solid var(--accent);"
-    title="View existing book configurations"
-  >
-    View Configs
-  </button>
-</div>
 
 <!-- Profile Popup -->
 {#if showProfilePopup}
