@@ -184,39 +184,31 @@ function handleRequest(req, res) {
       JSON.stringify({
         name: 'wikistr-og-proxy',
         status: 'ok',
-        targetPath: '/sites/{encoded-url}',
+        usage: '/sites/?url=https://example.com',
         port: PORT
       })
     );
     return;
   }
 
-  const prefix = '/sites/';
+  const prefix = '/sites';
   if (!path.startsWith(prefix)) {
     res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ error: 'Only /sites/{encoded-url} is supported' }));
+    res.end(JSON.stringify({ error: 'Only /sites/?url=... is supported' }));
     return;
   }
 
-  const encoded = path.slice(prefix.length);
-  if (!encoded) {
+  // Get URL from query parameter
+  const urlParam = requestUrl.searchParams.get('url');
+  if (!urlParam) {
     res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ error: 'Missing encoded URL' }));
-    return;
-  }
-
-  let decoded;
-  try {
-    decoded = decodeURIComponent(encoded);
-  } catch {
-    res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ error: 'Invalid encoded URL' }));
+    res.end(JSON.stringify({ error: 'Missing url query parameter. Use /sites/?url=https://example.com' }));
     return;
   }
 
   let targetUrl;
   try {
-    const parsed = new URL(decoded);
+    const parsed = new URL(urlParam);
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       throw new Error('Unsupported protocol');
     }
@@ -238,8 +230,8 @@ function handleRequest(req, res) {
 
 const server = http.createServer(handleRequest);
 
-server.listen(PORT, () => {
-  console.log(`Proxy server listening on http://localhost:${PORT}/sites/{encoded-url}`);
+server.listen(PORT, '127.0.0.1', () => {
+  console.log(`Proxy server listening on http://localhost:${PORT}/sites/?url=...`);
 });
 
 server.on('error', (err) => {

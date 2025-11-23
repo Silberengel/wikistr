@@ -11,7 +11,7 @@ require 'fileutils'
 require 'zip'
 
 set :port, ENV.fetch('ASCIIDOCTOR_PORT', 8091).to_i
-set :bind, '0.0.0.0'
+set :bind, '127.0.0.1'
 set :server, 'puma'
 
 # CORS configuration

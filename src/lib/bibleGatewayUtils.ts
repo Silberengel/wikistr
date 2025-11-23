@@ -23,15 +23,18 @@ function capitalizeWords(text: string): string {
 }
 
 function buildProxyUrl(target: string): string {
+  // Use query parameter instead of encoding in path
+  const encoded = encodeURIComponent(target);
+  
   // If OG_PROXY_URL is a full URL, use it directly
   if (OG_PROXY_URL.startsWith('http://') || OG_PROXY_URL.startsWith('https://')) {
     const sanitizedProxy = OG_PROXY_URL.replace(/\/$/, '');
-    return `${sanitizedProxy}/${encodeURIComponent(target)}`;
+    return `${sanitizedProxy}?url=${encoded}`;
   }
   
-  // Otherwise, treat it as a relative path - ensure trailing slash
-  const sanitizedProxy = OG_PROXY_URL.endsWith('/') ? OG_PROXY_URL : `${OG_PROXY_URL}/`;
-  return `${sanitizedProxy}${encodeURIComponent(target)}`;
+  // Otherwise, treat it as a relative path - remove trailing slash for query param usage
+  const basePath = OG_PROXY_URL.replace(/\/$/, '') || '/sites';
+  return `${basePath}?url=${encoded}`;
 }
 
 /**

@@ -16,18 +16,18 @@ export interface OGMetadata {
  * Build proxy URL for OG fetching
  */
 function buildProxyUrl(url: string): string {
-  // Encode the URL for the proxy
+  // Use query parameter instead of encoding in path
   const encoded = encodeURIComponent(url);
   
   // If OG_PROXY_URL is a full URL, use it directly
   if (OG_PROXY_URL.startsWith('http://') || OG_PROXY_URL.startsWith('https://')) {
     const sanitizedProxy = OG_PROXY_URL.replace(/\/$/, '');
-    return `${sanitizedProxy}/${encoded}`;
+    return `${sanitizedProxy}?url=${encoded}`;
   }
   
-  // Otherwise, treat as relative path
-  const sanitizedProxy = OG_PROXY_URL.endsWith('/') ? OG_PROXY_URL : `${OG_PROXY_URL}/`;
-  return `${sanitizedProxy}${encoded}`;
+  // Otherwise, treat as relative path - remove trailing slash for query param usage
+  const basePath = OG_PROXY_URL.replace(/\/$/, '') || '/sites';
+  return `${basePath}?url=${encoded}`;
 }
 
 /**

@@ -48,7 +48,7 @@ services:
     ports:
       - "8090:8090"
     environment:
-      PROXY_ALLOW_ORIGIN: https://*.imwald.eu
+      PROXY_ALLOW_ORIGIN: http://localhost:*
     dns:
       - 8.8.8.8
       - 8.8.4.4
@@ -70,7 +70,7 @@ services:
       - "8091:8091"
     environment:
       ASCIIDOCTOR_PORT: 8091
-      ASCIIDOCTOR_ALLOW_ORIGIN: https://*.imwald.eu
+      ASCIIDOCTOR_ALLOW_ORIGIN: http://localhost:*
     restart: unless-stopped
 
 networks:

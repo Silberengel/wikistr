@@ -14,7 +14,7 @@ const config: UserConfig = {
       '/sites': {
         target: 'http://localhost:8090',
         changeOrigin: true,
-        rewrite: (path) => path // Keep /sites/ prefix - server expects /sites/{encoded-url}
+        rewrite: (path) => path // Keep path as-is - server expects /sites?url=...
       },
       '/asciidoctor': {
         target: 'http://localhost:8091',
