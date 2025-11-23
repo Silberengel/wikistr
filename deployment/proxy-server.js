@@ -230,8 +230,8 @@ function handleRequest(req, res) {
 
 const server = http.createServer(handleRequest);
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Proxy server listening on http://localhost:${PORT}/sites/?url=...`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Proxy server listening on http://0.0.0.0:${PORT}/sites/?url=...`);
 });
 
 server.on('error', (err) => {

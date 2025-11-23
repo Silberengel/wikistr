@@ -1,0 +1,41 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install curl for health checks
+RUN apk add --no-cache curl
+
+# Copy proxy server script
+COPY deployment/proxy-server.js ./deployment/
+
+# Make the script executable
+RUN chmod +x /app/deployment/proxy-server.js
+
+# Expose port
+EXPOSE 8090
+
+# Set environment variables
+ENV PROXY_PORT=8090
+ENV PROXY_ALLOW_ORIGIN=*
+ENV PROXY_TIMEOUT_MS=30000
+ENV PROXY_MAX_BODY_BYTES=5242880
+
+# Verify Node.js installation and that the script can be parsed
+RUN node --version && \
+    node --check /app/deployment/proxy-server.js && \
+    echo "Node.js and proxy-server.js verified successfully"
+
+# Create a startup script in /app (not in deployment/) so it won't be overwritten by volume mounts
+RUN printf '#!/bin/sh\n\
+set -e\n\
+echo "=== OG Proxy Server Startup ==="\n\
+echo "Verifying Node.js installation..."\n\
+node --version || { echo "ERROR: Node.js not found"; exit 1; }\n\
+echo "Verifying proxy-server.js syntax..."\n\
+node --check /app/deployment/proxy-server.js || { echo "ERROR: proxy-server.js syntax error"; exit 1; }\n\
+echo "All dependencies verified. Starting proxy server..."\n\
+exec node /app/deployment/proxy-server.js\n' > /app/start.sh && chmod +x /app/start.sh
+
+# Use the startup script that verifies dependencies
+CMD ["/app/start.sh"]
+

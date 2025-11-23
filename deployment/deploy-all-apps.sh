@@ -13,7 +13,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-VERSION="v4.2"
+VERSION="v5.0.0"
 
 echo -e "${GREEN}🚀 Deploying all Wikistr applications version ${VERSION}${NC}"
 echo
@@ -92,31 +92,46 @@ if docker ps --format '{{.Names}}\t{{.Ports}}' | grep -q ":8090->"; then
     fi
 fi
 
+# Check if image exists, if not build it
+if ! docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "silberengel/wikistr:latest-og-proxy"; then
+    echo -e "    Building og-proxy image..."
+    docker build -f "${PARENT_DIR}/deployment/Dockerfile.og-proxy" -t silberengel/wikistr:latest-og-proxy "${PARENT_DIR}"
+fi
+
 docker run -d \
   --name og-proxy \
   --network ${NETWORK_NAME} \
-  -p 8090:8090 \
-  -v "${PARENT_DIR}:/app:ro" \
-  -w /app \
+  -p 127.0.0.1:8090:8090 \
+  -v "${PARENT_DIR}/deployment/proxy-server.js:/app/deployment/proxy-server.js:ro" \
+  -w /app/deployment \
+  -e PROXY_PORT=8090 \
   -e PROXY_ALLOW_ORIGIN="*" \
   -e PROXY_TIMEOUT_MS=30000 \
-  node:20-alpine \
-  node deployment/proxy-server.js
+  --dns 8.8.8.8 \
+  --dns 8.8.4.4 \
+  --dns 1.1.1.1 \
+  silberengel/wikistr:latest-og-proxy
 echo -e "  ${GREEN}✓${NC} og-proxy running on http://localhost:8090"
 
-# AsciiDoctor Server on port 8091
+# AsciiDoctor Server on port 8091 (mapped from container port 4567)
 echo -e "  Deploying asciidoctor on port 8091..."
 # Check if image exists, if not build it
 if ! docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "silberengel/wikistr:latest-asciidoctor"; then
     echo -e "    Building asciidoctor image..."
     docker build -f "${PARENT_DIR}/deployment/Dockerfile.asciidoctor" -t silberengel/wikistr:latest-asciidoctor "${PARENT_DIR}"
 fi
+# AsciiDoctor: Don't mount the deployment directory to avoid read-only filesystem issues
+# Mount only the server script for easy updates without rebuild
+# Gems are installed in vendor/bundle in the image, so Gemfile.lock won't be accessed
 docker run -d \
   --name asciidoctor \
   --network ${NETWORK_NAME} \
-  -p 8091:8091 \
+  -p 127.0.0.1:8091:8091 \
+  -v "${PARENT_DIR}/deployment/asciidoctor-server.rb:/app/deployment/asciidoctor-server.rb:ro" \
+  -w /app/deployment \
   -e ASCIIDOCTOR_PORT=8091 \
   -e ASCIIDOCTOR_ALLOW_ORIGIN="*" \
+  -e BUNDLE_PATH=/app/deployment/vendor/bundle \
   silberengel/wikistr:latest-asciidoctor
 echo -e "  ${GREEN}✓${NC} asciidoctor running on http://localhost:8091"
 

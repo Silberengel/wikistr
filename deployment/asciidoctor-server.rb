@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 require 'sinatra'
 require 'puma'
+require 'rack'
 require 'asciidoctor'
 require 'asciidoctor-pdf'
 require 'asciidoctor-epub3'
@@ -10,13 +11,24 @@ require 'tempfile'
 require 'fileutils'
 require 'zip'
 
+# Set port and bind - use environment variable or default to 8091
 set :port, ENV.fetch('ASCIIDOCTOR_PORT', 8091).to_i
-set :bind, '127.0.0.1'
+set :bind, '0.0.0.0'  # Bind to all interfaces so it can be accessed from Docker network
 set :server, 'puma'
+set :protection, false  # Disable CSRF protection for API (not needed for REST API)
 
 # Increase request body size limit to support large documents (e.g., full Bible ~4MB)
 # Default Rack limit is 1MB, we increase to 50MB to handle very large books
 Rack::Utils.key_space_limit = 50 * 1024 * 1024 # 50MB
+
+# Configure Puma to handle larger requests
+configure do
+  # Puma will handle request body size limits
+  # For very large documents (50MB+), Puma's default settings should handle it
+  set :server_settings, 
+    max_threads: 5, 
+    min_threads: 2
+end
 
 # CORS configuration
 before do
@@ -657,4 +669,3 @@ post '/convert/latex' do
     { error: 'Conversion failed', message: e.message }.to_json
   end
 end
-

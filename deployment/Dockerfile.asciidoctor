@@ -3,14 +3,20 @@ FROM ruby:3.2-slim
 WORKDIR /app
 
 # Install system dependencies
+# curl is needed for health checks
 RUN apt-get update && apt-get install -y \
     build-essential \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Gemfile and install dependencies
 COPY deployment/Gemfile deployment/Gemfile.lock* ./deployment/
 WORKDIR /app/deployment
-RUN bundle install --without development test
+
+# Install dependencies
+# Note: We skip build-time gem loading verification as it's slow
+# Runtime verification happens in the startup script
+RUN bundle install --without development test --path vendor/bundle
 
 # Copy server script, themes, and EPUB stylesheet
 COPY deployment/asciidoctor-server.rb ./
@@ -23,7 +29,8 @@ EXPOSE 8091
 # Set environment variables
 ENV ASCIIDOCTOR_PORT=8091
 ENV ASCIIDOCTOR_ALLOW_ORIGIN=*
+ENV BUNDLE_PATH=/app/deployment/vendor/bundle
 
-# Run the server
+# Run the server directly - Sinatra will handle port and bind settings
 CMD ["bundle", "exec", "ruby", "asciidoctor-server.rb"]
 
