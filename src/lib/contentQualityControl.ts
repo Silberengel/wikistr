@@ -3,6 +3,10 @@
  * Provides functions to ensure content quality for Markdown and AsciiDoc formats
  */
 
+import { parseBookWikilink } from './bookWikilinkParser';
+import type { ParsedBookReference } from './bookWikilinkParser';
+import { formatSections } from './utils';
+
 /**
  * Fix missing spaces after hash/equals signs in headers
  * Handles cases like "##Chapter 2" -> "## Chapter 2"
@@ -541,6 +545,631 @@ export function fixLinkAndMediaFormatting(content: string, isAsciiDoc: boolean):
 }
 
 /**
+ * Format book wikilink display text for GUI rendering
+ * This is the same formatting used in downloads, extracted for reuse
+ */
+export function formatBookWikilinkDisplayText(bookContent: string): string {
+  try {
+    const parsed = parseBookWikilink(`[[book::${bookContent}]]`);
+    
+    if (!parsed?.references?.length) {
+      // Fallback: make it human-readable
+      return bookContent
+        .split(' | ')
+        .map((part: string, index: number) => {
+          if (index === 0 && part.includes('::')) {
+            return ''; // Skip collection part
+          }
+          return part
+            .replace(/[-_]/g, ' ')
+            .split(' ')
+            .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join(' ');
+        })
+        .filter(Boolean)
+        .join(' | ');
+    }
+    
+    // Check if this is a Bible collection for special formatting
+    const isBible = parsed.references.some(ref => 
+      ref.collection && ref.collection.toLowerCase() === 'bible'
+    );
+    
+    if (isBible) {
+      // Special Bible citation format: _[Version/Collection]_, Title Chapter:Section, Title Chapter:Section, ...
+      // Get version from first reference (all should have same version)
+      const firstRef = parsed.references[0];
+      let bibleName = '';
+      
+      if (firstRef.version && firstRef.version.length > 0) {
+        // Format version in title case
+        let versionText = firstRef.version
+          .map((v: string) => {
+            // Handle common Bible version abbreviations
+            const versionMap: Record<string, string> = {
+              'kjv': 'King James Version',
+              'niv': 'New International Version',
+              'esv': 'English Standard Version',
+              'nasb': 'New American Standard Bible',
+              'nlt': 'New Living Translation',
+              'amp': 'Amplified',
+              'nrsv': 'New Revised Standard Version',
+              'rsv': 'Revised Standard Version',
+              'drb': 'Douay-Rheims',
+              'dra': 'Douay-Rheims (Ammerican)',
+            };
+            
+            const normalized = v.toLowerCase().trim();
+            if (versionMap[normalized]) {
+              return versionMap[normalized];
+            }
+            
+            // Otherwise, humanize normally
+            return v.replace(/[-_]/g, ' ')
+              .split(' ')
+              .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+              .join(' ');
+          })
+          .join(' ');
+        
+        // Check if "bible" is already in the version name (case-insensitive)
+        const hasBible = /\bbible\b/i.test(versionText);
+        const baseName = hasBible ? versionText : `${versionText} Bible`;
+        
+        // Add "The" at the beginning if not already present
+        bibleName = /^the\s+/i.test(baseName) ? baseName : `The ${baseName}`;
+      } else {
+        // No version, use default
+        bibleName = 'The Holy Bible';
+      }
+      
+      // Format all references: Title Chapter:Section, Title Chapter:Section, ...
+      const referenceParts = parsed.references.map((ref: ParsedBookReference) => {
+        const titlePart = ref.title 
+          ? ref.title
+              .replace(/[-_]/g, ' ')
+              .split(' ')
+              .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+              .join(' ')
+          : '';
+        
+        let display = titlePart || '';
+        if (ref.chapter) {
+          display = display ? `${display} ${ref.chapter}` : ref.chapter;
+        }
+        
+        if (ref.section && ref.section.length > 0) {
+          const sectionText = formatSections(ref.section);
+          display += `${display && !display.endsWith(':') ? ':' : ''}${sectionText}`;
+        }
+        
+        return display;
+      });
+      
+      // Return Bible format: _Bible Name_, Title Chapter:Section, Title Chapter:Section, ...
+      return `_${bibleName}_, ${referenceParts.join(', ')}`;
+    }
+    
+    // Regular book format: _Title_ Ch. X:Y, from the [Version] edition of the _[Collection]_
+    // Format each reference nicely
+    const formatted = parsed.references.map((ref: ParsedBookReference) => {
+      // Humanize title (replace hyphens/underscores, title case)
+      const titlePart = ref.title 
+        ? ref.title
+            .replace(/[-_]/g, ' ')
+            .split(' ')
+            .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+            .join(' ')
+        : '';
+      
+      // Format title with italics
+      let display = titlePart ? `_${titlePart}_` : '';
+      if (ref.chapter) {
+        // Humanize chapter: replace hyphens/underscores with spaces, title case
+        const chapterText = ref.chapter
+          .replace(/[-_]/g, ' ')
+          .split(' ')
+          .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join(' ');
+        
+        // If chapter starts with "chapter" or is just a number, format as "Ch. X"
+        // Otherwise, use the humanized text as-is
+        let formattedChapter: string;
+        if (/^chapter\s+\d+/i.test(chapterText)) {
+          // Already has "chapter" prefix, format as "Ch. X"
+          formattedChapter = chapterText.replace(/^chapter\s+(\d+)/i, 'Ch. $1');
+        } else if (/^\d+$/.test(ref.chapter)) {
+          // Just a number, add "Ch." prefix
+          formattedChapter = `Ch. ${ref.chapter}`;
+        } else {
+          // Has other text, use humanized version
+          formattedChapter = chapterText;
+        }
+        
+        display = display ? `${display}, ${formattedChapter}` : formattedChapter;
+      }
+      
+      if (ref.section && ref.section.length > 0) {
+        // Use formatSections to collapse ranges (e.g., [3, 4, 5, 6] -> "3-6")
+        // This preserves ranges in compact format when publishing
+        const sectionText = formatSections(ref.section);
+        display += `${display && !display.endsWith(':') ? ':' : ''}${sectionText}`;
+      }
+      
+      // Format collection and version at the end: ", from the [Version] edition of the _[Collection]_"
+      const parts: string[] = [];
+      
+      // Format version in title case
+      if (ref.version && ref.version.length > 0) {
+        const versionText = ref.version
+          .map((v: string) => 
+            v.replace(/[-_]/g, ' ')
+             .split(' ')
+             .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+             .join(' ')
+          )
+          .join(' ');
+        parts.push(versionText);
+      }
+      
+      // Format collection in title case with italics
+      if (ref.collection) {
+        const collectionText = ref.collection
+          .replace(/[-_]/g, ' ')
+          .split(' ')
+          .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join(' ');
+        parts.push(`_${collectionText}_`);
+      }
+      
+      // Build the suffix
+      if (parts.length > 0) {
+        let suffix = '';
+        if (ref.version && ref.version.length > 0 && ref.collection) {
+          // Both version and collection: "from the [Version] edition of the _[Collection]_"
+          suffix = `, from the ${parts[0]} edition of the ${parts[1]}`;
+        } else if (ref.version && ref.version.length > 0) {
+          // Only version: "from the [Version] edition"
+          suffix = `, from the ${parts[0]} edition`;
+        } else if (ref.collection) {
+          // Only collection: "from the _[Collection]_"
+          suffix = `, from the ${parts[0]}`;
+        }
+        display += suffix;
+      }
+      
+      return display || 'Book reference';
+    });
+    
+    return formatted.join(', ');
+  } catch (e) {
+    // Fallback on error
+    return bookContent;
+  }
+}
+
+/**
+ * Process wikilinks to ensure proper formatting
+ * Handles both [[wikilink]] and [[book::...]] formats
+ * Note: This is a synchronous function, so book wikilink formatting will use a simple approach
+ */
+export function processWikilinks(content: string, isAsciiDoc: boolean): string {
+  if (!content || content.trim().length === 0) return content;
+  
+  let processed = content;
+  
+  // Helper to format book wikilink display text (synchronous version)
+  // This creates human-readable, title-case display text
+  function formatBookDisplayText(bookContent: string): string {
+    try {
+      const parsed = parseBookWikilink(`[[book::${bookContent}]]`);
+      
+      if (!parsed?.references?.length) {
+        // Fallback: make it human-readable
+        return bookContent
+          .split(' | ')
+          .map((part: string, index: number) => {
+            if (index === 0 && part.includes('::')) {
+              return ''; // Skip collection part
+            }
+            return part
+              .replace(/[-_]/g, ' ')
+              .split(' ')
+              .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+              .join(' ');
+          })
+          .filter(Boolean)
+          .join(' | ');
+      }
+      
+      // Check if this is a Bible collection for special formatting
+      const isBible = parsed.references.some(ref => 
+        ref.collection && ref.collection.toLowerCase() === 'bible'
+      );
+      
+      if (isBible) {
+        // Special Bible citation format: _[Version/Collection]_, Title Chapter:Section, Title Chapter:Section, ...
+        // Get version from first reference (all should have same version)
+        const firstRef = parsed.references[0];
+        let bibleName = '';
+        
+        if (firstRef.version && firstRef.version.length > 0) {
+          // Format version in title case
+          let versionText = firstRef.version
+            .map((v: string) => {
+              // Handle common Bible version abbreviations
+              const versionMap: Record<string, string> = {
+                'kjv': 'King James Version',
+                'niv': 'New International Version',
+                'esv': 'English Standard Version',
+                'nasb': 'New American Standard Bible',
+                'nlt': 'New Living Translation',
+                'amp': 'Amplified',
+                'nrsv': 'New Revised Standard Version',
+                'rsv': 'Revised Standard Version',
+                'drb': 'Douay-Rheims',
+                'dra': 'Douay-Rheims (Ammerican)',
+              };
+              
+              const normalized = v.toLowerCase().trim();
+              if (versionMap[normalized]) {
+                return versionMap[normalized];
+              }
+              
+              // Otherwise, humanize normally
+              return v.replace(/[-_]/g, ' ')
+                .split(' ')
+                .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                .join(' ');
+            })
+            .join(' ');
+          
+          // Check if "bible" is already in the version name (case-insensitive)
+          const hasBible = /\bbible\b/i.test(versionText);
+          const baseName = hasBible ? versionText : `${versionText} Bible`;
+          
+          // Add "The" at the beginning if not already present
+          bibleName = /^the\s+/i.test(baseName) ? baseName : `The ${baseName}`;
+        } else {
+          // No version, use default
+          bibleName = 'The Holy Bible';
+        }
+        
+        // Format all references: Title Chapter:Section, Title Chapter:Section, ...
+        const referenceParts = parsed.references.map((ref: ParsedBookReference) => {
+          const titlePart = ref.title 
+            ? ref.title
+                .replace(/[-_]/g, ' ')
+                .split(' ')
+                .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                .join(' ')
+            : '';
+          
+          let display = titlePart || '';
+          if (ref.chapter) {
+            display = display ? `${display} ${ref.chapter}` : ref.chapter;
+          }
+          
+          if (ref.section && ref.section.length > 0) {
+            const sectionText = formatSections(ref.section);
+            display += `${display && !display.endsWith(':') ? ':' : ''}${sectionText}`;
+          }
+          
+          return display;
+        });
+        
+        // Return Bible format: _Bible Name_, Title Chapter:Section, Title Chapter:Section, ...
+        return `_${bibleName}_, ${referenceParts.join(', ')}`;
+      }
+      
+      // Format each reference nicely (non-Bible)
+      const formatted = parsed.references.map((ref: ParsedBookReference) => {
+        // Humanize title (replace hyphens/underscores, title case)
+        const titlePart = ref.title 
+          ? ref.title
+              .replace(/[-_]/g, ' ')
+              .split(' ')
+              .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+              .join(' ')
+          : '';
+        
+        // Regular book format: _Title_ Ch. X:Y, from the [Version] edition of the _[Collection]_
+        // Format title with italics (not quotation marks)
+        let display = titlePart ? `_${titlePart}_` : '';
+        if (ref.chapter) {
+          // Regular book format: "Title" Ch. X:Y, from the [Version] edition of the "[Collection]"
+          // Format title with italics (not quotation marks)
+          let display = titlePart ? `_${titlePart}_` : '';
+          if (ref.chapter) {
+            // Humanize chapter: replace hyphens/underscores with spaces, title case
+            const chapterText = ref.chapter
+              .replace(/[-_]/g, ' ')
+              .split(' ')
+              .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+              .join(' ');
+            
+            // If chapter starts with "chapter" or is just a number, format as "Ch. X"
+            // Otherwise, use the humanized text as-is
+            let formattedChapter: string;
+            if (/^chapter\s+\d+/i.test(chapterText)) {
+              // Already has "chapter" prefix, format as "Ch. X"
+              formattedChapter = chapterText.replace(/^chapter\s+(\d+)/i, 'Ch. $1');
+            } else if (/^\d+$/.test(ref.chapter)) {
+              // Just a number, add "Ch." prefix
+              formattedChapter = `Ch. ${ref.chapter}`;
+            } else {
+              // Has other text, use humanized version
+              formattedChapter = chapterText;
+            }
+            
+            display = display ? `${display}, ${formattedChapter}` : formattedChapter;
+          }
+          
+          if (ref.section && ref.section.length > 0) {
+            // Use formatSections to collapse ranges (e.g., [3, 4, 5, 6] -> "3-6")
+            // This preserves ranges in compact format when publishing
+            const sectionText = formatSections(ref.section);
+            display += `${display && !display.endsWith(':') ? ':' : ''}${sectionText}`;
+          }
+          
+          // Format collection and version at the end: ", from the [Version] edition of the _[Collection]_"
+          const parts: string[] = [];
+          
+          // Format version in title case
+          if (ref.version && ref.version.length > 0) {
+            const versionText = ref.version
+              .map((v: string) => 
+                v.replace(/[-_]/g, ' ')
+                 .split(' ')
+                 .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                 .join(' ')
+              )
+              .join(' ');
+            parts.push(versionText);
+          }
+          
+          // Format collection in title case with italics
+          if (ref.collection) {
+            const collectionText = ref.collection
+              .replace(/[-_]/g, ' ')
+              .split(' ')
+              .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+              .join(' ');
+            parts.push(`_${collectionText}_`);
+          }
+          
+          // Build the suffix
+          if (parts.length > 0) {
+            let suffix = '';
+            if (ref.version && ref.version.length > 0 && ref.collection) {
+              // Both version and collection: "from the [Version] edition of the _[Collection]_"
+              suffix = `, from the ${parts[0]} edition of the ${parts[1]}`;
+            } else if (ref.version && ref.version.length > 0) {
+              // Only version: "from the [Version] edition"
+              suffix = `, from the ${parts[0]} edition`;
+            } else if (ref.collection) {
+              // Only collection: "from the _[Collection]_"
+              suffix = `, from the ${parts[0]}`;
+            }
+            display += suffix;
+          }
+          
+          return display || 'Book reference';
+        }
+      });
+      
+      return formatted.join(', ');
+    } catch (e) {
+      // Fallback: make it human-readable
+      return bookContent
+        .split(' | ')
+        .map((part: string, index: number) => {
+          if (index === 0 && part.includes('::')) {
+            return ''; // Skip collection part
+          }
+          return part
+            .replace(/[-_]/g, ' ')
+            .split(' ')
+            .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join(' ');
+        })
+        .filter(Boolean)
+        .join(' | ');
+    }
+  }
+  
+  // Helper to format regular wikilink display text (replace hyphens with spaces)
+  function formatWikilinkDisplayText(identifier: string): string {
+    return identifier.replace(/-/g, ' ');
+  }
+  
+  // Process book wikilinks [[book::...]]
+  processed = processed.replace(/\[\[book::([^\]]+)\]\]/g, (match, bookContent) => {
+    // Format display text to be human-readable and title-case
+    const displayText = formatBookDisplayText(bookContent);
+    
+    if (isAsciiDoc) {
+      return `link:wikilink:book::${bookContent}[${displayText}]`;
+    } else {
+      return `[${displayText}](wikilink:book::${bookContent})`;
+    }
+  });
+  
+  // Process regular wikilinks [[identifier]] or [[identifier | display text]]
+  // Must come after book wikilinks to avoid conflicts
+  processed = processed.replace(/\[\[(?!book::)([^\]]+)\]\]/g, (match, content) => {
+    const pipeIndex = content.indexOf(' | ');
+    let identifier: string;
+    let displayText: string;
+    
+    if (pipeIndex !== -1) {
+      // Has explicit display text
+      identifier = content.substring(0, pipeIndex).trim();
+      displayText = content.substring(pipeIndex + 3).trim();
+    } else {
+      // No display text - use identifier with hyphens replaced by spaces
+      identifier = content.trim();
+      displayText = formatWikilinkDisplayText(identifier);
+    }
+    
+    if (isAsciiDoc) {
+      return `link:wikilink:${identifier}[${displayText}]`;
+    } else {
+      return `[${displayText}](wikilink:${identifier})`;
+    }
+  });
+  
+  return processed;
+}
+
+/**
+ * Process Nostr addresses to render them neatly
+ * - Removes "nostr:" prefix
+ * - npub/nprofile: renders as display_name (fallback chain)
+ * - note1, nevent, naddr, hex ID: renders as fallback cards
+ */
+export async function processNostrAddresses(
+  content: string,
+  isAsciiDoc: boolean,
+  getUserDisplayName?: (pubkey: string) => Promise<string>
+): Promise<string> {
+  if (!content || content.trim().length === 0) return content;
+  
+  let processed = content;
+  
+  // Import nip19 for decoding
+  const { nip19 } = await import('@nostr/tools');
+  
+  // Helper to decode bech32
+  function decodeBech32(bech32: string): { type: string; data: any } | null {
+    try {
+      const decoded = nip19.decode(bech32);
+      return decoded;
+    } catch {
+      return null;
+    }
+  }
+  
+  // Helper to get display name for npub/nprofile
+  async function getDisplayNameForNpub(pubkey: string, bech32: string): Promise<string> {
+    if (getUserDisplayName) {
+      try {
+        const displayName = await getUserDisplayName(pubkey);
+        // Check if we got a meaningful name (not just shortened npub)
+        if (displayName && !displayName.startsWith('npub1') && displayName.length > 8) {
+          return displayName;
+        }
+      } catch (e) {
+        // Fall through to fallbacks
+      }
+    }
+    
+    // Fallback: try to get from cache or return shortened
+    try {
+      const { contentCache } = await import('$lib/contentCache');
+      const cachedEvents = await contentCache.getEvents('metadata');
+      const cachedUserEvent = cachedEvents.find(cached => cached.event.pubkey === pubkey && cached.event.kind === 0);
+      
+      if (cachedUserEvent) {
+        try {
+          const userContent = JSON.parse(cachedUserEvent.event.content);
+          // Priority: display_name -> name -> nip05 -> shortened npub
+          if (userContent.display_name) return userContent.display_name;
+          if (userContent.name) return userContent.name;
+          if (userContent.nip05) return userContent.nip05;
+        } catch (e) {
+          // Fall through
+        }
+      }
+    } catch (e) {
+      // Fall through
+    }
+    
+    // Final fallback: shortened npub
+    return bech32.length > 20 ? bech32.slice(0, 20) + '...' : bech32;
+  }
+  
+  // Process nostr: links (remove prefix and format)
+  processed = processed.replace(/nostr:([a-zA-Z0-9]+)/g, (match, bech32) => {
+    const decoded = decodeBech32(bech32);
+    if (!decoded) return match; // Keep original if can't decode
+    
+    const { type, data } = decoded;
+    
+    if (type === 'npub' || type === 'nprofile') {
+      const pubkey = type === 'npub' ? data : data.pubkey;
+      // For async processing, we'll use a placeholder that gets replaced
+      return `__NOSTR_NPUB_${bech32}__`;
+    } else if (type === 'nevent' || type === 'note') {
+      // Render as fallback card format
+      const displayText = bech32.length > 20 ? bech32.slice(0, 20) + '...' : bech32;
+      if (isAsciiDoc) {
+        return `link:nostr:${bech32}[${displayText}]`;
+      } else {
+        return `[${displayText}](nostr:${bech32})`;
+      }
+    } else if (type === 'naddr') {
+      const identifier = data.identifier || (bech32.length > 20 ? bech32.slice(0, 20) + '...' : bech32);
+      if (isAsciiDoc) {
+        return `link:nostr:${bech32}[${identifier}]`;
+      } else {
+        return `[${identifier}](nostr:${bech32})`;
+      }
+    }
+    
+    return match;
+  });
+  
+  // Process standalone npub/nprofile (without nostr: prefix)
+  const npubMatches = processed.match(/(?:^|\s)(npub1[a-zA-Z0-9]+|nprofile1[a-zA-Z0-9]+)(?:\s|$)/g);
+  if (npubMatches) {
+    for (const match of npubMatches) {
+      const bech32 = match.trim();
+      const decoded = decodeBech32(bech32);
+      if (decoded && (decoded.type === 'npub' || decoded.type === 'nprofile')) {
+        processed = processed.replace(bech32, `__NOSTR_NPUB_${bech32}__`);
+      }
+    }
+  }
+  
+  // Process hex IDs (64 char hex strings) as event IDs
+  processed = processed.replace(/\b([0-9a-f]{64})\b/gi, (match, hexId) => {
+    // Only replace if it looks like an event ID (not part of a larger hex string)
+    if (match.length === 64) {
+      const displayText = hexId.slice(0, 20) + '...';
+      if (isAsciiDoc) {
+        return `link:nostr:${hexId}[${displayText}]`;
+      } else {
+        return `[${displayText}](nostr:${hexId})`;
+      }
+    }
+    return match;
+  });
+  
+  // Now replace npub placeholders with actual display names (async)
+  const npubPlaceholders = processed.match(/__NOSTR_NPUB_([a-zA-Z0-9]+)__/g);
+  if (npubPlaceholders) {
+    for (const placeholder of npubPlaceholders) {
+      const bech32 = placeholder.replace(/__NOSTR_NPUB_|__/g, '');
+      const decoded = decodeBech32(bech32);
+      if (decoded && (decoded.type === 'npub' || decoded.type === 'nprofile')) {
+        const pubkey = decoded.type === 'npub' ? decoded.data : decoded.data.pubkey;
+        const displayName = await getDisplayNameForNpub(pubkey, bech32);
+        const linkUrl = `nostr:${bech32}`;
+        
+        if (isAsciiDoc) {
+          processed = processed.replace(placeholder, `link:${linkUrl}[${displayName}]`);
+        } else {
+          processed = processed.replace(placeholder, `[${displayName}](${linkUrl})`);
+        }
+      }
+    }
+  }
+  
+  return processed;
+}
+
+/**
  * Process content for quality control
  * Applies all QC fixes: spacing, missing levels, document header, preamble, links/media
  */
@@ -557,21 +1186,48 @@ export function processContentQuality(
   // Apply fixes in order
   let processed = content;
   
-  // 1. Fix link and media formatting first (before other processing)
+  // 1. Process wikilinks first (before link formatting)
+  processed = processWikilinks(processed, isAsciiDoc);
+  
+  // 2. Fix link and media formatting (after wikilinks)
   processed = fixLinkAndMediaFormatting(processed, isAsciiDoc);
   
-  // 2. Fix header spacing
+  // 3. Fix header spacing
   processed = fixHeaderSpacing(processed);
   
-  // 3. Ensure document header exists (before fixing missing levels)
+  // 4. Ensure document header exists (before fixing missing levels)
   const title = getTitleFromEvent(event, true);
   processed = ensureDocumentHeader(processed, title, isAsciiDoc);
   
-  // 4. Fix missing heading levels (after doc header is in place)
+  // 5. Fix missing heading levels (after doc header is in place)
   processed = fixMissingHeadingLevels(processed);
   
-  // 5. Fix preamble content (move content before first section to Preamble)
+  // 6. Fix preamble content (move content before first section to Preamble)
   processed = fixPreambleContent(processed, isAsciiDoc);
+  
+  return processed;
+}
+
+/**
+ * Process content for quality control with async Nostr address processing
+ * This version includes Nostr address formatting with user metadata
+ */
+export async function processContentQualityAsync(
+  content: string,
+  event: { tags: string[][]; content?: string; kind?: number },
+  isAsciiDoc: boolean = true,
+  getUserDisplayName?: (pubkey: string) => Promise<string>
+): Promise<string> {
+  if (!content || content.trim().length === 0) {
+    const title = getTitleFromEvent(event, false);
+    return ensureDocumentHeader('', title, isAsciiDoc);
+  }
+  
+  // Apply synchronous fixes first
+  let processed = processContentQuality(content, event, isAsciiDoc);
+  
+  // Then process Nostr addresses (async)
+  processed = await processNostrAddresses(processed, isAsciiDoc, getUserDisplayName);
   
   return processed;
 }

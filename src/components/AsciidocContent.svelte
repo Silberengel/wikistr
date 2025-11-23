@@ -23,6 +23,7 @@
   import { parseBookWikilink } from '$lib/books';
   import { openBookSearchCard } from '$lib/bookSearchLauncher';
   import { openArticleCard } from '$lib/articleLauncher';
+  import { formatBookWikilinkDisplayText } from '$lib/contentQualityControl';
 
   interface Props {
     event: NostrEvent;
@@ -795,8 +796,15 @@
     // Pattern: link:wikilink:identifier[display text]
     // First, handle links with display text - be more permissive with the identifier pattern
     processed = processed.replace(/link:wikilink:([^\[]+)\[([^\]]+)\]/g, (match, identifier, displayText) => {
+      // For book:: wikilinks, use the formatted display text instead of the provided one
+      let finalDisplayText = displayText;
+      if (identifier.startsWith('book::')) {
+        const bookContent = identifier.replace(/^book::\s*/, '');
+        finalDisplayText = formatBookWikilinkDisplayText(bookContent);
+      }
+      
       // Escape HTML in display text
-      const escapedDisplay = displayText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const escapedDisplay = finalDisplayText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       // Ensure the identifier is preserved exactly, including book:: prefix
       // Store the full identifier in a data attribute as backup
       const dataAttr = identifier.startsWith('book::') ? ` data-book="${identifier.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"` : '';
@@ -821,8 +829,22 @@
       }
       
       // Escape identifier for display
-      const escapedId = identifier.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      return `<a href="wikilink:${identifier}" class="wikilink" style="color: var(--accent); text-decoration: underline; cursor: pointer;">${escapedId}</a>`;
+      let displayText = identifier.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      
+      // If this is a book:: wikilink, format the display text nicely
+      if (identifier.startsWith('book::')) {
+        const bookContent = identifier.replace(/^book::\s*/, '');
+        displayText = formatBookWikilinkDisplayText(bookContent);
+        // Escape HTML in the formatted display text
+        displayText = displayText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      } else {
+        // For regular wikilinks, replace hyphens with spaces
+        displayText = displayText.replace(/-/g, ' ');
+      }
+      
+      // Store the full identifier in a data attribute as backup
+      const dataAttr = identifier.startsWith('book::') ? ` data-book="${identifier.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"` : '';
+      return `<a href="wikilink:${identifier}"${dataAttr} class="wikilink" style="color: var(--accent); text-decoration: underline; cursor: pointer;">${displayText}</a>`;
     });
     
     // Process Nostr links in the HTML output

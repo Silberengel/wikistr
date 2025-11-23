@@ -9,6 +9,9 @@ import { relayService } from '$lib/relayService';
 import { exportToPDF, exportToEPUB, exportToHTML5, exportToRevealJS, exportToLaTeX, downloadBlob } from './asciidoctorExport';
 import {
   processContentQuality,
+  processContentQualityAsync,
+  processWikilinks,
+  processNostrAddresses,
   getTitleFromEvent,
   fixHeaderSpacing,
   fixMissingHeadingLevels,
@@ -142,8 +145,9 @@ export async function downloadAsMarkdown(event: NostrEvent, filename?: string): 
   }
   
   // Apply quality control for markdown events (30023, 30817)
+  // Use async version to process Nostr addresses with user metadata
   if (event.kind === 30023 || event.kind === 30817) {
-    content = processContentQuality(content, event, false); // false = markdown, not asciidoc
+    content = await processContentQualityAsync(content, event, false, getUserHandle); // false = markdown, not asciidoc
   }
   
   // Build YAML frontmatter
@@ -186,8 +190,8 @@ export async function downloadAsAsciiDoc(event: NostrEvent, filename?: string): 
     content = convertMarkdownToAsciiDoc(content);
   }
   
-  // Apply quality control
-  content = processContentQuality(content, event, true); // true = asciidoc
+  // Apply quality control with async Nostr address processing
+  content = await processContentQualityAsync(content, event, true, getUserHandle); // true = asciidoc
   
   // Create a temporary event with processed content for prepareAsciiDocContent
   const tempEvent = { ...event, content };
@@ -530,15 +534,28 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
           doc += `${summary}\n\n`;
         }
         
-        doc += restContent;
+        // Process wikilinks and nostr addresses in the content
+        doc = processWikilinks(doc, true); // true = asciidoc
+        doc = await processNostrAddresses(doc, true, getUserHandle); // true = asciidoc
+        
         return doc;
       }
     }
     
     // No existing title, build with metadata
     const eventImage = event.tags.find(([k]) => k === 'image')?.[1];
-    return await buildAsciiDocWithMetadata(event, content, theme, eventImage);
+    let doc = await buildAsciiDocWithMetadata(event, content, theme, eventImage);
+    
+    // Process wikilinks and nostr addresses in the content
+    doc = processWikilinks(doc, true); // true = asciidoc
+    doc = await processNostrAddresses(doc, true, getUserHandle); // true = asciidoc
+    
+    return doc;
   }
+  
+  // Process wikilinks and nostr addresses even when not including metadata
+  content = processWikilinks(content, true); // true = asciidoc
+  content = await processNostrAddresses(content, true, getUserHandle); // true = asciidoc
   
   return content;
 }

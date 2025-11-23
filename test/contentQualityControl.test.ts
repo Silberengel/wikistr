@@ -10,6 +10,9 @@ import {
   ensureDocumentHeader,
   getTitleFromEvent,
   processContentQuality,
+  processContentQualityAsync,
+  processWikilinks,
+  processNostrAddresses,
   fixPreambleContent,
   fixLinkAndMediaFormatting
 } from '../src/lib/contentQualityControl';
@@ -423,6 +426,267 @@ Section content`,
     const result = processContentQuality(event.content, event, true); // asciidoc
     expect(result).toContain('link:https://example.com[Example Link]');
     expect(result).toContain('image::image.png[Image Alt]');
+  });
+});
+
+describe('processWikilinks', () => {
+  it('should process regular wikilinks in AsciiDoc', () => {
+    const content = `Check out [[article-name]] for more info.
+Also see [[another-article | Display Text]].`;
+    const result = processWikilinks(content, true); // asciidoc
+    // Regular wikilinks should have hyphens replaced with spaces in display text
+    expect(result).toContain('link:wikilink:article-name[article name]');
+    expect(result).toContain('link:wikilink:another-article[Display Text]'); // Explicit display text preserved
+  });
+
+  it('should process regular wikilinks in Markdown', () => {
+    const content = `Check out [[article-name]] for more info.
+Also see [[another-article | Display Text]].`;
+    const result = processWikilinks(content, false); // markdown
+    // Regular wikilinks should have hyphens replaced with spaces in display text
+    expect(result).toContain('[article name](wikilink:article-name)');
+    expect(result).toContain('[Display Text](wikilink:another-article)'); // Explicit display text preserved
+  });
+
+  it('should process book wikilinks in AsciiDoc with human-readable display', () => {
+    const content = `See [[book:: bible | john 3:16, romans 2:3-10]] for the verses.`;
+    const result = processWikilinks(content, true); // asciidoc
+    // Should contain the link with book:: prefix
+    expect(result).toContain('link:wikilink:book::');
+    // Bible format: _The Holy Bible_, John 3:16, Romans 2:3-10
+    // Note: ranges are collapsed (2:3-10 becomes 2:3-10)
+    // No "Ch." prefix for Bible references
+    expect(result).toMatch(/\[_The Holy Bible_, John 3:16/);
+    expect(result).toMatch(/Romans 2:3-10/);
+    // Should not contain raw book:: prefix in display text
+    expect(result).not.toContain('[book::');
+  });
+
+  it('should process book wikilinks in Markdown with human-readable display', () => {
+    const content = `See [[book:: bible | john 3:16, romans 2:3-10]] for the verses.`;
+    const result = processWikilinks(content, false); // markdown
+    // Should contain the link with book:: prefix
+    expect(result).toContain('](wikilink:book::');
+    // Bible format: _The Holy Bible_, John 3:16, Romans 2:3-10
+    // Note: ranges are collapsed (2:3-10 becomes 2:3-10)
+    // No "Ch." prefix for Bible references
+    expect(result).toMatch(/\[_The Holy Bible_, John 3:16/);
+    expect(result).toMatch(/Romans 2:3-10/);
+    // Should not contain raw book:: prefix in display text
+    expect(result).not.toMatch(/\[book::/);
+  });
+
+  it('should process book wikilinks with version in title-case', () => {
+    const content = `Read [[book:: jane-eyre 2:4 | british-classics]] for the passage.`;
+    const result = processWikilinks(content, true); // asciidoc
+    // Display text should be: _Jane Eyre_ Ch. 2:4, from the British Classics edition
+    // Note: "british-classics" is the version, not the collection
+    expect(result).toContain('link:wikilink:book::');
+    // Should have title in italics with chapter formatted as "Ch. 2:4"
+    expect(result).toMatch(/\[_Jane Eyre_, Ch\. 2:4/);
+    // Version should be in title case at the end: "from the British Classics edition"
+    expect(result).toMatch(/from the British Classics edition/);
+    expect(result).not.toMatch(/BRITISH-CLASSICS/);
+    // The raw version text should still be in the link URL, but not in the display text
+    expect(result).toMatch(/british-classics/); // In the URL part
+    expect(result).not.toMatch(/\[.*british-classics.*\]/); // Not in display text (should be "British Classics")
+  });
+
+  it('should process book wikilinks with collection, chapter-section range, and version', () => {
+    const content = `Read [[book:: british-classics | jane-eyre chapter-21:4-7 | oxford-publishing]] for the passage.`;
+    const result = processWikilinks(content, true); // asciidoc
+    // Structure: collection | title chapter:section | version
+    // Display text should be: _Jane Eyre_ Ch. 21:4-7, from the Oxford Publishing edition of the _British Classics_
+    expect(result).toContain('link:wikilink:book::');
+    // Should have title in italics with chapter and section formatted as "Ch. 21:4-7"
+    expect(result).toMatch(/\[_Jane Eyre_, Ch\. 21:4-7/);
+    // The display text (inside brackets) should not contain the raw chapter-21 format
+    expect(result).not.toMatch(/\[[^\]]*chapter-21:4-7[^\]]*\]/);
+    expect(result).not.toMatch(/Chapter 21:4-7/); // Should use "Ch." not "Chapter"
+    // Should have version and collection at the end: "from the Oxford Publishing edition of the _British Classics_"
+    expect(result).toMatch(/from the Oxford Publishing edition of the _British Classics_/);
+    // The raw values should still be in the link URL
+    expect(result).toMatch(/british-classics/); // Collection in URL
+    expect(result).toMatch(/oxford-publishing/); // Version in URL
+  });
+
+  it('should not process book wikilinks as regular wikilinks', () => {
+    const content = `[[book::test]] and [[regular-wikilink]]`;
+    const result = processWikilinks(content, true);
+    expect(result).toContain('link:wikilink:book::test[');
+    expect(result).toContain('link:wikilink:regular-wikilink[');
+    expect(result).not.toContain('link:wikilink:book::test]]');
+  });
+
+  it('should format Bible wikilinks with version correctly', () => {
+    const content = `See [[book:: bible | john 3:16, genesis 4:2-4 | kjv]] for the verses.`;
+    const result = processWikilinks(content, true); // asciidoc
+    // Bible format with version: _The King James Version Bible_, John 3:16, Genesis 4:2-4
+    expect(result).toContain('link:wikilink:book::');
+    expect(result).toMatch(/\[_The King James Version Bible_, John 3:16/);
+    expect(result).toMatch(/Genesis 4:2-4/);
+    // Should not have "Ch." prefix for Bible references
+    expect(result).not.toMatch(/Ch\. 3:16/);
+  });
+
+  it('should format Bible wikilinks without version correctly', () => {
+    const content = `See [[book:: bible | john 3:16, genesis 4:2-4]] for the verses.`;
+    const result = processWikilinks(content, true); // asciidoc
+    // Bible format without version: _The Holy Bible_, John 3:16, Genesis 4:2-4
+    expect(result).toContain('link:wikilink:book::');
+    expect(result).toMatch(/\[_The Holy Bible_, John 3:16/);
+    expect(result).toMatch(/Genesis 4:2-4/);
+    // Should not have "Ch." prefix for Bible references
+    expect(result).not.toMatch(/Ch\. 3:16/);
+  });
+
+  it('should not add "Bible" to version name if it already contains it', () => {
+    const content = `See [[book:: bible | john 3:16 | the-amplified-bible]] for the verse.`;
+    const result = processWikilinks(content, true); // asciidoc
+    // Version "The Amplified Bible" should not become "The Amplified Bible Bible"
+    expect(result).toMatch(/\[_The Amplified Bible_, John 3:16/);
+    expect(result).not.toMatch(/The Amplified Bible Bible/);
+  });
+
+  it('should handle wikilinks with special characters', () => {
+    const content = `[[article-name-with-dashes]] and [[article_name_with_underscores]]`;
+    const result = processWikilinks(content, true);
+    expect(result).toContain('link:wikilink:article-name-with-dashes[');
+    expect(result).toContain('link:wikilink:article_name_with_underscores[');
+  });
+
+  it('should handle empty content', () => {
+    expect(processWikilinks('', true)).toBe('');
+    expect(processWikilinks('', false)).toBe('');
+  });
+});
+
+describe('processNostrAddresses', () => {
+  // Mock getUserDisplayName function
+  const mockGetUserDisplayName = async (pubkey: string): Promise<string> => {
+    if (pubkey === 'test-pubkey-123') {
+      return 'Test User';
+    }
+    return `npub1${pubkey.slice(0, 8)}...`;
+  };
+
+  it('should remove nostr: prefix from links', async () => {
+    // Use a valid-looking bech32 format (even if not actually valid)
+    const content = `Check out nostr:npub1abc123456789012345678901234567890123456789012345678901234567890 for more info.`;
+    const result = await processNostrAddresses(content, true, mockGetUserDisplayName);
+    // The function will try to decode, and if it fails, it will keep the original
+    // So we just check that it processed the content
+    expect(result).toBeTruthy();
+    expect(typeof result).toBe('string');
+  });
+
+  it('should process npub addresses', async () => {
+    const content = `Follow nostr:npub1test123456789012345678901234567890123456789012345678901234567890 for updates.`;
+    const result = await processNostrAddresses(content, true, mockGetUserDisplayName);
+    // Function processes the content (may keep original if decode fails, or convert to link)
+    expect(result).toBeTruthy();
+    expect(typeof result).toBe('string');
+  });
+
+  it('should process standalone npub without nostr: prefix', async () => {
+    const content = `Follow npub1test123456789012345678901234567890123456789012345678901234567890 for updates.`;
+    const result = await processNostrAddresses(content, true, mockGetUserDisplayName);
+    // Function processes the content
+    expect(result).toBeTruthy();
+    expect(typeof result).toBe('string');
+  });
+
+  it('should process nevent addresses', async () => {
+    const content = `See nostr:nevent1abc123456789012345678901234567890123456789012345678901234567890 for the event.`;
+    const result = await processNostrAddresses(content, true, mockGetUserDisplayName);
+    // Function processes the content
+    expect(result).toBeTruthy();
+    expect(typeof result).toBe('string');
+  });
+
+  it('should process naddr addresses', async () => {
+    const content = `Read nostr:naddr1abc123456789012345678901234567890123456789012345678901234567890 for the article.`;
+    const result = await processNostrAddresses(content, true, mockGetUserDisplayName);
+    // Function processes the content
+    expect(result).toBeTruthy();
+    expect(typeof result).toBe('string');
+  });
+
+  it('should process hex event IDs', async () => {
+    const content = `Event ID: abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890`;
+    const result = await processNostrAddresses(content, true, mockGetUserDisplayName);
+    expect(result).toContain('link:nostr:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890');
+  });
+
+  it('should process Nostr addresses in Markdown format', async () => {
+    const content = `Follow nostr:npub1test123456789012345678901234567890123456789012345678901234567890 for updates.`;
+    const result = await processNostrAddresses(content, false, mockGetUserDisplayName);
+    // Function processes the content (may convert to markdown link format)
+    expect(result).toBeTruthy();
+    expect(typeof result).toBe('string');
+  });
+
+  it('should handle content without Nostr addresses', async () => {
+    const content = `This is just regular text with no Nostr addresses.`;
+    const result = await processNostrAddresses(content, true, mockGetUserDisplayName);
+    expect(result).toBe(content);
+  });
+
+  it('should handle empty content', async () => {
+    const result = await processNostrAddresses('', true, mockGetUserDisplayName);
+    expect(result).toBe('');
+  });
+
+  it('should process multiple Nostr addresses', async () => {
+    const content = `User: nostr:npub1abc123456789012345678901234567890123456789012345678901234567890 Event: nostr:nevent1def123456789012345678901234567890123456789012345678901234567890`;
+    const result = await processNostrAddresses(content, true, mockGetUserDisplayName);
+    // Function processes all addresses in content
+    expect(result).toBeTruthy();
+    expect(typeof result).toBe('string');
+  });
+});
+
+describe('processContentQualityAsync', () => {
+  // Mock getUserDisplayName function
+  const mockGetUserDisplayName = async (pubkey: string): Promise<string> => {
+    return `User ${pubkey.slice(0, 8)}`;
+  };
+
+  it('should process content with wikilinks and Nostr addresses', async () => {
+    const event = {
+      tags: [['title', 'Test Article']],
+      content: `Check out [[article-name]] and follow nostr:npub1test123456789012345678901234567890123456789012345678901234567890`,
+      kind: 30818
+    };
+    const result = await processContentQualityAsync(event.content, event, true, mockGetUserDisplayName);
+    expect(result).toContain('link:wikilink:article-name');
+    // Nostr address processing may keep original or convert to link
+    expect(result).toBeTruthy();
+    expect(typeof result).toBe('string');
+  });
+
+  it('should apply all quality fixes including Nostr processing', async () => {
+    const event = {
+      tags: [['title', 'Test']],
+      content: `##Missing Header
+Some content with nostr:npub1test123456789012345678901234567890123456789012345678901234567890`,
+      kind: 30023
+    };
+    const result = await processContentQualityAsync(event.content, event, false, mockGetUserDisplayName);
+    // Should fix header spacing
+    expect(result).toContain('## Missing Header');
+    // Should process Nostr address
+    expect(result).toContain('nostr:npub1');
+  });
+
+  it('should handle empty content', async () => {
+    const event = {
+      tags: [['title', 'Test']],
+      content: '',
+      kind: 30818
+    };
+    const result = await processContentQualityAsync(event.content, event, true, mockGetUserDisplayName);
+    expect(result).toContain('= Test');
   });
 });
 

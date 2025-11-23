@@ -6,6 +6,9 @@
   import { fetchLNURLPay } from '$lib/zaps';
   import UserBadge from './UserBadge.svelte';
   import ProfileWebsiteOG from './ProfileWebsiteOG.svelte';
+  import LinkOGCard from './LinkOGCard.svelte';
+  import LinkFallback from './LinkFallback.svelte';
+  import { isStandaloneLink, extractNostrIdentifier } from '$lib/ogUtils';
   import QRCode from 'qrcode';
 
   interface Props {
@@ -21,6 +24,7 @@
   let loading = $state(true);
   let isMobile = $state(false);
   let aboutElement = $state<HTMLElement>();
+  let standaloneLinks = $state<Array<{id: string, url: string, hasOG: boolean}>>([]);
   let nip05Verified = $state(false);
   let nip05Verifying = $state(false);
   let nip05RetryCount = $state(0);
@@ -368,29 +372,72 @@
     const parts = text.split(urlRegex);
 
     aboutElement.innerHTML = '';
+    
+    // Clear previous standalone links
+    standaloneLinks = [];
+    const newStandaloneLinks: Array<{id: string, url: string, hasOG: boolean}> = [];
 
-    parts.forEach((part: string) => {
+    parts.forEach((part: string, index: number) => {
       if (urlRegex.test(part)) {
-        const link = document.createElement('a');
-        link.href = part;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.className = 'underline';
-        link.style.color = 'var(--accent)';
-        link.style.transition = 'opacity 0.2s';
-        link.onmouseenter = () => {
-          link.style.opacity = '0.8';
-        };
-        link.onmouseleave = () => {
-          link.style.opacity = '1';
-        };
-        link.textContent = part;
-        aboutElement?.appendChild(link);
-      } else {
+        // Check if this link is standalone (on its own line)
+        // A link is standalone if:
+        // 1. It's the only content (parts.length === 1)
+        // 2. It's at the start and followed by empty/newline (parts[1] is empty/whitespace)
+        // 3. It's at the end and preceded by empty/newline (parts[index-1] is empty/whitespace)
+        // 4. It's surrounded by empty/whitespace on both sides
+        const prevPart = index > 0 ? parts[index - 1] : '';
+        const nextPart = index < parts.length - 1 ? parts[index + 1] : '';
+        const isStandalone = 
+          parts.length === 1 || // Only link, no other text
+          (index === 0 && (!nextPart || nextPart.trim() === '')) || // Link at start, nothing after
+          (index === parts.length - 1 && (!prevPart || prevPart.trim() === '')) || // Link at end, nothing before
+          ((!prevPart || prevPart.trim() === '' || prevPart.endsWith('\n')) && 
+           (!nextPart || nextPart.trim() === '' || nextPart.startsWith('\n'))); // Link surrounded by whitespace/newlines
+        
+        if (isStandalone) {
+          // This is a standalone link - replace with placeholder and render OG/fallback card
+          const linkId = `profile-link-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          const placeholder = document.createElement('div');
+          placeholder.id = linkId;
+          placeholder.className = 'profile-standalone-link-placeholder';
+          placeholder.dataset.url = part;
+          
+          // Check if it has Nostr identifier (will use fallback)
+          const nostrId = extractNostrIdentifier(part);
+          const hasOG = !nostrId; // If it has Nostr ID, we'll use fallback instead of OG
+          placeholder.dataset.hasOg = hasOG.toString();
+          
+          aboutElement?.appendChild(placeholder);
+          newStandaloneLinks.push({ id: linkId, url: part, hasOG });
+        } else {
+          // Regular inline link
+          const link = document.createElement('a');
+          link.href = part;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.className = 'underline';
+          link.style.color = 'var(--accent)';
+          link.style.transition = 'opacity 0.2s';
+          link.onmouseenter = () => {
+            link.style.opacity = '0.8';
+          };
+          link.onmouseleave = () => {
+            link.style.opacity = '1';
+          };
+          link.textContent = part;
+          aboutElement?.appendChild(link);
+        }
+      } else if (part.trim().length > 0) {
+        // Only add non-empty text parts
         const textNode = document.createTextNode(part);
         aboutElement?.appendChild(textNode);
       }
     });
+    
+    // Update standalone links state
+    if (newStandaloneLinks.length > 0) {
+      standaloneLinks = newStandaloneLinks;
+    }
   }
 
   // Verify NIP-05
@@ -1698,6 +1745,16 @@
               <div class="whitespace-pre-wrap" style="color: var(--text-primary);" bind:this={aboutElement}>
                 {userData.about}
               </div>
+              <!-- Standalone Link OG/Fallback Cards -->
+              {#each standaloneLinks as link (link.id)}
+                <div class="mt-2">
+                  {#if link.hasOG}
+                    <LinkOGCard url={link.url} />
+                  {:else}
+                    <LinkFallback url={link.url} />
+                  {/if}
+                </div>
+              {/each}
             </div>
           {/if}
 
