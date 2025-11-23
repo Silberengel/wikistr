@@ -55,21 +55,17 @@ export function fixHeaderSpacing(content: string): string {
     }
     
     // Special case: Single # or = at the beginning of a line that looks like it should be a header
-    // Only fix if it's at the start of a section (after blank line or at document start)
-    // and the next non-empty line is not a header
+    // Fix if it's missing a space after the hash/equals sign
+    // Only skip if it's clearly not a header (e.g., in the middle of text or code)
     if (/^[#=]\w/.test(trimmed)) {
-      const isAtSectionStart = i === 0 || (i > 0 && lines[i - 1].trim().length === 0);
-      const hasNextHeader = i < lines.length - 1 && /^[#=]+\s+/.test(lines[i + 1].trim());
-      
-      // Only fix if it's at section start and there's no next header (likely a missing header)
-      if (isAtSectionStart && !hasNextHeader) {
-        const match = trimmed.match(/^([#=])(\w)/);
-        if (match) {
-          const prefix = match[1];
-          const rest = trimmed.substring(1);
-          const indent = line.substring(0, line.length - trimmed.length);
-          line = indent + prefix + ' ' + rest;
-        }
+      // Check if this looks like a header (starts with # or = followed by word character)
+      // Fix it by adding a space
+      const match = trimmed.match(/^([#=])(\w)/);
+      if (match) {
+        const prefix = match[1];
+        const rest = trimmed.substring(1);
+        const indent = line.substring(0, line.length - trimmed.length);
+        line = indent + prefix + ' ' + rest;
       }
     }
     
@@ -117,19 +113,28 @@ function getHeadingLevel(line: string, nextLine?: string): number | { level: num
 
 /**
  * Ensure no missing heading levels
- * If a level-N heading exists, ensure level (N-1) exists before it
- * Works recursively - only adds the immediate parent level, higher levels get fixed in next iteration
+ * If a level-N heading exists, ensure all parent levels (1 through N-1) exist before it
+ * Works recursively by making multiple passes until no more levels need to be added
  * Note: Document-level header (level 1) counts as level 1, so we don't add another
  */
 export function fixMissingHeadingLevels(content: string): string {
   if (!content || content.trim().length === 0) return content;
   
-  const lines = content.split('\n');
-  const fixed: string[] = [];
-  const headingHistory: number[] = []; // Track heading levels we've seen (in order)
-  let hasDocLevelHeader = false; // Track if we've seen a document-level header (level 1)
+  // Make multiple passes until no more levels need to be added
+  let result = content;
+  let changed = true;
+  let iterations = 0;
+  const maxIterations = 10; // Safety limit to prevent infinite loops
   
-  for (let i = 0; i < lines.length; i++) {
+  while (changed && iterations < maxIterations) {
+    iterations++;
+    changed = false;
+    const lines = result.split('\n');
+    const fixed: string[] = [];
+    const headingHistory: number[] = []; // Track heading levels we've seen (in order)
+    let hasDocLevelHeader = false; // Track if we've seen a document-level header (level 1)
+    
+    for (let i = 0; i < lines.length; i++) {
     const nextLine = i < lines.length - 1 ? lines[i + 1] : undefined;
     const headingInfo = getHeadingLevel(lines[i], nextLine);
     
@@ -243,9 +248,18 @@ export function fixMissingHeadingLevels(content: string): string {
       // Not a heading, just add the line
       fixed.push(lines[i]);
     }
+    }
+    
+    const newResult = fixed.join('\n');
+    if (newResult !== result) {
+      changed = true;
+      result = newResult;
+    } else {
+      changed = false;
+    }
   }
   
-  return fixed.join('\n');
+  return result;
 }
 
 /**

@@ -194,7 +194,7 @@ Content for chapter 2.`;
   });
 
   describe('Article Download Functions', () => {
-    it('should prepare AsciiDoc content from 30818 event', () => {
+    it('should prepare AsciiDoc content from 30818 event', async () => {
       const event = createMockEvent(
         30818,
         `= Test Article
@@ -203,12 +203,12 @@ This is AsciiDoc content.`,
         'Test Article'
       );
 
-      const prepared = prepareAsciiDocContent(event);
+      const prepared = await prepareAsciiDocContent(event);
       expect(prepared).toContain('Test Article');
       expect(prepared).toContain('AsciiDoc content');
     });
 
-    it('should prepare AsciiDoc content from 30817 (Markdown) event', () => {
+    it('should prepare AsciiDoc content from 30817 (Markdown) event', async () => {
       const event = createMockEvent(
         30817,
         `# Test Article
@@ -217,14 +217,14 @@ This is Markdown content.`,
         'Test Article'
       );
 
-      const prepared = prepareAsciiDocContent(event);
+      const prepared = await prepareAsciiDocContent(event);
       expect(prepared).toContain('Test Article');
       expect(prepared).toContain('Markdown content');
     });
 
-    it('should handle empty content in prepareAsciiDocContent', () => {
+    it('should handle empty content in prepareAsciiDocContent', async () => {
       const event = createMockEvent(30818, '', 'Test Article');
-      const prepared = prepareAsciiDocContent(event);
+      const prepared = await prepareAsciiDocContent(event);
       expect(prepared).toContain('Test Article');
       expect(prepared).toContain('No content available');
     });

@@ -6,10 +6,70 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { exportToPDF, exportToEPUB, exportToHTML5, checkServerHealth } from '../src/lib/asciidoctorExport';
 
 // Helper to read Blob content in test environment
+// In Node.js, we need to use Response API or access blob internals
 async function blobToText(blob: Blob): Promise<string> {
-  // Use Response API which works in both browser and Node.js (with fetch polyfill)
-  const response = new Response(blob);
-  return await response.text();
+  // Try Response API first (works with fetch polyfill in Node.js)
+  try {
+    const response = new Response(blob);
+    const text = await response.text();
+    if (text && typeof text === 'string' && !text.includes('[object')) {
+      return text;
+    }
+  } catch (e) {
+    // Continue to next method
+  }
+  
+  // Try blob.text() if available (browser or modern Node.js)
+  if (typeof blob.text === 'function') {
+    try {
+      const text = await blob.text();
+      if (text && typeof text === 'string' && !text.includes('[object')) {
+        return text;
+      }
+    } catch (e) {
+      // Continue
+    }
+  }
+  
+  // Try accessing blob internals (Node.js polyfill might store data differently)
+  // Check if blob has a _data or similar property
+  const blobAny = blob as any;
+  if (blobAny._data) {
+    if (typeof blobAny._data === 'string') {
+      return blobAny._data;
+    }
+    if (blobAny._data instanceof Uint8Array || blobAny._data instanceof ArrayBuffer) {
+      const decoder = new TextDecoder();
+      return decoder.decode(blobAny._data);
+    }
+  }
+  
+  // Try arrayBuffer if available
+  if (typeof blob.arrayBuffer === 'function') {
+    try {
+      const arrayBuffer = await blob.arrayBuffer();
+      const decoder = new TextDecoder();
+      return decoder.decode(arrayBuffer);
+    } catch (e) {
+      // Continue
+    }
+  }
+  
+  // Last resort: try to reconstruct from blob's parts if it's a multipart blob
+  if (blobAny.parts && Array.isArray(blobAny.parts)) {
+    const parts: string[] = [];
+    for (const part of blobAny.parts) {
+      if (typeof part === 'string') {
+        parts.push(part);
+      } else if (part instanceof Blob) {
+        parts.push(await blobToText(part));
+      }
+    }
+    return parts.join('');
+  }
+  
+  // If all methods fail, throw descriptive error
+  throw new Error(`Unable to read Blob content. Blob type: ${typeof blob}, size: ${blob.size}, constructor: ${blob.constructor?.name}, has _data: ${!!blobAny._data}`);
 }
 
 describe('AsciiDoc Features Rendering', () => {

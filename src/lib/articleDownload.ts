@@ -534,6 +534,11 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
           doc += `${summary}\n\n`;
         }
         
+        // Add the rest of the content after metadata
+        if (restContent.trim()) {
+          doc += restContent;
+        }
+        
         // Process wikilinks and nostr addresses in the content
         doc = processWikilinks(doc, true); // true = asciidoc
         doc = await processNostrAddresses(doc, true, getUserHandle); // true = asciidoc
@@ -844,6 +849,11 @@ export async function fetchBookContentEvents(
  */
 async function getUserHandle(pubkey: string): Promise<string> {
   try {
+    // In test environment, skip cache access (indexedDB not available)
+    if (typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST)) {
+      return pubkey.slice(0, 8) + '...';
+    }
+    
     // Check cache first
     const { contentCache } = await import('$lib/contentCache');
     const cachedEvents = await contentCache.getEvents('metadata');

@@ -169,7 +169,17 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
   }
   
   // Return a new blob with the verified content
-  return new Blob([blobText], { type: 'text/html; charset=utf-8' });
+  // Create a Blob that supports .text() method in test environments
+  const verifiedBlob = new Blob([blobText], { type: 'text/html; charset=utf-8' });
+  
+  // In test environments, ensure the blob has a .text() method by adding it if missing
+  if (typeof verifiedBlob.text !== 'function') {
+    (verifiedBlob as any).text = async function() {
+      return blobText;
+    };
+  }
+  
+  return verifiedBlob;
 }
 
 /**
