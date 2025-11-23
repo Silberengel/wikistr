@@ -6,7 +6,7 @@
 import type { NostrEvent } from '@nostr/tools/pure';
 import { nip19 } from '@nostr/tools';
 import { relayService } from '$lib/relayService';
-import { exportToPDF, exportToEPUB, exportToHTML5, exportToRevealJS, exportToLaTeX, exportToFODT, downloadBlob } from './asciidoctorExport';
+import { exportToPDF, exportToEPUB, exportToHTML5, exportToRevealJS, exportToLaTeX, downloadBlob, openInViewer } from './asciidoctorExport';
 import {
   processContentQuality,
   processContentQualityAsync,
@@ -570,109 +570,192 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
  */
 export type PDFTheme = 'classic' | 'antique' | 'modern' | 'documentation' | 'scientific' | 'pop' | 'bible-paragraph' | 'bible-versed' | 'poster';
 
-export async function downloadAsPDF(event: NostrEvent, filename?: string, theme: PDFTheme = 'classic'): Promise<void> {
+/**
+ * Get PDF blob (for viewing)
+ */
+export async function getPDFBlob(event: NostrEvent, theme: PDFTheme = 'classic'): Promise<{ blob: Blob; filename: string }> {
   if (!event.content || event.content.trim().length === 0) {
-    throw new Error('Cannot download PDF: article content is empty');
+    throw new Error('Cannot generate PDF: article content is empty');
   }
   
-  try {
-    // Prepare AsciiDoc content with metadata (includes cover image, abstract, etc.)
-    const asciiDocContent = await prepareAsciiDocContent(event, true, theme);
-    const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
-    const author = await getAuthorName(event);
-    
-    const blob = await exportToPDF({
-      content: asciiDocContent,
-      title,
-      author,
-      theme
-    });
-    
-    if (!blob || blob.size === 0) {
-      throw new Error('Server returned empty PDF file');
-    }
-    
-    const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.pdf`;
-    downloadBlob(blob, name);
-  } catch (error) {
-    console.error('Failed to download PDF:', error);
-    throw error;
+  // Prepare AsciiDoc content with metadata (includes cover image, abstract, etc.)
+  const asciiDocContent = await prepareAsciiDocContent(event, true, theme);
+  const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
+  const author = await getAuthorName(event);
+  
+  const blob = await exportToPDF({
+    content: asciiDocContent,
+    title,
+    author,
+    theme
+  });
+  
+  if (!blob || blob.size === 0) {
+    throw new Error('Server returned empty PDF file');
   }
+  
+  const filename = `${title.replace(/[^a-z0-9]/gi, '_')}.pdf`;
+  return { blob, filename };
+}
+
+export async function downloadAsPDF(event: NostrEvent, filename?: string, theme: PDFTheme = 'classic'): Promise<void> {
+  const { blob, filename: defaultFilename } = await getPDFBlob(event, theme);
+  const name = filename || defaultFilename;
+  downloadBlob(blob, name);
+}
+
+/**
+ * View PDF in e-book viewer
+ */
+export async function viewAsPDF(event: NostrEvent, theme: PDFTheme = 'classic'): Promise<void> {
+  const { blob, filename } = await getPDFBlob(event, theme);
+  await openInViewer(blob, filename, 'pdf');
 }
 
 /**
  * Download article as EPUB
  */
-export async function downloadAsEPUB(event: NostrEvent, filename?: string, theme: PDFTheme = 'classic'): Promise<void> {
+/**
+ * Get EPUB blob (for viewing)
+ */
+export async function getEPUBBlob(event: NostrEvent, theme: PDFTheme = 'classic'): Promise<{ blob: Blob; filename: string }> {
   if (!event.content || event.content.trim().length === 0) {
-    throw new Error('Cannot download EPUB: article content is empty');
+    throw new Error('Cannot generate EPUB: article content is empty');
   }
   
-  try {
-    // Prepare AsciiDoc content with metadata (includes cover image, abstract, etc.)
-    const asciiDocContent = await prepareAsciiDocContent(event, true, theme);
-    const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
-    const author = await getAuthorName(event);
-    
-    const blob = await exportToEPUB({
-      content: asciiDocContent,
-      title,
-      author,
-      theme
-    });
-    
-    if (!blob || blob.size === 0) {
-      throw new Error('Server returned empty EPUB file');
-    }
-    
-    const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.epub`;
-    downloadBlob(blob, name);
-  } catch (error) {
-    console.error('Failed to download EPUB:', error);
-    throw error;
+  // Prepare AsciiDoc content with metadata (includes cover image, abstract, etc.)
+  const asciiDocContent = await prepareAsciiDocContent(event, true, theme);
+  const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
+  const author = await getAuthorName(event);
+  
+  const blob = await exportToEPUB({
+    content: asciiDocContent,
+    title,
+    author,
+    theme
+  });
+  
+  if (!blob || blob.size === 0) {
+    throw new Error('Server returned empty EPUB file');
   }
+  
+  const filename = `${title.replace(/[^a-z0-9]/gi, '_')}.epub`;
+  return { blob, filename };
+}
+
+export async function downloadAsEPUB(event: NostrEvent, filename?: string, theme: PDFTheme = 'classic'): Promise<void> {
+  const { blob, filename: defaultFilename } = await getEPUBBlob(event, theme);
+  const name = filename || defaultFilename;
+  downloadBlob(blob, name);
+}
+
+/**
+ * View EPUB in e-book viewer
+ */
+export async function viewAsEPUB(event: NostrEvent, theme: PDFTheme = 'classic'): Promise<void> {
+  const { blob, filename } = await getEPUBBlob(event, theme);
+  await openInViewer(blob, filename, 'epub');
 }
 
 /**
  * Download article as HTML5
  */
-export async function downloadAsHTML5(event: NostrEvent, filename?: string): Promise<void> {
+/**
+ * Get HTML5 blob (for viewing)
+ */
+export async function getHTML5Blob(event: NostrEvent): Promise<{ blob: Blob; filename: string }> {
   if (!event.content || event.content.trim().length === 0) {
-    throw new Error('Cannot download HTML5: article content is empty');
+    throw new Error('Cannot generate HTML5: article content is empty');
   }
   
-  try {
-    // Prepare AsciiDoc content with metadata
-    // This converts Markdown (30817, 30023) to AsciiDoc and wraps with metadata
-    const asciiDocContent = await prepareAsciiDocContent(event, true, 'classic');
-    const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
-    const author = await getAuthorName(event);
-    
-    // Verify AsciiDoc content was created
-    if (!asciiDocContent || asciiDocContent.trim().length === 0) {
-      throw new Error('Failed to prepare AsciiDoc content');
-    }
-    
-    // Log for debugging (first 200 chars)
-    console.log('HTML5 Download: Sending AsciiDoc to server (preview):', asciiDocContent.substring(0, 200));
-    
-    // Send AsciiDoc content to AsciiDoctor server and request HTML
-    const blob = await exportToHTML5({
-      content: asciiDocContent,
-      title,
-      author
-    });
-    
-    if (!blob || blob.size === 0) {
-      throw new Error('Server returned empty HTML file');
-    }
-    
-    const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.html`;
-    downloadBlob(blob, name);
-  } catch (error) {
-    console.error('Failed to download HTML5:', error);
-    throw error;
+  // Prepare AsciiDoc content with metadata
+  // This converts Markdown (30817, 30023) to AsciiDoc and wraps with metadata
+  const asciiDocContent = await prepareAsciiDocContent(event, true, 'classic');
+  const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
+  const author = await getAuthorName(event);
+  
+  // Verify AsciiDoc content was created
+  if (!asciiDocContent || asciiDocContent.trim().length === 0) {
+    throw new Error('Failed to prepare AsciiDoc content');
   }
+  
+  // Send AsciiDoc content to AsciiDoctor server and request HTML
+  const blob = await exportToHTML5({
+    content: asciiDocContent,
+    title,
+    author
+  });
+  
+  if (!blob || blob.size === 0) {
+    throw new Error('Server returned empty HTML file');
+  }
+  
+  const filename = `${title.replace(/[^a-z0-9]/gi, '_')}.html`;
+  return { blob, filename };
+}
+
+export async function downloadAsHTML5(event: NostrEvent, filename?: string): Promise<void> {
+  const { blob, filename: defaultFilename } = await getHTML5Blob(event);
+  const name = filename || defaultFilename;
+  downloadBlob(blob, name);
+}
+
+/**
+ * View HTML5 in e-book viewer
+ */
+export async function viewAsHTML5(event: NostrEvent): Promise<void> {
+  const { blob, filename } = await getHTML5Blob(event);
+  await openInViewer(blob, filename, 'html');
+}
+
+/**
+ * View Markdown in e-book viewer
+ */
+export async function viewAsMarkdown(event: NostrEvent): Promise<void> {
+  if (!event.content || event.content.trim().length === 0) {
+    throw new Error('Cannot view Markdown: article content is empty');
+  }
+  
+  // Get the processed markdown content
+  let content: string;
+  if (event.kind === 30023 || event.kind === 30817) {
+    // Markdown events - process quality control
+    content = await processContentQualityAsync(event.content, event, false);
+  } else {
+    // Convert from AsciiDoc to Markdown
+    const { convertAsciiDocToMarkdown } = await import('./contentQualityControl');
+    content = convertAsciiDocToMarkdown(event.content);
+  }
+  
+  const title = getTitleFromEvent(event);
+  const filename = `${title.replace(/[^a-z0-9]/gi, '_')}.md`;
+  const blob = new Blob([content], { type: 'text/markdown' });
+  await openInViewer(blob, filename, 'markdown');
+}
+
+/**
+ * View AsciiDoc in e-book viewer
+ */
+export async function viewAsAsciiDoc(event: NostrEvent): Promise<void> {
+  if (!event.content || event.content.trim().length === 0) {
+    throw new Error('Cannot view AsciiDoc: article content is empty');
+  }
+  
+  // Get the processed asciidoc content
+  let content: string;
+  if (event.kind === 30023 || event.kind === 30817) {
+    // Markdown events - convert to AsciiDoc
+    const { convertMarkdownToAsciiDoc } = await import('./contentQualityControl');
+    content = convertMarkdownToAsciiDoc(event.content);
+  } else {
+    // AsciiDoc events - process quality control
+    content = await processContentQualityAsync(event.content, event, true);
+  }
+  
+  const title = getTitleFromEvent(event);
+  const filename = `${title.replace(/[^a-z0-9]/gi, '_')}.adoc`;
+  const blob = new Blob([content], { type: 'text/asciidoc' });
+  await openInViewer(blob, filename, 'asciidoc');
 }
 
 /**
@@ -707,37 +790,6 @@ export async function downloadAsLaTeX(event: NostrEvent, filename?: string): Pro
   }
 }
 
-/**
- * Download article as FODT (Open Document Format)
- */
-export async function downloadAsFODT(event: NostrEvent, filename?: string): Promise<void> {
-  if (!event.content || event.content.trim().length === 0) {
-    throw new Error('Cannot download FODT: article content is empty');
-  }
-  
-  try {
-    // Prepare AsciiDoc content with metadata
-    const asciiDocContent = await prepareAsciiDocContent(event, true, 'classic');
-    const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
-    const author = await getAuthorName(event);
-    
-    const blob = await exportToFODT({
-      content: asciiDocContent,
-      title,
-      author
-    });
-    
-    if (!blob || blob.size === 0) {
-      throw new Error('Server returned empty FODT file');
-    }
-    
-    const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.fodt`;
-    downloadBlob(blob, name);
-  } catch (error) {
-    console.error('Failed to download FODT:', error);
-    throw error;
-  }
-}
 
 /**
  * Download article as Reveal.js presentation (AsciiDoc events only)

@@ -28,7 +28,9 @@
     downloadAsHTML5,
     downloadAsRevealJS,
     downloadAsLaTeX,
-    downloadAsFODT,
+    viewAsPDF,
+    viewAsEPUB,
+    viewAsHTML5,
     downloadBookAsAsciiDoc,
     downloadBookAsPDF,
     downloadBookAsEPUB,
@@ -1011,29 +1013,51 @@
                             Markdown
                           {/if}
                         </button>
-                        <button
-                          onclick={async () => {
-                            if (!event) return;
-                            showDownloadMenu = false;
-                            isDownloading = true;
-                            try {
-                              await downloadAsPDF(event);
-                            } catch (error) {
-                              alert('Failed to download PDF. Make sure the AsciiDoctor server is running.');
-                            } finally {
-                              isDownloading = false;
-                            }
-                          }}
-                          disabled={isDownloading}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                          style="color: var(--text-primary);"
-                        >
-                          {#if isDownloading}
-                            Generating PDF...
-                          {:else}
-                            PDF
-                          {/if}
-                        </button>
+                        <div class="flex items-center gap-2">
+                          <button
+                            onclick={async () => {
+                              if (!event) return;
+                              showDownloadMenu = false;
+                              isDownloading = true;
+                              try {
+                                await downloadAsPDF(event);
+                              } catch (error) {
+                                alert('Failed to download PDF. Make sure the AsciiDoctor server is running.');
+                              } finally {
+                                isDownloading = false;
+                              }
+                            }}
+                            disabled={isDownloading}
+                            class="flex-1 text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                            style="color: var(--text-primary);"
+                          >
+                            {#if isDownloading}
+                              Generating PDF...
+                            {:else}
+                              ⬇ PDF
+                            {/if}
+                          </button>
+                          <button
+                            onclick={async () => {
+                              if (!event) return;
+                              showDownloadMenu = false;
+                              isDownloading = true;
+                              try {
+                                await viewAsPDF(event);
+                              } catch (error) {
+                                alert('Failed to view PDF. Make sure the AsciiDoctor server is running.');
+                              } finally {
+                                isDownloading = false;
+                              }
+                            }}
+                            disabled={isDownloading}
+                            class="px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                            style="color: var(--accent); border: 1px solid var(--accent); border-radius: 0.25rem;"
+                            title="View in e-book viewer"
+                          >
+                            👁
+                          </button>
+                        </div>
                         <button
                           onclick={async () => {
                             if (!event) return;
@@ -1172,9 +1196,10 @@
                             >
                               <div class="py-1">
                                 {#each ['classic', 'antique', 'modern', 'documentation', 'scientific', 'pop', 'bible-paragraph', 'bible-versed', 'poster'] as style}
-                        <button
-                          onclick={async () => {
-                            if (!event) return;
+                        <div class="flex items-center gap-2 px-2">
+                          <button
+                            onclick={async () => {
+                              if (!event) return;
                                       showEpubStyleMenu = false;
                             showDownloadMenu = false;
                             isDownloading = true;
@@ -1187,11 +1212,33 @@
                             }
                           }}
                           disabled={isDownloading}
-                                    class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 capitalize"
+                                    class="flex-1 text-left px-2 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 capitalize"
                           style="color: var(--text-primary);"
                         >
                                     {style}
                         </button>
+                          <button
+                            onclick={async () => {
+                              if (!event) return;
+                              showEpubStyleMenu = false;
+                              showDownloadMenu = false;
+                              isDownloading = true;
+                              try {
+                                await viewAsEPUB(event, style as PDFTheme);
+                              } catch (error) {
+                                alert('Failed to view EPUB. Make sure the AsciiDoctor server is running.');
+                              } finally {
+                                isDownloading = false;
+                              }
+                            }}
+                            disabled={isDownloading}
+                            class="px-2 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                            style="color: var(--accent); border: 1px solid var(--accent); border-radius: 0.25rem;"
+                            title="View in e-book viewer"
+                          >
+                            👁
+                          </button>
+                        </div>
                                 {/each}
                               </div>
                             </div>
@@ -1264,29 +1311,6 @@
                             Generating Reveal.js...
                           {:else}
                             Reveal.js
-                          {/if}
-                        </button>
-                        <button
-                          onclick={async () => {
-                            if (!event) return;
-                            showDownloadMenu = false;
-                            isDownloading = true;
-                            try {
-                              await downloadAsFODT(event);
-                            } catch (error) {
-                              alert('Failed to download FODT. Make sure the AsciiDoctor server is running.');
-                            } finally {
-                              isDownloading = false;
-                            }
-                          }}
-                          disabled={isDownloading}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                          style="color: var(--text-primary);"
-                        >
-                          {#if isDownloading}
-                            Generating FODT...
-                          {:else}
-                            FODT (Open Document)
                           {/if}
                         </button>
                       {/if}

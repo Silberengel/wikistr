@@ -54,10 +54,12 @@
     "@tailwindcss/typography": "^0.5.9",
     "debounce": "^2.2.0",
     "diff": "^8.0.2",
+    "epubjs": "^0.3.93",
     "highlight.js": "^11.11.1",
     "idb-keyval": "^6.2.1",
     "js-yaml": "^4.1.0",
     "katex": "^0.16.25",
+    "pdfjs-dist": "^5.4.394",
     "qrcode": "^1.5.4",
     "tailwind-scrollbar": "^3.1.0"
   }

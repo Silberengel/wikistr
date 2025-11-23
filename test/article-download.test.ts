@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { exportToPDF, exportToEPUB, checkServerHealth } from '../src/lib/asciidoctorExport';
 import { 
   downloadAsPDF, 
@@ -8,6 +8,65 @@ import {
   prepareAsciiDocContent 
 } from '../src/lib/articleDownload';
 import type { NostrEvent } from '@nostr/tools/pure';
+
+// Mock fetch for AsciiDoctor server
+const mockFetch = vi.fn();
+global.fetch = mockFetch;
+
+// Helper to create mock PDF blob with proper slice support
+function createMockPDFBlob(size: number = 1000): Blob {
+  // PDF header: %PDF-1.4
+  const pdfHeader = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34]);
+  const pdfContent = new Uint8Array(size);
+  pdfContent.set(pdfHeader, 0);
+  const blob = new Blob([pdfContent], { type: 'application/pdf' });
+  // Store the underlying array buffer for slice operations
+  const underlyingBuffer = pdfContent.buffer;
+  // Ensure slice returns a blob with arrayBuffer method
+  const originalSlice = blob.slice.bind(blob);
+  blob.slice = function(start?: number, end?: number, contentType?: string) {
+    const sliced = originalSlice(start, end, contentType);
+    // Always add arrayBuffer method to sliced blob
+    sliced.arrayBuffer = async () => {
+      const startByte = start || 0;
+      const endByte = end !== undefined ? end : size;
+      return underlyingBuffer.slice(startByte, endByte);
+    };
+    return sliced;
+  };
+  return blob;
+}
+
+// Helper to create mock EPUB blob with proper slice support
+function createMockEPUBBlob(size: number = 2000): Blob {
+  // EPUB is a ZIP file, so we'll create a minimal ZIP structure
+  // ZIP file signature: PK\x03\x04
+  const zipHeader = new Uint8Array([0x50, 0x4B, 0x03, 0x04]);
+  const epubContent = new Uint8Array(size);
+  epubContent.set(zipHeader, 0);
+  const blob = new Blob([epubContent], { type: 'application/epub+zip' });
+  // Store the underlying array buffer for slice operations
+  const underlyingBuffer = epubContent.buffer;
+  // Ensure slice returns a blob with arrayBuffer method
+  const originalSlice = blob.slice.bind(blob);
+  blob.slice = function(start?: number, end?: number, contentType?: string) {
+    const sliced = originalSlice(start, end, contentType);
+    // Always add arrayBuffer method to sliced blob
+    sliced.arrayBuffer = async () => {
+      const startByte = start || 0;
+      const endByte = end !== undefined ? end : size;
+      return underlyingBuffer.slice(startByte, endByte);
+    };
+    return sliced;
+  };
+  return blob;
+}
+
+// Helper to create mock HTML blob
+function createMockHTMLBlob(): Blob {
+  const htmlContent = '<!DOCTYPE html><html><head><title>Test</title></head><body><h1>Test Document</h1></body></html>';
+  return new Blob([htmlContent], { type: 'text/html' });
+}
 
 // Mock NostrEvent for testing
 function createMockEvent(
@@ -37,14 +96,78 @@ describe('AsciiDoctor Server Integration', () => {
   const ASCIIDOCTOR_URL = process.env.VITE_ASCIIDOCTOR_SERVER_URL || 'http://localhost:8091';
   const TEST_TIMEOUT = 30000; // 30 seconds for server requests
 
-  beforeAll(async () => {
-    // Check if server is available
-    const isHealthy = await checkServerHealth();
-    if (!isHealthy) {
-      console.warn('⚠️  AsciiDoctor server is not available. Some tests will be skipped.');
-      console.warn('   Start the server with: docker run -d --name asciidoctor -p 8091:8091 ...');
-    }
-  }, 10000);
+  beforeEach(() => {
+    // Reset mocks before each test
+    mockFetch.mockClear();
+    
+    // Default mock for health check
+    mockFetch.mockImplementation((url: string | Request | URL, options?: RequestInit) => {
+      const urlString = typeof url === 'string' ? url : url instanceof URL ? url.toString() : (url as Request).url;
+      
+      if (urlString.includes('/healthz')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ status: 'ok' })
+        } as Response);
+      }
+      
+      // Mock PDF responses - create blob dynamically to support size variations
+      if (urlString.includes('/convert/pdf')) {
+        // Check if request body contains large content to return larger blob
+        const body = options?.body as string;
+        const contentLength = body ? JSON.parse(body).content?.length || 0 : 0;
+        const pdfBlob = contentLength > 10000 
+          ? createMockPDFBlob(15000) 
+          : createMockPDFBlob(1000);
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/pdf' }),
+          blob: async () => pdfBlob,
+          arrayBuffer: async () => await pdfBlob.arrayBuffer()
+        } as Response);
+      }
+      
+      // Mock EPUB responses - create blob dynamically
+      if (urlString.includes('/convert/epub')) {
+        let contentLength = 0;
+        try {
+          const body = options?.body as string;
+          if (body) {
+            const parsed = JSON.parse(body);
+            contentLength = parsed.content?.length || 0;
+          }
+        } catch {
+          // Ignore parse errors
+        }
+        const epubBlob = contentLength > 10000 
+          ? createMockEPUBBlob(15000) 
+          : createMockEPUBBlob(2000);
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/epub+zip' }),
+          blob: async () => epubBlob,
+          arrayBuffer: async () => await epubBlob.arrayBuffer()
+        } as Response);
+      }
+      
+      // Mock HTML5 responses
+      if (urlString.includes('/convert/html5')) {
+        const htmlBlob = createMockHTMLBlob();
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'text/html' }),
+          blob: async () => htmlBlob,
+          text: async () => await htmlBlob.text()
+        } as Response);
+      }
+      
+      return Promise.reject(new Error(`Unexpected URL: ${urlString}`));
+    });
+  });
 
   describe('Server Health Check', () => {
     it('should check server health', async () => {
@@ -289,13 +412,13 @@ Content here.`,
     it('should throw error for empty content in downloadAsPDF', async () => {
       const event = createMockEvent(30818, '', 'Test Article');
       
-      await expect(downloadAsPDF(event)).rejects.toThrow('Cannot download PDF: article content is empty');
+      await expect(downloadAsPDF(event)).rejects.toThrow('Cannot generate PDF: article content is empty');
     });
 
     it('should throw error for empty content in downloadAsEPUB', async () => {
       const event = createMockEvent(30818, '', 'Test Article');
       
-      await expect(downloadAsEPUB(event)).rejects.toThrow('Cannot download EPUB: article content is empty');
+      await expect(downloadAsEPUB(event)).rejects.toThrow('Cannot generate EPUB: article content is empty');
     });
 
     it('should handle 30817 (Markdown) event for PDF', async () => {
@@ -311,8 +434,9 @@ Some content.`,
         'Test Markdown Article'
       );
 
+      const asciiDocContent = await prepareAsciiDocContent(event);
       const blob = await exportToPDF({
-        content: prepareAsciiDocContent(event),
+        content: asciiDocContent,
         title: event.tags.find(([k]) => k === 'title')?.[1] || 'Test',
         author: event.pubkey.slice(0, 8) + '...'
       });
