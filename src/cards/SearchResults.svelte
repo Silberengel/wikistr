@@ -89,13 +89,12 @@
               if (articleKinds.includes(foundEvent.kind)) {
                 // It's an article - create article card
                 const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
-                openOrCreateArticleCard(
-                  getTagOr(foundEvent, 'd') || '',
-                  foundEvent.pubkey,
-                  foundEvent,
-                  result.relays,
-                  createChild
-                );
+                openOrCreateArticleCard({
+                  type: 'article',
+                  data: [getTagOr(foundEvent, 'd') || '', foundEvent.pubkey],
+                  actualEvent: foundEvent,
+                  relayHints: result.relays
+                });
                 return;
               } else {
                 // Not an article kind
@@ -598,14 +597,16 @@
     const selectedEvents = results.filter(event => selectedArticles.has(event.id));
     if (selectedEvents.length < 2) return;
     
-    // Create diff query string from selected article titles
-    const articleTitles = selectedEvents.map(event => 
-      event.tags.find(t => t[0] === 'title')?.[1] || 
-      event.tags.find(t => t[0] === 'd')?.[1] || 
-      'Untitled'
-    );
+    // Create diff query string using dTag*pubkey format to uniquely identify articles
+    const articleRefs = selectedEvents.map(event => {
+      const dTag = event.tags.find(t => t[0] === 'd')?.[1] || 
+                   event.tags.find(t => t[0] === 'title')?.[1] || 
+                   'Untitled';
+      // Use dTag*pubkey format to ensure unique identification
+      return `${dTag}*${event.pubkey}`;
+    });
     
-    const diffQuery = `diff::${articleTitles.join(' | ')}`;
+    const diffQuery = `diff::${articleRefs.join(' | ')}`;
     
     // Store selected events in a global cache with the diff query as key
     const diffKey = `diff_${diffQuery}`;
@@ -628,6 +629,7 @@
     
     console.log('🔍 Creating diff card with localStorage cache:', diffCard);
     console.log('🔍 Stored events in localStorage with key:', diffKey);
+    console.log('🔍 Article refs (dTag*pubkey):', articleRefs);
     
     createChild(diffCard);
   }

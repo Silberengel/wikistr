@@ -53,12 +53,18 @@ export async function fetchOGMetadata(url: string): Promise<OGMetadata | null> {
       console.warn('OG fetch: unexpected content type', contentType, 'for', url);
     }
     
-    const html = await response.text();
+    let html = await response.text();
     
     if (!html || html.trim().length === 0) {
       console.warn('OG fetch: empty response for', url);
       return null;
     }
+    
+    // Remove script tags to prevent them from being executed
+    // This prevents module loading errors when parsing HTML with DOMParser
+    html = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+    // Also remove script tags without closing tags (self-closing or malformed)
+    html = html.replace(/<script\b[^>]*>/gi, '');
     
     if (typeof DOMParser === 'undefined') {
       console.warn('OG fetch: DOMParser not available');

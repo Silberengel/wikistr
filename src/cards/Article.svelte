@@ -31,6 +31,9 @@
     viewAsPDF,
     viewAsEPUB,
     viewAsHTML5,
+    viewAsMarkdown,
+    viewAsAsciiDoc,
+    viewAsLaTeX,
     downloadBookAsAsciiDoc,
     downloadBookAsPDF,
     downloadBookAsEPUB,
@@ -990,29 +993,51 @@
                     {:else if event}
                       <!-- Markdown events (30023, 30817): Markdown, PDF, HTML5, ODT -->
                       {#if event.kind === 30023 || event.kind === 30817}
-                        <button
-                          onclick={async () => {
-                            if (!event) return;
-                            showDownloadMenu = false;
-                            isDownloading = true;
-                            try {
-                              await downloadAsMarkdown(event);
-                            } catch (error) {
-                              console.error('Failed to download Markdown:', error);
-                            } finally {
-                              isDownloading = false;
-                            }
-                          }}
-                          disabled={isDownloading}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                          style="color: var(--text-primary);"
-                        >
-                          {#if isDownloading}
-                            Preparing...
-                          {:else}
-                            Markdown
-                          {/if}
-                        </button>
+                        <div class="flex items-center gap-2">
+                          <button
+                            onclick={async () => {
+                              if (!event) return;
+                              showDownloadMenu = false;
+                              isDownloading = true;
+                              try {
+                                await downloadAsMarkdown(event);
+                              } catch (error) {
+                                console.error('Failed to download Markdown:', error);
+                              } finally {
+                                isDownloading = false;
+                              }
+                            }}
+                            disabled={isDownloading}
+                            class="flex-1 text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                            style="color: var(--text-primary);"
+                          >
+                            {#if isDownloading}
+                              Preparing...
+                            {:else}
+                              ⬇ Markdown
+                            {/if}
+                          </button>
+                          <button
+                            onclick={async () => {
+                              if (!event) return;
+                              showDownloadMenu = false;
+                              isDownloading = true;
+                              try {
+                                await viewAsMarkdown(event);
+                              } catch (error) {
+                                alert('Failed to view Markdown.');
+                              } finally {
+                                isDownloading = false;
+                              }
+                            }}
+                            disabled={isDownloading}
+                            class="px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                            style="color: var(--accent); border: 1px solid var(--accent); border-radius: 0.25rem;"
+                            title="View in e-book viewer"
+                          >
+                            (View)
+                          </button>
+                        </div>
                         <div class="flex items-center gap-2">
                           <button
                             onclick={async () => {
@@ -1055,32 +1080,54 @@
                             style="color: var(--accent); border: 1px solid var(--accent); border-radius: 0.25rem;"
                             title="View in e-book viewer"
                           >
-                            👁
+                            (View)
                           </button>
                         </div>
-                        <button
-                          onclick={async () => {
-                            if (!event) return;
-                            showDownloadMenu = false;
-                            isDownloading = true;
-                            try {
-                              await downloadAsHTML5(event);
-                            } catch (error) {
-                              alert('Failed to download HTML5. Make sure the AsciiDoctor server is running.');
-                            } finally {
-                              isDownloading = false;
-                            }
-                          }}
-                          disabled={isDownloading}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                          style="color: var(--text-primary);"
-                        >
-                          {#if isDownloading}
-                            Generating HTML5...
-                          {:else}
-                            HTML5
-                          {/if}
-                        </button>
+                        <div class="flex items-center gap-2">
+                          <button
+                            onclick={async () => {
+                              if (!event) return;
+                              showDownloadMenu = false;
+                              isDownloading = true;
+                              try {
+                                await downloadAsHTML5(event);
+                              } catch (error) {
+                                alert('Failed to download HTML5. Make sure the AsciiDoctor server is running.');
+                              } finally {
+                                isDownloading = false;
+                              }
+                            }}
+                            disabled={isDownloading}
+                            class="flex-1 text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                            style="color: var(--text-primary);"
+                          >
+                            {#if isDownloading}
+                              Generating HTML5...
+                            {:else}
+                              ⬇ HTML5
+                            {/if}
+                          </button>
+                          <button
+                            onclick={async () => {
+                              if (!event) return;
+                              showDownloadMenu = false;
+                              isDownloading = true;
+                              try {
+                                await viewAsHTML5(event);
+                              } catch (error) {
+                                alert('Failed to view HTML5.');
+                              } finally {
+                                isDownloading = false;
+                              }
+                            }}
+                            disabled={isDownloading}
+                            class="px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                            style="color: var(--accent); border: 1px solid var(--accent); border-radius: 0.25rem;"
+                            title="View in e-book viewer"
+                          >
+                            (View)
+                          </button>
+                        </div>
                       {/if}
                       
                       <!-- AsciiDoc events (30040, 30041, 30818): Markdown, PDF, AsciiDoc, EPUB -->
@@ -1108,29 +1155,51 @@
                             Markdown
                           {/if}
                         </button>
-                        <button
-                          onclick={async () => {
-                            if (!event) return;
-                            showDownloadMenu = false;
-                            isDownloading = true;
-                            try {
-                              await downloadAsAsciiDoc(event);
-                            } catch (error) {
-                              console.error('Failed to download AsciiDoc:', error);
-                            } finally {
-                              isDownloading = false;
-                            }
-                          }}
-                          disabled={isDownloading}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                          style="color: var(--text-primary);"
-                        >
-                          {#if isDownloading}
-                            Preparing...
-                          {:else}
-                            AsciiDoc
-                          {/if}
-                        </button>
+                        <div class="flex items-center gap-2">
+                          <button
+                            onclick={async () => {
+                              if (!event) return;
+                              showDownloadMenu = false;
+                              isDownloading = true;
+                              try {
+                                await downloadAsAsciiDoc(event);
+                              } catch (error) {
+                                console.error('Failed to download AsciiDoc:', error);
+                              } finally {
+                                isDownloading = false;
+                              }
+                            }}
+                            disabled={isDownloading}
+                            class="flex-1 text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                            style="color: var(--text-primary);"
+                          >
+                            {#if isDownloading}
+                              Preparing...
+                            {:else}
+                              ⬇ AsciiDoc
+                            {/if}
+                          </button>
+                          <button
+                            onclick={async () => {
+                              if (!event) return;
+                              showDownloadMenu = false;
+                              isDownloading = true;
+                              try {
+                                await viewAsAsciiDoc(event);
+                              } catch (error) {
+                                alert('Failed to view AsciiDoc.');
+                              } finally {
+                                isDownloading = false;
+                              }
+                            }}
+                            disabled={isDownloading}
+                            class="px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                            style="color: var(--accent); border: 1px solid var(--accent); border-radius: 0.25rem;"
+                            title="View in e-book viewer"
+                          >
+                            (View)
+                          </button>
+                        </div>
                         <!-- PDF with style submenu -->
                         <div class="relative">
                           <button
@@ -1206,7 +1275,9 @@
                             try {
                                         await downloadAsEPUB(event, undefined, style as PDFTheme);
                             } catch (error) {
-                              alert('Failed to download EPUB. Make sure the AsciiDoctor server is running.');
+                              const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                              console.error('EPUB download failed:', error);
+                              alert(`Failed to download EPUB: ${errorMessage}`);
                             } finally {
                               isDownloading = false;
                             }
@@ -1236,7 +1307,7 @@
                             style="color: var(--accent); border: 1px solid var(--accent); border-radius: 0.25rem;"
                             title="View in e-book viewer"
                           >
-                            👁
+                            (View)
                           </button>
                         </div>
                                 {/each}
@@ -1244,52 +1315,96 @@
                             </div>
                           {/if}
                         </div>
-                        <button
-                          onclick={async () => {
-                            if (!event) return;
-                            showDownloadMenu = false;
-                            isDownloading = true;
-                            try {
-                              await downloadAsHTML5(event);
-                            } catch (error) {
-                              alert('Failed to download HTML5. Make sure the AsciiDoctor server is running.');
-                            } finally {
-                              isDownloading = false;
-                            }
-                          }}
-                          disabled={isDownloading}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                          style="color: var(--text-primary);"
-                        >
-                          {#if isDownloading}
-                            Generating HTML5...
-                          {:else}
-                            HTML5
-                          {/if}
-                        </button>
-                        <button
-                          onclick={async () => {
-                            if (!event) return;
-                            showDownloadMenu = false;
-                            isDownloading = true;
-                            try {
-                              await downloadAsLaTeX(event);
-                            } catch (error) {
-                              alert('Failed to download LaTeX. Make sure the AsciiDoctor server is running.');
-                            } finally {
-                              isDownloading = false;
-                            }
-                          }}
-                          disabled={isDownloading}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                          style="color: var(--text-primary);"
-                        >
-                          {#if isDownloading}
-                            Generating LaTeX...
-                          {:else}
-                            LaTeX
-                          {/if}
-                        </button>
+                        <div class="flex items-center gap-2">
+                          <button
+                            onclick={async () => {
+                              if (!event) return;
+                              showDownloadMenu = false;
+                              isDownloading = true;
+                              try {
+                                await downloadAsHTML5(event);
+                              } catch (error) {
+                                alert('Failed to download HTML5. Make sure the AsciiDoctor server is running.');
+                              } finally {
+                                isDownloading = false;
+                              }
+                            }}
+                            disabled={isDownloading}
+                            class="flex-1 text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                            style="color: var(--text-primary);"
+                          >
+                            {#if isDownloading}
+                              Generating HTML5...
+                            {:else}
+                              ⬇ HTML5
+                            {/if}
+                          </button>
+                          <button
+                            onclick={async () => {
+                              if (!event) return;
+                              showDownloadMenu = false;
+                              isDownloading = true;
+                              try {
+                                await viewAsHTML5(event);
+                              } catch (error) {
+                                alert('Failed to view HTML5.');
+                              } finally {
+                                isDownloading = false;
+                              }
+                            }}
+                            disabled={isDownloading}
+                            class="px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                            style="color: var(--accent); border: 1px solid var(--accent); border-radius: 0.25rem;"
+                            title="View in e-book viewer"
+                          >
+                            (View)
+                          </button>
+                        </div>
+                        <div class="flex items-center gap-2">
+                          <button
+                            onclick={async () => {
+                              if (!event) return;
+                              showDownloadMenu = false;
+                              isDownloading = true;
+                              try {
+                                await downloadAsLaTeX(event);
+                              } catch (error) {
+                                alert('Failed to download LaTeX. Make sure the AsciiDoctor server is running.');
+                              } finally {
+                                isDownloading = false;
+                              }
+                            }}
+                            disabled={isDownloading}
+                            class="flex-1 text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                            style="color: var(--text-primary);"
+                          >
+                            {#if isDownloading}
+                              Generating LaTeX...
+                            {:else}
+                              ⬇ LaTeX
+                            {/if}
+                          </button>
+                          <button
+                            onclick={async () => {
+                              if (!event) return;
+                              showDownloadMenu = false;
+                              isDownloading = true;
+                              try {
+                                await viewAsLaTeX(event);
+                              } catch (error) {
+                                alert('Failed to view LaTeX. Make sure the AsciiDoctor server is running.');
+                              } finally {
+                                isDownloading = false;
+                              }
+                            }}
+                            disabled={isDownloading}
+                            class="px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                            style="color: var(--accent); border: 1px solid var(--accent); border-radius: 0.25rem;"
+                            title="View as PDF in e-book viewer"
+                          >
+                            (View)
+                          </button>
+                        </div>
                         <button
                           onclick={async () => {
                             if (!event) return;

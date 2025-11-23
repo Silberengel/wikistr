@@ -18,8 +18,13 @@ const getAsciiDoctorServerUrl = () => {
   if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') {
     return 'http://localhost:8091';
   }
-  // In browser, use relative path (works with Apache proxy)
+  // In browser, check if we're in development (localhost) and use direct port, otherwise use proxy path
   if (typeof window !== 'undefined') {
+    // In development (localhost), use direct connection to port 8091
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      return 'http://localhost:8091/';
+    }
+    // In production, use relative path (works with Apache proxy)
     return '/asciidoctor/';
   }
   // Default fallback
@@ -39,7 +44,9 @@ export interface ExportOptions {
  * Convert AsciiDoc content to PDF
  */
 export async function exportToPDF(options: ExportOptions): Promise<Blob> {
-  const baseUrl = ASCIIDOCTOR_SERVER_URL.endsWith('/') ? ASCIIDOCTOR_SERVER_URL : `${ASCIIDOCTOR_SERVER_URL}/`;
+  // Normalize baseUrl - remove trailing slash, then add it back to ensure clean URL construction
+  const normalizedBase = ASCIIDOCTOR_SERVER_URL.replace(/\/+$/, '');
+  const baseUrl = `${normalizedBase}/`;
   const url = `${baseUrl}convert/pdf`;
   const response = await fetch(url, {
     method: 'POST',
@@ -237,7 +244,9 @@ export async function exportToRevealJS(options: ExportOptions): Promise<Blob> {
  * Convert AsciiDoc content to EPUB
  */
 export async function exportToEPUB(options: ExportOptions): Promise<Blob> {
-  const baseUrl = ASCIIDOCTOR_SERVER_URL.endsWith('/') ? ASCIIDOCTOR_SERVER_URL : `${ASCIIDOCTOR_SERVER_URL}/`;
+  // Normalize baseUrl - remove trailing slash, then add it back to ensure clean URL construction
+  const normalizedBase = ASCIIDOCTOR_SERVER_URL.replace(/\/+$/, '');
+  const baseUrl = `${normalizedBase}/`;
   const url = `${baseUrl}convert/epub`;
   const response = await fetch(url, {
     method: 'POST',
@@ -253,13 +262,42 @@ export async function exportToEPUB(options: ExportOptions): Promise<Blob> {
   });
 
   if (!response.ok) {
-    // Try to read error message
-    const contentType = response.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-      throw new Error(error.error || error.message || `Failed to generate EPUB: ${response.statusText}`);
+    // Try to read error message from response body
+    let errorMessage = `Failed to generate EPUB: ${response.status} ${response.statusText}`;
+    
+    try {
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const error = await response.json();
+        errorMessage = error.error || error.message || errorMessage;
+      } else {
+        // Try to read as text even if not JSON
+        const text = await response.text();
+        if (text) {
+          // Try to parse as JSON in case content-type is wrong
+          try {
+            const error = JSON.parse(text);
+            errorMessage = error.error || error.message || errorMessage;
+          } catch {
+            // Not JSON, use text as error message (limit length)
+            const preview = text.length > 200 ? text.substring(0, 200) + '...' : text;
+            errorMessage = `${errorMessage}\nServer response: ${preview}`;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to read error response:', err);
+      // Use default error message
     }
-    throw new Error(`Failed to generate EPUB: ${response.status} ${response.statusText}`);
+    
+    console.error('EPUB conversion failed:', {
+      status: response.status,
+      statusText: response.statusText,
+      url,
+      errorMessage
+    });
+    
+    throw new Error(errorMessage);
   }
 
   // Verify we got an EPUB response
@@ -326,7 +364,7 @@ export function downloadBlob(blob: Blob, filename: string): void {
 /**
  * Open a file in the e-book viewer instead of downloading
  */
-export async function openInViewer(blob: Blob, filename: string, format: 'pdf' | 'epub' | 'html'): Promise<void> {
+export async function openInViewer(blob: Blob, filename: string, format: 'pdf' | 'epub' | 'html' | 'markdown' | 'asciidoc'): Promise<void> {
   const { openViewer } = await import('./viewer');
   openViewer({ blob, filename, format });
 }

@@ -722,9 +722,10 @@ export async function viewAsMarkdown(event: NostrEvent): Promise<void> {
     // Markdown events - process quality control
     content = await processContentQualityAsync(event.content, event, false);
   } else {
-    // Convert from AsciiDoc to Markdown
-    const { convertAsciiDocToMarkdown } = await import('./contentQualityControl');
+    // Convert from AsciiDoc to Markdown (using existing function)
     content = convertAsciiDocToMarkdown(event.content);
+    // Apply basic quality control
+    content = processContentQuality(content, event, false);
   }
   
   const title = getTitleFromEvent(event);
@@ -744,9 +745,10 @@ export async function viewAsAsciiDoc(event: NostrEvent): Promise<void> {
   // Get the processed asciidoc content
   let content: string;
   if (event.kind === 30023 || event.kind === 30817) {
-    // Markdown events - convert to AsciiDoc
-    const { convertMarkdownToAsciiDoc } = await import('./contentQualityControl');
+    // Markdown events - convert to AsciiDoc (using existing function)
     content = convertMarkdownToAsciiDoc(event.content);
+    // Apply basic quality control
+    content = processContentQuality(content, event, true);
   } else {
     // AsciiDoc events - process quality control
     content = await processContentQualityAsync(event.content, event, true);
@@ -788,6 +790,20 @@ export async function downloadAsLaTeX(event: NostrEvent, filename?: string): Pro
     console.error('Failed to download LaTeX:', error);
     throw error;
   }
+}
+
+/**
+ * View LaTeX in e-book viewer (converts to PDF first)
+ */
+export async function viewAsLaTeX(event: NostrEvent, theme: PDFTheme = 'classic'): Promise<void> {
+  if (!event.content || event.content.trim().length === 0) {
+    throw new Error('Cannot view LaTeX: article content is empty');
+  }
+  
+  // Convert AsciiDoc to PDF and open in viewer
+  // This effectively shows the LaTeX-rendered output as PDF
+  const { blob, filename } = await getPDFBlob(event, theme);
+  await openInViewer(blob, filename, 'pdf');
 }
 
 
