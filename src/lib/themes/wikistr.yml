@@ -43,11 +43,12 @@ searchHelpText: |
 
   **Compare content with diff:**
   • diff::article1 | article2
+  • diff::article1*pubkey1 | article2*pubkey2 (compare specific authors)
+  • diff::article1 | article1*pubkey1 (compare different versions of same article)
   • diff::[[book::bible | john 3:16 | kjv]] | [[book::bible | john 3:16 | niv]]
   • diff::article1; article2; article3
-  • diff::[[book::bible | john 3:16 | kjv]] | [[book::bible | john 3:16 | esv]]
 
-  Use diff:: prefix to compare wiki articles, book versions, or any content. Supports pipe '|' and semicolon ';' separation.
+  Use diff:: prefix to compare wiki articles, book versions, or any content. Use article*pubkey format to compare specific authors' versions. Supports pipe '|' and semicolon ';' separation.
 typography:
   fontFamily: '"Linux Libertine", "Times New Roman", "Times", "Liberation Serif", "Nimbus Roman No9 L", "Minion Pro", "Crimson Text", serif'
   fontFamilyHeading: '"Linux Libertine", "Times New Roman", "Times", "Liberation Serif", "Nimbus Roman No9 L", "Minion Pro", "Crimson Text", serif'

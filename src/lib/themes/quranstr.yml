@@ -47,11 +47,12 @@ searchHelpText: |
 
   **Compare content with diff:**
   • diff::article1 | article2
+  • diff::article1*pubkey1 | article2*pubkey2 (compare specific authors)
+  • diff::article1 | article1*pubkey1 (compare different versions of same article)
   • diff::[[book::quran | al-fatiha 1-7 | pickthall]] | [[book::quran | al-fatiha 1-7 | shakir]]
   • diff::article1; article2; article3
-  • diff::[[book::quran | al-fatiha 1-7 | pickthall]] | [[book::quran | al-fatiha 1-7 | shakir]]
 
-  Use diff:: prefix to compare wiki articles, Quran translations, or any content. Supports pipe '|' and semicolon ';' separation.
+  Use diff:: prefix to compare wiki articles, Quran translations, or any content. Use article*pubkey format to compare specific authors' versions. Supports pipe '|' and semicolon ';' separation.
 typography:
   fontFamily: '"Scheherazade New", "Amiri", "Traditional Arabic", "Arabic Typesetting", "Times New Roman", "Times", serif'
   fontFamilyHeading: '"Scheherazade New", "Amiri", "Traditional Arabic", "Arabic Typesetting", "Times New Roman", "Times", serif'
