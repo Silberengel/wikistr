@@ -1279,6 +1279,46 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
     openOrCreateArticleCard(articleCardData);
   }
 
+  // Find and open a 30040 event for a book/chapter
+  async function openBookIndex(bookName: string, chapter?: string, ev?: MouseEvent) {
+    const isMiddleClick = ev?.button === 1;
+    
+    try {
+      const { findBookIndexEvent } = await import('$lib/books');
+      const indexEvent = await findBookIndexEvent(
+        bookName,
+        chapter,
+        bookCard.bookType,
+        relayService,
+        undefined
+      );
+      
+      if (indexEvent) {
+        const dTag = getTagOr(indexEvent, 'd') || indexEvent.id;
+        const pubkey = indexEvent.pubkey;
+        
+        const articleCardData: Omit<ArticleCard, 'id'> = {
+          type: 'article',
+          data: [dTag, pubkey],
+          relayHints: [],
+          actualEvent: indexEvent
+        };
+        
+        if (isMiddleClick) {
+          const card: ArticleCard = {
+            id: next(),
+            ...articleCardData
+          };
+          createChild(card);
+        } else {
+          openOrCreateArticleCard(articleCardData);
+        }
+      }
+    } catch (error) {
+      console.warn('Book: Failed to find index event for', bookName, chapter, error);
+    }
+  }
+
   function startEditing() {
     debouncedPerformBookSearch.clear();
     editable = true;
@@ -1587,12 +1627,30 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
                 {@const chapterKeys = Array.from(chapterMap.keys())}
                 {@const isFirstChapter = chapterKey === chapterKeys[0]}
                 
-                <!-- Chapter header -->
+                <!-- Chapter header with clickable parts -->
                 <div 
                   class="chapter-header" 
                   style="font-weight: bold; font-size: 1.1em; margin-bottom: 0.75rem; margin-top: {isFirstChapter ? '0' : '1.5rem'}; color: var(--accent);"
                 >
-                  {bookTitle} {chapter}:{headerVerses}
+                  {@const bookName = firstMetadata?.book || ''}
+                  <a
+                    onclick={(e) => openBookIndex(bookName, undefined, e)}
+                    style="color: var(--accent); text-decoration: underline; cursor: pointer;"
+                    title="Open book index"
+                  >
+                    {bookTitle}
+                  </a>
+                  {#if chapter}
+                    {' '}
+                    <a
+                      onclick={(e) => openBookIndex(bookName, chapter, e)}
+                      style="color: var(--accent); text-decoration: underline; cursor: pointer;"
+                      title="Open chapter index"
+                    >
+                      {chapter}
+                    </a>
+                  {/if}
+                  :{headerVerses}
                 </div>
                 
                 <!-- Create a map of section -> best event for this chapter -->
@@ -1701,12 +1759,30 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
           {@const chapterKeys = Array.from(chapterMap.keys())}
           {@const isFirstChapter = chapterKey === chapterKeys[0]}
           
-          <!-- Chapter header -->
+          <!-- Chapter header with clickable parts -->
           <div 
             class="chapter-header" 
             style="font-weight: bold; font-size: 1.1em; margin-bottom: 0.75rem; margin-top: {isFirstChapter ? '0' : '1.5rem'}; color: var(--accent);"
           >
-            {bookTitle} {chapter}:{headerVerses}
+            {@const bookName = firstMetadata?.book || ''}
+            <a
+              onclick={(e) => openBookIndex(bookName, undefined, e)}
+              style="color: var(--accent); text-decoration: underline; cursor: pointer;"
+              title="Open book index"
+            >
+              {bookTitle}
+            </a>
+            {#if chapter}
+              {' '}
+              <a
+                onclick={(e) => openBookIndex(bookName, chapter, e)}
+                style="color: var(--accent); text-decoration: underline; cursor: pointer;"
+                title="Open chapter index"
+              >
+                {chapter}
+              </a>
+            {/if}
+            :{headerVerses}
           </div>
           
           <!-- Create a map of section -> best event for this chapter -->

@@ -665,6 +665,85 @@ export function generateBookSearchQuery(references: BookReference[], bookType: s
  * Check if an event is a book event (based on generic book tags)
  * Supports both old format (type/book/chapter/verse/version) and NKBIP-08 format (C/T/c/s/v)
  */
+/**
+ * Find 30040 index events that contain a specific event ID in their 'e' tags
+ * This is used for "Level Higher" navigation
+ */
+export async function findParentIndexEvents(
+  eventId: string,
+  relayService: any,
+  accountPubkey?: string
+): Promise<BookEvent[]> {
+  try {
+    const result = await relayService.queryEvents(
+      accountPubkey || 'anonymous',
+      'wiki-read',
+      [
+        {
+          kinds: [30040],
+          '#e': [eventId]
+        }
+      ],
+      {
+        excludeUserContent: false,
+        currentUserPubkey: accountPubkey
+      }
+    );
+
+    return result.events.filter(evt => evt.kind === 30040) as BookEvent[];
+  } catch (error) {
+    console.warn('Failed to find parent index events:', error);
+    return [];
+  }
+}
+
+/**
+ * Find a 30040 index event for a specific book/chapter
+ * This is used for navigating to book/chapter indices from verse headers
+ */
+export async function findBookIndexEvent(
+  bookName: string,
+  chapter: string | undefined,
+  collection: string | undefined,
+  relayService: any,
+  accountPubkey?: string
+): Promise<BookEvent | null> {
+  const { normalizeIdentifier } = await import('@nostr/tools/nip54');
+  const normalizedBook = normalizeIdentifier(bookName).toLowerCase();
+  
+  const filters: any = {
+    kinds: [30040],
+    limit: 1,
+    '#T': [normalizedBook]
+  };
+
+  if (collection) {
+    filters['#C'] = [normalizeIdentifier(collection).toLowerCase()];
+  }
+
+  if (chapter) {
+    filters['#c'] = [chapter];
+  }
+
+  try {
+    const indexResult = await relayService.queryEvents(
+      accountPubkey || 'anonymous',
+      'wiki-read',
+      [filters],
+      {
+        excludeUserContent: false,
+        currentUserPubkey: accountPubkey
+      }
+    );
+
+    const indexEvent = indexResult.events.find(evt => evt.kind === 30040);
+    return indexEvent as BookEvent | null;
+  } catch (error) {
+    console.warn('Failed to find book index event:', error);
+    return null;
+  }
+}
+
 export function isBookEvent(event: BookEvent, bookType?: string): boolean {
   // Support both NKBIP-08 format tags (single-letter: C/T/c/s/v) and legacy format (type/book/chapter/verse/version)
   const collectionTag = event.tags.find(([tag]) => tag === 'C');

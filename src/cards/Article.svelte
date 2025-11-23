@@ -236,23 +236,8 @@
 
     isLoadingParents = true;
     try {
-      // Query for 30040 events that have this event's ID in their 'e' tags
-      const result = await relayService.queryEvents(
-        $account?.pubkey || 'anonymous',
-        'wiki-read',
-        [
-          {
-            kinds: [30040],
-            '#e': [event.id]
-          }
-        ],
-        {
-          excludeUserContent: false,
-          currentUserPubkey: $account?.pubkey
-        }
-      );
-
-      parentEvents = result.events;
+      const { findParentIndexEvents } = await import('$lib/books');
+      parentEvents = await findParentIndexEvents(event.id, relayService, $account?.pubkey);
     } catch (error) {
       console.error('Failed to load parent events:', error);
       parentEvents = [];
