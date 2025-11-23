@@ -11,7 +11,8 @@ import { openBookSearchCard } from '$lib/bookSearchLauncher';
 import ModeToggle from '$components/ModeToggle.svelte';
 import ProfilePopup from '$components/ProfilePopup.svelte';
 import UserBadge from '$components/UserBadge.svelte';
-  import { nip19, decode } from '@nostr/tools/nip19';
+  import { nip19 } from '@nostr/tools';
+  import { decode } from '@nostr/tools/nip19';
   import pkg from '../../package.json';
 
   // Theme configuration

@@ -6,7 +6,7 @@
 import type { NostrEvent } from '@nostr/tools/pure';
 import { nip19 } from '@nostr/tools';
 import { relayService } from '$lib/relayService';
-import { exportToPDF, exportToEPUB, exportToHTML5, exportToRevealJS, exportToLaTeX, downloadBlob } from './asciidoctorExport';
+import { exportToPDF, exportToEPUB, exportToHTML5, exportToRevealJS, exportToLaTeX, exportToFODT, downloadBlob } from './asciidoctorExport';
 import {
   processContentQuality,
   processContentQualityAsync,
@@ -703,6 +703,38 @@ export async function downloadAsLaTeX(event: NostrEvent, filename?: string): Pro
     downloadBlob(blob, name);
   } catch (error) {
     console.error('Failed to download LaTeX:', error);
+    throw error;
+  }
+}
+
+/**
+ * Download article as FODT (Open Document Format)
+ */
+export async function downloadAsFODT(event: NostrEvent, filename?: string): Promise<void> {
+  if (!event.content || event.content.trim().length === 0) {
+    throw new Error('Cannot download FODT: article content is empty');
+  }
+  
+  try {
+    // Prepare AsciiDoc content with metadata
+    const asciiDocContent = await prepareAsciiDocContent(event, true, 'classic');
+    const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
+    const author = await getAuthorName(event);
+    
+    const blob = await exportToFODT({
+      content: asciiDocContent,
+      title,
+      author
+    });
+    
+    if (!blob || blob.size === 0) {
+      throw new Error('Server returned empty FODT file');
+    }
+    
+    const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.fodt`;
+    downloadBlob(blob, name);
+  } catch (error) {
+    console.error('Failed to download FODT:', error);
     throw error;
   }
 }

@@ -1626,29 +1626,31 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
                 {@const headerVerses = formatSections(allSections)}
                 {@const chapterKeys = Array.from(chapterMap.keys())}
                 {@const isFirstChapter = chapterKey === chapterKeys[0]}
+                {@const bookName = firstMetadata?.book || ''}
                 
                 <!-- Chapter header with clickable parts -->
                 <div 
                   class="chapter-header" 
                   style="font-weight: bold; font-size: 1.1em; margin-bottom: 0.75rem; margin-top: {isFirstChapter ? '0' : '1.5rem'}; color: var(--accent);"
                 >
-                  {@const bookName = firstMetadata?.book || ''}
-                  <a
+                  <button
+                    type="button"
                     onclick={(e) => openBookIndex(bookName, undefined, e)}
-                    style="color: var(--accent); text-decoration: underline; cursor: pointer;"
+                    style="color: var(--accent); text-decoration: underline; cursor: pointer; background: none; border: none; padding: 0; font: inherit;"
                     title="Open book index"
                   >
                     {bookTitle}
-                  </a>
+                  </button>
                   {#if chapter}
                     {' '}
-                    <a
+                    <button
+                      type="button"
                       onclick={(e) => openBookIndex(bookName, chapter, e)}
-                      style="color: var(--accent); text-decoration: underline; cursor: pointer;"
+                      style="color: var(--accent); text-decoration: underline; cursor: pointer; background: none; border: none; padding: 0; font: inherit;"
                       title="Open chapter index"
                     >
                       {chapter}
-                    </a>
+                    </button>
                   {/if}
                   :{headerVerses}
                 </div>
@@ -1758,29 +1760,31 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
           {@const headerVerses = formatSections(allSections)}
           {@const chapterKeys = Array.from(chapterMap.keys())}
           {@const isFirstChapter = chapterKey === chapterKeys[0]}
+          {@const bookName = firstMetadata?.book || ''}
           
           <!-- Chapter header with clickable parts -->
           <div 
             class="chapter-header" 
             style="font-weight: bold; font-size: 1.1em; margin-bottom: 0.75rem; margin-top: {isFirstChapter ? '0' : '1.5rem'}; color: var(--accent);"
           >
-            {@const bookName = firstMetadata?.book || ''}
-            <a
+            <button
+              type="button"
               onclick={(e) => openBookIndex(bookName, undefined, e)}
-              style="color: var(--accent); text-decoration: underline; cursor: pointer;"
+              style="color: var(--accent); text-decoration: underline; cursor: pointer; background: none; border: none; padding: 0; font: inherit;"
               title="Open book index"
             >
               {bookTitle}
-            </a>
+            </button>
             {#if chapter}
               {' '}
-              <a
+              <button
+                type="button"
                 onclick={(e) => openBookIndex(bookName, chapter, e)}
-                style="color: var(--accent); text-decoration: underline; cursor: pointer;"
+                style="color: var(--accent); text-decoration: underline; cursor: pointer; background: none; border: none; padding: 0; font: inherit;"
                 title="Open chapter index"
               >
                 {chapter}
-              </a>
+              </button>
             {/if}
             :{headerVerses}
           </div>

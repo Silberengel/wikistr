@@ -8,4 +8,5 @@ gem 'asciidoctor-epub3', '~> 1.5'
 gem 'asciidoctor-revealjs', '~> 5.0'
 gem 'asciidoctor-diagram', '~> 2.2'  # For PlantUML, Graphviz, BPMN, Mermaid, etc.
 gem 'rubyzip', '~> 2.3'  # For EPUB ZIP validation
+gem 'asciidoctor-open-document', '~> 0.1'  # For FODT (Open Document) format
 

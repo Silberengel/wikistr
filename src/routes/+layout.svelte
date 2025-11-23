@@ -7,6 +7,7 @@
   import { getThemeConfig, generatePaletteFromAccent, getThemeDefaultMode } from '$lib/themes';
   import Toast from '$components/Toast.svelte';
   import { initializeBookConfigurations } from '$lib/bookConfig';
+  import OpenGraphMeta from '$components/OpenGraphMeta.svelte';
 
   // Theme configuration
   const theme = getThemeConfig();
@@ -284,6 +285,8 @@
     
   });
 </script>
+
+<OpenGraphMeta />
 
 <svelte:head>
   <title>{theme.title}</title>

@@ -7,6 +7,7 @@ require 'asciidoctor-pdf'
 require 'asciidoctor-epub3'
 require 'asciidoctor-revealjs'
 require 'asciidoctor-diagram'  # For PlantUML, Graphviz, BPMN, Mermaid, TikZ, etc.
+require 'asciidoctor-open-document'  # For FODT (Open Document) format
 require 'json'
 require 'tempfile'
 require 'fileutils'
@@ -60,7 +61,8 @@ get '/healthz' do
       epub: '/convert/epub',
       html5: '/convert/html5',
       revealjs: '/convert/revealjs',
-      latex: '/convert/latex'
+      latex: '/convert/latex',
+      fodt: '/convert/fodt'
     },
     port: settings.port
   }.to_json
@@ -244,6 +246,38 @@ get '/api' do
           latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks. Math is rendered natively in LaTeX output',
           diagrams: 'Diagram generation is supported via asciidoctor-diagram extension. TikZ diagrams work best with LaTeX backend. PlantUML, Graphviz, and Mermaid are also supported.'
         }
+      },
+      convert_fodt: {
+        method: 'POST',
+        path: '/asciidoctor/convert/fodt',
+        description: 'Convert AsciiDoc content to FODT (Open Document Format) - can be opened in LibreOffice, Word, and other word processors',
+        request: {
+          type: 'application/json',
+          body: {
+            content: 'string (required) - AsciiDoc content. Supports LaTeX math via stem:[] for inline and [stem] blocks for display math',
+            title: 'string (required) - Document title',
+            author: 'string (optional) - Document author'
+          }
+        },
+        response: {
+          type: 'application/vnd.oasis.opendocument.text',
+          disposition: 'attachment',
+          note: 'FODT files can be opened directly in LibreOffice, Microsoft Word, Google Docs, and other word processors. They can also be converted to ODT, DOCX, PDF, etc. using LibreOffice or other tools.'
+        },
+        features: {
+          table_of_contents: 'Automatic table of contents is generated when :toc: attribute is set (enabled by default)',
+          latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks',
+          diagrams: 'Diagram generation is supported via asciidoctor-diagram extension. Supported formats: PlantUML, Graphviz, Mermaid, BPMN (via PlantUML)',
+          word_processor_compatible: 'FODT format is compatible with LibreOffice, Microsoft Word, Google Docs, and other word processors'
+        },
+        example: {
+          request: {
+            content: '= My Document\n\nThis is the content.',
+            title: 'My Document',
+            author: 'John Doe'
+          },
+          curl_example: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/fodt -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\"}' --output document.fodt"
+        }
       }
     },
     cors: {
@@ -262,8 +296,10 @@ get '/api' do
       curl_pdf: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/pdf -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\",\"theme\":\"classic\"}' --output document.pdf",
       curl_pdf_bible: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/pdf -H 'Content-Type: application/json' -d '{\"content\":\"= John 3:16\\n\\nFor God so loved the world...\",\"title\":\"Bible Passage\",\"author\":\"KJV\",\"theme\":\"bible-paragraph\"}' --output bible.pdf",
       curl_epub: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/epub -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"theme\":\"classic\"}' --output document.epub",
+      curl_fodt: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/fodt -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\"}' --output document.fodt",
       javascript_fetch: "fetch('#{request.scheme}://#{request.host_with_port}/asciidoctor/convert/pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: '= Test\\n\\nHello world', title: 'Test Document', theme: 'classic' }) })",
-      javascript_fetch_with_theme: "fetch('#{request.scheme}://#{request.host_with_port}/asciidoctor/convert/pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: '= My Book\\n\\nContent here', title: 'My Book', author: 'Author', theme: 'bible-paragraph' }) }).then(r => r.blob()).then(blob => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'book.pdf'; a.click(); })"
+      javascript_fetch_with_theme: "fetch('#{request.scheme}://#{request.host_with_port}/asciidoctor/convert/pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: '= My Book\\n\\nContent here', title: 'My Book', author: 'Author', theme: 'bible-paragraph' }) }).then(r => r.blob()).then(blob => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'book.pdf'; a.click(); })",
+      javascript_fetch_fodt: "fetch('#{request.scheme}://#{request.host_with_port}/asciidoctor/convert/fodt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: '= My Document\\n\\nContent here', title: 'My Document', author: 'Author' }) }).then(r => r.blob()).then(blob => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'document.fodt'; a.click(); })"
     }
   }.to_json
 end
@@ -653,6 +689,7 @@ get '/' do
       html5: '/convert/html5',
       revealjs: '/convert/revealjs',
       latex: '/convert/latex',
+      fodt: '/convert/fodt',
       health: '/healthz',
       api_docs: '/api'
     }
@@ -707,5 +744,57 @@ post '/convert/latex' do
   rescue => e
     status 500
     { error: 'Conversion failed', message: e.message }.to_json
+  end
+end
+
+# Convert to FODT (Open Document Format)
+post '/convert/fodt' do
+  begin
+    request.body.rewind
+    body_content = request.body.read
+    log_request_size(body_content, 'FODT')
+    data = JSON.parse(body_content)
+    content = data['content'] || data['asciidoc']
+    title = data['title'] || 'Document'
+    author = data['author'] || ''
+    
+    unless content
+      status 400
+      return { error: 'Missing content or asciidoc field' }.to_json
+    end
+    
+    # Create temporary file for AsciiDoc content
+    temp_adoc = Tempfile.new(['document', '.adoc'])
+    temp_adoc.write(content)
+    temp_adoc.close
+    
+    begin
+      # Convert to FODT using asciidoctor-open-document
+      # The gem provides a backend that converts directly to FODT
+      fodt_content = Asciidoctor.convert content,
+        backend: 'fodt',
+        safe: 'unsafe',
+        attributes: {
+          'title' => title,
+          'author' => author,
+          'doctype' => 'article',
+          'imagesdir' => '.',
+          'allow-uri-read' => ''
+        }
+      
+      # Set headers
+      content_type 'application/vnd.oasis.opendocument.text; charset=utf-8'
+      headers 'Content-Disposition' => "attachment; filename=\"#{title.gsub(/[^a-z0-9]/i, '_')}.fodt\""
+      
+      fodt_content
+    ensure
+      temp_adoc.unlink
+    end
+  rescue JSON::ParserError => e
+    status 400
+    { error: 'Invalid JSON', message: e.message }.to_json
+  rescue => e
+    status 500
+    { error: 'Conversion failed', message: e.message, backtrace: e.backtrace.first(5) }.to_json
   end
 end
