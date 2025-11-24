@@ -59,9 +59,51 @@
     checkMobile();
     window.addEventListener('resize', checkMobile);
 
-    // Set up PDF.js worker - use a more reliable CDN or local fallback
-    // Try to use jsdelivr which is more reliable than cdnjs
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+    // Set up PDF.js worker with proxy support and offline fallback
+    const pdfVersion = pdfjsLib.version || '5.4.394';
+    const workerUrl = `https://unpkg.com/pdfjs-dist@${pdfVersion}/build/pdf.worker.min.js`;
+    
+    // Get proxy URL from environment or use default
+    const OG_PROXY_URL = (import.meta.env.VITE_OG_PROXY_URL as string | undefined)?.trim() || '/sites/';
+    
+    // Build proxy URL for the worker
+    function buildProxyUrl(url: string): string {
+      const encoded = encodeURIComponent(url);
+      
+      // If OG_PROXY_URL is a full URL, use it directly
+      if (OG_PROXY_URL.startsWith('http://') || OG_PROXY_URL.startsWith('https://')) {
+        const sanitizedProxy = OG_PROXY_URL.replace(/\/$/, '');
+        return `${sanitizedProxy}?url=${encoded}`;
+      }
+      
+      // Otherwise, use relative path
+      const basePath = OG_PROXY_URL.replace(/\/$/, '') || '/sites';
+      return `${basePath}?url=${encoded}`;
+    }
+    
+    // Use proxy for worker URL
+    const proxiedWorkerUrl = buildProxyUrl(workerUrl);
+    pdfjsLib.GlobalWorkerOptions.workerSrc = proxiedWorkerUrl;
+    
+    // Test if worker is available, if not, disable it for offline support
+    // This will use "fake worker" mode (runs on main thread) - slower but works offline
+    const testWorkerAvailability = async () => {
+      try {
+        // Try to fetch the worker through proxy to see if it's available
+        const response = await fetch(proxiedWorkerUrl, { method: 'HEAD' });
+        if (!response.ok) {
+          throw new Error('Worker not available');
+        }
+      } catch (error) {
+        console.warn('PDF.js worker unavailable through proxy, disabling worker for offline support (may be slower)');
+        // Disable worker - PDF.js will use "fake worker" mode (runs on main thread)
+        // This works offline but may be slower for large PDFs
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+      }
+    };
+    
+    // Test worker availability asynchronously (don't block initialization)
+    testWorkerAvailability();
 
     // Load content
     (async () => {
@@ -139,14 +181,39 @@
   async function loadPDF() {
     try {
       const arrayBuffer = await blob.arrayBuffer();
-      pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      
+      // If worker failed to load, disable it and retry with fake worker mode
+      let retryWithoutWorker = false;
+      try {
+        pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      } catch (workerError) {
+        const errorMessage = workerError instanceof Error ? workerError.message : String(workerError);
+        if (errorMessage.includes('worker') || errorMessage.includes('Setting up fake worker')) {
+          console.warn('Worker failed, retrying without worker (offline mode)');
+          // Disable worker and retry
+          pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+          retryWithoutWorker = true;
+          pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        } else {
+          throw workerError;
+        }
+      }
+      
       totalPages = pdfDoc.numPages;
       await renderPages();
+      
+      if (retryWithoutWorker) {
+        console.info('PDF loaded successfully in offline mode (without worker). Performance may be slower for large PDFs.');
+      }
     } catch (error) {
       console.error('Failed to load PDF:', error);
-      htmlContent = `<div style="padding: 2rem; text-align: center; color: var(--text-primary);">
-        <h2>Failed to load PDF</h2>
-        <p>${error instanceof Error ? error.message : 'Unknown error'}</p>
+      
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      htmlContent = `<div style="padding: 2rem; text-align: center; color: var(--text-primary); background: var(--bg-primary);">
+        <h2 style="color: var(--text-primary); margin-bottom: 1rem;">Failed to load PDF</h2>
+        <p style="color: var(--text-secondary); margin-bottom: 1rem;">${errorMessage || 'Unknown error occurred while loading the PDF.'}</p>
+        <p style="color: var(--text-secondary); font-size: 0.9rem;">Please try downloading the PDF instead, or check your network connection.</p>
       </div>`;
     }
   }
