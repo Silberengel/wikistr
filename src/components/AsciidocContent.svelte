@@ -136,11 +136,22 @@
     );
   }
 
+  // Track if we're currently processing to prevent loops
+  let isProcessing = false;
+  
   // Reactive statement to apply highlighting and process standalone links when content changes
   $effect(() => {
-    if (htmlContent && contentDiv) {
-      applySyntaxHighlighting();
-      processStandaloneLinks();
+    if (htmlContent && contentDiv && !isProcessing) {
+      isProcessing = true;
+      try {
+        applySyntaxHighlighting();
+        processStandaloneLinks();
+      } finally {
+        // Use setTimeout to ensure we reset the flag after DOM updates
+        setTimeout(() => {
+          isProcessing = false;
+        }, 0);
+      }
     }
   });
   
@@ -569,17 +580,37 @@
     // Convert strikethrough: ~~text~~ -> [line-through]#text#
     asciidoc = asciidoc.replace(/~~([^~]+)~~/g, '[line-through]#$1#');
     
+    // Convert bold: **text** -> *text* (must be done before italic to avoid conflicts)
+    // Match **text** but not ***text*** (which is bold+italic)
+    asciidoc = asciidoc.replace(/\*\*([^*]+)\*\*/g, '*$1*');
+    
+    // Convert italic: *text* -> _text_ (but not if it's part of **text** which we just converted)
+    // Match single asterisks that aren't preceded or followed by another asterisk
+    // Use a simpler approach: match *text* where text doesn't contain asterisks
+    asciidoc = asciidoc.replace(/(?<!\*)\*([^*\n]+?)\*(?!\*)/g, '_$1_');
+    
     // Convert code blocks: ```lang ... ``` -> [source,lang]
+    // Do this BEFORE image/link conversion to protect code blocks
     asciidoc = asciidoc.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
       const langAttr = lang ? `,${lang}` : '';
       return `[source${langAttr}]\n----\n${code.trim()}\n----`;
     });
 
-    // Convert images: ![alt](url) -> image:url[alt]
-    asciidoc = asciidoc.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, 'image::$2[$1]');
+    // Convert images: ![alt](url) -> image::url[alt]
+    // MUST be done BEFORE link conversion to avoid conflicts
+    // Handle both with and without alt text: ![alt](url) or ![](url)
+    // Also handle images with title: ![alt](url "title")
+    asciidoc = asciidoc.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]+)")?\)/g, (match, alt, url, title) => {
+      // AsciiDoc image syntax: image::url[alt text,title]
+      // If title is provided, include it
+      const altText = alt || '';
+      const titlePart = title ? `,${title}` : '';
+      return `image::${url}[${altText}${titlePart}]`;
+    });
     
-    // Convert links: [text](url) -> link:text[text]
-    asciidoc = asciidoc.replace(/\[([^\]]+)\]\(([^)]+)\)/g, 'link:$2[$1]');
+    // Convert links: [text](url) -> link:url[text]
+    // Must come AFTER image conversion to avoid matching ![alt](url) patterns
+    asciidoc = asciidoc.replace(/(?<!!)\[([^\]]+)\]\(([^)]+)\)/g, 'link:$2[$1]');
     
     // Convert tables: | col1 | col2 | -> [cols="2,1,1,3"]
     // Match multi-line tables with proper markdown table format

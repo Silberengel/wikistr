@@ -1515,202 +1515,200 @@
       </div>
     </div>
     <div>
-          <a class="cursor-pointer underline transition-colors" style="color: var(--accent);" onclick={edit}>
-            {#if event?.pubkey === $account?.pubkey}
-              Edit
-            {:else}
-              Fork
-            {/if}
-          </a>
+      <!-- Top row: Fork • Share • Versions • (Level Higher for books) • Copy Nevent -->
+      <div class="mb-2">
+        <a class="cursor-pointer underline transition-colors" style="color: var(--accent);" onclick={edit}>
+          {#if event?.pubkey === $account?.pubkey}
+            Edit
+          {:else}
+            Fork
+          {/if}
+        </a>
+        &nbsp;• &nbsp;
+        <a class="cursor-pointer underline transition-colors" style="color: var(--accent);" onclick={shareCopy}>
+          {#if copied}Copied!{:else}Share{/if}
+        </a>
+        &nbsp;• &nbsp;
+        <a class="cursor-pointer underline transition-colors" style="color: var(--accent);" onmouseup={seeOthers}>{nOthers || ''} Versions</a>
+        {#if event && (event.kind === 30040 || event.kind === 30041)}
           &nbsp;• &nbsp;
-          <a class="cursor-pointer underline transition-colors" style="color: var(--accent);" onclick={shareCopy}>
-            {#if copied}Copied!{:else}Share{/if}
-          </a>
-          &nbsp;• &nbsp;
-          <a class="cursor-pointer underline transition-colors" style="color: var(--accent);" onmouseup={seeOthers}>{nOthers || ''} Versions</a>
-          
-          <!-- Source and Relay buttons moved here (under Fork/Versions menu) -->
-          <div class="mt-2 flex flex-wrap items-center gap-2">
-            <!-- Source Button -->
+          <div class="relative inline-block">
             <button
-              onclick={() => {
-                view = view === 'formatted' ? 'asciidoc' : view === 'asciidoc' ? 'raw' : 'formatted';
+              onclick={async () => {
+                if (parentEvents.length === 0 && !isLoadingParents) {
+                  await loadParentEvents();
+                }
+                showLevelHigherMenu = !showLevelHigherMenu;
+                showBookMenu = false; // Close other menu
               }}
-              class="font-normal text-xs px-2 py-1 rounded cursor-pointer transition-colors"
-              style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
-              >see {#if view === 'formatted'}markdown source{:else if view === 'asciidoc'}raw event{:else}formatted{/if}</button
+              disabled={isLoadingParents}
+              class="cursor-pointer underline transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style="color: {isLoadingParents || parentEvents.length === 0 ? 'var(--text-secondary)' : 'var(--accent)'};"
+              title={isLoadingParents ? 'Loading...' : parentEvents.length === 0 ? 'No parent events found' : 'Show parent events'}
             >
-            
-            <!-- Relays -->
-            {#if seenOn.length}
-              {#each seenOn as r (r)}
-                <RelayItem url={r} {createChild} selected={selectedRelayUrl && (r === selectedRelayUrl || r.includes(selectedRelayUrl.replace(/^wss?:\/\//, '').replace(/\/$/, '')))} />
-              {/each}
+              {#if isLoadingParents}
+                <span class="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1"></span>
+              {/if}
+              Level Higher
+            </button>
+            {#if showLevelHigherMenu && (parentEvents.length > 0 || isLoadingParents)}
+              <div
+                class="absolute left-0 mt-2 w-64 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto"
+                style="background-color: var(--bg-primary); border: 1px solid var(--border);"
+                onclick={(e) => e.stopPropagation()}
+              >
+                <div class="py-1">
+                  <div class="px-4 py-2 text-xs font-semibold" style="color: var(--text-secondary);">
+                    Parent events ({parentEvents.length})
+                  </div>
+                  {#each parentEvents as parentEvent}
+                    <button
+                      onclick={() => {
+                        showLevelHigherMenu = false;
+                        const parentCard: ArticleCard = {
+                          id: next(),
+                          type: 'article',
+                          data: [getTagOr(parentEvent, 'd') || '', parentEvent.pubkey],
+                          back: undefined,
+                          actualEvent: parentEvent,
+                          relayHints: []
+                        };
+                        createChild(parentCard);
+                      }}
+                      class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                      style="color: var(--text-primary);"
+                    >
+                      {parentEvent.tags.find(([k]) => k === 'title')?.[1] || getTagOr(parentEvent, 'd') || 'Untitled'}
+                    </button>
+                  {/each}
+                </div>
+              </div>
             {/if}
           </div>
-          {#if event && (event.kind === 30040 || event.kind === 30041)}
-            &nbsp;• &nbsp;
-            <div class="relative inline-block">
-              <button
-                onclick={async () => {
-                  if (!bookEvent && !isLoadingBook) {
-                    await loadBookEvent();
-                  }
-                  showBookMenu = !showBookMenu;
-                  showLevelHigherMenu = false; // Close other menu
-                }}
-                disabled={isLoadingBook}
-                class="cursor-pointer underline transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                style="color: {isLoadingBook ? 'var(--text-secondary)' : 'var(--accent)'};"
-                title={isLoadingBook ? 'Loading book...' : 'Show book'}
-              >
-                {#if isLoadingBook}
-                  <span class="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1"></span>
-                {/if}
-                Book
-              </button>
-              {#if showBookMenu && (bookEvent || bookChapters.length > 0 || isLoadingBookChapters)}
-                <div
-                  class="absolute left-0 mt-2 w-64 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto"
-                  style="background-color: var(--bg-primary); border: 1px solid var(--border);"
-                  onclick={(e) => e.stopPropagation()}
-                >
-                  <div class="py-1">
-                    {#if bookEvent}
-                      <div class="px-4 py-2 text-xs font-semibold" style="color: var(--text-secondary);">
-                        Book: {bookEvent.tags.find(([k]) => k === 'title')?.[1] || getTagOr(bookEvent, 'd') || 'Untitled'}
-                      </div>
-                      <button
-                        onclick={() => {
-                          if (!bookEvent) return;
-                          showBookMenu = false;
-                          const bookCard: ArticleCard = {
-                            id: next(),
-                            type: 'article',
-                            data: [getTagOr(bookEvent, 'd') || '', bookEvent.pubkey],
-                            back: undefined,
-                            actualEvent: bookEvent as NostrEvent,
-                            relayHints: []
-                          };
-                          createChild(bookCard);
-                        }}
-                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                        style="color: var(--text-primary);"
-                      >
-                        {bookEvent.tags.find(([k]) => k === 'title')?.[1] || getTagOr(bookEvent, 'd') || 'Untitled'}
-                      </button>
-                    {/if}
-                    {#if isLoadingBookChapters}
-                      <div class="px-4 py-2 text-xs" style="color: var(--text-secondary);">
-                        <span class="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1"></span>
-                        Loading chapters...
-                      </div>
-                    {:else if bookChapters.length > 0}
-                      <div class="px-4 py-2 text-xs font-semibold" style="color: var(--text-secondary);">
-                        Chapters ({bookChapters.length})
-                      </div>
-                      {#each bookChapters as chapter}
-                        <button
-                          onclick={() => {
-                            showBookMenu = false;
-                            const chapterCard: ArticleCard = {
-                              id: next(),
-                              type: 'article',
-                              data: [getTagOr(chapter, 'd') || '', chapter.pubkey],
-                              back: undefined,
-                              actualEvent: chapter,
-                              relayHints: []
-                            };
-                            createChild(chapterCard);
-                          }}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                          style="color: var(--text-primary);"
-                        >
-                          {chapter.tags.find(([k]) => k === 'title')?.[1] || getTagOr(chapter, 'd') || 'Untitled'}
-                        </button>
-                      {/each}
-                    {/if}
-                  </div>
-                </div>
+        {/if}
+        &nbsp;• &nbsp;
+        {#if event}
+          <a 
+            class="cursor-pointer underline transition-colors" 
+            style="color: var(--accent);" 
+            onclick={copyNevent}
+            title="Copy nevent"
+          >
+            {#if neventCopied}Copied!{:else}Copy Nevent{/if}
+          </a>
+        {/if}
+      </div>
+      
+      <!-- Second row: Source button and Relay buttons -->
+      <div class="mt-2 flex flex-wrap items-center gap-2">
+        <!-- Source Button -->
+        <button
+          onclick={() => {
+            view = view === 'formatted' ? 'asciidoc' : view === 'asciidoc' ? 'raw' : 'formatted';
+          }}
+          class="font-normal text-xs px-2 py-1 rounded cursor-pointer transition-colors"
+          style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
+        >
+          see {#if view === 'formatted'}markdown source{:else if view === 'asciidoc'}raw event{:else}formatted{/if}
+        </button>
+        
+        <!-- Relays -->
+        {#if seenOn.length}
+          {#each seenOn as r (r)}
+            <RelayItem url={r} {createChild} selected={selectedRelayUrl && (r === selectedRelayUrl || r.includes(selectedRelayUrl.replace(/^wss?:\/\//, '').replace(/\/$/, '')))} />
+          {/each}
+        {/if}
+      </div>
+      
+      <!-- Book menu (for books only, separate from main menu) -->
+      {#if event && (event.kind === 30040 || event.kind === 30041)}
+        <div class="mt-2">
+          <div class="relative inline-block">
+            <button
+              onclick={async () => {
+                if (!bookEvent && !isLoadingBook) {
+                  await loadBookEvent();
+                }
+                showBookMenu = !showBookMenu;
+                showLevelHigherMenu = false; // Close other menu
+              }}
+              disabled={isLoadingBook}
+              class="cursor-pointer underline transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style="color: {isLoadingBook ? 'var(--text-secondary)' : 'var(--accent)'};"
+              title={isLoadingBook ? 'Loading book...' : 'Show book'}
+            >
+              {#if isLoadingBook}
+                <span class="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1"></span>
               {/if}
-            </div>
-            &nbsp;• &nbsp;
-            <div class="relative inline-block">
-              <button
-                onclick={async () => {
-                  if (parentEvents.length === 0 && !isLoadingParents) {
-                    await loadParentEvents();
-                  }
-                  showLevelHigherMenu = !showLevelHigherMenu;
-                  showBookMenu = false; // Close other menu
-                }}
-                disabled={isLoadingParents}
-                class="cursor-pointer underline transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                style="color: {isLoadingParents || parentEvents.length === 0 ? 'var(--text-secondary)' : 'var(--accent)'};"
-                title={isLoadingParents ? 'Loading...' : parentEvents.length === 0 ? 'No parent events found' : 'Show parent events'}
+              Book
+            </button>
+            {#if showBookMenu && (bookEvent || bookChapters.length > 0 || isLoadingBookChapters)}
+              <div
+                class="absolute left-0 mt-2 w-64 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto"
+                style="background-color: var(--bg-primary); border: 1px solid var(--border);"
+                onclick={(e) => e.stopPropagation()}
               >
-                {#if isLoadingParents}
-                  <span class="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1"></span>
-                {/if}
-                Level higher
-              </button>
-              {#if showLevelHigherMenu && (parentEvents.length > 0 || isLoadingParents)}
-                <div
-                  class="absolute left-0 mt-2 w-64 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto"
-                  style="background-color: var(--bg-primary); border: 1px solid var(--border);"
-                  onclick={(e) => e.stopPropagation()}
-                >
-                  <div class="py-1">
+                <div class="py-1">
+                  {#if bookEvent}
                     <div class="px-4 py-2 text-xs font-semibold" style="color: var(--text-secondary);">
-                      Parent events ({parentEvents.length})
+                      Book: {bookEvent.tags.find(([k]) => k === 'title')?.[1] || getTagOr(bookEvent, 'd') || 'Untitled'}
                     </div>
-                    {#each parentEvents as parentEvent}
+                    <button
+                      onclick={() => {
+                        if (!bookEvent) return;
+                        showBookMenu = false;
+                        const bookCard: ArticleCard = {
+                          id: next(),
+                          type: 'article',
+                          data: [getTagOr(bookEvent, 'd') || '', bookEvent.pubkey],
+                          back: undefined,
+                          actualEvent: bookEvent as NostrEvent,
+                          relayHints: []
+                        };
+                        createChild(bookCard);
+                      }}
+                      class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                      style="color: var(--text-primary);"
+                    >
+                      {bookEvent.tags.find(([k]) => k === 'title')?.[1] || getTagOr(bookEvent, 'd') || 'Untitled'}
+                    </button>
+                  {/if}
+                  {#if isLoadingBookChapters}
+                    <div class="px-4 py-2 text-xs" style="color: var(--text-secondary);">
+                      <span class="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1"></span>
+                      Loading chapters...
+                    </div>
+                  {:else if bookChapters.length > 0}
+                    <div class="px-4 py-2 text-xs font-semibold" style="color: var(--text-secondary);">
+                      Chapters ({bookChapters.length})
+                    </div>
+                    {#each bookChapters as chapter}
                       <button
                         onclick={() => {
-                          showLevelHigherMenu = false;
-                          const parentCard: ArticleCard = {
+                          showBookMenu = false;
+                          const chapterCard: ArticleCard = {
                             id: next(),
                             type: 'article',
-                            data: [getTagOr(parentEvent, 'd') || '', parentEvent.pubkey],
+                            data: [getTagOr(chapter, 'd') || '', chapter.pubkey],
                             back: undefined,
-                            actualEvent: parentEvent,
+                            actualEvent: chapter,
                             relayHints: []
                           };
-                          createChild(parentCard);
+                          createChild(chapterCard);
                         }}
                         class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                         style="color: var(--text-primary);"
                       >
-                        {parentEvent.tags.find(([k]) => k === 'title')?.[1] || getTagOr(parentEvent, 'd') || 'Untitled'}
+                        {chapter.tags.find(([k]) => k === 'title')?.[1] || getTagOr(chapter, 'd') || 'Untitled'}
                       </button>
                     {/each}
-                  </div>
+                  {/if}
                 </div>
-              {/if}
-            </div>
-          {/if}
-          &nbsp;• &nbsp;
-          {#if event}
-            <button
-              onclick={copyNevent}
-              class="p-2 rounded-lg transition-all duration-200"
-              style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
-              title="Copy nevent"
-            >
-              {#if neventCopied}
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                </svg>
-              {:else}
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                </svg>
-              {/if}
-            </button>
-            {#if neventCopied}
-              <span class="text-xs font-medium ml-2 animate-fade-in" style="color: var(--accent);">Nevent copied!</span>
+              </div>
             {/if}
-          {/if}
+          </div>
+        </div>
+      {/if}
     </div>
 
     <!-- Click outside to close menus -->
