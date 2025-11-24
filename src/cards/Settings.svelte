@@ -9,7 +9,6 @@
   } from '$lib/pdfThemes';
   import { get } from 'idb-keyval';
   import ModeToggle from '$components/ModeToggle.svelte';
-  import RelayItem from '$components/RelayItem.svelte';
   import { contentCache } from '$lib/contentCache';
   import { onMount } from 'svelte';
   import type { Card } from '$lib/types';
@@ -63,14 +62,11 @@
         const text = await response.text();
         const entry = parseChangelogForVersion(text, appVersion);
         changelogEntry = entry;
-      } else {
-        // Try alternative path
-        const altResponse = await fetch('/public/CHANGELOG.md');
-        if (altResponse.ok) {
-          const text = await altResponse.text();
-          const entry = parseChangelogForVersion(text, appVersion);
-          changelogEntry = entry;
+        if (!entry) {
+          console.warn('Changelog entry not found for version:', appVersion);
         }
+      } else {
+        console.warn('Failed to fetch CHANGELOG.md:', response.status, response.statusText);
       }
     } catch (error) {
       console.warn('Failed to load CHANGELOG:', error);
@@ -78,11 +74,15 @@
   });
 
   function parseChangelogForVersion(changelogText: string, version: string): { added?: string[]; changed?: string[]; fixed?: string[] } | null {
-    // Find the section for this version
-    const versionRegex = new RegExp(`## \\[${version.replace(/\./g, '\\.')}\\]`, 'i');
+    // Find the section for this version - match ## [version] and ignore anything after it on that line
+    const versionRegex = new RegExp(`## \\[${version.replace(/\./g, '\\.')}\\][^\\n]*`, 'i');
     const match = changelogText.match(versionRegex);
-    if (!match) return null;
+    if (!match) {
+      console.warn('Version not found in changelog:', version);
+      return null;
+    }
     
+    // Start after the entire version header line (including any date or other text)
     const startIndex = match.index! + match[0].length;
     const nextVersionMatch = changelogText.substring(startIndex).match(/^## \[/m);
     const endIndex = nextVersionMatch ? startIndex + nextVersionMatch.index! : changelogText.length;
@@ -118,7 +118,12 @@
         .filter(line => line.length > 0);
     }
     
-    return Object.keys(result).length > 0 ? result : null;
+    if (Object.keys(result).length === 0) {
+      console.warn('No changelog sections found for version:', version);
+      return null;
+    }
+    
+    return result;
   }
 
 
@@ -237,8 +242,6 @@
 
 </script>
 
-<div class="mt-2 font-bold text-4xl mb-6">Settings</div>
-
 <!-- Main Tabs -->
 <div class="w-full max-w-6xl mx-auto">
   <div class="border-b border-gray-300 dark:border-gray-700 mb-6">
@@ -260,7 +263,7 @@
 
   <!-- General Tab -->
   {#if activeTab === 'general'}
-    <div class="space-y-6">
+    <div class="space-y-6 min-h-[60vh] md:min-h-[70vh]">
       <!-- Appearance -->
       <div>
         <h3 class="text-lg font-medium mb-2">Appearance</h3>
@@ -272,22 +275,13 @@
 
       <!-- Relays -->
       <div>
-        <div class="flex items-center justify-between mb-2">
-          <h3 class="text-lg font-medium">Relays</h3>
-          <button
-            onclick={() => currentRelays = contentCache.getAllRelays()}
-            class="text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
-            title="Refresh relay list"
-          >
-            Refresh
-          </button>
-        </div>
+        <h3 class="text-lg font-medium mb-2">Relays</h3>
         {#if currentRelays.length > 0}
-          <div class="space-y-2 max-h-64 overflow-y-auto">
+          <ul class="space-y-1 max-h-64 overflow-y-auto list-none">
             {#each currentRelays as relay}
-              <RelayItem url={relay} createChild={createChild || (() => {})} />
+              <li class="text-sm text-gray-700 dark:text-gray-300">{relay}</li>
             {/each}
-          </div>
+          </ul>
         {:else}
           <p class="text-sm text-gray-500 dark:text-gray-400">No relays used yet</p>
         {/if}
@@ -298,9 +292,9 @@
         <h3 class="text-lg font-medium mb-2">Version</h3>
         <div>WikiStr v{appVersion}</div>
         <div class="mt-1 opacity-75">from GitCitadel</div>
-        {#if changelogEntry}
-          <div class="mt-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-            <h4 class="font-semibold mb-2">What's New in v{appVersion}</h4>
+        <div class="mt-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+          <h4 class="font-semibold mb-2">Recent Changes</h4>
+          {#if changelogEntry}
             <div class="text-sm space-y-2">
               {#if changelogEntry.added && changelogEntry.added.length > 0}
                 <div>
@@ -333,8 +327,12 @@
                 </div>
               {/if}
             </div>
-          </div>
-        {/if}
+          {:else}
+            <div class="text-sm text-gray-500 dark:text-gray-400">
+              Loading changelog...
+            </div>
+          {/if}
+        </div>
       </div>
     </div>
   {/if}
