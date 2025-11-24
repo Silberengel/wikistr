@@ -1179,13 +1179,15 @@
     line-height: 1.6;
     overflow-x: auto;
     overflow-y: auto;
+    background: var(--bg-primary, #ffffff);
+    color: var(--text-primary, #1c1917);
   }
 
   .code-viewer :global(pre) {
     margin: 0;
     padding: 1rem;
-    background: var(--code-bg, #1e1e1e);
-    color: var(--code-text, #d4d4d4);
+    background: var(--code-bg, var(--bg-secondary, #f5f5f4));
+    color: var(--code-text, var(--text-primary, #1c1917));
     border-radius: 0.25rem;
     overflow-x: auto;
     overflow-y: visible;
@@ -1198,42 +1200,130 @@
     border-radius: 0;
     font-family: inherit;
     font-size: inherit;
+    color: inherit;
   }
 
   .code-viewer :global(.hljs) {
-    background: var(--code-bg, #1e1e1e);
-    color: var(--code-text, #d4d4d4);
+    background: var(--code-bg, var(--bg-secondary, #f5f5f4));
+    color: var(--code-text, var(--text-primary, #1c1917));
+  }
+  
+  /* Ensure syntax highlighting maintains contrast */
+  .code-viewer :global(.hljs-keyword),
+  .code-viewer :global(.hljs-selector-tag),
+  .code-viewer :global(.hljs-built_in),
+  .code-viewer :global(.hljs-name),
+  .code-viewer :global(.hljs-type) {
+    color: var(--code-text, var(--text-primary, #1c1917));
+    opacity: 0.9;
+  }
+  
+  .code-viewer :global(.hljs-string),
+  .code-viewer :global(.hljs-attr),
+  .code-viewer :global(.hljs-attribute) {
+    color: var(--code-text, var(--text-primary, #1c1917));
+    opacity: 0.85;
   }
 
   /* EPUB styling */
   :global(.epub-container) {
-    background: var(--bg-primary);
-    color: var(--text-primary);
+    background: var(--bg-primary, #ffffff);
+    color: var(--text-primary, #1c1917);
   }
 
   :global(.epub-container section) {
-    background: var(--bg-primary);
-    color: var(--text-primary);
+    background: var(--bg-primary, #ffffff);
+    color: var(--text-primary, #1c1917);
     padding: 2rem;
+  }
+  
+  :global(.epub-container h1),
+  :global(.epub-container h2),
+  :global(.epub-container h3),
+  :global(.epub-container h4),
+  :global(.epub-container h5),
+  :global(.epub-container h6) {
+    color: var(--text-primary, #1c1917);
+  }
+  
+  :global(.epub-container p),
+  :global(.epub-container li),
+  :global(.epub-container td),
+  :global(.epub-container th) {
+    color: var(--text-primary, #1c1917);
+  }
+  
+  :global(.epub-container code) {
+    background: var(--code-bg, var(--bg-secondary, #f5f5f4));
+    color: var(--code-text, var(--text-primary, #1c1917));
+    padding: 0.125rem 0.25rem;
+    border-radius: 0.125rem;
+  }
+  
+  :global(.epub-container pre) {
+    background: var(--code-bg, var(--bg-secondary, #f5f5f4));
+    color: var(--code-text, var(--text-primary, #1c1917));
+    padding: 1rem;
+    border-radius: 0.25rem;
+    overflow-x: auto;
   }
 
   /* Style HTML content */
   .viewer-content :global(h1),
   .viewer-content :global(h2),
-  .viewer-content :global(h3) {
-    color: var(--text-primary);
+  .viewer-content :global(h3),
+  .viewer-content :global(h4),
+  .viewer-content :global(h5),
+  .viewer-content :global(h6) {
+    color: var(--text-primary, #1c1917);
   }
 
-  .viewer-content :global(p) {
-    color: var(--text-primary);
+  .viewer-content :global(p),
+  .viewer-content :global(li),
+  .viewer-content :global(td),
+  .viewer-content :global(th),
+  .viewer-content :global(span),
+  .viewer-content :global(div) {
+    color: var(--text-primary, #1c1917);
     line-height: 1.6;
   }
 
   .viewer-content :global(code) {
-    background: var(--code-bg);
-    color: var(--code-text);
+    background: var(--code-bg, var(--bg-secondary, #f5f5f4));
+    color: var(--code-text, var(--text-primary, #1c1917));
     padding: 0.125rem 0.25rem;
     border-radius: 0.125rem;
+  }
+  
+  .viewer-content :global(pre) {
+    background: var(--code-bg, var(--bg-secondary, #f5f5f4));
+    color: var(--code-text, var(--text-primary, #1c1917));
+    padding: 1rem;
+    border-radius: 0.25rem;
+    overflow-x: auto;
+  }
+  
+  .viewer-content :global(pre code) {
+    background: transparent;
+    padding: 0;
+  }
+  
+  .viewer-content :global(a) {
+    color: var(--accent, #8b5cf6);
+  }
+  
+  .viewer-content :global(a:visited) {
+    color: var(--accent, #8b5cf6);
+    opacity: 0.8;
+  }
+  
+  .viewer-content :global(table) {
+    border-color: var(--border, #d6d3d1);
+  }
+  
+  .viewer-content :global(th),
+  .viewer-content :global(td) {
+    border-color: var(--border, #d6d3d1);
   }
 
   /* Smooth page transitions */
