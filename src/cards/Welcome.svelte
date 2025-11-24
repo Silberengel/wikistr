@@ -17,6 +17,7 @@
   import ArticleListItem from '$components/ArticleListItem.svelte';
   import RelayItem from '$components/RelayItem.svelte';
   import ModeToggle from '$components/ModeToggle.svelte';
+  import VersionUpdateBanner from '$components/VersionUpdateBanner.svelte';
 
   // Theme configuration
   const theme = getThemeConfig();
@@ -103,7 +104,8 @@
       .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
       .slice(0, 100);
     
-    currentRelays = contentCache.getAllRelays();
+    // Only show wiki relays from theme
+    currentRelays = theme.relays?.wiki || [];
   }
 
 
@@ -116,13 +118,15 @@
     try {
       const userPubkey = $account?.pubkey || 'anonymous';
       
-      // Update wiki cache - include all wiki kinds: 30818, 30817, 30040, 30041
-      const wikiKinds = [30818, 30817, 30040, 30041, 30023];
+      // Update wiki cache - only 30817 and 30818 from wiki relays
+      const wikiKinds = [30817, 30818];
+      // Get wiki relays from theme
+      const wikiRelays = theme.relays?.wiki || [];
       const wikiResult = await relayService.queryEvents(
         userPubkey,
         'wiki-read',
         [{ kinds: wikiKinds, limit: 100 }],
-        { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+        { excludeUserContent: false, currentUserPubkey: $account?.pubkey, customRelays: wikiRelays }
       );
       
       if (wikiResult.events.length > 0) {
@@ -489,6 +493,7 @@
 
 <!-- Articles Section -->
 <section>
+  <VersionUpdateBanner />
   <h2 class="mb-2 font-bold text-2xl" style="color: var(--text-primary);">
     {currentFeed.title}
   </h2>
@@ -519,7 +524,7 @@
   <div class="mt-4">
     {#if results.length === 0 && !isLoading}
       <div class="text-sm text-gray-500">
-        No articles found. Try switching feeds or check your relay connections.
+        No articles found.
       </div>
     {:else}
       {#each results as result (result.id)}
