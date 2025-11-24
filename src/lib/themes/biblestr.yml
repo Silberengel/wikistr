@@ -12,6 +12,7 @@ relays:
     - wss://thecitadel.nostr1.com
     - wss://relay.wikifreedia.xyz
     - wss://orly-relay.imwald.eu
+    - wss://christpill.nostr1.com
   social:
     - wss://theforest.nostr1.com
     - wss://orly-relay.imwald.eu

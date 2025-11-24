@@ -449,6 +449,10 @@ class RelayService {
     
     // Use the queue system to throttle requests
     return this.queueRequest(async () => {
+      // First, check cache relay for events
+      const { queryCacheRelay, storeEventInCacheRelay } = await import('./cacheRelay');
+      const cachedEvents = await queryCacheRelay(filters) as T[];
+      
       // Use customRelays if provided, otherwise get relays for operation
       let relays = options.customRelays || await this.getRelaysForOperation(userPubkey, type);
       
@@ -466,6 +470,14 @@ class RelayService {
       }
       
       const events: T[] = [];
+      const eventMap = new Map<string, T>();
+      
+      // Add cached events to the map
+      for (const cachedEvent of cachedEvents) {
+        eventMap.set(cachedEvent.id, cachedEvent);
+        events.push(cachedEvent);
+      }
+      
       let subscriptionClosed = false;
       
       return new Promise<QueryResult<T>>((resolve) => {
@@ -473,14 +485,14 @@ class RelayService {
           if (!subscriptionClosed) {
             subscriptionClosed = true;
             console.log(`Query timeout for ${subscriptionId}, returning partial results`);
-            resolve({ events, relays });
+            resolve({ events: Array.from(eventMap.values()), relays });
           }
         }, 8000); // 8 second timeout
         
         try {
           // Use pool.subscribeMany with our controlled relay sets
           const subscription = pool.subscribeMany(relays, filters, {
-            onevent: (event: any) => {
+            onevent: async (event: any) => {
               if (subscriptionClosed) return;
               
               const typedEvent = event as T;
@@ -491,14 +503,28 @@ class RelayService {
                 return;
               }
               
-              events.push(typedEvent);
+              // Check if we have a newer version in cache or if this is a new event
+              const existing = eventMap.get(typedEvent.id);
+              if (!existing || typedEvent.created_at > existing.created_at) {
+                // Newer version or new event - update cache and map
+                eventMap.set(typedEvent.id, typedEvent);
+                await storeEventInCacheRelay(typedEvent);
+                
+                // Update events array
+                const index = events.findIndex(e => e.id === typedEvent.id);
+                if (index >= 0) {
+                  events[index] = typedEvent;
+                } else {
+                  events.push(typedEvent);
+                }
+              }
             },
             oneose: () => {
               if (!subscriptionClosed) {
                 subscriptionClosed = true;
                 clearTimeout(timeout);
                 subscription.close();
-                resolve({ events, relays });
+                resolve({ events: Array.from(eventMap.values()), relays });
               }
             }
           });
@@ -511,7 +537,7 @@ class RelayService {
             subscriptionClosed = true;
             clearTimeout(timeout);
             console.error(`Failed to create subscription for ${subscriptionId}:`, error);
-            resolve({ events, relays });
+            resolve({ events: Array.from(eventMap.values()), relays });
           }
         }
       });
@@ -528,6 +554,14 @@ class RelayService {
     showToastNotification = true
   ): Promise<{ success: boolean; publishedTo: string[]; failedRelays: string[] }> {
     await this.ensureInitialized();
+    
+    // Store in cache relay first
+    try {
+      const { storeEventInCacheRelay } = await import('./cacheRelay');
+      await storeEventInCacheRelay(event);
+    } catch (error) {
+      console.warn('Failed to store event in cache relay:', error);
+    }
     
     const relays = await this.getRelaysForOperation(userPubkey, type);
     

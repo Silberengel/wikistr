@@ -32,6 +32,7 @@
   let isUploading = $state(false);
   let showInfo = $state(false);
   let currentRelays = $state<string[]>([]);
+  let changelogEntry = $state<{ added?: string[]; changed?: string[]; fixed?: string[] } | null>(null);
   
   // Get version from package.json (injected at build time via vite.config.ts)
   const appVersion = typeof __VERSION__ !== 'undefined' ? __VERSION__ : '5.0.0';
@@ -52,10 +53,74 @@
     checkCustomTheme();
   });
 
-  onMount(() => {
+  onMount(async () => {
     // Get current relays from cache
     currentRelays = contentCache.getAllRelays();
+    
+    // Load changelog entry for current version
+    try {
+      const response = await fetch('/CHANGELOG.md');
+      if (response.ok) {
+        const text = await response.text();
+        const entry = parseChangelogForVersion(text, appVersion);
+        changelogEntry = entry;
+      } else {
+        // Try alternative path
+        const altResponse = await fetch('/public/CHANGELOG.md');
+        if (altResponse.ok) {
+          const text = await altResponse.text();
+          const entry = parseChangelogForVersion(text, appVersion);
+          changelogEntry = entry;
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to load CHANGELOG:', error);
+    }
   });
+
+  function parseChangelogForVersion(changelogText: string, version: string): { added?: string[]; changed?: string[]; fixed?: string[] } | null {
+    // Find the section for this version
+    const versionRegex = new RegExp(`## \\[${version.replace(/\./g, '\\.')}\\]`, 'i');
+    const match = changelogText.match(versionRegex);
+    if (!match) return null;
+    
+    const startIndex = match.index! + match[0].length;
+    const nextVersionMatch = changelogText.substring(startIndex).match(/^## \[/m);
+    const endIndex = nextVersionMatch ? startIndex + nextVersionMatch.index! : changelogText.length;
+    
+    const section = changelogText.substring(startIndex, endIndex);
+    
+    const result: { added?: string[]; changed?: string[]; fixed?: string[] } = {};
+    
+    // Extract Added section
+    const addedMatch = section.match(/### Added\s*\n([\s\S]*?)(?=###|$)/i);
+    if (addedMatch) {
+      result.added = addedMatch[1]
+        .split('\n')
+        .map(line => line.replace(/^-\s*/, '').trim())
+        .filter(line => line.length > 0);
+    }
+    
+    // Extract Changed section
+    const changedMatch = section.match(/### Changed\s*\n([\s\S]*?)(?=###|$)/i);
+    if (changedMatch) {
+      result.changed = changedMatch[1]
+        .split('\n')
+        .map(line => line.replace(/^-\s*/, '').trim())
+        .filter(line => line.length > 0);
+    }
+    
+    // Extract Fixed section
+    const fixedMatch = section.match(/### Fixed\s*\n([\s\S]*?)(?=###|$)/i);
+    if (fixedMatch) {
+      result.fixed = fixedMatch[1]
+        .split('\n')
+        .map(line => line.replace(/^-\s*/, '').trim())
+        .filter(line => line.length > 0);
+    }
+    
+    return Object.keys(result).length > 0 ? result : null;
+  }
 
   async function handleSave() {
     if (!customThemeYaml.trim()) {
@@ -256,13 +321,6 @@ themes_dir: /app/deployment`;
   <!-- General Tab -->
   {#if activeTab === 'general'}
     <div class="space-y-6">
-      <!-- Version -->
-      <div>
-        <h3 class="text-lg font-medium mb-2">Version</h3>
-        <div>WikiStr v{appVersion}</div>
-        <div class="mt-1 opacity-75">from GitCitadel</div>
-      </div>
-
       <!-- Appearance -->
       <div>
         <h3 class="text-lg font-medium mb-2">Appearance</h3>
@@ -292,6 +350,50 @@ themes_dir: /app/deployment`;
           </div>
         {:else}
           <p class="text-sm text-gray-500 dark:text-gray-400">No relays used yet</p>
+        {/if}
+      </div>
+
+      <!-- Version -->
+      <div>
+        <h3 class="text-lg font-medium mb-2">Version</h3>
+        <div>WikiStr v{appVersion}</div>
+        <div class="mt-1 opacity-75">from GitCitadel</div>
+        {#if changelogEntry}
+          <div class="mt-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+            <h4 class="font-semibold mb-2">What's New in v{appVersion}</h4>
+            <div class="text-sm space-y-2">
+              {#if changelogEntry.added && changelogEntry.added.length > 0}
+                <div>
+                  <span class="font-medium text-green-600 dark:text-green-400">Added:</span>
+                  <ul class="list-disc list-inside ml-2 mt-1">
+                    {#each changelogEntry.added as item}
+                      <li>{item}</li>
+                    {/each}
+                  </ul>
+                </div>
+              {/if}
+              {#if changelogEntry.changed && changelogEntry.changed.length > 0}
+                <div>
+                  <span class="font-medium text-blue-600 dark:text-blue-400">Changed:</span>
+                  <ul class="list-disc list-inside ml-2 mt-1">
+                    {#each changelogEntry.changed as item}
+                      <li>{item}</li>
+                    {/each}
+                  </ul>
+                </div>
+              {/if}
+              {#if changelogEntry.fixed && changelogEntry.fixed.length > 0}
+                <div>
+                  <span class="font-medium text-orange-600 dark:text-orange-400">Fixed:</span>
+                  <ul class="list-disc list-inside ml-2 mt-1">
+                    {#each changelogEntry.fixed as item}
+                      <li>{item}</li>
+                    {/each}
+                  </ul>
+                </div>
+              {/if}
+            </div>
+          </div>
         {/if}
       </div>
     </div>
