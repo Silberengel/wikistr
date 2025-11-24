@@ -6,7 +6,7 @@
 import type { NostrEvent } from '@nostr/tools/pure';
 import { nip19 } from '@nostr/tools';
 import { relayService } from '$lib/relayService';
-import { exportToPDF, exportToEPUB, exportToHTML5, exportToRevealJS, exportToLaTeX, downloadBlob, openInViewer } from './asciidoctorExport';
+import { exportToPDF, exportToEPUB, exportToHTML5, exportToLaTeX, downloadBlob, openInViewer } from './asciidoctorExport';
 import { getUploadedThemeFiles } from './pdfThemes';
 import {
   processContentQuality,
@@ -597,11 +597,17 @@ export async function getPDFBlob(event: NostrEvent, theme: PDFTheme = 'classic')
   
   // Validate AsciiDoc content before exporting
   const validation = validateAsciiDoc(asciiDocContent);
+  // Always log to console
   if (!validation.valid) {
     const errorMsg = `Invalid AsciiDoc syntax: ${validation.error}${validation.warnings ? '\nWarnings: ' + validation.warnings.join('; ') : ''}\n\nPlease fix the AsciiDoc syntax errors and try again.`;
+    console.error('AsciiDoc validation error:', validation.error);
+    if (validation.warnings && validation.warnings.length > 0) {
+      console.warn('AsciiDoc warnings:', validation.warnings);
+    }
     throw new Error(errorMsg);
   }
   if (validation.warnings && validation.warnings.length > 0) {
+    // Always log to console
     console.warn('AsciiDoc warnings:', validation.warnings);
   }
   
@@ -635,8 +641,25 @@ export async function downloadAsPDF(event: NostrEvent, filename?: string, theme:
  * View PDF in e-book viewer
  */
 export async function viewAsPDF(event: NostrEvent, theme: PDFTheme = 'classic'): Promise<void> {
+  // Prepare AsciiDoc content with metadata (includes cover image, abstract, etc.)
+  const asciiDocContent = await prepareAsciiDocContent(event, true, theme);
+  
+  // Validate AsciiDoc content before exporting
+  const validation = validateAsciiDoc(asciiDocContent);
+  const validationMessages: { errors?: string[]; warnings?: string[] } = {};
+  
+  // Always log to console AND pass to viewer
+  if (!validation.valid && validation.error) {
+    validationMessages.errors = [validation.error];
+    console.error('AsciiDoc validation error:', validation.error);
+  }
+  if (validation.warnings && validation.warnings.length > 0) {
+    validationMessages.warnings = validation.warnings;
+    console.warn('AsciiDoc warnings:', validation.warnings);
+  }
+  
   const { blob, filename } = await getPDFBlob(event, theme);
-  await openInViewer(blob, filename, 'pdf');
+  await openInViewer(blob, filename, 'pdf', validationMessages);
 }
 
 /**
@@ -693,8 +716,25 @@ export async function downloadAsEPUB(event: NostrEvent, filename?: string, theme
  * View EPUB in e-book viewer
  */
 export async function viewAsEPUB(event: NostrEvent, theme: PDFTheme = 'classic'): Promise<void> {
+  // Prepare AsciiDoc content with metadata (includes cover image, abstract, etc.)
+  const asciiDocContent = await prepareAsciiDocContent(event, true, theme);
+  
+  // Validate AsciiDoc content before exporting
+  const validation = validateAsciiDoc(asciiDocContent);
+  const validationMessages: { errors?: string[]; warnings?: string[] } = {};
+  
+  // Always log to console AND pass to viewer
+  if (!validation.valid && validation.error) {
+    validationMessages.errors = [validation.error];
+    console.error('AsciiDoc validation error:', validation.error);
+  }
+  if (validation.warnings && validation.warnings.length > 0) {
+    validationMessages.warnings = validation.warnings;
+    console.warn('AsciiDoc warnings:', validation.warnings);
+  }
+  
   const { blob, filename } = await getEPUBBlob(event, theme);
-  await openInViewer(blob, filename, 'epub');
+  await openInViewer(blob, filename, 'epub', validationMessages);
 }
 
 /**
@@ -780,11 +820,31 @@ export async function viewAsMarkdown(event: NostrEvent): Promise<void> {
     content = processContentQuality(content, event, false);
   }
   
+  // Validate content (convert to AsciiDoc for validation if needed)
+  let validationMessages: { errors?: string[]; warnings?: string[] } = {};
+  try {
+    // Convert markdown to AsciiDoc for validation
+    const asciiDocForValidation = convertMarkdownToAsciiDoc(content);
+    const validation = validateAsciiDoc(asciiDocForValidation);
+    // Always log to console AND pass to viewer
+    if (!validation.valid && validation.error) {
+      validationMessages.errors = [validation.error];
+      console.error('Markdown validation error:', validation.error);
+    }
+    if (validation.warnings && validation.warnings.length > 0) {
+      validationMessages.warnings = validation.warnings;
+      console.warn('Markdown warnings:', validation.warnings);
+    }
+  } catch (error) {
+    // If validation fails, just log it
+    console.warn('Failed to validate markdown content:', error);
+  }
+  
   const title = getTitleFromEvent(event);
   const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '').slice(2, 15); // yymmddHHmmss
   const filename = `${title.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.md`;
   const blob = new Blob([content], { type: 'text/markdown' });
-  await openInViewer(blob, filename, 'markdown');
+  await openInViewer(blob, filename, 'markdown', validationMessages);
 }
 
 /**
@@ -807,11 +867,24 @@ export async function viewAsAsciiDoc(event: NostrEvent): Promise<void> {
     content = await processContentQualityAsync(event.content, event, true);
   }
   
+  // Validate AsciiDoc content
+  const validation = validateAsciiDoc(content);
+  const validationMessages: { errors?: string[]; warnings?: string[] } = {};
+  // Always log to console AND pass to viewer
+  if (!validation.valid && validation.error) {
+    validationMessages.errors = [validation.error];
+    console.error('AsciiDoc validation error:', validation.error);
+  }
+  if (validation.warnings && validation.warnings.length > 0) {
+    validationMessages.warnings = validation.warnings;
+    console.warn('AsciiDoc warnings:', validation.warnings);
+  }
+  
   const title = getTitleFromEvent(event);
   const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '').slice(2, 15); // yymmddHHmmss
   const filename = `${title.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.adoc`;
   const blob = new Blob([content], { type: 'text/asciidoc' });
-  await openInViewer(blob, filename, 'asciidoc');
+  await openInViewer(blob, filename, 'asciidoc', validationMessages);
 }
 
 /**
@@ -872,38 +945,6 @@ export async function viewAsLaTeX(event: NostrEvent, theme: PDFTheme = 'classic'
 }
 
 
-/**
- * Download article as Reveal.js presentation (AsciiDoc events only)
- */
-export async function downloadAsRevealJS(event: NostrEvent, filename?: string): Promise<void> {
-  if (!event.content || event.content.trim().length === 0) {
-    throw new Error('Cannot download Reveal.js: article content is empty');
-  }
-  
-  try {
-    // Prepare AsciiDoc content with metadata
-    const asciiDocContent = await prepareAsciiDocContent(event, true, 'classic');
-    const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
-    const author = await getAuthorName(event);
-    
-    const blob = await exportToRevealJS({
-      content: asciiDocContent,
-      title,
-      author
-    });
-    
-    if (!blob || blob.size === 0) {
-      throw new Error('Server returned empty HTML file');
-    }
-    
-    const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '').slice(2, 15); // yymmddHHmmss
-    const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.html`;
-    downloadBlob(blob, name);
-  } catch (error) {
-    console.error('Failed to download Reveal.js:', error);
-    throw error;
-  }
-}
 
 /**
  * Fetch all 30041 events referenced by a 30040 index event

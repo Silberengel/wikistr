@@ -12,7 +12,8 @@ let viewerContainer: HTMLElement | null = null;
 export interface ViewerOptions {
   blob: Blob;
   filename: string;
-  format: 'pdf' | 'epub' | 'html' | 'markdown' | 'asciidoc';
+  format: 'pdf' | 'epub' | 'html' | 'markdown' | 'asciidoc' | 'json' | 'jsonl';
+  validationMessages?: { errors?: string[]; warnings?: string[] };
 }
 
 /**
@@ -36,7 +37,8 @@ export function openViewer(options: ViewerOptions): void {
         blob: options.blob,
         filename: options.filename,
         format: options.format,
-        onClose: closeViewer
+        onClose: closeViewer,
+        validationMessages: options.validationMessages
       }
     });
   } catch (error) {

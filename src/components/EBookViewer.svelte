@@ -7,11 +7,12 @@
   interface Props {
     blob: Blob;
     filename: string;
-    format: 'pdf' | 'epub' | 'html' | 'markdown' | 'asciidoc';
+    format: 'pdf' | 'epub' | 'html' | 'markdown' | 'asciidoc' | 'json' | 'jsonl';
     onClose: () => void;
+    validationMessages?: { errors?: string[]; warnings?: string[] };
   }
 
-  let { blob, filename, format, onClose }: Props = $props();
+  let { blob, filename, format, onClose, validationMessages }: Props = $props();
 
   // PDF state
   let currentPage = $state(1);
@@ -35,6 +36,7 @@
   // HTML/Text state
   let htmlContent = $state<string>('');
   let codeContainer = $state<HTMLElement | null>(null);
+  let isMaximized = $state(false);
 
   onMount(() => {
     // Detect mobile vs desktop
@@ -60,7 +62,7 @@
         await loadEPUB();
       } else if (format === 'html') {
         await loadHTML();
-      } else if (format === 'markdown' || format === 'asciidoc') {
+      } else if (format === 'markdown' || format === 'asciidoc' || format === 'json' || format === 'jsonl') {
         await loadTextFile();
       }
     })();
@@ -310,7 +312,33 @@
 
   async function loadTextFile() {
     try {
-      const text = await blob.text();
+      let text = await blob.text();
+      
+      // For JSONL files, format each line as a separate JSON object for better readability
+      if (format === 'jsonl') {
+        const lines = text.split('\n').filter(line => line.trim());
+        const formattedLines: string[] = [];
+        for (const line of lines) {
+          try {
+            // Try to parse and pretty-print each JSON line
+            const parsed = JSON.parse(line.trim());
+            formattedLines.push(JSON.stringify(parsed, null, 2));
+          } catch {
+            // If parsing fails, keep the original line
+            formattedLines.push(line);
+          }
+        }
+        text = formattedLines.join('\n\n');
+      } else if (format === 'json') {
+        // Try to pretty-print JSON for better readability
+        try {
+          const parsed = JSON.parse(text);
+          text = JSON.stringify(parsed, null, 2);
+        } catch {
+          // If parsing fails, keep original text
+        }
+      }
+      
       // Escape HTML to prevent XSS
       const escaped = text
         .replace(/&/g, '&amp;')
@@ -319,14 +347,55 @@
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
       
-      // Use highlight.js to syntax highlight
-      const language = format === 'markdown' ? 'markdown' : 'asciidoc';
+      // Use highlight.js to syntax highlight with correct language
+      let language: string;
+      if (format === 'markdown') {
+        language = 'markdown';
+      } else if (format === 'asciidoc') {
+        // AsciiDoc is not directly supported by highlight.js
+        // Fallback to markdown since they share many tags
+        try {
+          const asciidocLang = hljs.getLanguage('asciidoc');
+          if (asciidocLang) {
+            language = 'asciidoc';
+          } else {
+            // Try adoc as alternative name
+            const adocLang = hljs.getLanguage('adoc');
+            if (adocLang) {
+              language = 'adoc';
+            } else {
+              // Fallback to markdown (they share many tags like #, ==, etc.)
+              language = 'markdown';
+            }
+          }
+        } catch {
+          // Fallback to markdown
+          language = 'markdown';
+        }
+      } else if (format === 'json' || format === 'jsonl') {
+        language = 'json';
+      } else {
+        language = 'plaintext';
+      }
+      
       let highlighted;
       try {
-        highlighted = hljs.highlight(escaped, { language });
+        // Check if language is supported
+        const lang = hljs.getLanguage(language);
+        if (lang) {
+          highlighted = hljs.highlight(escaped, { language });
+        } else {
+          // Fallback to auto-detect
+          highlighted = hljs.highlightAuto(escaped);
+        }
       } catch {
-        // Fallback if language not supported
-        highlighted = hljs.highlightAuto(escaped);
+        // Fallback if language not supported - try plaintext
+        try {
+          highlighted = hljs.highlight(escaped, { language: 'plaintext' });
+        } catch {
+          // Last resort: just escape and use plain text
+          highlighted = { value: escaped };
+        }
       }
       
       // Create a pre element with highlighted content
@@ -414,6 +483,23 @@
     }
   }
 
+  function toggleMaximize() {
+    if (!viewerContainer) return;
+    isMaximized = !isMaximized;
+    // The container is already fullscreen, so we just toggle a class for styling
+    // The actual maximize is handled by CSS
+    // For PDF/EPUB, we can also use fullscreen API as fallback
+    if (format === 'pdf' || format === 'epub') {
+      if (isMaximized) {
+        viewerContainer.requestFullscreen?.();
+      } else {
+        if (document.fullscreenElement) {
+          document.exitFullscreen?.();
+        }
+      }
+    }
+  }
+
   function downloadFile() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -423,10 +509,14 @@
     URL.revokeObjectURL(url);
   }
 
-  // Watch for fullscreen changes
+  // Watch for fullscreen changes and sync with maximize state
   $effect(() => {
     const handleFullscreenChange = () => {
       isFullscreen = !!document.fullscreenElement;
+      // Sync maximize state with fullscreen for PDF/EPUB
+      if (format === 'pdf' || format === 'epub') {
+        isMaximized = isFullscreen;
+      }
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => {
@@ -438,6 +528,7 @@
 <div
   bind:this={viewerContainer}
   class="ebook-viewer"
+  class:maximized={isMaximized}
   style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999; background: var(--bg-primary); display: flex; flex-direction: column;"
 >
   <!-- Toolbar -->
@@ -539,11 +630,11 @@
       <span style="color: var(--text-secondary); font-size: 0.9em;">{filename}</span>
       <button
         type="button"
-        onclick={toggleFullscreen}
+        onclick={toggleMaximize}
         style="background: var(--bg-tertiary); border: 1px solid var(--border); color: var(--text-primary); padding: 0.5rem 1rem; border-radius: 0.25rem; cursor: pointer;"
-        title="Toggle fullscreen"
+        title={isMaximized ? "Minimize" : "Maximize"}
       >
-        ⛶ Fullscreen
+        {isMaximized ? '⊟ Minimize' : '⊞ Maximize'}
       </button>
       <button
         type="button"
@@ -556,12 +647,41 @@
     </div>
   </div>
 
+  <!-- Validation Messages -->
+  {#if validationMessages && (validationMessages.errors?.length || validationMessages.warnings?.length)}
+    <div
+      class="validation-messages"
+      style="background: var(--bg-secondary); border-bottom: 1px solid var(--border); padding: 1rem; max-height: 200px; overflow-y: auto; flex-shrink: 0;"
+    >
+      {#if validationMessages.errors && validationMessages.errors.length > 0}
+        <div style="margin-bottom: 0.5rem;">
+          <strong style="color: #ef4444;">Errors:</strong>
+          <ul style="margin: 0.5rem 0 0 1.5rem; padding: 0; color: var(--text-primary);">
+            {#each validationMessages.errors as error}
+              <li style="margin-bottom: 0.25rem;">{error}</li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+      {#if validationMessages.warnings && validationMessages.warnings.length > 0}
+        <div>
+          <strong style="color: #f59e0b;">Warnings:</strong>
+          <ul style="margin: 0.5rem 0 0 1.5rem; padding: 0; color: var(--text-primary);">
+            {#each validationMessages.warnings as warning}
+              <li style="margin-bottom: 0.25rem;">{warning}</li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+    </div>
+  {/if}
+
   <!-- Content Area with responsive layout -->
   <div
     class="viewer-content"
     class:horizontal={isHorizontal && format === 'pdf'}
     class:vertical={!isHorizontal && format === 'pdf'}
-    style="flex: 1; display: flex; align-items: center; padding: 2rem; background: var(--page-bg); scroll-behavior: smooth;"
+    style="flex: 1; display: flex; align-items: center; padding: 2rem; background: var(--page-bg); scroll-behavior: smooth; overflow: auto; min-height: 0;"
   >
     {#if format === 'pdf'}
       <div
@@ -579,11 +699,11 @@
       >
         <!-- EPUB will be rendered here by epubjs -->
       </div>
-    {:else if format === 'markdown' || format === 'asciidoc'}
+    {:else if format === 'markdown' || format === 'asciidoc' || format === 'json' || format === 'jsonl'}
       <div
         bind:this={codeContainer}
         class="code-viewer"
-        style="max-width: 100%; width: 100%; height: 100%; overflow: auto; padding: 1rem;"
+        style="max-width: 100%; width: 100%; height: 100%; overflow: auto; padding: 1rem; box-sizing: border-box;"
       >
         {@html htmlContent}
       </div>
@@ -605,6 +725,30 @@
   .viewer-content {
     /* Smooth scrolling */
     scroll-behavior: smooth;
+    /* Ensure proper scrolling on all screen sizes */
+    overflow: auto;
+  }
+
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .viewer-content {
+      padding: 1rem;
+    }
+    
+    .code-viewer {
+      font-size: 0.85rem;
+      padding: 0.75rem;
+    }
+    
+    .code-viewer :global(pre) {
+      padding: 0.75rem;
+    }
+  }
+
+  @media (min-width: 769px) {
+    .viewer-content {
+      padding: 2rem;
+    }
   }
 
   /* Horizontal layout for PDFs (desktop default) */
@@ -626,6 +770,8 @@
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
     font-size: 0.9rem;
     line-height: 1.6;
+    overflow-x: auto;
+    overflow-y: auto;
   }
 
   .code-viewer :global(pre) {
@@ -635,6 +781,8 @@
     color: var(--code-text, #d4d4d4);
     border-radius: 0.25rem;
     overflow-x: auto;
+    overflow-y: visible;
+    min-width: fit-content;
   }
 
   .code-viewer :global(pre code) {
@@ -684,5 +832,38 @@
   /* Smooth page transitions */
   .viewer-content :global(canvas) {
     transition: opacity 0.3s ease-in-out;
+  }
+
+  /* Maximized state for plaintext viewer */
+  .ebook-viewer.maximized {
+    z-index: 10000;
+  }
+
+  /* JSON/JSONL specific styling */
+  .code-viewer :global(pre code.json),
+  .code-viewer :global(pre code.jsonl) {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+
+  /* Ensure viewer fits screen properly */
+  .ebook-viewer {
+    width: 100vw;
+    height: 100vh;
+    max-width: 100vw;
+    max-height: 100vh;
+    overflow: hidden;
+  }
+
+  /* Responsive adjustments for mobile */
+  @media (max-width: 768px) {
+    .viewer-toolbar {
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    
+    .viewer-toolbar > div {
+      flex-wrap: wrap;
+    }
   }
 </style>

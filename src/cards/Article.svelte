@@ -21,13 +21,6 @@
   import { nip19 } from '@nostr/tools';
   import { cards } from '$lib/state';
   import {
-    downloadAsMarkdown,
-    downloadAsAsciiDoc,
-    downloadAsPDF,
-    downloadAsEPUB,
-    downloadAsHTML5,
-    downloadAsRevealJS,
-    downloadAsLaTeX,
     viewAsPDF,
     viewAsEPUB,
     viewAsHTML5,
@@ -76,7 +69,6 @@
   let showPdfStyleMenu = $state(false);
   let showEpubStyleMenu = $state(false);
   let isDownloading = $state(false);
-  let openToView = $state(true); // Default to opening in viewer
   let showLevelHigherMenu = $state(false);
   let parentEvents = $state<NostrEvent[]>([]);
   let isLoadingParents = $state(false);
@@ -812,7 +804,7 @@
                 onclick={() => showDownloadMenu = !showDownloadMenu}
                 class="px-3 py-2 rounded-lg transition-colors hover:bg-gray-200 dark:hover:bg-gray-700 text-sm"
                 style="color: var(--text-secondary);"
-                title="Download options"
+                title="Open"
               >
                 ...
               </button>
@@ -822,15 +814,9 @@
                   style="background-color: var(--bg-primary); border: 1px solid var(--border);"
                   onclick={(e) => e.stopPropagation()}
                 >
-                  <div class="px-4 py-2 border-b" style="border-color: var(--border);">
-                    <label class="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" bind:checked={openToView} class="cursor-pointer" />
-                      <span class="text-sm" style="color: var(--text-primary);">Open to view</span>
-                    </label>
-                  </div>
                   <div class="py-1">
                     <div class="px-4 py-2 text-xs font-semibold" style="color: var(--text-secondary);">
-                      Download the publication as:
+                      Open:
                     </div>
                     {#if event && event.kind === 30040}
                       <!-- Download overview option for 30040 events -->
@@ -1006,11 +992,7 @@
                             showDownloadMenu = false;
                             isDownloading = true;
                             try {
-                              if (openToView) {
-                                await viewAsMarkdown(event);
-                              } else {
-                                await downloadAsMarkdown(event);
-                              }
+                              await viewAsMarkdown(event);
                             } catch (error) {
                               console.error('Failed to process Markdown:', error);
                               alert('Failed to process Markdown.');
@@ -1023,9 +1005,9 @@
                           style="color: var(--text-primary);"
                         >
                           {#if isDownloading}
-                            Preparing...
+                            Opening...
                           {:else}
-                            ⬇ Markdown
+                            Markdown
                           {/if}
                         </button>
                         <button
@@ -1034,11 +1016,7 @@
                             showDownloadMenu = false;
                             isDownloading = true;
                             try {
-                              if (openToView) {
-                                await viewAsPDF(event);
-                              } else {
-                                await downloadAsPDF(event);
-                              }
+                              await viewAsPDF(event);
                             } catch (error) {
                               alert('Failed to process PDF. Make sure the AsciiDoctor server is running.');
                             } finally {
@@ -1050,9 +1028,9 @@
                           style="color: var(--text-primary);"
                         >
                           {#if isDownloading}
-                            Generating PDF...
+                            Opening PDF...
                           {:else}
-                            ⬇ PDF
+                            PDF
                           {/if}
                         </button>
                         <div class="flex items-center gap-2">
@@ -1062,9 +1040,9 @@
                               showDownloadMenu = false;
                               isDownloading = true;
                               try {
-                                await downloadAsHTML5(event);
+                                await viewAsHTML5(event);
                               } catch (error) {
-                                alert('Failed to download HTML5. Make sure the AsciiDoctor server is running.');
+                                alert('Failed to open HTML5. Make sure the AsciiDoctor server is running.');
                               } finally {
                                 isDownloading = false;
                               }
@@ -1090,9 +1068,10 @@
                             showDownloadMenu = false;
                             isDownloading = true;
                             try {
-                              await downloadAsMarkdown(event);
+                              await viewAsMarkdown(event);
                             } catch (error) {
-                              console.error('Failed to download Markdown:', error);
+                              console.error('Failed to open Markdown:', error);
+                              alert('Failed to open Markdown.');
                             } finally {
                               isDownloading = false;
                             }
@@ -1102,53 +1081,35 @@
                           style="color: var(--text-primary);"
                         >
                           {#if isDownloading}
-                            Preparing...
+                            Opening...
                           {:else}
                             Markdown
                           {/if}
                         </button>
-                        <div class="flex items-center gap-2">
-                          <button
-                            onclick={async () => {
-                              if (!event) return;
-                              showDownloadMenu = false;
-                              isDownloading = true;
-                              try {
-                                await downloadAsAsciiDoc(event);
-                              } catch (error) {
-                                console.error('Failed to download AsciiDoc:', error);
-                              } finally {
-                                isDownloading = false;
-                              }
-                            }}
-                            disabled={isDownloading}
-                            class="flex-1 text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                            style="color: var(--text-primary);"
-                          >
-                            {#if isDownloading}
-                              Preparing...
-                            {:else}
-                              ⬇ AsciiDoc
-                            {/if}
-                          </button>
-                          <button
-                            onclick={async () => {
-                              if (!event) return;
-                              showDownloadMenu = false;
-                              isDownloading = true;
-                              try {
-                                await viewAsAsciiDoc(event);
-                              } catch (error) {
-                                alert('Failed to view AsciiDoc.');
-                              } finally {
-                                isDownloading = false;
-                              }
-                            }}
-                            disabled={isDownloading}
-                          >
-                            PDF
-                          </button>
-                        </div>
+                        <button
+                          onclick={async () => {
+                            if (!event) return;
+                            showDownloadMenu = false;
+                            isDownloading = true;
+                            try {
+                              await viewAsAsciiDoc(event);
+                            } catch (error) {
+                              console.error('Failed to open AsciiDoc:', error);
+                              alert('Failed to open AsciiDoc.');
+                            } finally {
+                              isDownloading = false;
+                            }
+                          }}
+                          disabled={isDownloading}
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                          style="color: var(--text-primary);"
+                        >
+                          {#if isDownloading}
+                            Opening...
+                          {:else}
+                            AsciiDoc
+                          {/if}
+                        </button>
                         <!-- PDF with style submenu -->
                         <div class="relative">
                           <button
@@ -1176,9 +1137,9 @@
                             showDownloadMenu = false;
                             isDownloading = true;
                             try {
-                                        await downloadAsPDF(event, undefined, style as PDFTheme);
+                                        await viewAsPDF(event, style as PDFTheme);
                             } catch (error) {
-                              alert('Failed to download PDF. Make sure the AsciiDoctor server is running.');
+                              alert('Failed to open PDF. Make sure the AsciiDoctor server is running.');
                             } finally {
                               isDownloading = false;
                             }
@@ -1214,48 +1175,28 @@
                             >
                               <div class="py-1">
                                 {#each ['classic', 'antique', 'modern', 'documentation', 'scientific', 'pop', 'bible-paragraph', 'bible-versed', 'poster'] as style}
-                        <div class="flex items-center gap-2 px-2">
-                          <button
-                            onclick={async () => {
-                              if (!event) return;
-                                      showEpubStyleMenu = false;
+                        <button
+                          onclick={async () => {
+                            if (!event) return;
+                                    showEpubStyleMenu = false;
                             showDownloadMenu = false;
                             isDownloading = true;
                             try {
-                                        await downloadAsEPUB(event, undefined, style as PDFTheme);
+                                      await viewAsEPUB(event, style as PDFTheme);
                             } catch (error) {
                               const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                              console.error('EPUB download failed:', error);
-                              alert(`Failed to download EPUB: ${errorMessage}`);
+                              console.error('EPUB open failed:', error);
+                              alert(`Failed to open EPUB: ${errorMessage}`);
                             } finally {
                               isDownloading = false;
                             }
                           }}
                           disabled={isDownloading}
-                                    class="flex-1 text-left px-2 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 capitalize"
+                                    class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 capitalize"
                           style="color: var(--text-primary);"
                         >
                                     {style}
-                        </button>
-                          <button
-                            onclick={async () => {
-                              if (!event) return;
-                              showEpubStyleMenu = false;
-                              showDownloadMenu = false;
-                              isDownloading = true;
-                              try {
-                                await viewAsEPUB(event, style as PDFTheme);
-                              } catch (error) {
-                                alert('Failed to view EPUB. Make sure the AsciiDoctor server is running.');
-                              } finally {
-                                isDownloading = false;
-                              }
-                            }}
-                            disabled={isDownloading}
-                          >
-                            EPUB
-                          </button>
-                        </div>
+                                  </button>
                                 {/each}
                               </div>
                             </div>
@@ -1267,40 +1208,23 @@
                               if (!event) return;
                               showDownloadMenu = false;
                               isDownloading = true;
-                              try {
-                                await downloadAsHTML5(event);
-                              } catch (error) {
-                                alert('Failed to download HTML5. Make sure the AsciiDoctor server is running.');
-                              } finally {
-                                isDownloading = false;
-                              }
-                            }}
-                            disabled={isDownloading}
-                            class="flex-1 text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                            try {
+                              await viewAsHTML5(event);
+                            } catch (error) {
+                              alert('Failed to open HTML5. Make sure the AsciiDoctor server is running.');
+                            } finally {
+                              isDownloading = false;
+                            }
+                          }}
+                          disabled={isDownloading}
+                            class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                             style="color: var(--text-primary);"
                           >
                             {#if isDownloading}
-                              Generating HTML5...
+                              Opening HTML5...
                             {:else}
-                              ⬇ HTML5
+                              HTML5
                             {/if}
-                          </button>
-                          <button
-                            onclick={async () => {
-                              if (!event) return;
-                              showDownloadMenu = false;
-                              isDownloading = true;
-                              try {
-                                await viewAsHTML5(event);
-                              } catch (error) {
-                                alert('Failed to view HTML5.');
-                              } finally {
-                                isDownloading = false;
-                              }
-                            }}
-                            disabled={isDownloading}
-                          >
-                            HTML5
                           </button>
                         </div>
                         <div class="flex items-center gap-2">
@@ -1310,9 +1234,9 @@
                               showDownloadMenu = false;
                               isDownloading = true;
                               try {
-                                await downloadAsLaTeX(event);
+                                await viewAsLaTeX(event);
                               } catch (error) {
-                                alert('Failed to download LaTeX. Make sure the AsciiDoctor server is running.');
+                                alert('Failed to open LaTeX. Make sure the AsciiDoctor server is running.');
                               } finally {
                                 isDownloading = false;
                               }
@@ -1335,7 +1259,7 @@
                               try {
                                 await viewAsLaTeX(event);
                               } catch (error) {
-                                alert('Failed to view LaTeX. Make sure the AsciiDoctor server is running.');
+                                alert('Failed to open LaTeX. Make sure the AsciiDoctor server is running.');
                               } finally {
                                 isDownloading = false;
                               }
@@ -1345,29 +1269,6 @@
                             LaTeX
                           </button>
                         </div>
-                        <button
-                          onclick={async () => {
-                            if (!event) return;
-                            showDownloadMenu = false;
-                            isDownloading = true;
-                            try {
-                              await downloadAsRevealJS(event);
-                            } catch (error) {
-                              alert('Failed to download Reveal.js. Make sure the AsciiDoctor server is running.');
-                            } finally {
-                              isDownloading = false;
-                            }
-                          }}
-                          disabled={isDownloading}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                          style="color: var(--text-primary);"
-                        >
-                          {#if isDownloading}
-                            Generating Reveal.js...
-                          {:else}
-                            Reveal.js
-                          {/if}
-                        </button>
                       {/if}
                     {/if}
                   </div>
