@@ -21,6 +21,7 @@
   let { card, replaceSelf, createChild }: Props = $props();
   let results = $state<NostrEvent[]>([]);
   let tried = $state(false);
+  let isLoading = $state(false);
 
   // Type guard to ensure we have a relay card
   if (card.type !== 'relay') {
@@ -29,14 +30,14 @@
   
   const relayCard = card as { type: 'relay'; data: string };
 
-  onMount(async () => {
-    const update = debounce(() => {
-      results = results;
-    }, 500);
+  const update = debounce(() => {
+    results = results;
+  }, 500);
 
-    setTimeout(() => {
-      tried = true;
-    }, 1500);
+  async function loadRelayArticles() {
+    isLoading = true;
+    tried = false;
+    results = [];
 
     // Always query the specific relay directly (no cache for relay-specific views)
     const relayUrl = relayCard.data;
@@ -70,7 +71,19 @@
     } catch (err) {
       console.warn('Failed to load relay articles:', err);
       tried = true;
+    } finally {
+      isLoading = false;
     }
+  }
+
+  onMount(async () => {
+    setTimeout(() => {
+      if (!tried) {
+        tried = true;
+      }
+    }, 1500);
+
+    await loadRelayArticles();
   });
 
   function openArticle(result: NostrEvent, ev: MouseEvent) {
@@ -110,10 +123,18 @@
 {#each results as result (result.id)}
   <ArticleListItem event={result} {openArticle} />
 {/each}
-{#if tried && results.length === 0}
+{#if tried && results.length === 0 && !isLoading}
   <div class="px-4 py-5 border-2 border-stone rounded-lg mt-2 min-h-[48px]" style="background-color: var(--theme-bg);">
     <p class="mb-2">No articles found in this relay.</p>
+    <button
+      onclick={loadRelayArticles}
+      type="button"
+      class="inline-flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors"
+      style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
+    >
+      Retry
+    </button>
   </div>
-{:else if !tried}
+{:else if isLoading || !tried}
   <div class="px-4 py-5 rounded-lg mt-2 min-h-[48px]">Loading...</div>
 {/if}

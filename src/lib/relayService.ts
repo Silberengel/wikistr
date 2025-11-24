@@ -380,9 +380,9 @@ class RelayService {
         return [];
       }
       
-      // Add timeout protection to prevent hanging
+      // Add timeout protection to prevent hanging (shorter timeout for relay list)
       const timeoutPromise = new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error('User relay list query timeout')), 10000)
+        setTimeout(() => reject(new Error('User relay list query timeout')), 5000)
       );
       
       // Use metadata-read relays to load the user's kind 10002 event
@@ -413,7 +413,11 @@ class RelayService {
       
       return relays;
     } catch (error) {
-      console.warn('Failed to load user relay list:', error);
+      // Only log if it's not a timeout (timeouts are expected and handled gracefully)
+      const isTimeout = error instanceof Error && error.message.includes('timeout');
+      if (!isTimeout) {
+        console.warn('Failed to load user relay list:', error);
+      }
       
       // Cache empty result to prevent repeated failures
       this.userRelayCache.set(userPubkey, {
@@ -620,6 +624,30 @@ class RelayService {
         }, 8000); // 8 second timeout
         
         try {
+          // Authenticate to relays that require it before subscribing
+          (async () => {
+            try {
+              const { get } = await import('idb-keyval');
+              const loggedInUser = await get('wikistr:loggedin');
+              const signer = loggedInUser?.signer;
+              
+              if (signer) {
+                // Authenticate to all relays before subscribing
+                for (const url of filteredRelays) {
+                  try {
+                    const r = await pool.ensureRelay(url);
+                    await r.auth(signer);
+                  } catch (authErr) {
+                    // If auth fails, continue anyway - some relays don't need auth for reading
+                    // Connection errors are also expected for some relays
+                  }
+                }
+              }
+            } catch (err) {
+              // Ignore auth errors - continue with subscription anyway
+            }
+          })();
+          
           // Use pool.subscribeMany with our controlled relay sets
           const subscription = pool.subscribeMany(filteredRelays, filters, {
             onevent: async (event: any) => {
