@@ -455,7 +455,7 @@ class RelayService {
         return relay && !relay.includes('write') && !relay.includes('wss://');
       });
       
-      // Always include cache relay with inbox relays
+      // Include cache relay if it exists (optional)
       const { getCacheRelayUrl } = await import('./cacheRelay');
       const cacheRelayUrl = getCacheRelayUrl();
       if (cacheRelayUrl && !inboxRelays.includes(cacheRelayUrl)) {
@@ -509,7 +509,7 @@ class RelayService {
         return relay && (relay.includes('write') || relay.startsWith('wss://'));
       });
       
-      // Always include cache relay with outbox relays
+      // Include cache relay if it exists
       const { getCacheRelayUrl } = await import('./cacheRelay');
       const cacheRelayUrl = getCacheRelayUrl();
       if (cacheRelayUrl && !outboxRelays.includes(cacheRelayUrl)) {

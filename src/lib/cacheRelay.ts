@@ -16,9 +16,12 @@ const CACHE_RELAY_KEY = 'cache-relay:events';
 
 /**
  * Get the cache relay URL (websocket format for local cache)
+ * Returns empty string if no cache relay is configured (optional)
  */
 export function getCacheRelayUrl(): string {
-  return 'ws://cache-relay.local';
+  // Return empty string if no cache relay is configured
+  // Users can override this to return their cache relay URL if they have one
+  return '';
 }
 
 /**
