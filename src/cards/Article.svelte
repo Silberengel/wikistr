@@ -1224,7 +1224,7 @@
                         {/if}
                       </button>
                     {:else if event}
-                      <!-- Markdown events (30023, 30817): Markdown, PDF, HTML5, ODT -->
+                      <!-- Markdown events (30023, 30817): Markdown, PDF, HTML5 -->
                       {#if event.kind === 30023 || event.kind === 30817}
                         <button
                           onclick={async () => {
@@ -1273,31 +1273,29 @@
                             PDF
                           {/if}
                         </button>
-                        <div class="flex items-center gap-2">
-                          <button
-                            onclick={async () => {
-                              if (!event) return;
-                              showDownloadMenu = false;
-                              isDownloading = true;
-                              try {
-                                await viewAsHTML5(event);
-                              } catch (error) {
-                                alert('Failed to open HTML5. Make sure the AsciiDoctor server is running.');
-                              } finally {
-                                isDownloading = false;
-                              }
-                            }}
-                            disabled={isDownloading}
-                            class="flex-1 text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                            style="color: var(--text-primary);"
-                          >
-                            {#if isDownloading}
-                              Generating HTML5...
-                            {:else}
-                              ⬇ HTML5
-                            {/if}
-                          </button>
-                        </div>
+                        <button
+                          onclick={async () => {
+                            if (!event) return;
+                            showDownloadMenu = false;
+                            isDownloading = true;
+                            try {
+                              await viewAsHTML5(event);
+                            } catch (error) {
+                              alert('Failed to open HTML5. Make sure the AsciiDoctor server is running.');
+                            } finally {
+                              isDownloading = false;
+                            }
+                          }}
+                          disabled={isDownloading}
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                          style="color: var(--text-primary);"
+                        >
+                          {#if isDownloading}
+                            Opening HTML5...
+                          {:else}
+                            HTML5
+                          {/if}
+                        </button>
                       {/if}
                       
                       <!-- AsciiDoc events (30040, 30041, 30818): Markdown, PDF, AsciiDoc, EPUB -->
