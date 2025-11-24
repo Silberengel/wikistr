@@ -480,6 +480,8 @@
   // Watch for tab changes and rebuild feed
   $effect(() => {
     if (initialized) {
+      // Explicitly reference activeTab to ensure effect runs when it changes
+      activeTab;
       buildFeedFromCache();
     }
   });
