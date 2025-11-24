@@ -356,13 +356,34 @@ class RelayService {
 
   /**
    * Load user's relay list with caching to prevent infinite loops
+   * Now uses contentCache for kind 10002 events
    */
   private async loadUserRelayList(userPubkey: string): Promise<string[]> {
     try {
-      // Check cache first
+      // Check in-memory cache first
       const cached = this.userRelayCache.get(userPubkey);
       if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
         return cached.relays;
+      }
+      
+      // Check contentCache for kind 10002 event
+      const { contentCache } = await import('$lib/contentCache');
+      const cachedEvents = contentCache.getEvents('kind10002');
+      const cachedEvent = cachedEvents.find(c => c.event.pubkey === userPubkey && c.event.kind === 10002);
+      
+      if (cachedEvent) {
+        const relays = cachedEvent.event.tags
+          .filter(tag => tag[0] === 'r')
+          .map(tag => tag[1])
+          .filter(relay => relay && relay.startsWith('wss://'));
+        
+        // Update in-memory cache
+        this.userRelayCache.set(userPubkey, {
+          relays,
+          timestamp: Date.now()
+        });
+        
+        return relays;
       }
       
       // Only load relays for the logged-in user, not for other users
@@ -403,9 +424,15 @@ class RelayService {
           .filter(tag => tag[0] === 'r')
           .map(tag => tag[1])
           .filter(relay => relay && relay.startsWith('wss://'));
+        
+        // Store in contentCache for future use
+        await contentCache.storeEvents('kind10002', [{
+          event,
+          relays: result.relays
+        }]);
       }
       
-      // Cache the result
+      // Cache the result in memory
       this.userRelayCache.set(userPubkey, {
         relays,
         timestamp: Date.now()

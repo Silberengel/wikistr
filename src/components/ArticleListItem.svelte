@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { NostrEvent } from '@nostr/tools/pure';
+  import { nip19 } from '@nostr/tools';
 
   import UserLabel from './UserLabel.svelte';
   import { formatRelativeTime } from '$lib/utils';
@@ -95,7 +96,13 @@
     {#if event.tags.find((e) => e[0] == 'author')?.[1]}
       {event.tags.find((e) => e[0] == 'author')?.[1]} • 
     {/if}
-    <UserLabel pubkey={event.pubkey} showAvatar={false} /> • {formatRelativeTime(event.created_at)} 
+    <UserLabel pubkey={event.pubkey} showAvatar={false} /> • 
+    {#try}
+      {nip19.npubEncode(event.pubkey).slice(0, 16)}...
+    {:catch}
+      {event.pubkey.slice(0, 16)}...
+    {/try}
+    • {formatRelativeTime(event.created_at)} 
   </p>
   <p class="text-xs text-wrap break-words whitespace-pre-wrap">
     {#if event.tags.find((e) => e[0] == 'summary')?.[0] && event.tags.find((e) => e[0] == 'summary')?.[1]}

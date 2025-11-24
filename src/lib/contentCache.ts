@@ -17,6 +17,7 @@ const CACHE_KEYS = {
   kind1: 'wikistr:cache:kind1',
   kind1111: 'wikistr:cache:kind1111',
   kind30041: 'wikistr:cache:kind30041',
+  kind10002: 'wikistr:cache:kind10002',
   metadata: 'wikistr:cache:metadata',
   bookConfigs: 'wikistr:cache:bookconfigs',
   cacheInfo: 'wikistr:cache:info'
@@ -30,6 +31,7 @@ const CACHE_EXPIRY = {
   kind1: 5 * 60 * 1000,       // 5 minutes
   kind1111: 5 * 60 * 1000,    // 5 minutes
   kind30041: 10 * 60 * 1000,  // 10 minutes
+  kind10002: 60 * 60 * 1000,  // 1 hour (relay lists change infrequently)
   metadata: 30 * 60 * 1000,   // 30 minutes
   bookConfigs: 60 * 60 * 1000 // 1 hour
 } as const;
@@ -53,6 +55,7 @@ interface ContentCache {
   kind1: Map<string, CachedEvent>;
   kind1111: Map<string, CachedEvent>;
   kind30041: Map<string, CachedEvent>;
+  kind10002: Map<string, CachedEvent>;
   metadata: Map<string, CachedEvent>;
   bookConfigs: Map<string, CachedEvent>;
 }
@@ -65,6 +68,7 @@ class ContentCacheManager {
     kind1: new Map(),
     kind1111: new Map(),
     kind30041: new Map(),
+    kind10002: new Map(),
     metadata: new Map(),
     bookConfigs: new Map()
   };
@@ -86,6 +90,7 @@ class ContentCacheManager {
         kind1Data,
         kind1111Data,
         kind30041Data,
+        kind10002Data,
         metadataData,
         bookConfigsData
       ] = await Promise.all([
@@ -95,6 +100,7 @@ class ContentCacheManager {
         idbkv.get(CACHE_KEYS.kind1, store),
         idbkv.get(CACHE_KEYS.kind1111, store),
         idbkv.get(CACHE_KEYS.kind30041, store),
+        idbkv.get(CACHE_KEYS.kind10002, store),
         idbkv.get(CACHE_KEYS.metadata, store),
         idbkv.get(CACHE_KEYS.bookConfigs, store)
       ]);
@@ -106,6 +112,7 @@ class ContentCacheManager {
       this.cache.kind1 = new Map(kind1Data || []);
       this.cache.kind1111 = new Map(kind1111Data || []);
       this.cache.kind30041 = new Map(kind30041Data || []);
+      this.cache.kind10002 = new Map(kind10002Data || []);
       this.cache.metadata = new Map(metadataData || []);
       this.cache.bookConfigs = new Map(bookConfigsData || []);
 
@@ -161,14 +168,37 @@ class ContentCacheManager {
       const now = Date.now();
       
       // For replaceable event types, we need to deduplicate by a-tag and keep newest
-      const isReplaceable = contentType === 'wiki' || contentType === 'kind30041' || contentType === 'kind1111';
+      // kind 10002 is replaceable by author (no d-tag needed)
+      const isReplaceable = contentType === 'wiki' || contentType === 'kind30041' || contentType === 'kind1111' || contentType === 'kind10002';
       
       // Merge new events with existing cache, preventing duplicates
       events.forEach(({ event, relays }) => {
         let cacheKey = event.id;
         
         // For replaceable events, use a-tag (kind:pubkey:d-tag) as the key
-        if (isReplaceable) {
+        // For kind 10002, use pubkey as key (replaceable by author only)
+        if (contentType === 'kind10002') {
+          cacheKey = event.pubkey;
+          
+          // Check if we already have a version of this replaceable event
+          const existing = this.cache[contentType].get(cacheKey);
+          if (existing) {
+            // Keep only the newest version (by created_at)
+            if (event.created_at > existing.event.created_at) {
+              // Newer version - replace it
+              this.cache[contentType].set(cacheKey, {
+                event,
+                relays,
+                cachedAt: now
+              });
+            } else {
+              // Older version - just merge relays if needed
+              existing.relays = [...new Set([...existing.relays, ...relays])];
+              existing.cachedAt = now;
+            }
+            return;
+          }
+        } else if (isReplaceable) {
           const dTag = event.tags.find(([t]) => t === 'd')?.[1];
           if (dTag) {
             const aTag = `${event.kind}:${event.pubkey}:${dTag}`;
@@ -230,7 +260,7 @@ class ContentCacheManager {
     if (direct) return direct;
     
     // For replaceable events, also try searching by event.id if eventId looks like an a-tag
-    const isReplaceable = contentType === 'wiki' || contentType === 'kind30041' || contentType === 'kind1111';
+    const isReplaceable = contentType === 'wiki' || contentType === 'kind30041' || contentType === 'kind1111' || contentType === 'kind10002';
     if (isReplaceable && eventId.includes(':')) {
       // Might be an a-tag, try direct lookup (already tried above)
       // Or might be an event.id, search all entries
@@ -273,6 +303,7 @@ class ContentCacheManager {
         idbkv.del(CACHE_KEYS.kind1, store),
         idbkv.del(CACHE_KEYS.kind1111, store),
         idbkv.del(CACHE_KEYS.kind30041, store),
+        idbkv.del(CACHE_KEYS.kind10002, store),
         idbkv.del(CACHE_KEYS.metadata, store),
         idbkv.del(CACHE_KEYS.bookConfigs, store),
         idbkv.del(CACHE_KEYS.cacheInfo, store)
