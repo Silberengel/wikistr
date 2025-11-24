@@ -38,6 +38,13 @@
   let htmlContent = $state<string>('');
   let codeContainer = $state<HTMLElement | null>(null);
   let isMaximized = $state(false);
+  
+  // Search state
+  let showSearch = $state(false);
+  let searchQuery = $state('');
+  let searchResults: any[] = $state([]);
+  let currentSearchIndex = $state(-1);
+  let searchContainer = $state<HTMLElement | null>(null);
 
   onMount(() => {
     // Detect mobile vs desktop
@@ -87,7 +94,27 @@
           }
         }
       } else if (e.key === 'Escape') {
-        onClose();
+        if (showSearch) {
+          showSearch = false;
+          searchQuery = '';
+          clearSearchHighlights();
+        } else {
+          onClose();
+        }
+      } else if ((e.key === 'f' || e.key === 'F') && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        showSearch = !showSearch;
+        if (showSearch) {
+          setTimeout(() => {
+            const searchInput = document.querySelector('.search-input') as HTMLInputElement;
+            searchInput?.focus();
+          }, 0);
+        } else {
+          clearSearchHighlights();
+        }
+      } else if (e.key === 'Enter' && showSearch && searchQuery) {
+        e.preventDefault();
+        findNext();
       } else if (e.key === '+' || e.key === '=') {
         e.preventDefault();
         zoomIn();
@@ -502,6 +529,270 @@
     }
   }
 
+  function toggleSearch() {
+    showSearch = !showSearch;
+    if (!showSearch) {
+      searchQuery = '';
+      clearSearchHighlights();
+    } else {
+      setTimeout(() => {
+        const searchInput = document.querySelector('.search-input') as HTMLInputElement;
+        searchInput?.focus();
+      }, 0);
+    }
+  }
+
+  function clearSearchHighlights() {
+    if (format === 'pdf') {
+      // Clear PDF search highlights - PDF.js doesn't have built-in highlighting
+      // We just clear the results
+      searchResults = [];
+      currentSearchIndex = -1;
+    } else if (format === 'epub') {
+      // EPUB search is handled by epubjs
+      if (epubRendition) {
+        epubRendition.annotations.clear();
+      }
+      searchResults = [];
+      currentSearchIndex = -1;
+    } else {
+      // Clear text/HTML highlights by replacing highlight spans with text nodes
+      const containers = [codeContainer, searchContainer].filter(Boolean) as HTMLElement[];
+      for (const container of containers) {
+        if (!container) continue;
+        
+        container.querySelectorAll('.search-highlight').forEach(el => {
+          const span = el as HTMLElement;
+          const parent = span.parentNode;
+          if (parent) {
+            // Replace highlight span with text node
+            const textNode = document.createTextNode(span.textContent || '');
+            parent.replaceChild(textNode, span);
+            // Normalize to merge adjacent text nodes
+            parent.normalize();
+          }
+        });
+      }
+      searchResults = [];
+      currentSearchIndex = -1;
+    }
+  }
+
+  async function performSearch() {
+    if (!searchQuery.trim()) {
+      clearSearchHighlights();
+      return;
+    }
+
+    const query = searchQuery.trim();
+    
+    if (format === 'pdf') {
+      await searchPDF(query);
+    } else if (format === 'epub') {
+      await searchEPUB(query);
+    } else {
+      searchText(query);
+    }
+  }
+
+  async function searchPDF(query: string) {
+    if (!pdfDoc || !contentContainer) return;
+    
+    try {
+      searchResults = [];
+      currentSearchIndex = -1;
+      
+      // Search through all pages
+      for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+        const page = await pdfDoc.getPage(pageNum);
+        const textContent = await page.getTextContent();
+        const textItems = textContent.items as any[];
+        const fullText = textItems.map((item: any) => item.str).join(' ');
+        
+        const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+        let match;
+        while ((match = regex.exec(fullText)) !== null) {
+          searchResults.push({
+            page: pageNum,
+            index: match.index,
+            text: match[0]
+          });
+        }
+      }
+      
+      if (searchResults.length > 0) {
+        currentSearchIndex = 0;
+        await highlightPDFSearch();
+      }
+    } catch (error) {
+      console.error('PDF search error:', error);
+    }
+  }
+
+  async function highlightPDFSearch() {
+    if (!pdfDoc || !contentContainer || searchResults.length === 0) return;
+    
+    const result = searchResults[currentSearchIndex];
+    if (result.page !== currentPage) {
+      currentPage = result.page;
+      await renderPages();
+    }
+    
+    // Scroll to the result (PDF.js doesn't have built-in highlighting, so we'll just navigate)
+    setTimeout(() => {
+      contentContainer?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  }
+
+  async function searchEPUB(query: string) {
+    if (!epubRendition) return;
+    
+    try {
+      const results = await epubRendition.search(query);
+      searchResults = results || [];
+      currentSearchIndex = 0;
+      
+      if (searchResults.length > 0) {
+        epubRendition.display(searchResults[currentSearchIndex].cfi);
+      }
+    } catch (error) {
+      console.error('EPUB search error:', error);
+    }
+  }
+
+  function searchText(query: string) {
+    const container = codeContainer || searchContainer;
+    if (!container) return;
+    
+    clearSearchHighlights();
+    searchResults = [];
+    currentSearchIndex = -1;
+    
+    // Get all text content
+    const text = container.innerText || container.textContent || '';
+    const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    const matches = [...text.matchAll(regex)];
+    
+    if (matches.length === 0) return;
+    
+    // Store matches with their positions
+    searchResults = matches.map(match => ({
+      index: match.index || 0,
+      text: match[0]
+    }));
+    
+    currentSearchIndex = 0;
+    highlightTextSearch();
+  }
+
+  function highlightTextSearch() {
+    const container = codeContainer || searchContainer;
+    if (!container || searchResults.length === 0 || !searchQuery) return;
+    
+    const result = searchResults[currentSearchIndex];
+    
+    // Get all text nodes and find the one containing our match
+    const walker = document.createTreeWalker(
+      container,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+    
+    const textNodes: Array<{ node: Text; start: number; end: number }> = [];
+    let charIndex = 0;
+    let node;
+    while ((node = walker.nextNode())) {
+      const nodeText = node.textContent || '';
+      const nodeStart = charIndex;
+      const nodeEnd = charIndex + nodeText.length;
+      textNodes.push({ node: node as Text, start: nodeStart, end: nodeEnd });
+      charIndex = nodeEnd;
+    }
+    
+    // Find the text node containing the match
+    for (const { node: textNode, start, end } of textNodes) {
+      if (result.index >= start && result.index < end) {
+        const offset = result.index - start;
+        const nodeText = textNode.textContent || '';
+        const beforeText = nodeText.substring(0, offset);
+        const matchText = nodeText.substring(offset, offset + result.text.length);
+        const afterText = nodeText.substring(offset + result.text.length);
+        
+        // Create highlight span
+        const highlight = document.createElement('span');
+        highlight.className = 'search-highlight';
+        highlight.style.cssText = 'background-color: rgba(255, 255, 0, 0.5); color: inherit; padding: 2px 0; border-radius: 2px;';
+        highlight.textContent = matchText;
+        
+        // Replace the text node with highlighted version
+        const parent = textNode.parentNode;
+        if (parent) {
+          if (beforeText) {
+            parent.insertBefore(document.createTextNode(beforeText), textNode);
+          }
+          parent.insertBefore(highlight, textNode);
+          if (afterText) {
+            parent.insertBefore(document.createTextNode(afterText), textNode);
+          }
+          parent.removeChild(textNode);
+        }
+        
+        // Scroll to highlight
+        setTimeout(() => {
+          highlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 50);
+        break;
+      }
+    }
+  }
+
+  function findNext() {
+    if (searchResults.length === 0) {
+      performSearch();
+      return;
+    }
+    
+    currentSearchIndex = (currentSearchIndex + 1) % searchResults.length;
+    
+    if (format === 'pdf') {
+      highlightPDFSearch();
+    } else if (format === 'epub') {
+      if (epubRendition && searchResults[currentSearchIndex]) {
+        epubRendition.display(searchResults[currentSearchIndex].cfi);
+      }
+    } else {
+      clearSearchHighlights();
+      highlightTextSearch();
+    }
+  }
+
+  function findPrevious() {
+    if (searchResults.length === 0) return;
+    
+    currentSearchIndex = currentSearchIndex <= 0 ? searchResults.length - 1 : currentSearchIndex - 1;
+    
+    if (format === 'pdf') {
+      highlightPDFSearch();
+    } else if (format === 'epub') {
+      if (epubRendition && searchResults[currentSearchIndex]) {
+        epubRendition.display(searchResults[currentSearchIndex].cfi);
+      }
+    } else {
+      clearSearchHighlights();
+      highlightTextSearch();
+    }
+  }
+
+  // Watch for search query changes
+  $effect(() => {
+    if (searchQuery && showSearch) {
+      const timeoutId = setTimeout(() => {
+        performSearch();
+      }, 300); // Debounce search
+      return () => clearTimeout(timeoutId);
+    }
+  });
+
   async function downloadFile() {
     // For LaTeX (shown as PDF), ask user if they want PDF or .tex
     if (format === 'pdf' && originalLaTeXBlob) {
@@ -656,6 +947,14 @@
       <span style="color: var(--text-secondary); font-size: 0.9em;">{filename}</span>
       <button
         type="button"
+        onclick={toggleSearch}
+        style="background: {showSearch ? 'var(--accent)' : 'var(--bg-tertiary)'}; border: 1px solid var(--border); color: {showSearch ? 'white' : 'var(--text-primary)'}; padding: 0.5rem 1rem; border-radius: 0.25rem; cursor: pointer;"
+        title="Find in document (Ctrl+F / Cmd+F)"
+      >
+        🔍 Find
+      </button>
+      <button
+        type="button"
         onclick={toggleMaximize}
         style="background: var(--bg-tertiary); border: 1px solid var(--border); color: var(--text-primary); padding: 0.5rem 1rem; border-radius: 0.25rem; cursor: pointer;"
         title={isMaximized ? "Minimize" : "Maximize"}
@@ -672,6 +971,62 @@
       </button>
     </div>
   </div>
+
+  <!-- Search Bar -->
+  {#if showSearch}
+    <div
+      class="search-bar"
+      style="background: var(--bg-secondary); border-bottom: 1px solid var(--border); padding: 0.75rem 1rem; display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0;"
+    >
+      <input
+        type="text"
+        class="search-input"
+        bind:value={searchQuery}
+        placeholder="Search..."
+        style="flex: 1; padding: 0.5rem; border: 1px solid var(--border); border-radius: 0.25rem; background: var(--bg-primary); color: var(--text-primary);"
+        onkeydown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            findNext();
+          } else if (e.key === 'Enter' && e.shiftKey) {
+            e.preventDefault();
+            findPrevious();
+          }
+        }}
+      />
+      {#if searchResults.length > 0}
+        <span style="color: var(--text-secondary); font-size: 0.9em; min-width: 5rem; text-align: center;">
+          {currentSearchIndex + 1} / {searchResults.length}
+        </span>
+        <button
+          type="button"
+          onclick={findPrevious}
+          style="background: var(--bg-tertiary); border: 1px solid var(--border); color: var(--text-primary); padding: 0.5rem; border-radius: 0.25rem; cursor: pointer;"
+          title="Previous (Shift+Enter)"
+        >
+          ↑
+        </button>
+        <button
+          type="button"
+          onclick={findNext}
+          style="background: var(--bg-tertiary); border: 1px solid var(--border); color: var(--text-primary); padding: 0.5rem; border-radius: 0.25rem; cursor: pointer;"
+          title="Next (Enter)"
+        >
+          ↓
+        </button>
+      {:else if searchQuery}
+        <span style="color: var(--text-secondary); font-size: 0.9em;">No results</span>
+      {/if}
+      <button
+        type="button"
+        onclick={toggleSearch}
+        style="background: var(--bg-tertiary); border: 1px solid var(--border); color: var(--text-primary); padding: 0.5rem 1rem; border-radius: 0.25rem; cursor: pointer;"
+        title="Close search (Esc)"
+      >
+        ✕
+      </button>
+    </div>
+  {/if}
 
   <!-- Validation Messages -->
   {#if validationMessages && (validationMessages.errors?.length || validationMessages.warnings?.length)}
@@ -735,6 +1090,7 @@
       </div>
     {:else}
       <div
+        bind:this={searchContainer}
         style="max-width: 100%; width: 100%; height: 100%; overflow: auto;"
       >
         {@html htmlContent}
