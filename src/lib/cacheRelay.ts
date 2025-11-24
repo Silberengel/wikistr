@@ -15,10 +15,10 @@ const CACHE_RELAY_STORE = idbkv.createStore('wikistr-cache-relay', 'events-store
 const CACHE_RELAY_KEY = 'cache-relay:events';
 
 /**
- * Get the cache relay URL (local identifier)
+ * Get the cache relay URL (websocket format for local cache)
  */
 export function getCacheRelayUrl(): string {
-  return 'local://cache-relay';
+  return 'ws://cache-relay.local';
 }
 
 /**

@@ -6,10 +6,11 @@
   import { relayService } from '$lib/relayService';
   import { wikiKind, reactionKind, account, setAccount, wot } from '$lib/nostr';
   import { getThemeConfig } from '$lib/themes';
-  import { next, getTagOr } from '$lib/utils';
+  import { next, getTagOr, deduplicateRelays } from '$lib/utils';
   import { contentCache } from '$lib/contentCache';
   import { cards } from '$lib/state';
   import { openOrCreateArticleCard } from '$lib/articleLauncher';
+  import { getCacheRelayUrl } from '$lib/cacheRelay';
   
   // Components
   import UserBadge from '$components/UserBadge.svelte';
@@ -66,9 +67,36 @@
   });
 
   /**
+   * Get all relays for queries: wiki relays + user's inboxes + cache relay
+   */
+  async function getAllRelays(): Promise<string[]> {
+    const wikiRelays = theme.relays?.wiki || [];
+    const allRelays = [...wikiRelays];
+    
+    // Add user's inbox relays if logged in
+    if ($account?.pubkey) {
+      try {
+        const userRelayLists = await relayService.loadUserRelayLists($account.pubkey);
+        allRelays.push(...userRelayLists.inbox);
+      } catch (error) {
+        console.warn('Failed to load user inbox relays:', error);
+      }
+    }
+    
+    // Add cache relay
+    const cacheRelayUrl = getCacheRelayUrl();
+    if (cacheRelayUrl) {
+      allRelays.push(cacheRelayUrl);
+    }
+    
+    // Deduplicate and return
+    return deduplicateRelays(allRelays);
+  }
+
+  /**
    * Build feed from cache - show events based on active tab
    */
-  function buildFeedFromCache(): void {
+  async function buildFeedFromCache(): Promise<void> {
     const allCachedEvents = contentCache.getEvents('wiki');
     
     // Valid d-tag pattern: only alphanumeric and hyphens (no spaces, underscores, or special symbols)
@@ -92,9 +120,13 @@
         if (!myContentKinds.includes(event.kind)) {
           continue;
         }
-        // Filter by logged-in user's pubkey
-        if (!$account?.pubkey || event.pubkey !== $account.pubkey) {
-          continue;
+        // STRICT filter: Only show content from the logged-in user's pubkey
+        const currentUserPubkey = $account?.pubkey;
+        if (!currentUserPubkey) {
+          continue; // Skip if not logged in
+        }
+        if (event.pubkey !== currentUserPubkey) {
+          continue; // Skip if pubkey doesn't match logged-in user
         }
       }
       
@@ -123,8 +155,8 @@
       .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
       .slice(0, 100);
     
-    // Only show wiki relays from theme
-    currentRelays = theme.relays?.wiki || [];
+    // Get all relays: wiki relays + user's inboxes + cache relay
+    currentRelays = await getAllRelays();
   }
 
 
@@ -137,16 +169,16 @@
     try {
       const userPubkey = $account?.pubkey || 'anonymous';
       
-      // Get wiki relays from theme
-      const wikiRelays = theme.relays?.wiki || [];
+      // Get all relays: wiki relays + user's inboxes + cache relay
+      const allRelays = await getAllRelays();
       
-      // Update wiki cache - only 30817 and 30818 from wiki relays for "all" feed
+      // Update wiki cache - only 30817 and 30818 for "all" feed
       const wikiKinds = [30817, 30818];
       const wikiResult = await relayService.queryEvents(
         userPubkey,
         'wiki-read',
         [{ kinds: wikiKinds, limit: 100 }],
-        { excludeUserContent: false, currentUserPubkey: $account?.pubkey, customRelays: wikiRelays }
+        { excludeUserContent: false, currentUserPubkey: $account?.pubkey, customRelays: allRelays }
       );
       
       // Also update user's own content cache if logged in (30817, 30818, 30023, 30040, NOT 30041)
@@ -156,7 +188,7 @@
           $account.pubkey,
           'wiki-read',
           [{ kinds: myContentKinds, authors: [$account.pubkey], limit: 100 }],
-          { excludeUserContent: false, currentUserPubkey: $account.pubkey, customRelays: wikiRelays }
+          { excludeUserContent: false, currentUserPubkey: $account.pubkey, customRelays: allRelays }
         );
         
         if (myContentResult.events.length > 0) {
@@ -267,6 +299,9 @@
     try {
       const userPubkey = $account?.pubkey || 'anonymous';
       
+      // Get all relays: wiki relays + user's inboxes + cache relay
+      const allRelays = await getAllRelays();
+      
       // Always update wiki cache to ensure it's populated
       
       // Update wiki cache - include all wiki kinds: 30818, 30817, 30040, 30041
@@ -275,7 +310,7 @@
         userPubkey,
         'wiki-read',
         [{ kinds: wikiKinds, limit: 100 }],
-        { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+        { excludeUserContent: false, currentUserPubkey: $account?.pubkey, customRelays: allRelays }
       );
       
       // Store wiki events in cache
@@ -283,7 +318,7 @@
         await contentCache.storeEvents('wiki', wikiResult.events.map(event => ({ event, relays: wikiResult.relays })));
         
         // Rebuild feed with new data
-        buildFeedFromCache();
+        await buildFeedFromCache();
       }
       
       // Check other caches for updates
@@ -396,6 +431,8 @@
       del('wikistr:loggedin');
     });
     setAccount(null);
+    // Reset to 'all' tab when logging out
+    activeTab = 'all';
   }
 
   /**
@@ -446,12 +483,12 @@
           await contentCache.initialize();
           
           // Show cached results immediately (fast!)
-          buildFeedFromCache();
+          await buildFeedFromCache();
           
           // Update caches in background without blocking UI
-          updateAllCaches().then(() => {
+          updateAllCaches().then(async () => {
             // Refresh feed after cache updates complete
-            buildFeedFromCache();
+            await buildFeedFromCache();
           }).catch(error => {
             console.error('❌ Background cache update failed:', error);
           });
@@ -477,12 +514,22 @@
     };
   });
   
+  // Watch for account changes and reset tab if needed
+  $effect(() => {
+    // If user is not logged in but tab is set to 'my-content', reset to 'all'
+    if (!$account && activeTab === 'my-content') {
+      activeTab = 'all';
+    }
+  });
+
   // Watch for tab changes and rebuild feed
   $effect(() => {
     if (initialized) {
       // Explicitly reference activeTab to ensure effect runs when it changes
       activeTab;
-      buildFeedFromCache();
+      buildFeedFromCache().catch(error => {
+        console.error('Failed to rebuild feed:', error);
+      });
     }
   });
 </script>

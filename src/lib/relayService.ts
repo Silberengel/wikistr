@@ -4,7 +4,7 @@ import { DEFAULT_METADATA_RELAYS, DEFAULT_WRITE_RELAYS, DEFAULT_SEARCH_RELAYS } 
 import { getThemeConfig } from '$lib/themes';
 import type { NostrEvent } from '@nostr/tools/pure';
 
-export type RelaySetType = 'wiki-read' | 'wiki-write' | 'social-read' | 'social-write' | 'metadata-read' | 'fallback-write' | 'inbox-read';
+export type RelaySetType = 'wiki-read' | 'wiki-write' | 'social-read' | 'social-write' | 'metadata-read' | 'fallback-write' | 'inbox-read' | 'search';
 
 export interface QueryResult<T> {
   events: T[];
@@ -173,46 +173,163 @@ class RelayService {
     }
     
     let relays: string[] = [];
+    const isLoggedIn = userPubkey && userPubkey !== 'anonymous' && userPubkey !== 'undefined' && userPubkey !== 'null';
     
     try {
       // Get theme-specific relays
       const theme = getThemeConfig();
       const themeWikiRelays = theme.relays?.wiki || [];
       const themeSocialRelays = theme.relays?.social || [];
+      const { getCacheRelayUrl } = await import('./cacheRelay');
+      const cacheRelayUrl = getCacheRelayUrl();
       
       switch (type) {
         case 'wiki-read':
-        case 'wiki-write':
+          // Articles READ: if logged in: wiki from theme + user's inboxes + cache relay
+          //              if not logged in: wiki from theme
           relays = [...themeWikiRelays];
+          if (isLoggedIn) {
+            try {
+              const userRelayLists = await this.loadUserRelayLists(userPubkey);
+              relays.push(...userRelayLists.inbox);
+              if (cacheRelayUrl) {
+                relays.push(cacheRelayUrl);
+              }
+            } catch (error) {
+              console.warn('Failed to load user inbox relays:', error);
+            }
+          }
           break;
+          
+        case 'wiki-write':
+          // Articles WRITE: if logged in: wiki from theme + user's outboxes + cache relay
+          //                if logged in but no outboxes/cache: wiki from theme + DEFAULT_WRITE_RELAYS
+          //                if not logged in: no write allowed (return empty)
+          if (!isLoggedIn) {
+            return [];
+          }
+          relays = [...themeWikiRelays];
+          try {
+            const userRelayLists = await this.loadUserRelayLists(userPubkey);
+            if (userRelayLists.outbox.length > 0 || cacheRelayUrl) {
+              relays.push(...userRelayLists.outbox);
+              if (cacheRelayUrl) {
+                relays.push(cacheRelayUrl);
+              }
+            } else {
+              // No outboxes or cache relay, use default write relays
+              relays.push(...DEFAULT_WRITE_RELAYS);
+            }
+          } catch (error) {
+            console.warn('Failed to load user outbox relays:', error);
+            // Fallback to default write relays
+            relays.push(...DEFAULT_WRITE_RELAYS);
+          }
+          break;
+          
         case 'social-read':
+          // Comments/voting READ: if logged in: social from theme + user's inboxes + cache relay
+          //                       if not logged in: social from theme
+          relays = [...themeSocialRelays];
+          if (isLoggedIn) {
+            try {
+              const userRelayLists = await this.loadUserRelayLists(userPubkey);
+              relays.push(...userRelayLists.inbox);
+              if (cacheRelayUrl) {
+                relays.push(cacheRelayUrl);
+              }
+            } catch (error) {
+              console.warn('Failed to load user inbox relays:', error);
+            }
+          }
+          break;
+          
         case 'social-write':
+          // Comments/voting WRITE: if logged in: social from theme + user's outboxes + cache relay
+          //                        if logged in but no relay list/cache: social from theme + DEFAULT_WRITE_RELAYS
+          //                        if not logged in: no write allowed (return empty)
+          if (!isLoggedIn) {
+            return [];
+          }
           relays = [...themeSocialRelays];
+          try {
+            const userRelayLists = await this.loadUserRelayLists(userPubkey);
+            if (userRelayLists.outbox.length > 0 || cacheRelayUrl) {
+              relays.push(...userRelayLists.outbox);
+              if (cacheRelayUrl) {
+                relays.push(cacheRelayUrl);
+              }
+            } else {
+              // No relay list or cache relay, use default write relays
+              relays.push(...DEFAULT_WRITE_RELAYS);
+            }
+          } catch (error) {
+            console.warn('Failed to load user outbox relays:', error);
+            // Fallback to default write relays
+            relays.push(...DEFAULT_WRITE_RELAYS);
+          }
           break;
-        case 'inbox-read':
-          // For inbox, start with theme social relays as fallback
-          // Only use user's relay list if available
-          relays = [...themeSocialRelays];
-          break;
+          
         case 'metadata-read':
+          // Metadata: if logged in: social from theme + DEFAULT_METADATA_RELAYS + user's inboxes + cache relay
+          //            if not logged in: social from theme + DEFAULT_METADATA_RELAYS
           relays = [...themeSocialRelays, ...DEFAULT_METADATA_RELAYS];
+          if (isLoggedIn) {
+            try {
+              const userRelayLists = await this.loadUserRelayLists(userPubkey);
+              relays.push(...userRelayLists.inbox);
+              if (cacheRelayUrl) {
+                relays.push(cacheRelayUrl);
+              }
+            } catch (error) {
+              console.warn('Failed to load user inbox relays:', error);
+            }
+          }
           break;
+          
+        case 'search':
+          // Search: if logged in: wiki from theme + DEFAULT_SEARCH_RELAYS + user's outboxes + cache relay
+          //         if logged in but no relay list/cache, or not logged in: wiki from theme + DEFAULT_SEARCH_RELAYS
+          relays = [...themeWikiRelays, ...DEFAULT_SEARCH_RELAYS];
+          if (isLoggedIn) {
+            try {
+              const userRelayLists = await this.loadUserRelayLists(userPubkey);
+              if (userRelayLists.outbox.length > 0 || cacheRelayUrl) {
+                relays.push(...userRelayLists.outbox);
+                if (cacheRelayUrl) {
+                  relays.push(cacheRelayUrl);
+                }
+              }
+            } catch (error) {
+              console.warn('Failed to load user outbox relays for search:', error);
+            }
+          }
+          break;
+          
+        case 'inbox-read':
+          // Legacy: For inbox, start with theme social relays as fallback
+          relays = [...themeSocialRelays];
+          if (isLoggedIn) {
+            try {
+              const userRelayLists = await this.loadUserRelayLists(userPubkey);
+              relays.push(...userRelayLists.inbox);
+              if (cacheRelayUrl) {
+                relays.push(cacheRelayUrl);
+              }
+            } catch (error) {
+              console.warn('Failed to load user inbox relays:', error);
+            }
+          }
+          break;
+          
         case 'fallback-write':
+          // Legacy fallback
           relays = [...DEFAULT_WRITE_RELAYS];
           break;
       }
       
-      // Load user's own relays only for the logged-in user and only if we need more relays
-      if (userPubkey && userPubkey !== 'anonymous' && userPubkey !== 'undefined' && userPubkey !== 'null' && relays.length < 3) {
-        try {
-          const userRelays = await this.loadUserRelayList(userPubkey);
-          relays = [...relays, ...userRelays];
-        } catch (error) {
-          console.warn('Failed to load user relays:', error);
-        }
-      }
-      
-      // Normalize and deduplicate
+      // Normalize and deduplicate - filter out non-websocket URLs (like cache relay)
+      // Cache relay is handled separately, not as a websocket relay
       relays = [...new Set(relays.map(url => this.normalizeRelayUrl(url)))]
         .filter(url => url && 
                       url !== 'undefined' && 
@@ -338,13 +455,24 @@ class RelayService {
         return relay && !relay.includes('write') && !relay.includes('wss://');
       });
       
+      // Always include cache relay with inbox relays
+      const { getCacheRelayUrl } = await import('./cacheRelay');
+      const cacheRelayUrl = getCacheRelayUrl();
+      if (cacheRelayUrl && !inboxRelays.includes(cacheRelayUrl)) {
+        inboxRelays.push(cacheRelayUrl);
+      }
+      
+      // Normalize and deduplicate
+      const normalized = inboxRelays.map(url => this.normalizeRelayUrl(url));
+      const deduplicated = [...new Set(normalized)];
+      
       // Cache the result
       this.userInboxCache.set(userPubkey, {
-        relays: inboxRelays,
+        relays: deduplicated,
         timestamp: Date.now()
       });
       
-      return inboxRelays;
+      return deduplicated;
     } catch (error) {
       console.warn('Failed to load user inbox relays:', error);
       return [];
@@ -381,13 +509,24 @@ class RelayService {
         return relay && (relay.includes('write') || relay.startsWith('wss://'));
       });
       
+      // Always include cache relay with outbox relays
+      const { getCacheRelayUrl } = await import('./cacheRelay');
+      const cacheRelayUrl = getCacheRelayUrl();
+      if (cacheRelayUrl && !outboxRelays.includes(cacheRelayUrl)) {
+        outboxRelays.push(cacheRelayUrl);
+      }
+      
+      // Normalize and deduplicate
+      const normalized = outboxRelays.map(url => this.normalizeRelayUrl(url));
+      const deduplicated = [...new Set(normalized)];
+      
       // Cache the result
       this.userOutboxCache.set(userPubkey, {
-        relays: outboxRelays,
+        relays: deduplicated,
         timestamp: Date.now()
       });
       
-      return outboxRelays;
+      return deduplicated;
     } catch (error) {
       console.warn('Failed to load user outbox relays:', error);
       return [];
@@ -449,34 +588,25 @@ class RelayService {
     
     // Use the queue system to throttle requests
     return this.queueRequest(async () => {
-      // First, check cache relay for events
-      const { queryCacheRelay, storeEventInCacheRelay } = await import('./cacheRelay');
-      const cachedEvents = await queryCacheRelay(filters) as T[];
-      
       // Use customRelays if provided, otherwise get relays for operation
-      let relays = options.customRelays || await this.getRelaysForOperation(userPubkey, type);
+      const relays = options.customRelays || await this.getRelaysForOperation(userPubkey, type);
       
       // Extra safety filter for undefined/null relays
-      relays = relays.filter(url => url && 
+      const filteredRelays = relays.filter(url => url && 
                                     url !== 'undefined' && 
                                     url !== 'null' && 
                                     url !== '' && 
                                     typeof url === 'string' &&
                                     (url.startsWith('ws://') || url.startsWith('wss://')));
       
-      if (relays.length === 0) {
+      if (filteredRelays.length === 0) {
         console.warn('No relays available for query');
-        return { events: [], relays: [] };
+        return { events: [], relays };
       }
       
       const events: T[] = [];
       const eventMap = new Map<string, T>();
-      
-      // Add cached events to the map
-      for (const cachedEvent of cachedEvents) {
-        eventMap.set(cachedEvent.id, cachedEvent);
-        events.push(cachedEvent);
-      }
+      const { storeEventInCacheRelay } = await import('./cacheRelay');
       
       let subscriptionClosed = false;
       
@@ -491,7 +621,7 @@ class RelayService {
         
         try {
           // Use pool.subscribeMany with our controlled relay sets
-          const subscription = pool.subscribeMany(relays, filters, {
+          const subscription = pool.subscribeMany(filteredRelays, filters, {
             onevent: async (event: any) => {
               if (subscriptionClosed) return;
               
