@@ -526,17 +526,24 @@
 
   function toggleMaximize() {
     if (!viewerContainer) return;
-    isMaximized = !isMaximized;
-    // The container is already fullscreen, so we just toggle a class for styling
-    // The actual maximize is handled by CSS
-    // For PDF/EPUB, we can also use fullscreen API as fallback
-    if (format === 'pdf' || format === 'epub') {
-      if (isMaximized) {
-        viewerContainer.requestFullscreen?.();
+    
+    if (isMaximized) {
+      // Minimize: exit fullscreen if active
+      if (document.fullscreenElement) {
+        document.exitFullscreen?.();
+      }
+      isMaximized = false;
+    } else {
+      // Maximize: enter fullscreen
+      if (viewerContainer.requestFullscreen) {
+        viewerContainer.requestFullscreen().catch(err => {
+          console.warn('Failed to enter fullscreen:', err);
+          // Fallback: just set the state
+          isMaximized = true;
+        });
       } else {
-        if (document.fullscreenElement) {
-          document.exitFullscreen?.();
-        }
+        // Browser doesn't support fullscreen API, just toggle state
+        isMaximized = true;
       }
     }
   }
@@ -842,10 +849,8 @@
   $effect(() => {
     const handleFullscreenChange = () => {
       isFullscreen = !!document.fullscreenElement;
-      // Sync maximize state with fullscreen for PDF/EPUB
-      if (format === 'pdf' || format === 'epub') {
-        isMaximized = isFullscreen;
-      }
+      // Sync maximize state with fullscreen for all formats
+      isMaximized = isFullscreen;
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => {
