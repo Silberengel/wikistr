@@ -82,7 +82,7 @@
       
       // Check cache first before making relay queries
       const { contentCache } = await import('$lib/contentCache');
-      const cachedEvents = await contentCache.getEvents('metadata');
+      const cachedEvents = contentCache.getEvents('metadata');
       const cachedUserEvent = cachedEvents.find(cached => cached.event.pubkey === hexPubkey && cached.event.kind === 0);
       
       let result: any;

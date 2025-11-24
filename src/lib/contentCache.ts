@@ -167,18 +167,29 @@ class ContentCacheManager {
     try {
       const now = Date.now();
       
-      // For replaceable event types, we need to deduplicate by a-tag and keep newest
-      // kind 10002 is replaceable by author (no d-tag needed)
-      const isReplaceable = contentType === 'wiki' || contentType === 'kind30041' || contentType === 'kind1111' || contentType === 'kind10002';
+      // Cache key logic based on NIP specification:
+      // - Regular (1000 <= n < 10000 || 4 <= n < 45 || n == 1 || n == 2): use event.id
+      // - Replaceable (10000 <= n < 20000 || n == 0 || n == 3): use kind:pubkey
+      // - Ephemeral (20000 <= n < 30000): use event.id (not expected to be stored, but we cache them)
+      // - Addressable (30000 <= n < 40000): use kind:pubkey:d-tag
+      const isReplaceable = contentType === 'wiki' || contentType === 'kind30041' || contentType === 'kind1111' || contentType === 'kind10002' || contentType === 'metadata';
       
       // Merge new events with existing cache, preventing duplicates
       events.forEach(({ event, relays }) => {
         let cacheKey = event.id;
         
-        // For replaceable events, use a-tag (kind:pubkey:d-tag) as the key
-        // For kind 10002, use pubkey as key (replaceable by author only)
-        if (contentType === 'kind10002') {
-          cacheKey = event.pubkey;
+        const kind = event.kind;
+        
+        // Determine event type based on NIP specification
+        const isRegular = (kind >= 1000 && kind < 10000) || (kind >= 4 && kind < 45) || kind === 1 || kind === 2;
+        const isReplaceableKind = (kind >= 10000 && kind < 20000) || kind === 0 || kind === 3;
+        const isEphemeral = kind >= 20000 && kind < 30000;
+        const isAddressable = kind >= 30000 && kind < 40000;
+        
+        if (isReplaceableKind) {
+          // Replaceable events: use kind:pubkey as key
+          // Only the latest event for each (kind, pubkey) combination is kept
+          cacheKey = `${kind}:${event.pubkey}`;
           
           // Check if we already have a version of this replaceable event
           const existing = this.cache[contentType].get(cacheKey);
@@ -198,13 +209,14 @@ class ContentCacheManager {
             }
             return;
           }
-        } else if (isReplaceable) {
+        } else if (isAddressable) {
+          // Addressable events: use kind:pubkey:d-tag as key
+          // Only the latest event for each (kind, pubkey, d-tag) combination is kept
           const dTag = event.tags.find(([t]) => t === 'd')?.[1];
           if (dTag) {
-            const aTag = `${event.kind}:${event.pubkey}:${dTag}`;
-            cacheKey = aTag;
+            cacheKey = `${kind}:${event.pubkey}:${dTag}`;
             
-            // Check if we already have a version of this replaceable event
+            // Check if we already have a version of this addressable event
             const existing = this.cache[contentType].get(cacheKey);
             if (existing) {
               // Keep only the newest version (by created_at)
@@ -223,7 +235,9 @@ class ContentCacheManager {
               return;
             }
           }
+          // If addressable event has no d-tag, fall through to use event.id
         }
+        // For regular and ephemeral events, use event.id (already set above)
         
         // For non-replaceable events or events without d-tag, use event.id
         const existing = this.cache[contentType].get(cacheKey);
@@ -251,23 +265,48 @@ class ContentCacheManager {
   }
 
   /**
-   * Get specific event by ID or a-tag
-   * For replaceable events, can search by a-tag (kind:pubkey:d-tag) or event.id
+   * Get specific event by ID or cache key
+   * Cache key formats:
+   * - Replaceable (10000 <= n < 20000 || n == 0 || n == 3): kind:pubkey
+   * - Addressable (30000 <= n < 40000): kind:pubkey:d-tag
+   * - Regular/Ephemeral: event.id
    */
   getEvent(contentType: keyof ContentCache, eventId: string): CachedEvent | undefined {
-    // First try direct lookup
+    // First try direct lookup (works for event.id or cache keys)
     const direct = this.cache[contentType].get(eventId);
     if (direct) return direct;
     
-    // For replaceable events, also try searching by event.id if eventId looks like an a-tag
-    const isReplaceable = contentType === 'wiki' || contentType === 'kind30041' || contentType === 'kind1111' || contentType === 'kind10002';
-    if (isReplaceable && eventId.includes(':')) {
-      // Might be an a-tag, try direct lookup (already tried above)
-      // Or might be an event.id, search all entries
-      for (const cached of this.cache[contentType].values()) {
-        if (cached.event.id === eventId) {
-          return cached;
+    // If eventId contains colons, it might be a cache key format
+    if (eventId.includes(':')) {
+      const parts = eventId.split(':');
+      
+      // Try kind:pubkey format (replaceable events: 10000-19999, 0, 3)
+      if (parts.length === 2) {
+        const [kindStr, pubkey] = parts;
+        const kindNum = parseInt(kindStr);
+        if (!isNaN(kindNum)) {
+          const key = `${kindNum}:${pubkey}`;
+          const found = this.cache[contentType].get(key);
+          if (found) return found;
         }
+      }
+      
+      // Try kind:pubkey:d-tag format (addressable events: 30000-39999)
+      if (parts.length === 3) {
+        const [kindStr, pubkey, dTag] = parts;
+        const kindNum = parseInt(kindStr);
+        if (!isNaN(kindNum)) {
+          const key = `${kindNum}:${pubkey}:${dTag}`;
+          const found = this.cache[contentType].get(key);
+          if (found) return found;
+        }
+      }
+    }
+    
+    // Fallback: search all entries by event.id (for regular/ephemeral events or if cache key lookup failed)
+    for (const cached of this.cache[contentType].values()) {
+      if (cached.event.id === eventId) {
+        return cached;
       }
     }
     

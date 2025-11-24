@@ -218,16 +218,34 @@
     }
     
     try {
-      // Fetch user metadata using relayService
-      const result = await relayService.queryEvents(
-        'anonymous',
-        'metadata-read',
-        [{ kinds: [0], authors: [pubkey], limit: 1 }],
-        {
-          excludeUserContent: false,
-          currentUserPubkey: undefined
+      // Check cache first
+      const { contentCache } = await import('$lib/contentCache');
+      const cachedEvents = contentCache.getEvents('metadata');
+      const cachedUserEvent = cachedEvents.find(cached => cached.event.pubkey === pubkey && cached.event.kind === 0);
+      
+      let result: any;
+      if (cachedUserEvent) {
+        result = { events: [cachedUserEvent.event], relays: cachedUserEvent.relays };
+      } else {
+        // Fetch user metadata using relayService
+        result = await relayService.queryEvents(
+          'anonymous',
+          'metadata-read',
+          [{ kinds: [0], authors: [pubkey], limit: 1 }],
+          {
+            excludeUserContent: false,
+            currentUserPubkey: undefined
+          }
+        );
+        
+        // Store in cache for future use
+        if (result.events.length > 0) {
+          await contentCache.storeEvents('metadata', result.events.map((event: any) => ({
+            event,
+            relays: result.relays
+          })));
         }
-      );
+      }
 
       const userEvent = result.events.find(event => event.pubkey === pubkey);
       if (userEvent) {

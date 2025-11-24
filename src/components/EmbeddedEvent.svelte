@@ -110,15 +110,32 @@
         event = cachedEvent;
         pubkey = cachedEvent.pubkey;
         loading = false;
-        // Load user data
+        // Load user data - check cache first
         try {
-          const { relayService } = await import('$lib/relayService');
-          const result = await relayService.queryEvents(
-            'anonymous',
-            'metadata-read',
-            [{ kinds: [0], authors: [cachedEvent.pubkey], limit: 1 }],
-            { excludeUserContent: false, currentUserPubkey: undefined }
-          );
+          const { contentCache } = await import('$lib/contentCache');
+          const cachedEvents = contentCache.getEvents('metadata');
+          const cachedUserEvent = cachedEvents.find(cached => cached.event.pubkey === cachedEvent.pubkey && cached.event.kind === 0);
+          
+          let result: any;
+          if (cachedUserEvent) {
+            result = { events: [cachedUserEvent.event], relays: cachedUserEvent.relays };
+          } else {
+            const { relayService } = await import('$lib/relayService');
+            result = await relayService.queryEvents(
+              'anonymous',
+              'metadata-read',
+              [{ kinds: [0], authors: [cachedEvent.pubkey], limit: 1 }],
+              { excludeUserContent: false, currentUserPubkey: undefined }
+            );
+            
+            // Store in cache for future use
+            if (result.events.length > 0) {
+              await contentCache.storeEvents('metadata', result.events.map((event: any) => ({
+                event,
+                relays: result.relays
+              })));
+            }
+          }
           
           if (result.events.length > 0) {
             const event = result.events[0];
@@ -238,15 +255,32 @@
       if (fetchedEvent) {
         event = fetchedEvent;
         pubkey = fetchedEvent.pubkey;
-        // Load user data using relayService (only metadata-read relays)
+        // Load user data - check cache first
         try {
-          const { relayService } = await import('$lib/relayService');
-          const result = await relayService.queryEvents(
-            'anonymous',
-            'metadata-read',
-            [{ kinds: [0], authors: [fetchedEvent.pubkey], limit: 1 }],
-            { excludeUserContent: false, currentUserPubkey: undefined }
-          );
+          const { contentCache } = await import('$lib/contentCache');
+          const cachedEvents = contentCache.getEvents('metadata');
+          const cachedUserEvent = cachedEvents.find(cached => cached.event.pubkey === fetchedEvent.pubkey && cached.event.kind === 0);
+          
+          let result: any;
+          if (cachedUserEvent) {
+            result = { events: [cachedUserEvent.event], relays: cachedUserEvent.relays };
+          } else {
+            const { relayService } = await import('$lib/relayService');
+            result = await relayService.queryEvents(
+              'anonymous',
+              'metadata-read',
+              [{ kinds: [0], authors: [fetchedEvent.pubkey], limit: 1 }],
+              { excludeUserContent: false, currentUserPubkey: undefined }
+            );
+            
+            // Store in cache for future use
+            if (result.events.length > 0) {
+              await contentCache.storeEvents('metadata', result.events.map((event: any) => ({
+                event,
+                relays: result.relays
+              })));
+            }
+          }
           
           if (result.events.length > 0) {
             const event = result.events[0];

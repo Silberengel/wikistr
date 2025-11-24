@@ -567,12 +567,30 @@
       (async () => {
         try {
         const { relayService } = await import('$lib/relayService');
-        const result = await relayService.queryEvents(
-          'anonymous', // Always use anonymous for metadata requests - relays are determined by type
-          'metadata-read',
-          [{ kinds: [0], authors: [pubkey], limit: 1 }],
-          { excludeUserContent: false, currentUserPubkey: undefined }
-        );
+        // Check cache first
+        const { contentCache } = await import('$lib/contentCache');
+        const cachedEvents = contentCache.getEvents('metadata');
+        const cachedUserEvent = cachedEvents.find(cached => cached.event.pubkey === pubkey && cached.event.kind === 0);
+        
+        let result: any;
+        if (cachedUserEvent) {
+          result = { events: [cachedUserEvent.event], relays: cachedUserEvent.relays };
+        } else {
+          result = await relayService.queryEvents(
+            'anonymous', // Always use anonymous for metadata requests - relays are determined by type
+            'metadata-read',
+            [{ kinds: [0], authors: [pubkey], limit: 1 }],
+            { excludeUserContent: false, currentUserPubkey: undefined }
+          );
+          
+          // Store in cache for future use
+          if (result.events.length > 0) {
+            await contentCache.storeEvents('metadata', result.events.map((event: any) => ({
+              event,
+              relays: result.relays
+            })));
+          }
+        }
         
         if (result.events.length > 0) {
           const event = result.events[0];
