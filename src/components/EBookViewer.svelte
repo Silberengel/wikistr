@@ -10,9 +10,10 @@
     format: 'pdf' | 'epub' | 'html' | 'markdown' | 'asciidoc' | 'json' | 'jsonl';
     onClose: () => void;
     validationMessages?: { errors?: string[]; warnings?: string[] };
+    originalLaTeXBlob?: Blob; // For LaTeX: store original .tex file for download
   }
 
-  let { blob, filename, format, onClose, validationMessages }: Props = $props();
+  let { blob, filename, format, onClose, validationMessages, originalLaTeXBlob }: Props = $props();
 
   // PDF state
   let currentPage = $state(1);
@@ -51,8 +52,9 @@
     checkMobile();
     window.addEventListener('resize', checkMobile);
 
-    // Set up PDF.js worker
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+    // Set up PDF.js worker - use a more reliable CDN or local fallback
+    // Try to use jsdelivr which is more reliable than cdnjs
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
 
     // Load content
     (async () => {
@@ -500,13 +502,37 @@
     }
   }
 
-  function downloadFile() {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
+  async function downloadFile() {
+    // For LaTeX (shown as PDF), ask user if they want PDF or .tex
+    if (format === 'pdf' && originalLaTeXBlob) {
+      const choice = confirm('Download as PDF or LaTeX (.tex) file?\n\nOK = PDF\nCancel = LaTeX (.tex)');
+      if (choice) {
+        // Download PDF
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        // Download .tex
+        const texFilename = filename.replace(/\.pdf$/i, '.tex');
+        const url = URL.createObjectURL(originalLaTeXBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = texFilename;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } else {
+      // Normal download
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
   }
 
   // Watch for fullscreen changes and sync with maximize state

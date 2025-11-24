@@ -1227,48 +1227,29 @@
                             {/if}
                           </button>
                         </div>
-                        <div class="flex items-center gap-2">
-                          <button
-                            onclick={async () => {
-                              if (!event) return;
-                              showDownloadMenu = false;
-                              isDownloading = true;
-                              try {
-                                await viewAsLaTeX(event);
-                              } catch (error) {
-                                alert('Failed to open LaTeX. Make sure the AsciiDoctor server is running.');
-                              } finally {
-                                isDownloading = false;
-                              }
-                            }}
-                            disabled={isDownloading}
-                            class="flex-1 text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                            style="color: var(--text-primary);"
-                          >
-                            {#if isDownloading}
-                              Generating LaTeX...
-                            {:else}
-                              ⬇ LaTeX
-                            {/if}
-                          </button>
-                          <button
-                            onclick={async () => {
-                              if (!event) return;
-                              showDownloadMenu = false;
-                              isDownloading = true;
-                              try {
-                                await viewAsLaTeX(event);
-                              } catch (error) {
-                                alert('Failed to open LaTeX. Make sure the AsciiDoctor server is running.');
-                              } finally {
-                                isDownloading = false;
-                              }
-                            }}
-                            disabled={isDownloading}
-                          >
+                        <button
+                          onclick={async () => {
+                            if (!event) return;
+                            showDownloadMenu = false;
+                            isDownloading = true;
+                            try {
+                              await viewAsLaTeX(event);
+                            } catch (error) {
+                              alert('Failed to open LaTeX. Make sure the AsciiDoctor server is running.');
+                            } finally {
+                              isDownloading = false;
+                            }
+                          }}
+                          disabled={isDownloading}
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                          style="color: var(--text-primary);"
+                        >
+                          {#if isDownloading}
+                            Opening LaTeX...
+                          {:else}
                             LaTeX
-                          </button>
-                        </div>
+                          {/if}
+                        </button>
                       {/if}
                     {/if}
                   </div>

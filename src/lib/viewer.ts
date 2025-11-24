@@ -14,6 +14,7 @@ export interface ViewerOptions {
   filename: string;
   format: 'pdf' | 'epub' | 'html' | 'markdown' | 'asciidoc' | 'json' | 'jsonl';
   validationMessages?: { errors?: string[]; warnings?: string[] };
+  originalLaTeXBlob?: Blob; // For LaTeX: store original .tex file for download
 }
 
 /**
@@ -38,7 +39,8 @@ export function openViewer(options: ViewerOptions): void {
         filename: options.filename,
         format: options.format,
         onClose: closeViewer,
-        validationMessages: options.validationMessages
+        validationMessages: options.validationMessages,
+        originalLaTeXBlob: options.originalLaTeXBlob
       }
     });
   } catch (error) {

@@ -938,10 +938,36 @@ export async function viewAsLaTeX(event: NostrEvent, theme: PDFTheme = 'classic'
     throw new Error('Cannot view LaTeX: article content is empty');
   }
   
-  // Convert AsciiDoc to PDF and open in viewer
-  // This effectively shows the LaTeX-rendered output as PDF
+  // Prepare AsciiDoc content with metadata (includes cover image, abstract, etc.)
+  const asciiDocContent = await prepareAsciiDocContent(event, true, theme);
+  
+  // Validate AsciiDoc content before exporting
+  const validation = validateAsciiDoc(asciiDocContent);
+  const validationMessages: { errors?: string[]; warnings?: string[] } = {};
+  
+  // Always log to console AND pass to viewer
+  if (!validation.valid && validation.error) {
+    validationMessages.errors = [validation.error];
+    console.error('AsciiDoc validation error:', validation.error);
+  }
+  if (validation.warnings && validation.warnings.length > 0) {
+    validationMessages.warnings = validation.warnings;
+    console.warn('AsciiDoc warnings:', validation.warnings);
+  }
+  
+  // Get PDF blob
   const { blob, filename } = await getPDFBlob(event, theme);
-  await openInViewer(blob, filename, 'pdf');
+  
+  // Also get LaTeX blob for download option
+  const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
+  const author = await getAuthorName(event);
+  const latexBlob = await exportToLaTeX({
+    content: asciiDocContent,
+    title,
+    author
+  });
+  
+  await openInViewer(blob, filename, 'pdf', validationMessages, latexBlob);
 }
 
 

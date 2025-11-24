@@ -321,10 +321,11 @@ export async function openInViewer(
   blob: Blob, 
   filename: string, 
   format: 'pdf' | 'epub' | 'html' | 'markdown' | 'asciidoc' | 'json' | 'jsonl',
-  validationMessages?: { errors?: string[]; warnings?: string[] }
+  validationMessages?: { errors?: string[]; warnings?: string[] },
+  originalLaTeXBlob?: Blob
 ): Promise<void> {
   const { openViewer } = await import('./viewer');
-  openViewer({ blob, filename, format, validationMessages });
+  openViewer({ blob, filename, format, validationMessages, originalLaTeXBlob });
 }
 
 /**
