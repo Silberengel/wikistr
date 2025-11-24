@@ -368,15 +368,20 @@
         }
       }
       
-      // Escape HTML to prevent XSS
-      const escaped = text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
+      // Decode HTML entities that are already in the text (so they display as characters)
+      // This handles cases where the source text contains &lt;div&gt; etc.
+      // We decode first, then pass to highlight.js which will escape for us
+      // Order matters: decode &amp; last to avoid double-decoding
+      let decoded = text
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#039;/g, "'")
+        .replace(/&#39;/g, "'")
+        .replace(/&amp;/g, '&'); // Decode &amp; last
       
       // Use highlight.js to syntax highlight with correct language
+      // highlight.js expects raw text and will escape it internally
       let language: string;
       if (format === 'markdown') {
         language = 'markdown';
@@ -410,19 +415,26 @@
       let highlighted;
       try {
         // Check if language is supported
+        // highlight.js will escape the text internally, so we pass the decoded text
         const lang = hljs.getLanguage(language);
         if (lang) {
-          highlighted = hljs.highlight(escaped, { language });
+          highlighted = hljs.highlight(decoded, { language });
         } else {
           // Fallback to auto-detect
-          highlighted = hljs.highlightAuto(escaped);
+          highlighted = hljs.highlightAuto(decoded);
         }
       } catch {
         // Fallback if language not supported - try plaintext
         try {
-          highlighted = hljs.highlight(escaped, { language: 'plaintext' });
+          highlighted = hljs.highlight(decoded, { language: 'plaintext' });
         } catch {
-          // Last resort: just escape and use plain text
+          // Last resort: manually escape and use plain text
+          const escaped = decoded
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
           highlighted = { value: escaped };
         }
       }
