@@ -21,6 +21,7 @@
   import { account } from '$lib/nostr';
   import { relayService } from '$lib/relayService';
   import { openOrCreateArticleCard } from '$lib/articleLauncher';
+  import BookmarksPanel from '$components/BookmarksPanel.svelte';
 
   // Theme configuration
   const theme = getThemeConfig();
@@ -772,6 +773,9 @@
       Add more relays
     </button>
   </div>
-{:else}
+  {:else}
   <div class="px-4 py-5 rounded-lg mt-2">Loading...</div>
 {/if}
+
+<!-- Bookmarks and Last Viewed Panel -->
+<BookmarksPanel />

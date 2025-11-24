@@ -4,6 +4,8 @@
  * Originally designed for Bible references, now supports Quran, Catechism, and other books
  */
 
+import type { NostrEvent } from '@nostr/tools/pure';
+
 export interface BookReference {
   book: string;
   chapter?: number;
@@ -153,7 +155,9 @@ export const BOOK_TYPES: { [type: string]: BookType } = {
       'YLT': 'Young\'s Literal Translation',
       'WEB': 'World English Bible',
       'GNV': '1599 Geneva Bible',
-      'DRB': 'Douay-Rheims Bible'
+      'DRB': 'Douay-Rheims Bible',
+      'DRA': 'Douay-Rheims (American)',
+      'AMP': 'Amplified Bible'
     },
     parsingRules: {
       bookPattern: /^(?:Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|Esther|Job|Psalms|Proverbs|Ecclesiastes|Song|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|Galatians|Ephesians|Philippians|Colossians|Titus|Philemon|Hebrews|James|Jude|Revelation|Tobit|Judith|Wisdom|Sirach|Baruch|Prayer of Manasseh|Psalm 151|Additions to Esther|Additions to Daniel|Bel and the Dragon|Susanna|Prayer of Azariah|Song of the Three Young Men|\d+\s*(?:Samuel|Kings|Chronicles|Corinthians|Thessalonians|Timothy|Peter|John|Maccabees|Esdras))\s+\d+(?::\d+)?(?:\s*[-,]\s*\d+)*$/i,
@@ -690,7 +694,7 @@ export async function findParentIndexEvents(
       }
     );
 
-    return result.events.filter(evt => evt.kind === 30040) as BookEvent[];
+    return result.events.filter((evt: NostrEvent) => evt.kind === 30040) as BookEvent[];
   } catch (error) {
     console.warn('Failed to find parent index events:', error);
     return [];
@@ -736,7 +740,7 @@ export async function findBookIndexEvent(
       }
     );
 
-    const indexEvent = indexResult.events.find(evt => evt.kind === 30040);
+    const indexEvent = indexResult.events.find((evt: NostrEvent) => evt.kind === 30040);
     return indexEvent as BookEvent | null;
   } catch (error) {
     console.warn('Failed to find book index event:', error);

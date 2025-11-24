@@ -6,6 +6,7 @@
 import { parseBookWikilink } from './bookWikilinkParser';
 import type { ParsedBookReference } from './bookWikilinkParser';
 import { formatSections } from './utils';
+import { BOOK_TYPES } from './books';
 
 /**
  * Fix missing spaces after hash/equals signs in headers
@@ -577,6 +578,23 @@ export function fixLinkAndMediaFormatting(content: string, isAsciiDoc: boolean):
  * Format book wikilink display text for GUI rendering (uses quotes instead of italics)
  * This is used in the web UI where links are already styled, so quotes are more appropriate
  */
+/**
+ * Get Bible version full name from abbreviation
+ * Uses BOOK_TYPES.bible.versions mapping
+ */
+function getBibleVersionName(abbrev: string): string | null {
+  const bibleType = BOOK_TYPES.bible;
+  if (!bibleType?.versions) return null;
+  
+  // Try uppercase first (as stored in BOOK_TYPES)
+  const upperAbbrev = abbrev.toUpperCase().trim();
+  if (bibleType.versions[upperAbbrev]) {
+    return bibleType.versions[upperAbbrev];
+  }
+  
+  return null;
+}
+
 export function formatBookWikilinkDisplayTextForGUI(bookContent: string): string {
   try {
     const parsed = parseBookWikilink(`[[book::${bookContent}]]`);
@@ -605,32 +623,72 @@ export function formatBookWikilinkDisplayTextForGUI(bookContent: string): string
     );
     
     if (isBible) {
-      // Special Bible citation format: "[Version/Collection]", Title Chapter:Section, Title Chapter:Section, ...
-      // Get version from first reference (all should have same version)
+      // Special Bible citation format
       const firstRef = parsed.references[0];
+      
+      // Format reference part (title chapter:section)
+      const formatReferencePart = (ref: ParsedBookReference): string => {
+        const titlePart = ref.title 
+          ? ref.title
+              .replace(/[-_]/g, ' ')
+              .split(' ')
+              .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+              .join(' ')
+          : '';
+        
+        let display = titlePart || '';
+        if (ref.chapter) {
+          display = display ? `${display} ${ref.chapter}` : ref.chapter;
+        }
+        
+        if (ref.section && ref.section.length > 0) {
+          const sectionText = formatSections(ref.section);
+          display += `${display && !display.endsWith(':') ? ':' : ''}${sectionText}`;
+        }
+        
+        return display;
+      };
+      
+      const referencePart = formatReferencePart(firstRef);
+      
+      // Check if there are multiple versions
+      if (firstRef.version && firstRef.version.length > 1) {
+        // Format each version name separately
+        const formatVersionName = (versionAbbr: string): string => {
+          // Try to get from BOOK_TYPES first
+          let versionText = getBibleVersionName(versionAbbr);
+          
+          if (!versionText) {
+            // Fallback: humanize the abbreviation
+            versionText = versionAbbr.replace(/[-_]/g, ' ')
+              .split(' ')
+              .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+              .join(' ');
+          }
+          
+          const hasBible = /\bbible\b/i.test(versionText);
+          const baseName = hasBible ? versionText : `${versionText} Bible`;
+          return /^the\s+/i.test(baseName) ? baseName : `The ${baseName}`;
+        };
+        
+        const versionNames = firstRef.version.map(formatVersionName);
+        // Join versions with " and " and wrap each in quotes
+        const versionsText = versionNames.map(v => `"${v}"`).join(' and ');
+        
+        return `${versionsText}, ${referencePart}`;
+      }
+      
+      // Single version or no version - use original format
       let bibleName = '';
       
       if (firstRef.version && firstRef.version.length > 0) {
         // Format version in title case
         let versionText = firstRef.version
           .map((v: string) => {
-            // Handle common Bible version abbreviations
-            const versionMap: Record<string, string> = {
-              'kjv': 'King James Version',
-              'niv': 'New International Version',
-              'esv': 'English Standard Version',
-              'nasb': 'New American Standard Bible',
-              'nlt': 'New Living Translation',
-              'amp': 'Amplified',
-              'nrsv': 'New Revised Standard Version',
-              'rsv': 'Revised Standard Version',
-              'drb': 'Douay-Rheims',
-              'dra': 'Douay-Rheims (Ammerican)',
-            };
-            
-            const normalized = v.toLowerCase().trim();
-            if (versionMap[normalized]) {
-              return versionMap[normalized];
+            // Try to get from BOOK_TYPES first
+            const fullName = getBibleVersionName(v);
+            if (fullName) {
+              return fullName;
             }
             
             // Otherwise, humanize normally
@@ -652,31 +710,8 @@ export function formatBookWikilinkDisplayTextForGUI(bookContent: string): string
         bibleName = 'The Holy Bible';
       }
       
-      // Format all references: Title Chapter:Section, Title Chapter:Section, ...
-      const referenceParts = parsed.references.map((ref: ParsedBookReference) => {
-        const titlePart = ref.title 
-          ? ref.title
-              .replace(/[-_]/g, ' ')
-              .split(' ')
-              .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-              .join(' ')
-          : '';
-        
-        let display = titlePart || '';
-        if (ref.chapter) {
-          display = display ? `${display} ${ref.chapter}` : ref.chapter;
-        }
-        
-        if (ref.section && ref.section.length > 0) {
-          const sectionText = formatSections(ref.section);
-          display += `${display && !display.endsWith(':') ? ':' : ''}${sectionText}`;
-        }
-        
-        return display;
-      });
-      
       // Return Bible format: "Bible Name", Title Chapter:Section, Title Chapter:Section, ...
-      return `"${bibleName}", ${referenceParts.join(', ')}`;
+      return `"${bibleName}", ${referencePart}`;
     }
     
     // Regular book format: "Title" Ch. X:Y, from the [Version] edition of the "[Collection]"
@@ -818,23 +853,10 @@ export function formatBookWikilinkDisplayText(bookContent: string): string {
         // Format version in title case
         let versionText = firstRef.version
           .map((v: string) => {
-            // Handle common Bible version abbreviations
-            const versionMap: Record<string, string> = {
-              'kjv': 'King James Version',
-              'niv': 'New International Version',
-              'esv': 'English Standard Version',
-              'nasb': 'New American Standard Bible',
-              'nlt': 'New Living Translation',
-              'amp': 'Amplified',
-              'nrsv': 'New Revised Standard Version',
-              'rsv': 'Revised Standard Version',
-              'drb': 'Douay-Rheims',
-              'dra': 'Douay-Rheims (Ammerican)',
-            };
-            
-            const normalized = v.toLowerCase().trim();
-            if (versionMap[normalized]) {
-              return versionMap[normalized];
+            // Try to get from BOOK_TYPES first
+            const fullName = getBibleVersionName(v);
+            if (fullName) {
+              return fullName;
             }
             
             // Otherwise, humanize normally
@@ -1030,23 +1052,10 @@ export function processWikilinks(content: string, isAsciiDoc: boolean): string {
           // Format version in title case
           let versionText = firstRef.version
             .map((v: string) => {
-              // Handle common Bible version abbreviations
-              const versionMap: Record<string, string> = {
-                'kjv': 'King James Version',
-                'niv': 'New International Version',
-                'esv': 'English Standard Version',
-                'nasb': 'New American Standard Bible',
-                'nlt': 'New Living Translation',
-                'amp': 'Amplified',
-                'nrsv': 'New Revised Standard Version',
-                'rsv': 'Revised Standard Version',
-                'drb': 'Douay-Rheims',
-                'dra': 'Douay-Rheims (Ammerican)',
-              };
-              
-              const normalized = v.toLowerCase().trim();
-              if (versionMap[normalized]) {
-                return versionMap[normalized];
+              // Try to get from BOOK_TYPES first
+              const fullName = getBibleVersionName(v);
+              if (fullName) {
+                return fullName;
               }
               
               // Otherwise, humanize normally

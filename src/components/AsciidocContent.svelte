@@ -22,8 +22,9 @@
   import { isStandaloneLink, extractNostrIdentifier } from '$lib/ogUtils';
   import { parseBookWikilink } from '$lib/books';
   import { openBookSearchCard } from '$lib/bookSearchLauncher';
-  import { openArticleCard } from '$lib/articleLauncher';
+  import { openArticleCard, openOrCreateArticleCard } from '$lib/articleLauncher';
   import { formatBookWikilinkDisplayTextForGUI } from '$lib/contentQualityControl';
+  import { saveReadingPlace } from '$lib/bookmarks';
 
   interface Props {
     event: NostrEvent;
@@ -1467,6 +1468,7 @@
       renderLatexExpressions();
       setupCollapsibleTOC();
       styleAdmonitionContent();
+      addReadingPlaceButtons();
     }, 100);
   });
 
@@ -1684,6 +1686,65 @@
           originalOnClick.call(link, e);
         }
       };
+    });
+  }
+
+  // Add reading place buttons next to chapter/subchapter headings
+  function addReadingPlaceButtons() {
+    if (!contentDiv || !event) return;
+    
+    // Find all headings (h1, h2, h3, h4, h5, h6)
+    const headings = contentDiv.querySelectorAll('h1, h2, h3, h4, h5, h6');
+    
+    headings.forEach((heading) => {
+      // Skip if already has a reading place button
+      if (heading.querySelector('.reading-place-button')) return;
+      
+      // Create button
+      const button = document.createElement('button');
+      button.className = 'reading-place-button';
+      button.innerHTML = '📖';
+      button.title = 'Save reading place';
+      button.style.cssText = `
+        margin-left: 0.5rem;
+        padding: 0.25rem 0.5rem;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        font-size: 0.875rem;
+        opacity: 0.6;
+        transition: opacity 0.2s;
+        vertical-align: middle;
+      `;
+      
+      button.onmouseover = () => {
+        button.style.opacity = '1';
+      };
+      
+      button.onmouseout = () => {
+        button.style.opacity = '0.6';
+      };
+      
+      button.onclick = async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        try {
+          await saveReadingPlace(event.id);
+          // Visual feedback
+          button.style.opacity = '1';
+          button.title = 'Reading place saved';
+          setTimeout(() => {
+            button.style.opacity = '0.6';
+            button.title = 'Save reading place';
+          }, 2000);
+        } catch (error) {
+          console.error('Failed to save reading place:', error);
+        }
+      };
+      
+      // Insert button after heading text
+      heading.appendChild(button);
     });
   }
   

@@ -88,7 +88,7 @@ export function isDiffQuery(query: string): boolean {
   return query.startsWith('diff::');
 }
 
-import { diffLines, Change } from 'diff';
+import { diffLines, type Change } from 'diff';
 
 /**
  * Simple text diff algorithm using the 'diff' library

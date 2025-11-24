@@ -34,6 +34,7 @@
     downloadBookOverview,
     type PDFTheme
   } from '$lib/articleDownload';
+  import { addBookmark, removeBookmark, isBookmarked, isBookmarkableKind } from '$lib/bookmarks';
 
   interface Props {
     card: Card;
@@ -77,6 +78,8 @@
   let isLoadingBook = $state(false);
   let bookChapters = $state<NostrEvent[]>([]);
   let isLoadingBookChapters = $state(false);
+  let isBookmarkedState = $state(false);
+  let isBookmarking = $state(false);
 
   const articleCard = card as ArticleCard;
   const dTag = articleCard.data[0];
@@ -850,6 +853,37 @@
       isVoting = false; // Reset voting state
     }
   }
+
+  // Check bookmark status when event loads
+  $effect(() => {
+    if (event && isBookmarkableKind(event.kind)) {
+      isBookmarked(event).then(bookmarked => {
+        isBookmarkedState = bookmarked;
+      });
+    } else {
+      isBookmarkedState = false;
+    }
+  });
+
+  async function toggleBookmark() {
+    if (!event || !isBookmarkableKind(event.kind) || !$account) return;
+    
+    isBookmarking = true;
+    try {
+      if (isBookmarkedState) {
+        await removeBookmark(event);
+        isBookmarkedState = false;
+      } else {
+        await addBookmark(event);
+        isBookmarkedState = true;
+      }
+    } catch (error) {
+      console.error('Failed to toggle bookmark:', error);
+      alert('Failed to update bookmark. Please try again.');
+    } finally {
+      isBookmarking = false;
+    }
+  }
 </script>
 
 <div>
@@ -982,8 +1016,27 @@
       
       <div class="flex-1">
         <div class="flex items-center justify-between mb-4">
-          <div class="font-bold text-4xl" style="font-family: {theme.typography.fontFamilyHeading};">
-            {title || dTag}
+          <div class="font-bold text-4xl flex items-center gap-3" style="font-family: {theme.typography.fontFamilyHeading};">
+            <span>{title || dTag}</span>
+            {#if event && isBookmarkableKind(event.kind)}
+              <button
+                onclick={toggleBookmark}
+                disabled={isBookmarking}
+                class="p-1.5 rounded transition-colors disabled:opacity-50"
+                style="color: {isBookmarkedState ? 'var(--accent)' : 'var(--text-secondary)'};"
+                title={isBookmarkedState ? 'Remove bookmark' : 'Add bookmark'}
+              >
+                {#if isBookmarking}
+                  <svg class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                {:else}
+                  <svg class="w-5 h-5" fill={isBookmarkedState ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                  </svg>
+                {/if}
+              </button>
+            {/if}
           </div>
           {#if event}
             <div class="relative">

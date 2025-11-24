@@ -445,8 +445,9 @@ export function preprocessContentForAsciidoc(content: string): string {
     return placeholder;
   });
   
-  // Protect [source] code blocks
-  processed = processed.replace(/^\[source[^\]]*\]\n----\n([\s\S]*?)\n----$/gm, (match) => {
+  // Protect [source] code blocks - match more flexibly
+  // Pattern: [source,lang] followed by ---- block
+  processed = processed.replace(/\[source[^\]]*\]\n----\n([\s\S]*?)\n----/gm, (match) => {
     const placeholder = `__SOURCE_BLOCK_${placeholderIndex}__`;
     codePlaceholders[placeholderIndex] = match;
     placeholderIndex++;
@@ -498,14 +499,25 @@ export function preprocessContentForAsciidoc(content: string): string {
   });
   
   // Restore protected code blocks and inline code
-  codePlaceholders.forEach((code, index) => {
-    const placeholder = processed.includes(`__CODE_BLOCK_${index}__`) 
-      ? `__CODE_BLOCK_${index}__`
-      : processed.includes(`__INLINE_CODE_${index}__`)
-      ? `__INLINE_CODE_${index}__`
-      : `__SOURCE_BLOCK_${index}__`;
-    processed = processed.replace(placeholder, code);
-  });
+  // Process in reverse order to handle all placeholders correctly
+  for (let index = codePlaceholders.length - 1; index >= 0; index--) {
+    const code = codePlaceholders[index];
+    if (!code) continue;
+    
+    // Try to find which placeholder type this is
+    let placeholder: string | null = null;
+    if (processed.includes(`__SOURCE_BLOCK_${index}__`)) {
+      placeholder = `__SOURCE_BLOCK_${index}__`;
+    } else if (processed.includes(`__CODE_BLOCK_${index}__`)) {
+      placeholder = `__CODE_BLOCK_${index}__`;
+    } else if (processed.includes(`__INLINE_CODE_${index}__`)) {
+      placeholder = `__INLINE_CODE_${index}__`;
+    }
+    
+    if (placeholder) {
+      processed = processed.replace(placeholder, code);
+    }
+  }
   
   return processed;
 }
