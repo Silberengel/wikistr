@@ -107,8 +107,8 @@
   }
 </script>
 
-<div class="cache-browser fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-  <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] flex flex-col" onclick={(e) => e.stopPropagation()}>
+<div class="cache-browser fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }} onkeydown={(e) => { if (e.key === 'Escape') onClose(); }} role="dialog" aria-modal="true" tabindex="-1">
+  <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] flex flex-col" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="0">
     <!-- Header -->
     <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
       <h2 class="text-2xl font-bold">Cache Browser</h2>
@@ -165,6 +165,9 @@
             <div
               class="p-3 border border-gray-200 dark:border-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
               onclick={() => selectedEvent = selectedEvent?.id === event.id ? null : event}
+              onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectedEvent = selectedEvent?.id === event.id ? null : event; } }}
+              role="button"
+              tabindex="0"
             >
               <div class="flex items-center justify-between">
                 <div class="flex-1">

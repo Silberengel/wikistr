@@ -68,8 +68,10 @@
       return;
     }
 
-    // Check if query is a nevent identifier
+    // Check if query is a nevent, naddr, or npub identifier
     const trimmedQuery = query.trim();
+    
+    // Handle nevent
     if (trimmedQuery.startsWith('nevent1')) {
       (async () => {
         try {
@@ -118,6 +120,129 @@
         }
       })();
       return;
+    }
+    
+    // Handle naddr
+    if (trimmedQuery.startsWith('naddr1')) {
+      (async () => {
+        try {
+          const { decode } = await import('@nostr/tools/nip19');
+          const decoded = decode(trimmedQuery);
+          if (decoded.type === 'naddr') {
+            const articleKinds = [30023, 30817, 30041, 30040, 30818];
+            if (decoded.data.kind && articleKinds.includes(decoded.data.kind)) {
+              // It's an article - create article card
+              const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+              openOrCreateArticleCard({
+                type: 'article',
+                data: [decoded.data.identifier || '', decoded.data.pubkey || ''],
+                actualEvent: undefined,
+                relayHints: decoded.data.relays || []
+              });
+              return;
+            } else {
+              tried = true;
+              results = [];
+              return;
+            }
+          }
+        } catch (error) {
+          console.error('Failed to decode naddr:', error);
+          tried = true;
+          results = [];
+          return;
+        }
+      })();
+      return;
+    }
+    
+    // Handle npub - search for all articles by this author
+    if (trimmedQuery.startsWith('npub1')) {
+      (async () => {
+        try {
+          const { decode } = await import('@nostr/tools/nip19');
+          const decoded = decode(trimmedQuery);
+          if (decoded.type === 'npub') {
+            const pubkey = decoded.data;
+            // Search for all articles by this author
+            const result = await relayService.queryEvents(
+              $account?.pubkey || 'anonymous',
+              'wiki-read',
+              [{ kinds: wikiKinds, authors: [pubkey], limit: 100 }],
+              { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+            );
+            
+            if (result.events.length > 0) {
+              result.events.forEach(evt => {
+                if (addUniqueTaggedReplaceable(results, evt)) {
+                  seenCache[evt.id] = result.relays;
+                }
+              });
+              tried = true;
+            } else {
+              tried = true;
+              results = [];
+            }
+            return;
+          }
+        } catch (error) {
+          console.error('Failed to decode npub:', error);
+          tried = true;
+          results = [];
+          return;
+        }
+      })();
+      return;
+    }
+    
+    // Handle d-tag*pubkey format (e.g., "article-name*pubkey" or "article-name*npub1...")
+    if (trimmedQuery.includes('*')) {
+      const parts = trimmedQuery.split('*');
+      if (parts.length === 2) {
+        const dTagPart = normalizeIdentifier(parts[0].trim());
+        const pubkeyPart = parts[1].trim();
+        
+        // Search for article with specific d-tag and pubkey
+        (async () => {
+          let pubkey: string;
+          // Check if it's an npub
+          if (pubkeyPart.startsWith('npub1')) {
+            try {
+              const { decode } = await import('@nostr/tools/nip19');
+              const decoded = decode(pubkeyPart);
+              if (decoded.type === 'npub') {
+                pubkey = decoded.data;
+              } else {
+                pubkey = pubkeyPart; // Fallback to hex if decode fails
+              }
+            } catch (error) {
+              pubkey = pubkeyPart; // Fallback to hex if decode fails
+            }
+          } else {
+            pubkey = pubkeyPart; // Assume it's already a hex pubkey
+          }
+          
+          const result = await relayService.queryEvents(
+            $account?.pubkey || 'anonymous',
+            'wiki-read',
+            [{ kinds: wikiKinds, '#d': [dTagPart], authors: [pubkey], limit: 25 }],
+            { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+          );
+          
+          if (result.events.length > 0) {
+            result.events.forEach(evt => {
+              if (addUniqueTaggedReplaceable(results, evt)) {
+                seenCache[evt.id] = result.relays;
+              }
+            });
+            tried = true;
+          } else {
+            tried = true;
+            results = [];
+          }
+        })();
+        return;
+      }
     }
 
     // Only perform search if we have a meaningful query

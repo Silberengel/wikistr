@@ -285,7 +285,7 @@ import Settings from '$cards/Settings.svelte';
 {#if showSettings}
   <!-- Mobile: Bottom drawer -->
   <div class="md:hidden fixed inset-0 z-50 bg-black bg-opacity-50" onclick={toggleSettings} onkeydown={(e) => e.key === 'Escape' && toggleSettings()} role="dialog" aria-modal="true" tabindex="-1">
-    <div class="fixed bottom-0 left-0 right-0 max-h-[90vh] overflow-y-auto rounded-t-lg border-t" style="background-color: var(--bg-primary); border-color: var(--border);" onclick={(e) => e.stopPropagation()}>
+    <div class="fixed bottom-0 left-0 right-0 max-h-[90vh] overflow-y-auto rounded-t-lg border-t" style="background-color: var(--bg-primary); border-color: var(--border);" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="0">
       <div class="p-4">
         <div class="flex items-center justify-between mb-4">
           <h3 class="text-lg font-semibold" style="color: var(--text-primary);">Settings</h3>
@@ -307,7 +307,7 @@ import Settings from '$cards/Settings.svelte';
 
   <!-- Desktop: Popup -->
   <div class="hidden md:block fixed inset-0 z-50 bg-black bg-opacity-50" onclick={toggleSettings} onkeydown={(e) => e.key === 'Escape' && toggleSettings()} role="dialog" aria-modal="true" tabindex="-1">
-    <div class="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[90vw] max-w-4xl max-h-[90vh] overflow-y-auto p-6 rounded-lg border shadow-lg" style="background-color: var(--bg-primary); border-color: var(--border);" onclick={(e) => e.stopPropagation()}>
+    <div class="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[90vw] max-w-4xl max-h-[90vh] overflow-y-auto p-6 rounded-lg border shadow-lg" style="background-color: var(--bg-primary); border-color: var(--border);" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="0">
       <div class="flex items-center justify-between mb-4">
         <h3 class="text-2xl font-semibold" style="color: var(--text-primary);">Settings</h3>
         <button

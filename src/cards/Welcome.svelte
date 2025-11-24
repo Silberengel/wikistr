@@ -37,18 +37,27 @@
   let results = $state<Event[]>([]);
   let currentRelays = $state<string[]>([]);
   let isLoading = $state(false);
+  let activeTab = $state<'all' | 'my-content'>('all');
   
   // Profile popup state
   let profilePopupOpen = $state(false);
   let selectedUserPubkey = $state('');
   let selectedUserBech32 = $state('');
-
-  // Simple feed - no filtering
-  const currentFeed = {
+  
+  // Feed configurations
+  const allRelaysFeed = {
     id: 'all-relays',
     label: 'all relays',
-    title: 'Articles from all relays'
+    title: 'Wiki Articles from all relays'
   };
+  
+  const myContentFeed = {
+    id: 'my-content',
+    label: 'my content',
+    title: 'My Content from all relays'
+  };
+  
+  const currentFeed = $derived(activeTab === 'all' ? allRelaysFeed : myContentFeed);
   
   // Get the currently selected relay URL from the cards array
   const selectedRelayUrl = $derived.by(() => {
@@ -57,13 +66,10 @@
   });
 
   /**
-   * Build feed from cache - only show 30817 and 30818 events with valid d-tags
+   * Build feed from cache - show events based on active tab
    */
   function buildFeedFromCache(): void {
     const allCachedEvents = contentCache.getEvents('wiki');
-    
-    // Only include wiki article kinds 30817 and 30818
-    const wikiKinds = [30817, 30818];
     
     // Valid d-tag pattern: only alphanumeric and hyphens (no spaces, underscores, or special symbols)
     const validDTagPattern = /^[a-zA-Z0-9-]+$/;
@@ -74,25 +80,38 @@
     for (const cached of allCachedEvents) {
       const event = cached.event;
       
-      // Only process 30817 and 30818 events
-      if (!wikiKinds.includes(event.kind)) {
-        continue;
+      if (activeTab === 'all') {
+        // Only include wiki article kinds 30817 and 30818
+        const wikiKinds = [30817, 30818];
+        if (!wikiKinds.includes(event.kind)) {
+          continue;
+        }
+      } else if (activeTab === 'my-content') {
+        // Only include user's own content: 30817, 30818, 30023, 30040 (but not 30041)
+        const myContentKinds = [30817, 30818, 30023, 30040];
+        if (!myContentKinds.includes(event.kind)) {
+          continue;
+        }
+        // Filter by logged-in user's pubkey
+        if (!$account?.pubkey || event.pubkey !== $account.pubkey) {
+          continue;
+        }
       }
       
-      // Both 30817 and 30818 are replaceable and require d-tags
+      // All these kinds are replaceable and require d-tags (except 30040 which might not always have d-tag)
       const dTag = event.tags.find(([t]) => t === 'd')?.[1];
-      if (!dTag) {
-        // Skip events without d-tags
+      if (event.kind !== 30040 && !dTag) {
+        // Skip events without d-tags (except 30040)
         continue;
       }
       
       // Skip events with invalid d-tags (contains spaces, special symbols, etc.)
-      if (!validDTagPattern.test(dTag)) {
+      if (dTag && !validDTagPattern.test(dTag)) {
         continue;
       }
       
       // Deduplicate by a-tag, keeping only the newest
-      const aTag = `${event.kind}:${event.pubkey}:${dTag}`;
+      const aTag = dTag ? `${event.kind}:${event.pubkey}:${dTag}` : event.id;
       const existing = deduplicated.get(aTag);
       if (!existing || (event.created_at || 0) > (existing.created_at || 0)) {
         deduplicated.set(aTag, event);
@@ -118,16 +137,32 @@
     try {
       const userPubkey = $account?.pubkey || 'anonymous';
       
-      // Update wiki cache - only 30817 and 30818 from wiki relays
-      const wikiKinds = [30817, 30818];
       // Get wiki relays from theme
       const wikiRelays = theme.relays?.wiki || [];
+      
+      // Update wiki cache - only 30817 and 30818 from wiki relays for "all" feed
+      const wikiKinds = [30817, 30818];
       const wikiResult = await relayService.queryEvents(
         userPubkey,
         'wiki-read',
         [{ kinds: wikiKinds, limit: 100 }],
         { excludeUserContent: false, currentUserPubkey: $account?.pubkey, customRelays: wikiRelays }
       );
+      
+      // Also update user's own content cache if logged in (30817, 30818, 30023, 30040, NOT 30041)
+      if ($account?.pubkey) {
+        const myContentKinds = [30817, 30818, 30023, 30040];
+        const myContentResult = await relayService.queryEvents(
+          $account.pubkey,
+          'wiki-read',
+          [{ kinds: myContentKinds, authors: [$account.pubkey], limit: 100 }],
+          { excludeUserContent: false, currentUserPubkey: $account.pubkey, customRelays: wikiRelays }
+        );
+        
+        if (myContentResult.events.length > 0) {
+          await contentCache.storeEvents('wiki', myContentResult.events.map(event => ({ event, relays: myContentResult.relays })));
+        }
+      }
       
       if (wikiResult.events.length > 0) {
         await contentCache.storeEvents('wiki', wikiResult.events.map(event => ({ event, relays: wikiResult.relays })));
@@ -420,6 +455,7 @@
           }).catch(error => {
             console.error('❌ Background cache update failed:', error);
           });
+          
         } catch (error) {
           console.error('❌ Cache initialization failed:', error);
         }
@@ -439,6 +475,13 @@
         backgroundInterval = null;
       }
     };
+  });
+  
+  // Watch for tab changes and rebuild feed
+  $effect(() => {
+    if (initialized) {
+      buildFeedFromCache();
+    }
   });
 </script>
 
@@ -494,6 +537,27 @@
 <!-- Articles Section -->
 <section>
   <VersionUpdateBanner />
+  
+  <!-- Tabs -->
+  <div class="mb-4 border-b border-gray-200 dark:border-gray-700">
+    <nav class="flex space-x-8" aria-label="Tabs">
+      <button
+        onclick={() => activeTab = 'all'}
+        class="py-4 px-1 border-b-2 font-medium text-sm transition-colors {activeTab === 'all' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'}"
+      >
+        All Articles
+      </button>
+      {#if $account}
+        <button
+          onclick={() => activeTab = 'my-content'}
+          class="py-4 px-1 border-b-2 font-medium text-sm transition-colors {activeTab === 'my-content' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'}"
+        >
+          My Content
+        </button>
+      {/if}
+    </nav>
+  </div>
+  
   <h2 class="mb-2 font-bold text-2xl" style="color: var(--text-primary);">
     {currentFeed.title}
   </h2>
