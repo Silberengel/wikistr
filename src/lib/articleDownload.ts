@@ -381,7 +381,34 @@ function convertMarkdownToAsciiDoc(markdown: string): string {
   
   let asciidoc = markdown;
   
-  // Convert headers: # Title -> = Title, ## Subtitle -> == Subtitle
+  // Convert setext-style headers FIRST (before ATX headers)
+  // Setext headers use underlines: === for h1, --- for h2
+  // Pattern: text on one line, followed by === or --- on the next line
+  const headerLines = asciidoc.split('\n');
+  const processedHeaderLines: string[] = [];
+  
+  for (let i = 0; i < headerLines.length; i++) {
+    const line = headerLines[i];
+    const nextLine = i + 1 < headerLines.length ? headerLines[i + 1] : '';
+    
+    // Check if next line is a setext underline
+    if (nextLine && /^={3,}$/.test(nextLine.trim())) {
+      // Level 1 header (===)
+      processedHeaderLines.push(`= ${line.trim()}`);
+      i++; // Skip the underline line
+    } else if (nextLine && /^-{3,}$/.test(nextLine.trim())) {
+      // Level 2 header (---)
+      processedHeaderLines.push(`== ${line.trim()}`);
+      i++; // Skip the underline line
+    } else {
+      processedHeaderLines.push(line);
+    }
+  }
+  
+  asciidoc = processedHeaderLines.join('\n');
+  
+  // Convert ATX headers: # Title -> = Title, ## Subtitle -> == Subtitle
+  // Only convert if not already converted by setext processing
   asciidoc = asciidoc.replace(/^(#{1,6})\s+(.+)$/gm, (match, hashes, text) => {
     const level = hashes.length;
     return '='.repeat(level) + ' ' + text;

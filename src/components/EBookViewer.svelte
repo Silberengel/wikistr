@@ -1012,7 +1012,11 @@
         </span>
         <button
           type="button"
-          onclick={findPrevious}
+          onclick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            findPrevious();
+          }}
           style="background: var(--bg-tertiary); border: 1px solid var(--border); color: var(--text-primary); padding: 0.5rem; border-radius: 0.25rem; cursor: pointer;"
           title="Previous (Shift+Enter)"
         >
@@ -1020,7 +1024,11 @@
         </button>
         <button
           type="button"
-          onclick={findNext}
+          onclick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            findNext();
+          }}
           style="background: var(--bg-tertiary); border: 1px solid var(--border); color: var(--text-primary); padding: 0.5rem; border-radius: 0.25rem; cursor: pointer;"
           title="Next (Enter)"
         >
