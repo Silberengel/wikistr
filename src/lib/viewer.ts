@@ -3,10 +3,10 @@
  * Functions to open downloaded files in an elegant viewer
  */
 
-import type { ComponentProps } from 'svelte';
 import EBookViewer from '$components/EBookViewer.svelte';
+import { mount } from 'svelte';
 
-let viewerInstance: EBookViewer | null = null;
+let viewerInstance: ReturnType<typeof mount> | null = null;
 let viewerContainer: HTMLElement | null = null;
 
 export interface ViewerOptions {
@@ -25,20 +25,29 @@ export function openViewer(options: ViewerOptions): void {
   // Create container for viewer
   viewerContainer = document.createElement('div');
   viewerContainer.id = 'ebook-viewer-container';
+  viewerContainer.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9999; background: rgba(0, 0, 0, 0.9);';
   document.body.appendChild(viewerContainer);
 
-  // Create viewer instance
-  const props: ComponentProps<EBookViewer> = {
-    blob: options.blob,
-    filename: options.filename,
-    format: options.format,
-    onClose: closeViewer
-  };
-
-  viewerInstance = new EBookViewer({
-    target: viewerContainer,
-    props
-  });
+  // Create viewer instance using Svelte 5 mount API
+  try {
+    viewerInstance = mount(EBookViewer, {
+      target: viewerContainer,
+      props: {
+        blob: options.blob,
+        filename: options.filename,
+        format: options.format,
+        onClose: closeViewer
+      }
+    });
+  } catch (error) {
+    console.error('Failed to mount viewer:', error);
+    // Fallback: try using the component constructor (Svelte 4 style)
+    if (viewerContainer) {
+      viewerContainer.remove();
+      viewerContainer = null;
+    }
+    throw error;
+  }
 }
 
 /**
@@ -46,7 +55,10 @@ export function openViewer(options: ViewerOptions): void {
  */
 export function closeViewer(): void {
   if (viewerInstance) {
-    viewerInstance.$destroy();
+    // In Svelte 5, mount returns an object with a destroy method
+    if (typeof viewerInstance === 'object' && 'destroy' in viewerInstance) {
+      (viewerInstance as any).destroy();
+    }
     viewerInstance = null;
   }
   if (viewerContainer) {

@@ -1,15 +1,16 @@
 // See https://kit.svelte.dev/docs/types#app
 // for information about these interfaces
 declare global {
-  namespace App {
-    // interface Error {}
-    // interface Locals {}
-    // interface PageData {}
-    // interface Platform {}
-  }
-  
-  // Theme variable injected at build time
-  const __THEME__: string;
+	namespace App {
+		// interface Error {}
+		// interface Locals {}
+		// interface PageData {}
+		// interface Platform {}
+	}
+
+	// Vite build-time constants
+	const __THEME__: string;
+	const __VERSION__: string;
 }
 
 export {};

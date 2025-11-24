@@ -1,14 +1,515 @@
 <script lang="ts">
-  function saveData() {}
+  import { 
+    saveCustomThemeConfig, 
+    clearCustomThemeCache, 
+    getAvailableThemes,
+    saveThemeFile,
+    getUploadedThemeFiles,
+    deleteThemeFile
+  } from '$lib/pdfThemes';
+  import { get } from 'idb-keyval';
+  import ModeToggle from '$components/ModeToggle.svelte';
+  import RelayItem from '$components/RelayItem.svelte';
+  import { contentCache } from '$lib/contentCache';
+  import { onMount } from 'svelte';
+  import type { Card } from '$lib/types';
+
+  interface Props {
+    createChild?: (card: Card) => void;
+  }
+
+  let { createChild }: Props = $props();
+
+  let activeTab = $state<'general' | 'themes'>('general');
+  let activeThemeTab = $state<'config' | 'files' | 'paste'>('config');
+  
+  let customThemeYaml = $state('');
+  let isSaving = $state(false);
+  let saveMessage = $state<{ type: 'success' | 'error'; text: string } | null>(null);
+  let hasCustomTheme = $state(false);
+  let availableThemes = $state<string[]>([]);
+  let uploadedThemeFiles = $state<Array<{ filename: string; content: string }>>([]);
+  let isUploading = $state(false);
+  let showInfo = $state(false);
+  let currentRelays = $state<string[]>([]);
+  
+  // Get version from package.json (injected at build time via vite.config.ts)
+  const appVersion = typeof __VERSION__ !== 'undefined' ? __VERSION__ : '5.0.0';
+
+  // Check if custom theme exists on mount
+  async function checkCustomTheme() {
+    try {
+      const cached = await get('pdf-themes-config');
+      hasCustomTheme = !!cached;
+      availableThemes = await getAvailableThemes();
+      uploadedThemeFiles = await getUploadedThemeFiles();
+    } catch (error) {
+      console.error('Failed to check custom theme:', error);
+    }
+  }
+
+  $effect(() => {
+    checkCustomTheme();
+  });
+
+  onMount(() => {
+    // Get current relays from cache
+    currentRelays = contentCache.getAllRelays();
+  });
+
+  async function handleSave() {
+    if (!customThemeYaml.trim()) {
+      saveMessage = { type: 'error', text: 'Please paste a YAML configuration' };
+      return;
+    }
+
+    isSaving = true;
+    saveMessage = null;
+
+    try {
+      const result = await saveCustomThemeConfig(customThemeYaml.trim());
+      
+      if (result.success) {
+        saveMessage = { type: 'success', text: 'Custom theme configuration saved successfully! It will be used for all PDF/EPUB exports.' };
+        customThemeYaml = '';
+        hasCustomTheme = true;
+        availableThemes = await getAvailableThemes();
+        
+        setTimeout(() => {
+          saveMessage = null;
+        }, 5000);
+      } else {
+        saveMessage = { type: 'error', text: result.error || 'Failed to save theme configuration' };
+      }
+    } catch (error) {
+      saveMessage = { type: 'error', text: error instanceof Error ? error.message : 'An unexpected error occurred' };
+    } finally {
+      isSaving = false;
+    }
+  }
+
+  async function handleClear() {
+    if (!confirm('Are you sure you want to clear the custom theme configuration? The default theme file will be used instead.')) {
+      return;
+    }
+
+    try {
+      await clearCustomThemeCache();
+      hasCustomTheme = false;
+      customThemeYaml = '';
+      saveMessage = { type: 'success', text: 'Custom theme configuration cleared. Using default theme file.' };
+      availableThemes = await getAvailableThemes();
+      
+      setTimeout(() => {
+        saveMessage = null;
+      }, 5000);
+    } catch (error) {
+      saveMessage = { type: 'error', text: 'Failed to clear custom theme' };
+    }
+  }
+
+  async function handleThemeFileUpload(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const files = input.files;
+    if (!files || files.length === 0) return;
+
+    isUploading = true;
+    saveMessage = null;
+
+    try {
+      for (const file of Array.from(files)) {
+        if (!file.name.endsWith('.yml') && !file.name.endsWith('.yaml')) {
+          saveMessage = { type: 'error', text: `File ${file.name} must have .yml or .yaml extension` };
+          continue;
+        }
+
+        const content = await file.text();
+        const result = await saveThemeFile(file.name, content);
+
+        if (result.success) {
+          saveMessage = { type: 'success', text: `Theme file ${file.name} uploaded successfully!` };
+        } else {
+          saveMessage = { type: 'error', text: `Failed to upload ${file.name}: ${result.error}` };
+          break;
+        }
+      }
+
+      uploadedThemeFiles = await getUploadedThemeFiles();
+      
+      setTimeout(() => {
+        saveMessage = null;
+      }, 5000);
+    } catch (error) {
+      saveMessage = { type: 'error', text: error instanceof Error ? error.message : 'Failed to upload theme file' };
+    } finally {
+      isUploading = false;
+      input.value = ''; // Reset input
+    }
+  }
+
+  async function handlePdfThemesUpload(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    if (file.name !== 'pdf-themes.yml' && file.name !== 'pdf-themes.yaml') {
+      saveMessage = { type: 'error', text: 'File must be named pdf-themes.yml or pdf-themes.yaml' };
+      input.value = '';
+      return;
+    }
+
+    isSaving = true;
+    saveMessage = null;
+
+    try {
+      const content = await file.text();
+      const result = await saveCustomThemeConfig(content);
+
+      if (result.success) {
+        saveMessage = { type: 'success', text: 'pdf-themes.yml uploaded and saved successfully! It will be used for all PDF/EPUB exports.' };
+        hasCustomTheme = true;
+        availableThemes = await getAvailableThemes();
+        
+        setTimeout(() => {
+          saveMessage = null;
+        }, 5000);
+      } else {
+        saveMessage = { type: 'error', text: result.error || 'Failed to save theme configuration' };
+      }
+    } catch (error) {
+      saveMessage = { type: 'error', text: error instanceof Error ? error.message : 'An unexpected error occurred' };
+    } finally {
+      isSaving = false;
+      input.value = ''; // Reset input
+    }
+  }
+
+  async function handleDeleteThemeFile(filename: string) {
+    if (!confirm(`Are you sure you want to delete ${filename}?`)) {
+      return;
+    }
+
+    try {
+      await deleteThemeFile(filename);
+      uploadedThemeFiles = await getUploadedThemeFiles();
+      saveMessage = { type: 'success', text: `Theme file ${filename} deleted.` };
+      
+      setTimeout(() => {
+        saveMessage = null;
+      }, 3000);
+    } catch (error) {
+      saveMessage = { type: 'error', text: 'Failed to delete theme file' };
+    }
+  }
+
+  function handleLoadExample() {
+    customThemeYaml = `# PDF Theme Configuration
+# This file defines all available PDF themes and their mappings
+# Users can add custom themes by following the same structure
+
+# Theme name mapping: client-side name -> server-side theme file name
+themes:
+  classic:
+    server_name: classic-novel
+    description: Classic novel style with traditional typography
+    file: classic-novel-theme.yml
+
+  antique:
+    server_name: antique-novel
+    description: Antique book style with vintage aesthetics
+    file: antique-novel-theme.yml
+
+  modern:
+    server_name: modern-book
+    description: Modern book style with contemporary design
+    file: modern-book-theme.yml
+
+# Default theme to use when none is specified
+default: classic
+
+# Theme directory (relative to deployment directory)
+themes_dir: /app/deployment`;
+  }
 </script>
 
-<div class="mt-2 font-bold text-4xl">Settings</div>
+<div class="mt-2 font-bold text-4xl mb-6">Settings</div>
 
-<!-- Save button -->
-<button
-  onclick={saveData}
-  type="button"
-  class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
->
-  Save & Reload
-</button>
+<!-- Main Tabs -->
+<div class="w-full max-w-6xl mx-auto">
+  <div class="border-b border-gray-300 dark:border-gray-700 mb-6">
+    <nav class="flex space-x-8" aria-label="Tabs">
+      <button
+        onclick={() => activeTab = 'general'}
+        class="py-4 px-1 border-b-2 font-medium text-sm transition-colors {activeTab === 'general' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'}"
+      >
+        General
+      </button>
+      <button
+        onclick={() => activeTab = 'themes'}
+        class="py-4 px-1 border-b-2 font-medium text-sm transition-colors {activeTab === 'themes' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'}"
+      >
+        PDF Themes
+      </button>
+    </nav>
+  </div>
+
+  <!-- General Tab -->
+  {#if activeTab === 'general'}
+    <div class="space-y-6">
+      <!-- Version -->
+      <div>
+        <h3 class="text-lg font-medium mb-2">Version</h3>
+        <div>WikiStr v{appVersion}</div>
+        <div class="mt-1 opacity-75">from GitCitadel</div>
+      </div>
+
+      <!-- Appearance -->
+      <div>
+        <h3 class="text-lg font-medium mb-2">Appearance</h3>
+        <div class="flex items-center gap-2">
+          <span>Toggle light/dark mode</span>
+          <ModeToggle />
+        </div>
+      </div>
+
+      <!-- Relays -->
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-lg font-medium">Relays</h3>
+          <button
+            onclick={() => currentRelays = contentCache.getAllRelays()}
+            class="text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
+            title="Refresh relay list"
+          >
+            Refresh
+          </button>
+        </div>
+        {#if currentRelays.length > 0}
+          <div class="space-y-2 max-h-64 overflow-y-auto">
+            {#each currentRelays as relay}
+              <RelayItem url={relay} createChild={createChild || (() => {})} />
+            {/each}
+          </div>
+        {:else}
+          <p class="text-sm text-gray-500 dark:text-gray-400">No relays used yet</p>
+        {/if}
+      </div>
+    </div>
+  {/if}
+
+  <!-- PDF Themes Tab -->
+  {#if activeTab === 'themes'}
+    <div class="border border-gray-300 dark:border-gray-700 rounded-lg p-4 md:p-6 lg:p-8 min-h-[60vh] md:min-h-[70vh]">
+      <div class="flex items-center gap-2 mb-6">
+        <h2 class="text-2xl font-semibold">PDF Theme Configuration</h2>
+        <div class="relative">
+          <button
+            type="button"
+            onmouseenter={() => showInfo = true}
+            onmouseleave={() => showInfo = false}
+            class="w-6 h-6 rounded-full border border-gray-400 dark:border-gray-600 flex items-center justify-center text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-help"
+            title="Click for info"
+          >
+            i
+          </button>
+          {#if showInfo}
+            <div class="absolute left-0 top-8 w-80 md:w-96 p-4 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg shadow-lg z-10 text-sm">
+              <p class="mb-2 font-semibold">How it works:</p>
+              <ul class="list-disc list-inside space-y-1 text-gray-700 dark:text-gray-300">
+                <li>Upload <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">pdf-themes.yml</code> to define which themes appear in the download menu dropdown</li>
+                <li>Upload individual theme files (e.g., <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">my-theme.yml</code>) that define the actual styling</li>
+                <li>The <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">pdf-themes.yml</code> file references these theme files via the <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">file</code> field</li>
+                <li>Only the newest <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">pdf-themes.yml</code> is used (uploading a new one replaces the old)</li>
+                <li>You can upload multiple theme files - all will be available if referenced in <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">pdf-themes.yml</code></li>
+              </ul>
+            </div>
+          {/if}
+        </div>
+      </div>
+      
+      {#if hasCustomTheme}
+        <div class="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded">
+          <p class="text-sm text-blue-800 dark:text-blue-200">
+            ✓ Custom theme configuration is active. It will be used instead of the default theme file.
+          </p>
+        </div>
+      {/if}
+
+      {#if saveMessage}
+        <div class="mb-6 p-4 rounded {saveMessage.type === 'success' ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'}">
+          <p class="text-sm {saveMessage.type === 'success' ? 'text-green-800 dark:text-green-200' : 'text-red-800 dark:text-red-200'}">
+            {saveMessage.text}
+          </p>
+        </div>
+      {/if}
+
+      <!-- Theme Sub-tabs -->
+      <div class="border-b border-gray-300 dark:border-gray-700 mb-6">
+        <nav class="flex space-x-4 md:space-x-8 overflow-x-auto" aria-label="Theme sub-tabs">
+          <button
+            onclick={() => activeThemeTab = 'config'}
+            class="py-3 px-2 md:px-4 border-b-2 font-medium text-sm whitespace-nowrap transition-colors {activeThemeTab === 'config' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'}"
+          >
+            Configuration
+          </button>
+          <button
+            onclick={() => activeThemeTab = 'files'}
+            class="py-3 px-2 md:px-4 border-b-2 font-medium text-sm whitespace-nowrap transition-colors {activeThemeTab === 'files' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'}"
+          >
+            Theme Files
+          </button>
+          <button
+            onclick={() => activeThemeTab = 'paste'}
+            class="py-3 px-2 md:px-4 border-b-2 font-medium text-sm whitespace-nowrap transition-colors {activeThemeTab === 'paste' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'}"
+          >
+            Paste YAML
+          </button>
+        </nav>
+      </div>
+
+      <!-- Configuration Tab -->
+      {#if activeThemeTab === 'config'}
+        <div class="space-y-6">
+          <div>
+            <label for="pdf-themes-upload" class="block text-sm font-medium mb-3">
+              Upload pdf-themes.yml (replaces existing)
+            </label>
+            <input
+              type="file"
+              id="pdf-themes-upload"
+              accept=".yml,.yaml"
+              onchange={handlePdfThemesUpload}
+              disabled={isSaving || isUploading}
+              class="block w-full text-base md:text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-3 md:file:py-2 file:px-6 md:file:px-4 file:rounded-md file:border-0 file:text-base md:file:text-sm file:font-semibold file:bg-indigo-50 dark:file:bg-indigo-900/20 file:text-indigo-700 dark:file:text-indigo-300 hover:file:bg-indigo-100 dark:hover:file:bg-indigo-900/40 disabled:opacity-50 cursor-pointer"
+            />
+            <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+              Upload a pdf-themes.yml file to define available themes. Only the newest upload is used.
+            </p>
+          </div>
+
+          {#if availableThemes.length > 0}
+            <div>
+              <p class="text-sm font-medium mb-3">Available Themes (from pdf-themes.yml):</p>
+              <div class="flex flex-wrap gap-2">
+                {#each availableThemes as theme}
+                  <span class="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 rounded text-sm">
+                    {theme}
+                  </span>
+                {/each}
+              </div>
+            </div>
+          {/if}
+
+          {#if hasCustomTheme}
+            <div>
+              <button
+                onclick={handleClear}
+                disabled={isSaving || isUploading}
+                class="inline-flex items-center px-6 py-3 border border-gray-300 dark:border-gray-700 text-base md:text-sm font-medium rounded-md shadow-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Clear Custom Theme Config
+              </button>
+            </div>
+          {/if}
+        </div>
+      {/if}
+
+      <!-- Theme Files Tab -->
+      {#if activeThemeTab === 'files'}
+        <div class="space-y-6">
+          <div>
+            <label for="theme-files-upload" class="block text-sm font-medium mb-3">
+              Upload Theme Files (.yml)
+            </label>
+            <input
+              type="file"
+              id="theme-files-upload"
+              accept=".yml,.yaml"
+              multiple
+              onchange={handleThemeFileUpload}
+              disabled={isSaving || isUploading}
+              class="block w-full text-base md:text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-3 md:file:py-2 file:px-6 md:file:px-4 file:rounded-md file:border-0 file:text-base md:file:text-sm file:font-semibold file:bg-indigo-50 dark:file:bg-indigo-900/20 file:text-indigo-700 dark:file:text-indigo-300 hover:file:bg-indigo-100 dark:hover:file:bg-indigo-900/40 disabled:opacity-50 cursor-pointer"
+            />
+            <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+              Upload one or more theme files (e.g., my-theme.yml). These define the actual PDF styling.
+            </p>
+          </div>
+
+          {#if uploadedThemeFiles.length > 0}
+            <div>
+              <p class="text-sm font-medium mb-3">Uploaded Theme Files:</p>
+              <div class="space-y-2 max-h-64 md:max-h-96 overflow-y-auto">
+                {#each uploadedThemeFiles as file}
+                  <div class="flex items-center justify-between p-3 md:p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                    <span class="text-sm md:text-base font-mono break-all">{file.filename}</span>
+                    <button
+                      onclick={() => handleDeleteThemeFile(file.filename)}
+                      class="ml-4 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-lg md:text-base font-bold"
+                      title="Delete theme file"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {:else}
+            <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+              <p>No theme files uploaded yet.</p>
+            </div>
+          {/if}
+        </div>
+      {/if}
+
+      <!-- Paste YAML Tab -->
+      {#if activeThemeTab === 'paste'}
+        <div class="space-y-6">
+          <div>
+            <label for="theme-yaml" class="block text-sm font-medium mb-3">
+              Paste pdf-themes.yml Configuration (YAML)
+            </label>
+            <textarea
+              id="theme-yaml"
+              bind:value={customThemeYaml}
+              placeholder="Paste your YAML theme configuration here..."
+              class="w-full h-96 md:h-80 lg:h-96 px-4 py-3 text-base md:text-sm border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-800 dark:text-white font-mono resize-y"
+              disabled={isSaving || isUploading}
+            ></textarea>
+          </div>
+
+          <div class="flex flex-wrap gap-3">
+            <button
+              onclick={handleSave}
+              disabled={isSaving || isUploading || !customThemeYaml.trim()}
+              class="inline-flex items-center px-6 py-3 text-base md:text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {#if isSaving}
+                Saving...
+              {:else}
+                Save Custom Theme Config
+              {/if}
+            </button>
+
+            <button
+              onclick={handleLoadExample}
+              disabled={isSaving || isUploading}
+              class="inline-flex items-center px-6 py-3 border border-gray-300 dark:border-gray-700 text-base md:text-sm font-medium rounded-md shadow-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Load Example
+            </button>
+          </div>
+        </div>
+      {/if}
+    </div>
+  {/if}
+</div>
+
+<style>
+  /* Ensure proper scrolling on mobile */
+  @media (max-width: 768px) {
+    :global(.settings-container) {
+      max-height: calc(100vh - 200px);
+      overflow-y: auto;
+    }
+  }
+</style>

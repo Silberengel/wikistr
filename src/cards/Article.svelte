@@ -1079,26 +1079,6 @@
                               ⬇ HTML5
                             {/if}
                           </button>
-                          <button
-                            onclick={async () => {
-                              if (!event) return;
-                              showDownloadMenu = false;
-                              isDownloading = true;
-                              try {
-                                await viewAsHTML5(event);
-                              } catch (error) {
-                                alert('Failed to view HTML5.');
-                              } finally {
-                                isDownloading = false;
-                              }
-                            }}
-                            disabled={isDownloading}
-                            class="px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                            style="color: var(--accent); border: 1px solid var(--accent); border-radius: 0.25rem;"
-                            title="View in e-book viewer"
-                          >
-                            (View)
-                          </button>
                         </div>
                       {/if}
                       
@@ -1165,11 +1145,8 @@
                               }
                             }}
                             disabled={isDownloading}
-                            class="px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                            style="color: var(--accent); border: 1px solid var(--accent); border-radius: 0.25rem;"
-                            title="View in e-book viewer"
                           >
-                            (View)
+                            PDF
                           </button>
                         </div>
                         <!-- PDF with style submenu -->
@@ -1275,11 +1252,8 @@
                               }
                             }}
                             disabled={isDownloading}
-                            class="px-2 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                            style="color: var(--accent); border: 1px solid var(--accent); border-radius: 0.25rem;"
-                            title="View in e-book viewer"
                           >
-                            (View)
+                            EPUB
                           </button>
                         </div>
                                 {/each}
@@ -1325,11 +1299,8 @@
                               }
                             }}
                             disabled={isDownloading}
-                            class="px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                            style="color: var(--accent); border: 1px solid var(--accent); border-radius: 0.25rem;"
-                            title="View in e-book viewer"
                           >
-                            (View)
+                            HTML5
                           </button>
                         </div>
                         <div class="flex items-center gap-2">
@@ -1370,11 +1341,8 @@
                               }
                             }}
                             disabled={isDownloading}
-                            class="px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                            style="color: var(--accent); border: 1px solid var(--accent); border-radius: 0.25rem;"
-                            title="View as PDF in e-book viewer"
                           >
-                            (View)
+                            LaTeX
                           </button>
                         </div>
                         <button

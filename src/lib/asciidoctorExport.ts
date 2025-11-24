@@ -38,6 +38,7 @@ export interface ExportOptions {
   title: string;
   author?: string;
   theme?: string;
+  themeFiles?: Record<string, string>; // filename -> content mapping for custom theme files
 }
 
 /**
@@ -57,6 +58,8 @@ export async function exportToPDF(options: ExportOptions): Promise<Blob> {
       content: options.content,
       title: options.title,
       author: options.author || '',
+      theme: options.theme,
+      theme_files: options.themeFiles || {},
     }),
   });
 

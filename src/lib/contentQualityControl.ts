@@ -506,7 +506,18 @@ export function fixLinkAndMediaFormatting(content: string, isAsciiDoc: boolean):
   if (isAsciiDoc) {
     // Convert markdown to asciidoc
     
-    // Convert markdown images first (before links, to avoid conflicts)
+    // Convert HTML img tags first (before markdown images, to avoid conflicts)
+    // <img src="url" alt="alt"> or <img alt="alt" src="url"> -> image::url[alt]
+    processed = processed.replace(/<img[^>]+src=["']([^"']+)["'][^>]*(?:alt=["']([^"']*)["'])?[^>]*>/gi, (match, url, alt) => {
+      // Also try to extract alt from title attribute if alt is missing
+      if (!alt) {
+        const titleMatch = match.match(/title=["']([^"']+)["']/i);
+        if (titleMatch) alt = titleMatch[1];
+      }
+      return `image::${url}[${alt || ''}]`;
+    });
+    
+    // Convert markdown images
     // ![alt](url) -> image::url[alt]
     processed = processed.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, url) => {
       return `image::${url}[${alt || ''}]`;

@@ -7,6 +7,7 @@ import type { NostrEvent } from '@nostr/tools/pure';
 import { nip19 } from '@nostr/tools';
 import { relayService } from '$lib/relayService';
 import { exportToPDF, exportToEPUB, exportToHTML5, exportToRevealJS, exportToLaTeX, downloadBlob, openInViewer } from './asciidoctorExport';
+import { getUploadedThemeFiles } from './pdfThemes';
 import {
   processContentQuality,
   processContentQualityAsync,
@@ -18,6 +19,7 @@ import {
   ensureDocumentHeader,
   validateAsciiDoc
 } from './contentQualityControl';
+import { getThemeMap, getServerThemeName } from './pdfThemes';
 
 /**
  * Generate table of contents from markdown headings
@@ -231,6 +233,18 @@ async function getAuthorName(event: NostrEvent): Promise<string> {
 }
 
 /**
+ * Get uploaded theme files as a map
+ */
+async function getThemeFilesMap(): Promise<Record<string, string>> {
+  const themeFiles = await getUploadedThemeFiles();
+  const themeFilesMap: Record<string, string> = {};
+  for (const file of themeFiles) {
+    themeFilesMap[file.filename] = file.content;
+  }
+  return themeFilesMap;
+}
+
+/**
  * Build AsciiDoc document with metadata header
  */
 async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, theme: PDFTheme = 'classic', providedImage?: string): Promise<string> {
@@ -245,23 +259,15 @@ async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, the
   const topicTags = event.tags.filter(([k]) => k === 't').map(([, v]) => v);
   
   // Build AsciiDoc document with metadata
-  const themeMap: Record<PDFTheme, string> = {
-    'classic': 'classic-novel',
-    'antique': 'antique-novel',
-    'modern': 'modern-book',
-    'documentation': 'documentation',
-    'scientific': 'scientific',
-    'pop': 'pop-book',
-    'bible-paragraph': 'bible-paragraph',
-    'bible-versed': 'bible-versed',
-    'poster': 'poster'
-  };
+  const themeMap = await getThemeMap();
   let doc = `= ${title}\n`;
   doc += `:author: ${author}\n`;
-  doc += `:pdf-theme: ${themeMap[theme]}\n`;
+  doc += `:pdf-theme: ${await getServerThemeName(theme)}\n`;
   doc += `:pdf-themesdir: /app/deployment\n`;
   doc += `:toc:\n`; // Enable table of contents
   doc += `:stem:\n`; // Enable STEM (math) support for LaTeX rendering
+  doc += `:page-break-mode: auto\n`; // Reduce unnecessary page breaks
+  doc += `:pdf-page-break-mode: auto\n`; // Allow content to flow naturally
   
   if (version) {
     doc += `:version: ${version}\n`;
@@ -510,24 +516,16 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
         const topicTags = event.tags.filter(([k]) => k === 't').map(([, v]) => v);
         
         // Build theme map for this scope
-        const themeMap: Record<PDFTheme, string> = {
-          'classic': 'classic-novel',
-          'antique': 'antique-novel',
-          'modern': 'modern-book',
-          'documentation': 'documentation',
-          'scientific': 'scientific',
-          'pop': 'pop-book',
-          'bible-paragraph': 'bible-paragraph',
-          'bible-versed': 'bible-versed',
-          'poster': 'poster'
-        };
+        const themeMap = await getThemeMap();
         
         let doc = `= ${title}\n`;
         doc += `:author: ${author}\n`;
-        doc += `:pdf-theme: ${themeMap[theme]}\n`;
+        doc += `:pdf-theme: ${await getServerThemeName(theme)}\n`;
         doc += `:pdf-themesdir: /app/deployment\n`;
         doc += `:toc:\n`; // Enable table of contents
         doc += `:stem:\n`; // Enable STEM (math) support for LaTeX rendering
+        doc += `:page-break-mode: auto\n`; // Reduce unnecessary page breaks
+        doc += `:pdf-page-break-mode: auto\n`; // Allow content to flow naturally
         
         if (version) doc += `:version: ${version}\n`;
         if (publishedOn) doc += `:pubdate: ${publishedOn}\n`;
@@ -614,7 +612,8 @@ export async function getPDFBlob(event: NostrEvent, theme: PDFTheme = 'classic')
     content: asciiDocContent,
     title,
     author,
-    theme
+    theme,
+    themeFiles: await getThemeFilesMap()
   });
   
   if (!blob || blob.size === 0) {
@@ -671,7 +670,8 @@ export async function getEPUBBlob(event: NostrEvent, theme: PDFTheme = 'classic'
     content: asciiDocContent,
     title,
     author,
-    theme
+    theme,
+    themeFiles: await getThemeFilesMap()
   });
   
   if (!blob || blob.size === 0) {
@@ -1298,19 +1298,10 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   }
   
   // PDF theme configuration
-  const themeMap: Record<PDFTheme, string> = {
-    'classic': 'classic-novel',
-    'antique': 'antique-novel',
-    'modern': 'modern-book',
-    'documentation': 'documentation',
-    'scientific': 'scientific',
-    'pop': 'pop-book',
-    'bible-paragraph': 'bible-paragraph',
-    'bible-versed': 'bible-versed',
-    'poster': 'poster'
-  };
-  doc += `:pdf-theme: ${themeMap[theme]}\n`;
+  doc += `:pdf-theme: ${await getServerThemeName(theme)}\n`;
   doc += `:pdf-themesdir: /app/deployment\n`;
+  doc += `:page-break-mode: auto\n`; // Reduce unnecessary page breaks
+  doc += `:pdf-page-break-mode: auto\n`; // Allow content to flow naturally
   
   // For poster theme, display image prominently with text wrapping
   if (theme === 'poster' && image) {
@@ -1455,7 +1446,8 @@ export async function downloadBookAsPDF(indexEvent: NostrEvent, filename?: strin
       content: combined,
       title,
       author,
-      theme
+      theme,
+      themeFiles: await getThemeFilesMap()
     });
     
     if (!blob || blob.size === 0) {
@@ -1506,7 +1498,8 @@ export async function downloadBookAsEPUB(indexEvent: NostrEvent, filename?: stri
       content: combined,
       title,
       author,
-      theme
+      theme,
+      themeFiles: await getThemeFilesMap()
     });
     
     if (!blob || blob.size === 0) {
@@ -1561,24 +1554,15 @@ async function combineBookSearchResults(
   }
   
   // Build AsciiDoc document with theme styling
-  const themeMap: Record<PDFTheme, string> = {
-    'classic': 'classic-novel',
-    'antique': 'antique-novel',
-    'modern': 'modern-book',
-    'documentation': 'documentation',
-    'scientific': 'scientific',
-    'pop': 'pop-book',
-    'bible-paragraph': 'bible-paragraph',
-    'bible-versed': 'bible-versed',
-    'poster': 'poster'
-  };
   let doc = `= ${title}\n`;
   doc += `:author: ${author}\n`;
   doc += `:doctype: book\n`;
-  doc += `:pdf-theme: ${themeMap[theme]}\n`;
+  doc += `:pdf-theme: ${await getServerThemeName(theme)}\n`;
   doc += `:pdf-themesdir: /app/deployment\n`;
   doc += `:toc:\n`; // Enable table of contents
   doc += `:stem:\n`; // Enable STEM (math) support for LaTeX rendering
+  doc += `:page-break-mode: auto\n`; // Reduce unnecessary page breaks
+  doc += `:pdf-page-break-mode: auto\n`; // Allow content to flow naturally
   doc += `\n`;
   
   // Create styled title page
@@ -1815,7 +1799,8 @@ export async function downloadBookSearchResultsAsPDF(
       content: combined,
       title,
       author,
-      theme
+      theme,
+      themeFiles: await getThemeFilesMap()
     });
     
     if (!blob || blob.size === 0) {
@@ -1869,7 +1854,8 @@ export async function downloadBookSearchResultsAsEPUB(
       content: combined,
       title,
       author,
-      theme
+      theme,
+      themeFiles: await getThemeFilesMap()
     });
     
     if (!blob || blob.size === 0) {

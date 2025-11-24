@@ -1,6 +1,10 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import type { UserConfig } from 'vite';
+import { readFileSync } from 'fs';
+
+// Read version from package.json
+const packageJson = JSON.parse(readFileSync('./package.json', 'utf-8'));
 
 const config: UserConfig = {
   plugins: [sveltekit()],
@@ -29,7 +33,8 @@ const config: UserConfig = {
     }
   },
   define: {
-    __THEME__: JSON.stringify((process as any).env.THEME || 'wikistr')
+    __THEME__: JSON.stringify((process as any).env.THEME || 'wikistr'),
+    __VERSION__: JSON.stringify(packageJson.version)
   }
 };
 

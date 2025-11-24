@@ -401,7 +401,7 @@ import { highlightedArticleCardId } from '$lib/articleLauncher';
       {:else if card.type === 'user'}
         <User {createChild} {card} />
       {:else if card.type === 'settings'}
-        <Settings />
+        <Settings {createChild} />
       {:else if card.type === 'editor'}
         <Editor {replaceSelf} {card} />
       {:else if card.type === 'book'}

@@ -11,6 +11,7 @@ require 'json'
 require 'tempfile'
 require 'fileutils'
 require 'zip'
+require 'yaml'
 
 # Set port and bind - use environment variable or default to 8091
 set :port, ENV.fetch('ASCIIDOCTOR_PORT', 8091).to_i
@@ -47,6 +48,45 @@ end
 
 options '*' do
   204
+end
+
+# Load theme configuration from YAML file
+def load_theme_config
+  @theme_config ||= begin
+    config_path = File.join(File.dirname(__FILE__), '..', 'pdf-themes.yml')
+    if File.exist?(config_path)
+      YAML.load_file(config_path)
+    else
+      # Fallback configuration if file doesn't exist
+      {
+        'themes' => {
+          'classic' => { 'server_name' => 'classic-novel' },
+          'antique' => { 'server_name' => 'antique-novel' },
+          'modern' => { 'server_name' => 'modern-book' },
+          'documentation' => { 'server_name' => 'documentation' },
+          'scientific' => { 'server_name' => 'scientific' },
+          'pop' => { 'server_name' => 'pop-book' },
+          'bible-paragraph' => { 'server_name' => 'bible-paragraph' },
+          'bible-versed' => { 'server_name' => 'bible-versed' },
+          'poster' => { 'server_name' => 'poster' }
+        },
+        'default' => 'classic'
+      }
+    end
+  end
+end
+
+# Get server theme name from client theme name
+def get_server_theme_name(client_theme)
+  config = load_theme_config
+  theme_def = config['themes'][client_theme]
+  if theme_def && theme_def['server_name']
+    theme_def['server_name']
+  else
+    # Fallback to default
+    default_theme = config['default'] || 'classic'
+    config['themes'][default_theme]['server_name']
+  end
 end
 
 # Health check
@@ -292,10 +332,25 @@ post '/convert/pdf' do
     title = data['title'] || 'Document'
     author = data['author'] || ''
     theme_param = data['theme']
+    theme_files = data['theme_files'] || {}
     
     unless content
       status 400
       return { error: 'Missing content or asciidoc field' }.to_json
+    end
+    
+    # Create temporary directory for theme files if custom themes are provided
+    temp_themes_dir = nil
+    if theme_files.is_a?(Hash) && !theme_files.empty?
+      temp_themes_dir = Dir.mktmpdir('custom-themes-')
+      theme_files.each do |filename, file_content|
+        # Sanitize filename to prevent directory traversal
+        safe_filename = File.basename(filename)
+        next unless safe_filename.end_with?('.yml') || safe_filename.end_with?('.yaml')
+        
+        theme_file_path = File.join(temp_themes_dir, safe_filename)
+        File.write(theme_file_path, file_content)
+      end
     end
     
     # Create temporary file for AsciiDoc content
@@ -309,28 +364,26 @@ post '/convert/pdf' do
     
     begin
       # Convert to PDF with enhanced attributes for better rendering
-      # Theme mapping from client theme names to server theme files
-      theme_map = {
-        'classic' => 'classic-novel',
-        'antique' => 'antique-novel',
-        'modern' => 'modern-book',
-        'documentation' => 'documentation',
-        'scientific' => 'scientific',
-        'pop' => 'pop-book',
-        'bible-paragraph' => 'bible-paragraph',
-        'bible-versed' => 'bible-versed',
-        'poster' => 'poster'
-      }
+      # Theme mapping from client theme names to server theme files (loaded from YAML)
       
       # Use theme from parameter if provided, otherwise check if already in content, otherwise default
-      if theme_param && theme_map[theme_param]
-        theme = theme_map[theme_param]
+      if theme_param
+        theme = get_server_theme_name(theme_param)
       elsif content.include?(':pdf-theme:')
         theme = nil # Content already specifies theme
       else
-        theme = 'classic-novel' # Default
+        # Use default from config
+        config = load_theme_config
+        default_theme = config['default'] || 'classic'
+        theme = get_server_theme_name(default_theme)
       end
-      themesdir = content.include?(':pdf-themesdir:') ? nil : '/app/deployment'
+      
+      # Use custom themes directory if provided, otherwise default
+      if temp_themes_dir
+        themesdir = temp_themes_dir
+      else
+        themesdir = content.include?(':pdf-themesdir:') ? nil : '/app/deployment'
+      end
       
       attributes = {
         'title' => title,
@@ -370,6 +423,10 @@ post '/convert/pdf' do
     ensure
       temp_adoc.unlink
       temp_pdf.unlink
+      # Clean up temporary themes directory
+      if temp_themes_dir && Dir.exist?(temp_themes_dir)
+        FileUtils.rm_rf(temp_themes_dir)
+      end
     end
   rescue JSON::ParserError => e
     status 400
@@ -391,10 +448,25 @@ post '/convert/epub' do
     title = data['title'] || 'Document'
     author = data['author'] || ''
     theme_param = data['theme']
+    theme_files = data['theme_files'] || {}
     
     unless content
       status 400
       return { error: 'Missing content or asciidoc field' }.to_json
+    end
+    
+    # Create temporary directory for theme files if custom themes are provided
+    temp_themes_dir = nil
+    if theme_files.is_a?(Hash) && !theme_files.empty?
+      temp_themes_dir = Dir.mktmpdir('custom-themes-')
+      theme_files.each do |filename, file_content|
+        # Sanitize filename to prevent directory traversal
+        safe_filename = File.basename(filename)
+        next unless safe_filename.end_with?('.yml') || safe_filename.end_with?('.yaml')
+        
+        theme_file_path = File.join(temp_themes_dir, safe_filename)
+        File.write(theme_file_path, file_content)
+      end
     end
     
     # Create temporary file for AsciiDoc content
@@ -536,7 +608,11 @@ post '/convert/epub' do
       epub_content
     ensure
       temp_adoc.unlink
-      FileUtils.rm_rf(temp_dir)
+      FileUtils.rm_rf(temp_dir) if temp_dir
+      # Clean up temporary themes directory
+      if temp_themes_dir && Dir.exist?(temp_themes_dir)
+        FileUtils.rm_rf(temp_themes_dir)
+      end
     end
   rescue JSON::ParserError => e
     status 400
