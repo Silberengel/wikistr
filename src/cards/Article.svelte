@@ -1514,7 +1514,7 @@
         </div>
       </div>
     </div>
-    <div>
+    <div class="mb-6">
       <!-- Top row: Fork • Share • Versions • (Level Higher for books) • Copy Nevent -->
       <div class="mb-2">
         <a class="cursor-pointer underline transition-colors" style="color: var(--accent);" onclick={edit}>
@@ -1600,7 +1600,7 @@
       </div>
       
       <!-- Second row: Source button and Relay buttons -->
-      <div class="mt-2 flex flex-wrap items-center gap-2">
+      <div class="mt-4 flex flex-wrap items-center gap-2">
         <!-- Source Button -->
         <button
           onclick={() => {
