@@ -21,9 +21,8 @@
   let { createChild }: Props = $props();
 
   let activeTab = $state<'general' | 'themes'>('general');
-  let activeThemeTab = $state<'config' | 'files' | 'paste'>('config');
+  let activeThemeTab = $state<'config' | 'files'>('config');
   
-  let customThemeYaml = $state('');
   let isSaving = $state(false);
   let saveMessage = $state<{ type: 'success' | 'error'; text: string } | null>(null);
   let hasCustomTheme = $state(false);
@@ -122,36 +121,6 @@
     return Object.keys(result).length > 0 ? result : null;
   }
 
-  async function handleSave() {
-    if (!customThemeYaml.trim()) {
-      saveMessage = { type: 'error', text: 'Please paste a YAML configuration' };
-      return;
-    }
-
-    isSaving = true;
-    saveMessage = null;
-
-    try {
-      const result = await saveCustomThemeConfig(customThemeYaml.trim());
-      
-      if (result.success) {
-        saveMessage = { type: 'success', text: 'Custom theme configuration saved successfully! It will be used for all PDF/EPUB exports.' };
-        customThemeYaml = '';
-        hasCustomTheme = true;
-        availableThemes = await getAvailableThemes();
-        
-        setTimeout(() => {
-          saveMessage = null;
-        }, 5000);
-      } else {
-        saveMessage = { type: 'error', text: result.error || 'Failed to save theme configuration' };
-      }
-    } catch (error) {
-      saveMessage = { type: 'error', text: error instanceof Error ? error.message : 'An unexpected error occurred' };
-    } finally {
-      isSaving = false;
-    }
-  }
 
   async function handleClear() {
     if (!confirm('Are you sure you want to clear the custom theme configuration? The default theme file will be used instead.')) {
@@ -161,7 +130,6 @@
     try {
       await clearCustomThemeCache();
       hasCustomTheme = false;
-      customThemeYaml = '';
       saveMessage = { type: 'success', text: 'Custom theme configuration cleared. Using default theme file.' };
       availableThemes = await getAvailableThemes();
       
@@ -267,34 +235,6 @@
     }
   }
 
-  function handleLoadExample() {
-    customThemeYaml = `# PDF Theme Configuration
-# This file defines all available PDF themes and their mappings
-# Users can add custom themes by following the same structure
-
-# Theme name mapping: client-side name -> server-side theme file name
-themes:
-  classic:
-    server_name: classic-novel
-    description: Classic novel style with traditional typography
-    file: classic-novel-theme.yml
-
-  antique:
-    server_name: antique-novel
-    description: Antique book style with vintage aesthetics
-    file: antique-novel-theme.yml
-
-  modern:
-    server_name: modern-book
-    description: Modern book style with contemporary design
-    file: modern-book-theme.yml
-
-# Default theme to use when none is specified
-default: classic
-
-# Theme directory (relative to deployment directory)
-themes_dir: /app/deployment`;
-  }
 </script>
 
 <div class="mt-2 font-bold text-4xl mb-6">Settings</div>
@@ -460,12 +400,6 @@ themes_dir: /app/deployment`;
           >
             Theme Files
           </button>
-          <button
-            onclick={() => activeThemeTab = 'paste'}
-            class="py-3 px-2 md:px-4 border-b-2 font-medium text-sm whitespace-nowrap transition-colors {activeThemeTab === 'paste' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'}"
-          >
-            Paste YAML
-          </button>
         </nav>
       </div>
 
@@ -560,46 +494,6 @@ themes_dir: /app/deployment`;
               <p>No theme files uploaded yet.</p>
             </div>
           {/if}
-        </div>
-      {/if}
-
-      <!-- Paste YAML Tab -->
-      {#if activeThemeTab === 'paste'}
-        <div class="space-y-6">
-          <div>
-            <label for="theme-yaml" class="block text-sm font-medium mb-3">
-              Paste pdf-themes.yml Configuration (YAML)
-            </label>
-            <textarea
-              id="theme-yaml"
-              bind:value={customThemeYaml}
-              placeholder="Paste your YAML theme configuration here..."
-              class="w-full h-96 md:h-80 lg:h-96 px-4 py-3 text-base md:text-sm border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-800 dark:text-white font-mono resize-y"
-              disabled={isSaving || isUploading}
-            ></textarea>
-          </div>
-
-          <div class="flex flex-wrap gap-3">
-            <button
-              onclick={handleSave}
-              disabled={isSaving || isUploading || !customThemeYaml.trim()}
-              class="inline-flex items-center px-6 py-3 text-base md:text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {#if isSaving}
-                Saving...
-              {:else}
-                Save Custom Theme Config
-              {/if}
-            </button>
-
-            <button
-              onclick={handleLoadExample}
-              disabled={isSaving || isUploading}
-              class="inline-flex items-center px-6 py-3 border border-gray-300 dark:border-gray-700 text-base md:text-sm font-medium rounded-md shadow-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Load Example
-            </button>
-          </div>
         </div>
       {/if}
     </div>
