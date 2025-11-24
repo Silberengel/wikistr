@@ -945,7 +945,7 @@
     {/if}
     
     <!-- Title with voting on the left -->
-    <div class="flex items-start gap-3 mb-4">
+    <div id="article-header" class="flex items-start gap-3 mb-4">
       <!-- Unified voting interface -->
       <div
         class="flex flex-col items-center space-y-2 flex-shrink-0"
@@ -1812,7 +1812,13 @@
     <div class="mt-8 pt-4 border-t border-gray-300 flex justify-center">
       <button
         onclick={() => {
-          window.scrollTo({ top: 0, behavior: 'smooth' });
+          const header = document.getElementById('article-header');
+          if (header) {
+            header.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          } else {
+            // Fallback to window scroll if header not found
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }
         }}
         class="font-normal text-sm px-4 py-2 rounded cursor-pointer transition-colors"
         style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
