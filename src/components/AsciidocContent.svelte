@@ -796,19 +796,26 @@
     // Pattern: link:wikilink:identifier[display text]
     // First, handle links with display text - be more permissive with the identifier pattern
     processed = processed.replace(/link:wikilink:([^\[]+)\[([^\]]+)\]/g, (match, identifier, displayText) => {
+      // Normalize identifier: remove whitespace after book:: prefix
+      let normalizedIdentifier = identifier;
+      if (identifier.startsWith('book::')) {
+        // Remove whitespace after book:: prefix
+        normalizedIdentifier = identifier.replace(/^book::\s+/, 'book::');
+      }
+      
       // For book:: wikilinks, use the formatted display text instead of the provided one
       let finalDisplayText = displayText;
-      if (identifier.startsWith('book::')) {
-        const bookContent = identifier.replace(/^book::\s*/, '');
+      if (normalizedIdentifier.startsWith('book::')) {
+        const bookContent = normalizedIdentifier.replace(/^book::\s*/, '');
         finalDisplayText = formatBookWikilinkDisplayTextForGUI(bookContent);
       }
       
       // Escape HTML in display text
       const escapedDisplay = finalDisplayText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      // Ensure the identifier is preserved exactly, including book:: prefix
+      // Ensure the identifier is preserved exactly, including book:: prefix (normalized)
       // Store the full identifier in a data attribute as backup
-      const dataAttr = identifier.startsWith('book::') ? ` data-book="${identifier.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"` : '';
-      return `<a href="wikilink:${identifier}"${dataAttr} class="wikilink" style="color: var(--accent); text-decoration: underline; cursor: pointer;">${escapedDisplay}</a>`;
+      const dataAttr = normalizedIdentifier.startsWith('book::') ? ` data-book="${normalizedIdentifier.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"` : '';
+      return `<a href="wikilink:${normalizedIdentifier}"${dataAttr} class="wikilink" style="color: var(--accent); text-decoration: underline; cursor: pointer;">${escapedDisplay}</a>`;
     });
     
     // Then handle links without display text: link:wikilink:identifier
@@ -828,12 +835,19 @@
         return match; // Don't replace, we're inside an anchor tag
       }
       
+      // Normalize identifier: remove whitespace after book:: prefix
+      let normalizedIdentifier = identifier;
+      if (identifier.startsWith('book::')) {
+        // Remove whitespace after book:: prefix
+        normalizedIdentifier = identifier.replace(/^book::\s+/, 'book::');
+      }
+      
       // Escape identifier for display
-      let displayText = identifier.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      let displayText = normalizedIdentifier.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       
       // If this is a book:: wikilink, format the display text nicely
-      if (identifier.startsWith('book::')) {
-        const bookContent = identifier.replace(/^book::\s*/, '');
+      if (normalizedIdentifier.startsWith('book::')) {
+        const bookContent = normalizedIdentifier.replace(/^book::\s*/, '');
         displayText = formatBookWikilinkDisplayTextForGUI(bookContent);
         // Escape HTML in the formatted display text
         displayText = displayText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -842,9 +856,9 @@
         displayText = displayText.replace(/-/g, ' ');
       }
       
-      // Store the full identifier in a data attribute as backup
-      const dataAttr = identifier.startsWith('book::') ? ` data-book="${identifier.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"` : '';
-      return `<a href="wikilink:${identifier}"${dataAttr} class="wikilink" style="color: var(--accent); text-decoration: underline; cursor: pointer;">${displayText}</a>`;
+      // Store the full identifier in a data attribute as backup (normalized)
+      const dataAttr = normalizedIdentifier.startsWith('book::') ? ` data-book="${normalizedIdentifier.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"` : '';
+      return `<a href="wikilink:${normalizedIdentifier}"${dataAttr} class="wikilink" style="color: var(--accent); text-decoration: underline; cursor: pointer;">${displayText}</a>`;
     });
     
     // Process Nostr links in the HTML output
@@ -1714,6 +1728,11 @@
         
         // Clear after a delay to allow re-clicking if needed
         setTimeout(() => clickedLinks.delete(linkKey), 1000);
+        
+        // Normalize identifier: remove whitespace after book:: prefix
+        if (identifier.startsWith('book::')) {
+          identifier = identifier.replace(/^book::\s+/, 'book::');
+        }
         
         // Check if this is a book:: wikilink - route to BookCard instead
         if (identifier.startsWith('book::')) {

@@ -15,7 +15,8 @@ import {
   getTitleFromEvent,
   fixHeaderSpacing,
   fixMissingHeadingLevels,
-  ensureDocumentHeader
+  ensureDocumentHeader,
+  validateAsciiDoc
 } from './contentQualityControl';
 
 /**
@@ -173,7 +174,8 @@ export async function downloadAsMarkdown(event: NostrEvent, filename?: string): 
   
   const finalContent = frontmatter + toc + content;
   const blob = new Blob([finalContent], { type: 'text/markdown' });
-  const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.md`;
+  const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '').slice(2, 15); // yymmddHHmmss
+  const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.md`;
   downloadBlob(blob, name);
 }
 
@@ -201,7 +203,8 @@ export async function downloadAsAsciiDoc(event: NostrEvent, filename?: string): 
   const title = getTitleFromEvent(event, true);
   
   const blob = new Blob([contentWithMetadata], { type: 'text/asciidoc' });
-  const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.adoc`;
+  const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '').slice(2, 15); // yymmddHHmmss
+  const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.adoc`;
   downloadBlob(blob, name);
 }
 
@@ -292,11 +295,11 @@ async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, the
   
   // Add description as abstract if available
   if (description) {
-    doc += `[abstract]\n\n`;
+    doc += `[abstract]\n`;
     doc += `== Abstract\n\n`;
     doc += `${description}\n\n`;
   } else if (summary) {
-    doc += `[abstract]\n\n`;
+    doc += `[abstract]\n`;
     doc += `== Abstract\n\n`;
     doc += `${summary}\n\n`;
   }
@@ -506,9 +509,22 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
         const publishedOn = event.tags.find(([k]) => k === 'published_on')?.[1];
         const topicTags = event.tags.filter(([k]) => k === 't').map(([, v]) => v);
         
+        // Build theme map for this scope
+        const themeMap: Record<PDFTheme, string> = {
+          'classic': 'classic-novel',
+          'antique': 'antique-novel',
+          'modern': 'modern-book',
+          'documentation': 'documentation',
+          'scientific': 'scientific',
+          'pop': 'pop-book',
+          'bible-paragraph': 'bible-paragraph',
+          'bible-versed': 'bible-versed',
+          'poster': 'poster'
+        };
+        
         let doc = `= ${title}\n`;
         doc += `:author: ${author}\n`;
-        doc += `:pdf-theme: ${theme}\n`;
+        doc += `:pdf-theme: ${themeMap[theme]}\n`;
         doc += `:pdf-themesdir: /app/deployment\n`;
         doc += `:toc:\n`; // Enable table of contents
         doc += `:stem:\n`; // Enable STEM (math) support for LaTeX rendering
@@ -525,11 +541,11 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
         }
         doc += `\n`;
         if (description) {
-          doc += `[abstract]\n\n`;
+          doc += `[abstract]\n`;
           doc += `== Abstract\n\n`;
           doc += `${description}\n\n`;
         } else if (summary) {
-          doc += `[abstract]\n\n`;
+          doc += `[abstract]\n`;
           doc += `== Abstract\n\n`;
           doc += `${summary}\n\n`;
         }
@@ -580,6 +596,17 @@ export async function getPDFBlob(event: NostrEvent, theme: PDFTheme = 'classic')
   
   // Prepare AsciiDoc content with metadata (includes cover image, abstract, etc.)
   const asciiDocContent = await prepareAsciiDocContent(event, true, theme);
+  
+  // Validate AsciiDoc content before exporting
+  const validation = validateAsciiDoc(asciiDocContent);
+  if (!validation.valid) {
+    const errorMsg = `Invalid AsciiDoc syntax: ${validation.error}${validation.warnings ? '\nWarnings: ' + validation.warnings.join('; ') : ''}\n\nPlease fix the AsciiDoc syntax errors and try again.`;
+    throw new Error(errorMsg);
+  }
+  if (validation.warnings && validation.warnings.length > 0) {
+    console.warn('AsciiDoc warnings:', validation.warnings);
+  }
+  
   const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
   const author = await getAuthorName(event);
   
@@ -594,7 +621,8 @@ export async function getPDFBlob(event: NostrEvent, theme: PDFTheme = 'classic')
     throw new Error('Server returned empty PDF file');
   }
   
-  const filename = `${title.replace(/[^a-z0-9]/gi, '_')}.pdf`;
+  const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '').slice(2, 15); // yymmddHHmmss
+  const filename = `${title.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.pdf`;
   return { blob, filename };
 }
 
@@ -625,6 +653,17 @@ export async function getEPUBBlob(event: NostrEvent, theme: PDFTheme = 'classic'
   
   // Prepare AsciiDoc content with metadata (includes cover image, abstract, etc.)
   const asciiDocContent = await prepareAsciiDocContent(event, true, theme);
+  
+  // Validate AsciiDoc content before exporting
+  const validation = validateAsciiDoc(asciiDocContent);
+  if (!validation.valid) {
+    const errorMsg = `Invalid AsciiDoc syntax: ${validation.error}${validation.warnings ? '\nWarnings: ' + validation.warnings.join('; ') : ''}\n\nPlease fix the AsciiDoc syntax errors and try again.`;
+    throw new Error(errorMsg);
+  }
+  if (validation.warnings && validation.warnings.length > 0) {
+    console.warn('AsciiDoc warnings:', validation.warnings);
+  }
+  
   const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
   const author = await getAuthorName(event);
   
@@ -639,7 +678,8 @@ export async function getEPUBBlob(event: NostrEvent, theme: PDFTheme = 'classic'
     throw new Error('Server returned empty EPUB file');
   }
   
-  const filename = `${title.replace(/[^a-z0-9]/gi, '_')}.epub`;
+  const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '').slice(2, 15); // yymmddHHmmss
+  const filename = `${title.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.epub`;
   return { blob, filename };
 }
 
@@ -671,13 +711,24 @@ export async function getHTML5Blob(event: NostrEvent): Promise<{ blob: Blob; fil
   // Prepare AsciiDoc content with metadata
   // This converts Markdown (30817, 30023) to AsciiDoc and wraps with metadata
   const asciiDocContent = await prepareAsciiDocContent(event, true, 'classic');
-  const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
-  const author = await getAuthorName(event);
   
   // Verify AsciiDoc content was created
   if (!asciiDocContent || asciiDocContent.trim().length === 0) {
     throw new Error('Failed to prepare AsciiDoc content');
   }
+  
+  // Validate AsciiDoc content before exporting
+  const validation = validateAsciiDoc(asciiDocContent);
+  if (!validation.valid) {
+    const errorMsg = `Invalid AsciiDoc syntax: ${validation.error}${validation.warnings ? '\nWarnings: ' + validation.warnings.join('; ') : ''}\n\nPlease fix the AsciiDoc syntax errors and try again.`;
+    throw new Error(errorMsg);
+  }
+  if (validation.warnings && validation.warnings.length > 0) {
+    console.warn('AsciiDoc warnings:', validation.warnings);
+  }
+  
+  const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
+  const author = await getAuthorName(event);
   
   // Send AsciiDoc content to AsciiDoctor server and request HTML
   const blob = await exportToHTML5({
@@ -690,7 +741,8 @@ export async function getHTML5Blob(event: NostrEvent): Promise<{ blob: Blob; fil
     throw new Error('Server returned empty HTML file');
   }
   
-  const filename = `${title.replace(/[^a-z0-9]/gi, '_')}.html`;
+  const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '').slice(2, 15); // yymmddHHmmss
+  const filename = `${title.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.html`;
   return { blob, filename };
 }
 
@@ -729,7 +781,8 @@ export async function viewAsMarkdown(event: NostrEvent): Promise<void> {
   }
   
   const title = getTitleFromEvent(event);
-  const filename = `${title.replace(/[^a-z0-9]/gi, '_')}.md`;
+  const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '').slice(2, 15); // yymmddHHmmss
+  const filename = `${title.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.md`;
   const blob = new Blob([content], { type: 'text/markdown' });
   await openInViewer(blob, filename, 'markdown');
 }
@@ -755,7 +808,8 @@ export async function viewAsAsciiDoc(event: NostrEvent): Promise<void> {
   }
   
   const title = getTitleFromEvent(event);
-  const filename = `${title.replace(/[^a-z0-9]/gi, '_')}.adoc`;
+  const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '').slice(2, 15); // yymmddHHmmss
+  const filename = `${title.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.adoc`;
   const blob = new Blob([content], { type: 'text/asciidoc' });
   await openInViewer(blob, filename, 'asciidoc');
 }
@@ -771,6 +825,17 @@ export async function downloadAsLaTeX(event: NostrEvent, filename?: string): Pro
   try {
     // Prepare AsciiDoc content with metadata
     const asciiDocContent = await prepareAsciiDocContent(event, true, 'classic');
+    
+    // Validate AsciiDoc content before exporting
+    const validation = validateAsciiDoc(asciiDocContent);
+    if (!validation.valid) {
+      const errorMsg = `Invalid AsciiDoc syntax: ${validation.error}${validation.warnings ? '\nWarnings: ' + validation.warnings.join('; ') : ''}\n\nPlease fix the AsciiDoc syntax errors and try again.`;
+      throw new Error(errorMsg);
+    }
+    if (validation.warnings && validation.warnings.length > 0) {
+      console.warn('AsciiDoc warnings:', validation.warnings);
+    }
+    
     const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
     const author = await getAuthorName(event);
     
@@ -831,7 +896,8 @@ export async function downloadAsRevealJS(event: NostrEvent, filename?: string): 
       throw new Error('Server returned empty HTML file');
     }
     
-    const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.html`;
+    const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '').slice(2, 15); // yymmddHHmmss
+    const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.html`;
     downloadBlob(blob, name);
   } catch (error) {
     console.error('Failed to download Reveal.js:', error);
@@ -1260,11 +1326,11 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   
   // Add abstract/description after title page
   if (description) {
-    doc += `[abstract]\n\n`;
+    doc += `[abstract]\n`;
     doc += `== Abstract\n\n`;
     doc += `${description}\n\n`;
   } else if (summary) {
-    doc += `[abstract]\n\n`;
+    doc += `[abstract]\n`;
     doc += `== Abstract\n\n`;
     doc += `${summary}\n\n`;
   }
@@ -1364,6 +1430,16 @@ export async function downloadBookAsPDF(indexEvent: NostrEvent, filename?: strin
     throw new Error('Cannot download PDF: book content is empty');
   }
   
+  // Validate AsciiDoc content before exporting
+  const validation = validateAsciiDoc(combined);
+  if (!validation.valid) {
+    const errorMsg = `Invalid AsciiDoc syntax: ${validation.error}${validation.warnings ? '\nWarnings: ' + validation.warnings.join('; ') : ''}\n\nPlease fix the AsciiDoc syntax errors and try again.`;
+    throw new Error(errorMsg);
+  }
+  if (validation.warnings && validation.warnings.length > 0) {
+    console.warn('AsciiDoc warnings:', validation.warnings);
+  }
+  
   const title = indexEvent.tags.find(([k]) => k === 'title')?.[1] || 
                 indexEvent.tags.find(([k]) => k === 'T')?.[1] ||
                 indexEvent.id.slice(0, 8);
@@ -1403,6 +1479,16 @@ export async function downloadBookAsEPUB(indexEvent: NostrEvent, filename?: stri
   
   if (!combined || combined.trim().length === 0) {
     throw new Error('Cannot download EPUB: book content is empty');
+  }
+  
+  // Validate AsciiDoc content before exporting
+  const validation = validateAsciiDoc(combined);
+  if (!validation.valid) {
+    const errorMsg = `Invalid AsciiDoc syntax: ${validation.error}${validation.warnings ? '\nWarnings: ' + validation.warnings.join('; ') : ''}\n\nPlease fix the AsciiDoc syntax errors and try again.`;
+    throw new Error(errorMsg);
+  }
+  if (validation.warnings && validation.warnings.length > 0) {
+    console.warn('AsciiDoc warnings:', validation.warnings);
   }
   
   const title = indexEvent.tags.find(([k]) => k === 'title')?.[1] || 

@@ -76,6 +76,7 @@
   let showPdfStyleMenu = $state(false);
   let showEpubStyleMenu = $state(false);
   let isDownloading = $state(false);
+  let openToView = $state(true); // Default to opening in viewer
   let showLevelHigherMenu = $state(false);
   let parentEvents = $state<NostrEvent[]>([]);
   let isLoadingParents = $state(false);
@@ -821,6 +822,12 @@
                   style="background-color: var(--bg-primary); border: 1px solid var(--border);"
                   onclick={(e) => e.stopPropagation()}
                 >
+                  <div class="px-4 py-2 border-b" style="border-color: var(--border);">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" bind:checked={openToView} class="cursor-pointer" />
+                      <span class="text-sm" style="color: var(--text-primary);">Open to view</span>
+                    </label>
+                  </div>
                   <div class="py-1">
                     <div class="px-4 py-2 text-xs font-semibold" style="color: var(--text-secondary);">
                       Download the publication as:
@@ -993,96 +1000,61 @@
                     {:else if event}
                       <!-- Markdown events (30023, 30817): Markdown, PDF, HTML5, ODT -->
                       {#if event.kind === 30023 || event.kind === 30817}
-                        <div class="flex items-center gap-2">
-                          <button
-                            onclick={async () => {
-                              if (!event) return;
-                              showDownloadMenu = false;
-                              isDownloading = true;
-                              try {
-                                await downloadAsMarkdown(event);
-                              } catch (error) {
-                                console.error('Failed to download Markdown:', error);
-                              } finally {
-                                isDownloading = false;
-                              }
-                            }}
-                            disabled={isDownloading}
-                            class="flex-1 text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                            style="color: var(--text-primary);"
-                          >
-                            {#if isDownloading}
-                              Preparing...
-                            {:else}
-                              ⬇ Markdown
-                            {/if}
-                          </button>
-                          <button
-                            onclick={async () => {
-                              if (!event) return;
-                              showDownloadMenu = false;
-                              isDownloading = true;
-                              try {
+                        <button
+                          onclick={async () => {
+                            if (!event) return;
+                            showDownloadMenu = false;
+                            isDownloading = true;
+                            try {
+                              if (openToView) {
                                 await viewAsMarkdown(event);
-                              } catch (error) {
-                                alert('Failed to view Markdown.');
-                              } finally {
-                                isDownloading = false;
+                              } else {
+                                await downloadAsMarkdown(event);
                               }
-                            }}
-                            disabled={isDownloading}
-                            class="px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                            style="color: var(--accent); border: 1px solid var(--accent); border-radius: 0.25rem;"
-                            title="View in e-book viewer"
-                          >
-                            (View)
-                          </button>
-                        </div>
-                        <div class="flex items-center gap-2">
-                          <button
-                            onclick={async () => {
-                              if (!event) return;
-                              showDownloadMenu = false;
-                              isDownloading = true;
-                              try {
-                                await downloadAsPDF(event);
-                              } catch (error) {
-                                alert('Failed to download PDF. Make sure the AsciiDoctor server is running.');
-                              } finally {
-                                isDownloading = false;
-                              }
-                            }}
-                            disabled={isDownloading}
-                            class="flex-1 text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                            style="color: var(--text-primary);"
-                          >
-                            {#if isDownloading}
-                              Generating PDF...
-                            {:else}
-                              ⬇ PDF
-                            {/if}
-                          </button>
-                          <button
-                            onclick={async () => {
-                              if (!event) return;
-                              showDownloadMenu = false;
-                              isDownloading = true;
-                              try {
+                            } catch (error) {
+                              console.error('Failed to process Markdown:', error);
+                              alert('Failed to process Markdown.');
+                            } finally {
+                              isDownloading = false;
+                            }
+                          }}
+                          disabled={isDownloading}
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                          style="color: var(--text-primary);"
+                        >
+                          {#if isDownloading}
+                            Preparing...
+                          {:else}
+                            ⬇ Markdown
+                          {/if}
+                        </button>
+                        <button
+                          onclick={async () => {
+                            if (!event) return;
+                            showDownloadMenu = false;
+                            isDownloading = true;
+                            try {
+                              if (openToView) {
                                 await viewAsPDF(event);
-                              } catch (error) {
-                                alert('Failed to view PDF. Make sure the AsciiDoctor server is running.');
-                              } finally {
-                                isDownloading = false;
+                              } else {
+                                await downloadAsPDF(event);
                               }
-                            }}
-                            disabled={isDownloading}
-                            class="px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                            style="color: var(--accent); border: 1px solid var(--accent); border-radius: 0.25rem;"
-                            title="View in e-book viewer"
-                          >
-                            (View)
-                          </button>
-                        </div>
+                            } catch (error) {
+                              alert('Failed to process PDF. Make sure the AsciiDoctor server is running.');
+                            } finally {
+                              isDownloading = false;
+                            }
+                          }}
+                          disabled={isDownloading}
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                          style="color: var(--text-primary);"
+                        >
+                          {#if isDownloading}
+                            Generating PDF...
+                          {:else}
+                            ⬇ PDF
+                          {/if}
+                        </button>
                         <div class="flex items-center gap-2">
                           <button
                             onclick={async () => {

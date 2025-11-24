@@ -1431,6 +1431,176 @@ export function processContentQuality(
 }
 
 /**
+ * Validate AsciiDoc content and return error message if invalid
+ * Checks for common syntax errors that can cause export failures
+ */
+export function validateAsciiDoc(content: string): { valid: boolean; error?: string; warnings?: string[] } {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  
+  if (!content || content.trim().length === 0) {
+    return { valid: false, error: 'AsciiDoc content is empty' };
+  }
+  
+  const lines = content.split('\n');
+  
+  // Check for attribute block spacing issue: [attribute]\n\n== Header should be [attribute]\n== Header
+  // This applies to [abstract], [discrete], [partintro], [appendix], etc.
+  for (let i = 0; i < lines.length - 1; i++) {
+    const line = lines[i].trim();
+    // Match any attribute block: [word] or [.class] or [#id] or [role.attribute]
+    if (line.match(/^\[([^\]]+)\]$/)) {
+      const nextLine = lines[i + 1]?.trim();
+      const afterNext = lines[i + 2]?.trim();
+      // Check if there's a blank line followed by a heading (starts with =)
+      if (nextLine === '' && afterNext?.match(/^=+\s+/)) {
+        const attributeName = line;
+        const headingText = afterNext.replace(/^=+\s+/, '').substring(0, 50);
+        errors.push(`Invalid spacing: ${attributeName} should be followed directly by the heading without a blank line (found at line ${i + 1}, heading: "${headingText}")`);
+      }
+    }
+  }
+  
+  // Check for empty lines within document header (between attributes)
+  // Document header: = Title followed by :attribute: lines
+  // Rules:
+  // 1. No empty lines between the title and first attribute
+  // 2. No empty lines between attributes
+  // 3. Must have exactly one blank line after the last attribute
+  let inHeader = false;
+  let titleLineIndex = -1; // 0-based index
+  let lastAttributeLineIndex = -1; // 0-based index
+  let foundBlankAfterHeader = false;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    const isEmpty = line === '';
+    
+    // Check if this is the document title (= Title)
+    if (line.match(/^=\s+/)) {
+      inHeader = true;
+      titleLineIndex = i;
+      lastAttributeLineIndex = -1; // Reset, no attributes yet
+      foundBlankAfterHeader = false;
+      continue;
+    }
+    
+    // If we're in the header and this is an attribute line
+    if (inHeader && line.match(/^:[a-zA-Z_][a-zA-Z0-9_-]*:\s*/)) {
+      // Check if there was an empty line before this attribute
+      // (either after the title or after the previous attribute)
+      const previousNonEmptyIndex = lastAttributeLineIndex >= 0 ? lastAttributeLineIndex : titleLineIndex;
+      if (i > previousNonEmptyIndex + 1) {
+        // There's a gap - check if it contains empty lines
+        for (let j = previousNonEmptyIndex + 1; j < i; j++) {
+          if (lines[j].trim() === '') {
+            const context = lastAttributeLineIndex >= 0 ? 'between attributes' : 'after the document title';
+            errors.push(`Empty line found within document header ${context} (found at line ${j + 1}). Attributes should be consecutive without blank lines.`);
+            break;
+          }
+        }
+      }
+      lastAttributeLineIndex = i;
+      foundBlankAfterHeader = false;
+      continue;
+    }
+    
+    // If we're in the header and hit a blank line
+    if (inHeader && isEmpty) {
+      // This should be the required blank line after the last attribute
+      if (lastAttributeLineIndex >= 0 && i === lastAttributeLineIndex + 1) {
+        foundBlankAfterHeader = true;
+        inHeader = false; // Header ends after the blank line
+        continue;
+      } else if (lastAttributeLineIndex >= 0) {
+        // Blank line but not immediately after last attribute - error already caught above
+        inHeader = false;
+        continue;
+      } else if (titleLineIndex >= 0 && i === titleLineIndex + 1) {
+        // Blank line immediately after title - this is okay, attributes can start on next line
+        continue;
+      }
+    }
+    
+    // If we're in the header and hit a non-attribute, non-blank line
+    if (inHeader && !isEmpty && !line.match(/^:[a-zA-Z_][a-zA-Z0-9_-]*:\s*/)) {
+      // Check if we had a blank line after the last attribute
+      if (lastAttributeLineIndex >= 0) {
+        if (i === lastAttributeLineIndex + 1) {
+          // No blank line after last attribute - this is an error
+          errors.push(`Missing blank line after document header attributes (found at line ${i + 1}). There must be a blank line after the last attribute before content begins.`);
+        } else if (i > lastAttributeLineIndex + 2) {
+          // Multiple blank lines
+          warnings.push(`Multiple blank lines after document header attributes (found at line ${i + 1}). Only one blank line is needed.`);
+        }
+      }
+      inHeader = false;
+      continue;
+    }
+  }
+  
+  // Check if header ended without a blank line (if we're still in header at the end)
+  if (inHeader && lastAttributeLineIndex >= 0 && !foundBlankAfterHeader) {
+    // Check if the last line is an attribute
+    const lastLine = lines[lines.length - 1]?.trim();
+    if (lastLine && lastLine.match(/^:[a-zA-Z_][a-zA-Z0-9_-]*:\s*/)) {
+      errors.push(`Document header ends without a blank line after the last attribute (found at line ${lastAttributeLineIndex + 1}). A blank line is required after the document header.`);
+    }
+  }
+  
+  // Check for unclosed blocks (simplified check)
+  let openBlocks = 0;
+  let blockStartLine = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line === '----') {
+      // Check if previous line suggests this is an opening delimiter
+      const prevLine = i > 0 ? lines[i - 1].trim() : '';
+      if (prevLine.match(/^\[(source|listing|literal|example|sidebar|quote|verse|pass|stem|math|latex|asciimath|latexmath)/i)) {
+        openBlocks++;
+        blockStartLine = i + 1;
+      } else if (openBlocks > 0) {
+        openBlocks--;
+      } else {
+        // Closing delimiter without matching opening
+        warnings.push(`Possible unmatched closing block delimiter (----) at line ${i + 1}`);
+      }
+    }
+  }
+  if (openBlocks > 0) {
+    errors.push(`Unclosed block starting at line ${blockStartLine}: ${openBlocks} block(s) not properly closed`);
+  }
+  
+  // Check for invalid attribute syntax
+  const invalidAttributePattern = /^:[^:]+:[^=]/;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.startsWith(':') && !line.match(/^:[a-zA-Z_][a-zA-Z0-9_-]*:\s*.*$/)) {
+      if (line.includes('::') && !line.match(/^:[a-zA-Z_][a-zA-Z0-9_-]*::/)) {
+        warnings.push(`Potentially invalid attribute syntax at line ${i + 1}: ${line.substring(0, 50)}`);
+      }
+    }
+  }
+  
+  // Check for common syntax errors in headings
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.match(/^=+\s*$/)) {
+      errors.push(`Empty heading at line ${i + 1}`);
+    }
+    if (line.match(/^={7,}\s+/)) {
+      warnings.push(`Heading level exceeds 6 at line ${i + 1} (AsciiDoc supports up to 6 levels)`);
+    }
+  }
+  
+  if (errors.length > 0) {
+    return { valid: false, error: errors.join('; '), warnings: warnings.length > 0 ? warnings : undefined };
+  }
+  
+  return { valid: true, warnings: warnings.length > 0 ? warnings : undefined };
+}
+
+/**
  * Process content for quality control with async Nostr address processing
  * This version includes Nostr address formatting with user metadata
  */

@@ -447,16 +447,40 @@ post '/convert/epub' do
       end
       
       # Convert to EPUB
-      result = Asciidoctor.convert_file temp_adoc.path,
-        backend: 'epub3',
-        safe: 'unsafe',
-        to_file: epub_file,
-        attributes: epub_attributes
+      begin
+        result = Asciidoctor.convert_file temp_adoc.path,
+          backend: 'epub3',
+          safe: 'unsafe',
+          to_file: epub_file,
+          attributes: epub_attributes
+      rescue => e
+        # Provide detailed error message for AsciiDoc conversion failures
+        error_details = {
+          error: 'EPUB conversion failed',
+          message: e.message,
+          class: e.class.name
+        }
+        
+        # Check if it's an AsciiDoc syntax error
+        if e.message.include?('syntax') || e.message.include?('parse') || e.message.include?('invalid')
+          error_details[:hint] = 'This appears to be an AsciiDoc syntax error. Please check your document for: unclosed blocks, invalid attribute syntax, or malformed headings.'
+        end
+        
+        # Include line number if available in error message
+        if e.message.match(/line\s+(\d+)/i)
+          line_num = e.message.match(/line\s+(\d+)/i)[1]
+          error_details[:line] = line_num.to_i
+          error_details[:hint] = "Error detected around line #{line_num}. Please check the AsciiDoc syntax at that location."
+        end
+        
+        status 500
+        return error_details.to_json
+      end
       
       # Verify EPUB file was created and exists
       unless File.exist?(epub_file)
         status 500
-        return { error: 'EPUB file was not created', debug: "Expected file: #{epub_file}" }.to_json
+        return { error: 'EPUB file was not created', debug: "Expected file: #{epub_file}", hint: 'The conversion completed but no EPUB file was generated. This may indicate an AsciiDoc syntax error or missing content.' }.to_json
       end
       
       # Check file size
@@ -518,8 +542,25 @@ post '/convert/epub' do
     status 400
     { error: 'Invalid JSON', message: e.message }.to_json
   rescue => e
+    # Provide detailed error information for EPUB conversion
+    error_details = {
+      error: 'EPUB conversion failed',
+      message: e.message,
+      class: e.class.name
+    }
+    
+    # Check if it's an AsciiDoc syntax error
+    if e.message.include?('syntax') || e.message.include?('parse') || e.message.include?('invalid') || e.message.include?('AsciiDoc')
+      error_details[:hint] = 'This appears to be an AsciiDoc syntax error. Common issues include: unclosed blocks (----), invalid attribute syntax, malformed headings, or incorrect attribute block spacing (attribute blocks like [abstract], [discrete], etc. should be followed directly by the heading without a blank line).'
+    end
+    
+    # Include backtrace for debugging (first few lines only)
+    if e.backtrace && e.backtrace.length > 0
+      error_details[:backtrace] = e.backtrace.first(3)
+    end
+    
     status 500
-    { error: 'Conversion failed', message: e.message }.to_json
+    error_details.to_json
   end
 end
 

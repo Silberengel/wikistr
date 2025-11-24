@@ -456,6 +456,8 @@ export function preprocessContentForAsciidoc(content: string): string {
             // Convert bookstr wikilinks [[book::...]] to AsciiDoc link format (like regular wikilinks)
             // This creates clickable links that will open BookCard components
             // Only process outside of code blocks
+            // For exports, we'll convert these to formatted text in contentQualityControl
+            // Here we keep them as links for browser rendering
             processed = processed.replace(/\[\[book::([^\]]+)\]\]/g, (match, content) => {
               const cleanedContent = cleanBookWikilinkContent(content);
               if (!cleanedContent) {
