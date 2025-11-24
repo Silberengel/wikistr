@@ -92,6 +92,9 @@
       : event.tags.find((e) => e[0] == 'd')?.[1]}
   </h1>
   <p class="text-xs my-1">
+    {#if event.tags.find((e) => e[0] == 'author')?.[1]}
+      {event.tags.find((e) => e[0] == 'author')?.[1]} • 
+    {/if}
     <UserLabel pubkey={event.pubkey} showAvatar={false} /> • {formatRelativeTime(event.created_at)} 
   </p>
   <p class="text-xs text-wrap break-words whitespace-pre-wrap">

@@ -4,6 +4,8 @@ export type EditorData = {
   title: string;
   summary: string;
   content: string;
+  image?: string;
+  author?: string;
   previous: ArticleCard | undefined;
 };
 

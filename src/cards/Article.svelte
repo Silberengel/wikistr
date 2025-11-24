@@ -70,8 +70,13 @@
   let showEpubStyleMenu = $state(false);
   let isDownloading = $state(false);
   let showLevelHigherMenu = $state(false);
+  let showBookMenu = $state(false);
   let parentEvents = $state<NostrEvent[]>([]);
   let isLoadingParents = $state(false);
+  let bookEvent = $state<NostrEvent | null>(null);
+  let isLoadingBook = $state(false);
+  let bookChapters = $state<NostrEvent[]>([]);
+  let isLoadingBookChapters = $state(false);
 
   const articleCard = card as ArticleCard;
   const dTag = articleCard.data[0];
@@ -171,6 +176,8 @@
         title: title || '',
         summary: summary || '',
         content: event?.content || '',
+        image: event?.tags?.find(([k]) => k === 'image')?.[1] || '',
+        author: event?.tags?.find(([k]) => k === 'author')?.[1] || '',
         previous: card as ArticleCard
       }
     });
@@ -236,12 +243,192 @@
     isLoadingParents = true;
     try {
       const { findParentIndexEvents } = await import('$lib/books');
-      parentEvents = await findParentIndexEvents(event.id, relayService, $account?.pubkey);
+      const parents = await findParentIndexEvents(event.id, relayService, $account?.pubkey);
+      
+      // Display immediately
+      parentEvents = parents;
+      
+      // Then recursively load branches and leaves for each parent
+      for (const parent of parents) {
+        await loadBranchesAndLeaves(parent);
+      }
     } catch (error) {
       console.error('Failed to load parent events:', error);
       parentEvents = [];
     } finally {
       isLoadingParents = false;
+    }
+  }
+
+  // Load branches (30040) and leaves (30041) for a 30040 event
+  async function loadBranchesAndLeaves(indexEvent: NostrEvent) {
+    if (indexEvent.kind !== 30040) return;
+    
+    // Get all 'e' and 'a' tags
+    const eventIds: string[] = [];
+    const aTags: string[] = [];
+    
+    for (const tag of indexEvent.tags) {
+      if (tag[0] === 'e' && tag[1]) {
+        eventIds.push(tag[1]);
+      } else if (tag[0] === 'a' && tag[1]) {
+        aTags.push(tag[1]);
+      }
+    }
+    
+    if (eventIds.length === 0 && aTags.length === 0) return;
+    
+    try {
+      // Query for events by IDs
+      const idFilters: any[] = [];
+      if (eventIds.length > 0) {
+        idFilters.push({ kinds: [30040, 30041], ids: eventIds });
+      }
+      
+      // Query for events by a-tags
+      const aTagFilters: any[] = [];
+      for (const aTag of aTags) {
+        const [kind, pubkey, dTag] = aTag.split(':');
+        if (kind && pubkey && dTag) {
+          aTagFilters.push({
+            kinds: [parseInt(kind)],
+            authors: [pubkey],
+            '#d': [dTag]
+          });
+        }
+      }
+      
+      const allFilters = [...idFilters, ...aTagFilters];
+      if (allFilters.length === 0) return;
+      
+      const result = await relayService.queryEvents(
+        $account?.pubkey || 'anonymous',
+        'wiki-read',
+        allFilters,
+        {
+          excludeUserContent: false,
+          currentUserPubkey: $account?.pubkey
+        }
+      );
+      
+      // Separate 30040 (branches) and 30041 (leaves)
+      const branches = result.events.filter(e => e.kind === 30040);
+      const leaves = result.events.filter(e => e.kind === 30041);
+      
+      // Add to parentEvents if they're 30040 (chapters)
+      for (const branch of branches) {
+        if (!parentEvents.find(e => e.id === branch.id)) {
+          parentEvents = [...parentEvents, branch];
+        }
+        // Recursively load branches and leaves for nested chapters
+        await loadBranchesAndLeaves(branch);
+      }
+    } catch (error) {
+      console.error('Failed to load branches and leaves:', error);
+    }
+  }
+
+  // Load book-level 30040 event
+  async function loadBookEvent() {
+    if (!event || (event.kind !== 30040 && event.kind !== 30041)) {
+      return;
+    }
+
+    isLoadingBook = true;
+    try {
+      const { findBookIndexEvent, extractBookMetadata } = await import('$lib/books');
+      const metadata = extractBookMetadata(event);
+      
+      // Find book-level 30040 (no chapter specified)
+      // extractBookMetadata returns { book, chapter, verse, version, type }
+      const bookName = metadata.book || '';
+      const collection = metadata.type || undefined; // type field might contain collection
+      const book = await findBookIndexEvent(
+        bookName,
+        undefined, // No chapter for book-level
+        collection,
+        relayService,
+        $account?.pubkey
+      );
+      
+      if (book) {
+        bookEvent = book;
+        // Load chapters immediately
+        await loadBookChapters(book);
+      }
+    } catch (error) {
+      console.error('Failed to load book event:', error);
+      bookEvent = null;
+    } finally {
+      isLoadingBook = false;
+    }
+  }
+
+  // Load chapters for a book-level 30040 event
+  async function loadBookChapters(bookIndex: NostrEvent) {
+    if (bookIndex.kind !== 30040) return;
+    
+    isLoadingBookChapters = true;
+    try {
+      // Get all 'e' and 'a' tags for chapters
+      const eventIds: string[] = [];
+      const aTags: string[] = [];
+      
+      for (const tag of bookIndex.tags) {
+        if (tag[0] === 'e' && tag[1]) {
+          eventIds.push(tag[1]);
+        } else if (tag[0] === 'a' && tag[1]) {
+          aTags.push(tag[1]);
+        }
+      }
+      
+      if (eventIds.length === 0 && aTags.length === 0) {
+        isLoadingBookChapters = false;
+        return;
+      }
+      
+      // Query for 30040 chapter events
+      const idFilters: any[] = [];
+      if (eventIds.length > 0) {
+        idFilters.push({ kinds: [30040], ids: eventIds });
+      }
+      
+      const aTagFilters: any[] = [];
+      for (const aTag of aTags) {
+        const [kind, pubkey, dTag] = aTag.split(':');
+        if (kind && pubkey && dTag && parseInt(kind) === 30040) {
+          aTagFilters.push({
+            kinds: [30040],
+            authors: [pubkey],
+            '#d': [dTag]
+          });
+        }
+      }
+      
+      const allFilters = [...idFilters, ...aTagFilters];
+      if (allFilters.length > 0) {
+        const result = await relayService.queryEvents(
+          $account?.pubkey || 'anonymous',
+          'wiki-read',
+          allFilters,
+          {
+            excludeUserContent: false,
+            currentUserPubkey: $account?.pubkey
+          }
+        );
+        
+        // Display chapters immediately (only 30040)
+        bookChapters = result.events.filter(e => e.kind === 30040);
+        
+        // Then recursively load branches and leaves for each chapter
+        for (const chapter of bookChapters) {
+          await loadBranchesAndLeaves(chapter);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load book chapters:', error);
+    } finally {
+      isLoadingBookChapters = false;
     }
   }
 
@@ -1259,6 +1446,12 @@
           {/if}
         </div>
         <div class="flex items-center space-x-3 mb-4">
+          {#if event.tags.find(([k]) => k === 'author')?.[1]}
+            <span class="text-xs font-semibold" style="color: var(--text-primary);">
+              {event.tags.find(([k]) => k === 'author')?.[1]}
+            </span>
+            <span class="text-xs" style="color: var(--text-secondary);">•</span>
+          {/if}
           <UserBadge pubkey={event.pubkey} {createChild} onProfileClick={handleProfileClick} size="small" hideSearchIcon={false} />
           {#if event.created_at}
             <span class="text-xs whitespace-nowrap" style="color: var(--text-secondary);">
@@ -1282,21 +1475,135 @@
           </a>
           &nbsp;• &nbsp;
           <a class="cursor-pointer underline transition-colors" style="color: var(--accent);" onmouseup={seeOthers}>{nOthers || ''} Versions</a>
+          
+          <!-- Source and Relay buttons moved here (under Fork/Versions menu) -->
+          <div class="mt-2 flex flex-wrap items-center gap-2">
+            <!-- Source Button -->
+            <button
+              onclick={() => {
+                view = view === 'formatted' ? 'asciidoc' : view === 'asciidoc' ? 'raw' : 'formatted';
+              }}
+              class="font-normal text-xs px-2 py-1 rounded cursor-pointer transition-colors"
+              style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
+              >see {#if view === 'formatted'}markdown source{:else if view === 'asciidoc'}raw event{:else}formatted{/if}</button
+            >
+            
+            <!-- Relays -->
+            {#if seenOn.length}
+              {#each seenOn as r (r)}
+                <RelayItem url={r} {createChild} selected={selectedRelayUrl && (r === selectedRelayUrl || r.includes(selectedRelayUrl.replace(/^wss?:\/\//, '').replace(/\/$/, '')))} />
+              {/each}
+            {/if}
+          </div>
           {#if event && (event.kind === 30040 || event.kind === 30041)}
             &nbsp;• &nbsp;
             <div class="relative inline-block">
               <button
-                onclick={() => showLevelHigherMenu = !showLevelHigherMenu}
-                disabled={isLoadingParents || parentEvents.length === 0}
+                onclick={async () => {
+                  if (!bookEvent && !isLoadingBook) {
+                    await loadBookEvent();
+                  }
+                  showBookMenu = !showBookMenu;
+                  showLevelHigherMenu = false; // Close other menu
+                }}
+                disabled={isLoadingBook}
+                class="cursor-pointer underline transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style="color: {isLoadingBook ? 'var(--text-secondary)' : 'var(--accent)'};"
+                title={isLoadingBook ? 'Loading book...' : 'Show book'}
+              >
+                {#if isLoadingBook}
+                  <span class="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1"></span>
+                {/if}
+                Book
+              </button>
+              {#if showBookMenu && (bookEvent || bookChapters.length > 0 || isLoadingBookChapters)}
+                <div
+                  class="absolute left-0 mt-2 w-64 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto"
+                  style="background-color: var(--bg-primary); border: 1px solid var(--border);"
+                  onclick={(e) => e.stopPropagation()}
+                >
+                  <div class="py-1">
+                    {#if bookEvent}
+                      <div class="px-4 py-2 text-xs font-semibold" style="color: var(--text-secondary);">
+                        Book: {bookEvent.tags.find(([k]) => k === 'title')?.[1] || getTagOr(bookEvent, 'd') || 'Untitled'}
+                      </div>
+                      <button
+                        onclick={() => {
+                          if (!bookEvent) return;
+                          showBookMenu = false;
+                          const bookCard: ArticleCard = {
+                            id: next(),
+                            type: 'article',
+                            data: [getTagOr(bookEvent, 'd') || '', bookEvent.pubkey],
+                            back: undefined,
+                            actualEvent: bookEvent as NostrEvent,
+                            relayHints: []
+                          };
+                          createChild(bookCard);
+                        }}
+                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        style="color: var(--text-primary);"
+                      >
+                        {bookEvent.tags.find(([k]) => k === 'title')?.[1] || getTagOr(bookEvent, 'd') || 'Untitled'}
+                      </button>
+                    {/if}
+                    {#if isLoadingBookChapters}
+                      <div class="px-4 py-2 text-xs" style="color: var(--text-secondary);">
+                        <span class="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1"></span>
+                        Loading chapters...
+                      </div>
+                    {:else if bookChapters.length > 0}
+                      <div class="px-4 py-2 text-xs font-semibold" style="color: var(--text-secondary);">
+                        Chapters ({bookChapters.length})
+                      </div>
+                      {#each bookChapters as chapter}
+                        <button
+                          onclick={() => {
+                            showBookMenu = false;
+                            const chapterCard: ArticleCard = {
+                              id: next(),
+                              type: 'article',
+                              data: [getTagOr(chapter, 'd') || '', chapter.pubkey],
+                              back: undefined,
+                              actualEvent: chapter,
+                              relayHints: []
+                            };
+                            createChild(chapterCard);
+                          }}
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          style="color: var(--text-primary);"
+                        >
+                          {chapter.tags.find(([k]) => k === 'title')?.[1] || getTagOr(chapter, 'd') || 'Untitled'}
+                        </button>
+                      {/each}
+                    {/if}
+                  </div>
+                </div>
+              {/if}
+            </div>
+            &nbsp;• &nbsp;
+            <div class="relative inline-block">
+              <button
+                onclick={async () => {
+                  if (parentEvents.length === 0 && !isLoadingParents) {
+                    await loadParentEvents();
+                  }
+                  showLevelHigherMenu = !showLevelHigherMenu;
+                  showBookMenu = false; // Close other menu
+                }}
+                disabled={isLoadingParents}
                 class="cursor-pointer underline transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 style="color: {isLoadingParents || parentEvents.length === 0 ? 'var(--text-secondary)' : 'var(--accent)'};"
                 title={isLoadingParents ? 'Loading...' : parentEvents.length === 0 ? 'No parent events found' : 'Show parent events'}
               >
+                {#if isLoadingParents}
+                  <span class="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1"></span>
+                {/if}
                 Level higher
               </button>
-              {#if showLevelHigherMenu && parentEvents.length > 0}
+              {#if showLevelHigherMenu && (parentEvents.length > 0 || isLoadingParents)}
                 <div
-                  class="absolute left-0 mt-2 w-64 rounded-lg shadow-lg z-50"
+                  class="absolute left-0 mt-2 w-64 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto"
                   style="background-color: var(--bg-primary); border: 1px solid var(--border);"
                   onclick={(e) => e.stopPropagation()}
                 >
@@ -1353,11 +1660,14 @@
           {/if}
     </div>
 
-    <!-- Click outside to close Level Higher menu -->
-    {#if showLevelHigherMenu}
+    <!-- Click outside to close menus -->
+    {#if showLevelHigherMenu || showBookMenu}
       <div
         class="fixed inset-0 z-40"
-        onclick={() => showLevelHigherMenu = false}
+        onclick={() => {
+          showLevelHigherMenu = false;
+          showBookMenu = false;
+        }}
       ></div>
     {/if}
 
@@ -1447,26 +1757,18 @@
       <Comments {event} {createChild} />
     {/if}
 
-    <!-- Article Metadata Section (always visible) -->
-    <div class="mt-8 pt-4 border-t border-gray-300">
-      <div class="flex flex-wrap items-center gap-2">
-        <!-- Source Button (first position) -->
-        <button
-          onclick={() => {
-            view = view === 'formatted' ? 'asciidoc' : view === 'asciidoc' ? 'raw' : 'formatted';
-          }}
-          class="font-normal text-xs px-2 py-1 rounded cursor-pointer transition-colors"
-          style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
-          >see {#if view === 'formatted'}markdown source{:else if view === 'asciidoc'}raw event{:else}formatted{/if}</button
-        >
-        
-        <!-- Relays (after source button) -->
-        {#if seenOn.length}
-          {#each seenOn as r (r)}
-            <RelayItem url={r} {createChild} selected={selectedRelayUrl && (r === selectedRelayUrl || r.includes(selectedRelayUrl.replace(/^wss?:\/\//, '').replace(/\/$/, '')))} />
-          {/each}
-        {/if}
-      </div>
+    <!-- Return to top button at bottom -->
+    <div class="mt-8 pt-4 border-t border-gray-300 flex justify-center">
+      <button
+        onclick={() => {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        class="font-normal text-sm px-4 py-2 rounded cursor-pointer transition-colors"
+        style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
+        title="Return to top"
+      >
+        ↑ Return to top
+      </button>
     </div>
 
   {/if}

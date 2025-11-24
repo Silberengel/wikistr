@@ -292,14 +292,28 @@
   </a>
 {:else}
   <!-- Generic fallback -->
+  {@const urlObj = (() => {
+    try {
+      return new URL(url);
+    } catch {
+      return null;
+    }
+  })()}
+  {@const shortUrl = url.length > 60 ? url.substring(0, 57) + '...' : url}
+  {@const websiteName = urlObj ? urlObj.hostname.replace(/^www\./, '') : 'External Link'}
   <a
     href={url}
     target="_blank"
     rel="noopener noreferrer"
     class="block rounded-lg border p-4 transition-all hover:opacity-90"
-    style="background-color: var(--bg-secondary); border-color: var(--border); color: var(--accent); text-decoration: none;"
+    style="background-color: var(--bg-secondary); border-color: var(--border); text-decoration: none;"
   >
-    {url}
+    <div class="font-semibold mb-1" style="color: var(--text-primary);">
+      {websiteName}
+    </div>
+    <div class="text-sm break-all" style="color: var(--text-secondary);">
+      {shortUrl}
+    </div>
   </a>
 {/if}
 
