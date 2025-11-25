@@ -1139,12 +1139,20 @@
     <div class="mt-8 pt-4 border-t border-gray-300 flex justify-center">
       <button
         onclick={() => {
-          const header = document.getElementById('article-header');
-          if (header) {
-            header.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          // Find the card container for this specific card
+          const cardContainer = document.getElementById(`wikicard-${card.id}`);
+          if (cardContainer) {
+            // Scroll the card container to top
+            cardContainer.scrollTo({ top: 0, behavior: 'smooth' });
           } else {
-            // Fallback to window scroll if header not found
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            // Fallback: try to find article-header within this card's context
+            const header = document.getElementById('article-header');
+            if (header) {
+              header.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } else {
+              // Last resort: scroll window (shouldn't happen)
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
           }
         }}
         class="font-normal text-sm px-4 py-2 rounded cursor-pointer transition-colors"
