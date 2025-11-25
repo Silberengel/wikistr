@@ -1348,8 +1348,7 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
 
   // Add metadata page only if there are fields to display
   if (metadataFields.length > 0) {
-    doc += `[.book-metadata]\n`;
-    doc += `== Book Metadata\n\n`;
+    doc += `[.book-metadata]\n== Book Metadata\n\n`;
     for (const field of metadataFields) {
       if (field.value && field.value.trim()) {
         doc += `*${field.label}:* ${field.value}\n\n`;
@@ -1506,8 +1505,7 @@ async function combineBookSearchResults(
   doc += `\n`;
   
   // Create styled title page
-  doc += `[.title-page]\n`;
-  doc += `== ${title}\n\n`;
+  doc += `[.title-page]\n== ${title}\n\n`;
   doc += `[.author]\n`;
   doc += `${author}\n\n`;
   doc += `\n`;
