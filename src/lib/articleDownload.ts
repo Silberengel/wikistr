@@ -1180,7 +1180,8 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   const originalEventTag = indexEvent.tags.find(([k]) => k === 'E')?.[1];
 
   // Build the document with metadata (AsciiDoc header attributes)
-  let doc = `= ${title}\n`;
+  const displayTitle = title || 'Untitled';
+  let doc = `= ${displayTitle}\n`;
   doc += `:author: ${author}\n`;
   doc += `:doctype: ${type}\n`;
   doc += `:toc:\n`; // Enable table of contents
@@ -1222,7 +1223,6 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   }
   
   doc += `:page-break-mode: auto\n`; // Reduce unnecessary page breaks
-  doc += `:pdf-page-break-mode: auto\n`; // Allow content to flow naturally
   
   if (image) {
     // Set as cover image for title page
@@ -1231,8 +1231,71 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   
   doc += `\n`;
 
-  // Add bookstr tags (written for humans) on title page
-  const bookstrTags: string[] = [];
+  // Create cover page with title, author, version, and image
+  // Use a dedicated cover page section with proper formatting for e-books
+  doc += `[dedication]\n`;
+  doc += `== \n\n`; // Empty title for cover page
+  doc += `[.cover-page]\n`;
+  
+  // Add cover image if available (centered, full width)
+  if (image) {
+    doc += `\n[.cover-image]\n`;
+    doc += `image::${image}[Cover Image,role="cover",width=100%]\n\n`;
+  }
+  
+  // Add title (centered, large, bold)
+  doc += `[.cover-title]\n`;
+  doc += `*${displayTitle}*\n\n`;
+  
+  // Add author information
+  const authors: string[] = [];
+  
+  // Get author from 'author' tag (original author)
+  const authorTag = indexEvent.tags.find(([k]) => k === 'author')?.[1];
+  if (authorTag && authorTag.trim()) {
+    authors.push(authorTag);
+  }
+  
+  // Add pubkey author (the event publisher) if different from author tag
+  // Only show if we have a proper author name, not just a truncated pubkey
+  if (author && author !== indexEvent.pubkey.slice(0, 8) + '...' && author !== authorTag) {
+    // Try to get npub for pubkey author
+    try {
+      const { nip19 } = await import('@nostr/tools');
+      const npub = nip19.npubEncode(indexEvent.pubkey);
+      authors.push(npub);
+    } catch {
+      // If npub encoding fails, use the author name we have
+      authors.push(author);
+    }
+  } else if (!authorTag && indexEvent.pubkey) {
+    // Fallback: show npub if no author tag available
+    try {
+      const { nip19 } = await import('@nostr/tools');
+      const npub = nip19.npubEncode(indexEvent.pubkey);
+      authors.push(npub);
+    } catch {
+      authors.push(indexEvent.pubkey.slice(0, 16) + '...');
+    }
+  }
+  
+  if (authors.length > 0) {
+    doc += `[.cover-author]\n`;
+    doc += `${authors.join(' & ')}\n\n`;
+  }
+  
+  // Add version if available
+  if (version || versionTag) {
+    doc += `[.cover-version]\n`;
+    doc += `${version || versionTag}\n\n`;
+  }
+  
+  doc += `\n\n`;
+
+  // Add metadata page (only show fields that have content)
+  const metadataFields: Array<{ label: string; value: string }> = [];
+  
+  // Collect bookstr tags (only if they exist and have content)
   const bookstrTagNames: Record<string, string> = {
     'C': 'Collection',
     'c': 'Collection',
@@ -1244,7 +1307,6 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     'V': 'Volume'
   };
 
-  // Collect all bookstr tags from index event
   const bookstrTagTypes = ['C', 'c', 'T', 't', 's', 'S', 'v', 'V'];
   for (const tagType of bookstrTagTypes) {
     const tagValues = indexEvent.tags
@@ -1261,26 +1323,57 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
           .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
           .join(' ');
       }).join(', ');
-      bookstrTags.push(`${tagName}: ${formattedValues}`);
+      metadataFields.push({ label: tagName, value: formattedValues });
     }
   }
+  
+  // Add other metadata fields only if they exist and have content
+  if (version || versionTag) {
+    metadataFields.push({ label: 'Version', value: version || versionTag || '' });
+  }
+  if (publishedOn) {
+    metadataFields.push({ label: 'Published On', value: publishedOn });
+  }
+  if (publishedBy) {
+    metadataFields.push({ label: 'Publisher', value: publishedBy });
+  }
+  if (isbn) {
+    metadataFields.push({ label: 'ISBN', value: isbn });
+  }
+  if (source) {
+    metadataFields.push({ label: 'Source', value: source });
+  }
+  if (originalAuthorTag) {
+    metadataFields.push({ label: 'Original Author', value: originalAuthorTag });
+  }
+  if (originalEventTag) {
+    metadataFields.push({ label: 'Original Event', value: originalEventTag });
+  }
+  if (topicTags.length > 0) {
+    metadataFields.push({ label: 'Keywords', value: topicTags.join(', ') });
+  }
+  if (bookReference) {
+    metadataFields.push({ label: 'Book Reference', value: bookReference });
+  }
 
-  // Add bookstr tags to title page if present
-  if (bookstrTags.length > 0) {
-    doc += `[.bookstr-tags]\n`;
+  // Add metadata page only if there are fields to display
+  if (metadataFields.length > 0) {
+    doc += `[.book-metadata]\n`;
     doc += `== Book Metadata\n\n`;
-    for (const tagLine of bookstrTags) {
-      doc += `${tagLine}\n`;
+    for (const field of metadataFields) {
+      if (field.value && field.value.trim()) {
+        doc += `*${field.label}:* ${field.value}\n\n`;
+      }
     }
     doc += `\n`;
   }
 
-  // Add abstract/description after title page
-  if (description) {
+  // Add abstract/description after metadata page
+  if (description && description.trim()) {
     doc += `[abstract]\n`;
     doc += `== Abstract\n\n`;
     doc += `${description}\n\n`;
-  } else if (summary) {
+  } else if (summary && summary.trim()) {
     doc += `[abstract]\n`;
     doc += `== Abstract\n\n`;
     doc += `${summary}\n\n`;
