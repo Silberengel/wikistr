@@ -15,6 +15,7 @@
   let searchQuery = $state('');
   let selectedKind = $state<string>('all');
   let selectedEvent: NostrEvent | null = $state(null);
+  let isClearing = $state(false);
 
   const kindOptions = [
     { value: 'all', label: 'All Kinds' },
@@ -153,6 +154,30 @@
       alert('Failed to delete event from cache');
     }
   }
+
+  async function clearAllCache() {
+    const eventCount = cachedEvents.length;
+    if (eventCount === 0) {
+      return;
+    }
+    
+    if (!confirm(`Are you sure you want to delete all ${eventCount} cached events? This action cannot be undone.`)) {
+      return;
+    }
+    
+    isClearing = true;
+    try {
+      await contentCache.clearAll();
+      cachedEvents = [];
+      selectedEvent = null;
+      alert(`Successfully cleared ${eventCount} cached events.`);
+    } catch (error) {
+      console.error('Failed to clear cache:', error);
+      alert('Failed to clear cache. Please try again.');
+    } finally {
+      isClearing = false;
+    }
+  }
 </script>
 
 <div class="cache-browser fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }} onkeydown={(e) => { if (e.key === 'Escape') onClose(); }} role="dialog" aria-modal="true" tabindex="-1">
@@ -197,6 +222,14 @@
           class="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
         >
           Refresh
+        </button>
+        <button
+          onclick={clearAllCache}
+          disabled={isClearing || cachedEvents.length === 0}
+          class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          title={cachedEvents.length === 0 ? 'No events to clear' : 'Clear all cached events'}
+        >
+          {isClearing ? 'Clearing...' : 'Clear Cache'}
         </button>
       </div>
     </div>
