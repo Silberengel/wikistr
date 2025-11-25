@@ -750,6 +750,9 @@ export async function findBookIndexEvent(
 
 export function isBookEvent(event: BookEvent, bookType?: string): boolean {
   // Support both NKBIP-08 format tags (single-letter: C/T/c/s/v) and legacy format (type/book/chapter/verse/version)
+  // IMPORTANT: Only return true if the event has bookstr tags that the book card can use to parse content.
+  // Events with just "a" tags or "type: book" but no bookstr tags should NOT be considered books
+  // (they should open as article cards/publications instead).
   const collectionTag = event.tags.find(([tag]) => tag === 'C');
   const titleTag = event.tags.find(([tag]) => tag === 'T');
   const chapterTagNKBIP = event.tags.find(([tag]) => tag === 'c');
@@ -783,9 +786,13 @@ export function isBookEvent(event: BookEvent, bookType?: string): boolean {
     }
   }
   
-  // It's a book event if it has NKBIP-08 single-letter tags (C/T/c/s/v) OR legacy format tags (type/book/chapter/verse/version)
+  // It's a book event ONLY if it has bookstr tags that the book card can parse:
+  // 1. NKBIP-08 single-letter tags (C/T/c/s/v) OR
+  // 2. Legacy format tags (book/chapter/verse/version)
+  // Note: The "type" tag alone is NOT sufficient - it's just metadata.
+  // Events with just "type: book" and "a" tags but no bookstr tags are NOT books (they're publications)
   return !!(collectionTag || titleTag || chapterTagNKBIP || sectionTag || versionTagNKBIP || 
-           typeTag || bookTag || chapterTag || verseTag || versionTag);
+           bookTag || chapterTag || verseTag || versionTag);
 }
 
 /**
