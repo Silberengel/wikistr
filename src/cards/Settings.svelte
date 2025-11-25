@@ -97,15 +97,20 @@
   }
   
   function getRelayStatusColor(status: 'parked' | 'retrying' | 'connected'): string {
+    // Use theme variables for status colors
+    return 'rounded';
+  }
+  
+  function getRelayStatusStyle(status: 'parked' | 'retrying' | 'connected'): string {
     switch (status) {
       case 'parked':
-        return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300';
+        return 'background-color: var(--bg-secondary); color: var(--accent); opacity: 0.8;';
       case 'retrying':
-        return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300';
+        return 'background-color: var(--bg-secondary); color: var(--accent); opacity: 0.9;';
       case 'connected':
-        return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300';
+        return 'background-color: var(--bg-secondary); color: var(--accent);';
       default:
-        return 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300';
+        return 'background-color: var(--bg-secondary); color: var(--text-secondary);';
     }
   }
   
@@ -139,9 +144,12 @@
       getCacheRelayUrls().then(urls => {
         cacheRelays = urls;
         updateRelayStatuses();
+        // Trigger a status update after a short delay to catch any failures
+        setTimeout(() => updateRelayStatuses(), 1000);
       }).catch(error => {
         console.warn('Failed to load cache relays:', error);
         cacheRelays = [];
+        updateRelayStatuses();
       });
     }
     
@@ -324,27 +332,27 @@
           </button>
         </div>
         {#if currentRelays.length > 0}
-          <ul class="space-y-2 max-h-64 overflow-y-auto list-none">
+          <ul class="space-y-2 max-h-64 overflow-y-auto list-none p-3 rounded border" style="background-color: var(--bg-primary); border-color: var(--border);">
             {#each currentRelays as relay}
               {@const status = relayStatuses.get(relay) || 'connected'}
               <li class="flex items-center gap-2 text-sm">
-                <span class="flex-1 text-gray-700 dark:text-gray-300 break-all">{relay}</span>
-                <span class="text-xs px-2 py-0.5 rounded {getRelayStatusColor(status)}" title={getRelayStatusLabel(status)}>
+                <span class="flex-1 break-all" style="color: var(--text-primary);">{relay}</span>
+                <span class="text-xs px-2 py-0.5 rounded {getRelayStatusColor(status)}" style={getRelayStatusStyle(status)} title={getRelayStatusLabel(status)}>
                   {status === 'parked' ? '🔴' : status === 'retrying' ? '🟡' : '🟢'}
                 </span>
                 {#if cacheRelays.includes(relay)}
-                  <span class="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded">Cache</span>
+                  <span class="text-xs px-2 py-0.5 rounded" style="background-color: var(--bg-secondary); color: var(--accent);">Cache</span>
                 {/if}
               </li>
             {/each}
           </ul>
-          <div class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          <div class="mt-2 text-xs p-2 rounded border" style="background-color: var(--bg-primary); border-color: var(--border); color: var(--text-secondary);">
             <div>🟢 Connected</div>
             <div>🟡 Retrying (1-2 failures)</div>
             <div>🔴 Parked (3+ failures, click Refresh to retry)</div>
           </div>
         {:else}
-          <p class="text-sm text-gray-500 dark:text-gray-400">No relays used yet</p>
+          <p class="text-sm" style="color: var(--text-secondary);">No relays used yet</p>
         {/if}
       </div>
 
@@ -367,9 +375,9 @@
           </div>
           
           {#if editingCacheRelays}
-            <div class="space-y-3">
+            <div class="space-y-3 p-4 rounded border" style="background-color: var(--bg-primary); border-color: var(--border);">
               <div>
-                <label for="cache-relay-input" class="block text-sm font-medium mb-1">
+                <label for="cache-relay-input" class="block text-sm font-medium mb-1" style="color: var(--text-primary);">
                   Cache Relay URLs (one per line, ws:// or wss://)
                 </label>
                 <textarea
@@ -377,13 +385,14 @@
                   bind:value={cacheRelayInput}
                   placeholder="ws://localhost:8080&#10;ws://192.168.1.100:8080"
                   rows="4"
-                  class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  class="w-full px-3 py-2 rounded-md shadow-sm focus:outline-none focus:ring-2"
+                  style="background-color: var(--bg-primary); border: 1px solid var(--border); color: var(--text-primary); --tw-ring-color: var(--accent);"
                 ></textarea>
-                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                <p class="mt-1 text-xs" style="color: var(--text-secondary);">
                   Enter cache relay URLs (ws:// or wss:// addresses), one per line
                 </p>
               </div>
-              <div class="flex gap-2">
+              <div class="flex gap-2 mt-3">
                 <button
                   onclick={async () => {
                     isSavingCacheRelays = true;
@@ -428,15 +437,17 @@
               </div>
             </div>
           {:else}
-            {#if cacheRelays.length > 0}
-              <ul class="space-y-1 list-none">
-                {#each cacheRelays as relay}
-                  <li class="text-sm text-gray-700 dark:text-gray-300">{relay}</li>
-                {/each}
-              </ul>
-            {:else}
-              <p class="text-sm text-gray-500 dark:text-gray-400">No cache relays configured</p>
-            {/if}
+            <div class="p-3 rounded border" style="background-color: var(--bg-primary); border-color: var(--border);">
+              {#if cacheRelays.length > 0}
+                <ul class="space-y-1 list-none">
+                  {#each cacheRelays as relay}
+                    <li class="text-sm" style="color: var(--text-primary);">{relay}</li>
+                  {/each}
+                </ul>
+              {:else}
+                <p class="text-sm" style="color: var(--text-secondary);">No cache relays configured</p>
+              {/if}
+            </div>
           {/if}
         </div>
       {/if}
@@ -446,14 +457,14 @@
         <h3 class="text-lg font-medium mb-2">Version</h3>
         <div>WikiStr v{appVersion}</div>
         <div class="mt-1 opacity-75">from GitCitadel</div>
-        <div class="mt-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-          <h4 class="font-semibold mb-2 text-gray-900 dark:text-gray-100">Recent Changes</h4>
+        <div class="mt-4 p-4 rounded-lg border" style="background-color: var(--bg-primary); border-color: var(--border);">
+          <h4 class="font-semibold mb-2" style="color: var(--text-primary);">Recent Changes</h4>
           {#if changelogEntry}
-            <div class="text-sm space-y-2 text-gray-700 dark:text-gray-300">
+            <div class="text-sm space-y-2" style="color: var(--text-primary);">
               {#if changelogEntry.added && changelogEntry.added.length > 0}
                 <div>
-                  <span class="font-medium text-green-600 dark:text-green-400">Added:</span>
-                  <ul class="list-disc list-inside ml-2 mt-1 text-gray-700 dark:text-gray-300">
+                  <span class="font-medium" style="color: var(--accent);">Added:</span>
+                  <ul class="list-disc list-inside ml-2 mt-1" style="color: var(--text-primary);">
                     {#each changelogEntry.added as item}
                       <li>{item}</li>
                     {/each}
@@ -462,8 +473,8 @@
               {/if}
               {#if changelogEntry.changed && changelogEntry.changed.length > 0}
                 <div>
-                  <span class="font-medium text-blue-600 dark:text-blue-400">Changed:</span>
-                  <ul class="list-disc list-inside ml-2 mt-1 text-gray-700 dark:text-gray-300">
+                  <span class="font-medium" style="color: var(--accent);">Changed:</span>
+                  <ul class="list-disc list-inside ml-2 mt-1" style="color: var(--text-primary);">
                     {#each changelogEntry.changed as item}
                       <li>{item}</li>
                     {/each}
@@ -472,8 +483,8 @@
               {/if}
               {#if changelogEntry.fixed && changelogEntry.fixed.length > 0}
                 <div>
-                  <span class="font-medium text-orange-600 dark:text-orange-400">Fixed:</span>
-                  <ul class="list-disc list-inside ml-2 mt-1 text-gray-700 dark:text-gray-300">
+                  <span class="font-medium" style="color: var(--accent);">Fixed:</span>
+                  <ul class="list-disc list-inside ml-2 mt-1" style="color: var(--text-primary);">
                     {#each changelogEntry.fixed as item}
                       <li>{item}</li>
                     {/each}
@@ -482,15 +493,15 @@
               {/if}
             </div>
           {:else if changelogLoading}
-            <div class="text-sm text-gray-500 dark:text-gray-400">
+            <div class="text-sm" style="color: var(--text-secondary);">
               Loading changelog...
             </div>
           {:else if changelogError}
-            <div class="text-sm text-gray-500 dark:text-gray-400">
+            <div class="text-sm" style="color: var(--text-secondary);">
               {changelogError}
             </div>
           {:else}
-            <div class="text-sm text-gray-500 dark:text-gray-400">
+            <div class="text-sm" style="color: var(--text-secondary);">
               No changelog available for this version.
             </div>
           {/if}
@@ -515,14 +526,14 @@
             i
           </button>
           {#if showInfo}
-            <div class="absolute left-0 top-8 w-80 md:w-96 p-4 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg shadow-lg z-10 text-sm">
-              <p class="mb-2 font-semibold">How it works:</p>
-              <ul class="list-disc list-inside space-y-1 text-gray-700 dark:text-gray-300">
-                <li>Upload <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">pdf-themes.yml</code> to define which themes appear in the download menu dropdown</li>
-                <li>Upload individual theme files (e.g., <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">my-theme.yml</code>) that define the actual styling</li>
-                <li>The <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">pdf-themes.yml</code> file references these theme files via the <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">file</code> field</li>
-                <li>Only the newest <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">pdf-themes.yml</code> is used (uploading a new one replaces the old)</li>
-                <li>You can upload multiple theme files - all will be available if referenced in <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">pdf-themes.yml</code></li>
+            <div class="absolute left-0 top-8 w-80 md:w-96 p-4 rounded-lg shadow-lg z-10 text-sm border" style="background-color: var(--bg-primary); border-color: var(--border);">
+              <p class="mb-2 font-semibold" style="color: var(--text-primary);">How it works:</p>
+              <ul class="list-disc list-inside space-y-1" style="color: var(--text-primary);">
+                <li>Upload <code class="px-1 rounded" style="background-color: var(--bg-secondary);">pdf-themes.yml</code> to define which themes appear in the download menu dropdown</li>
+                <li>Upload individual theme files (e.g., <code class="px-1 rounded" style="background-color: var(--bg-secondary);">my-theme.yml</code>) that define the actual styling</li>
+                <li>The <code class="px-1 rounded" style="background-color: var(--bg-secondary);">pdf-themes.yml</code> file references these theme files via the <code class="px-1 rounded" style="background-color: var(--bg-secondary);">file</code> field</li>
+                <li>Only the newest <code class="px-1 rounded" style="background-color: var(--bg-secondary);">pdf-themes.yml</code> is used (uploading a new one replaces the old)</li>
+                <li>You can upload multiple theme files - all will be available if referenced in <code class="px-1 rounded" style="background-color: var(--bg-secondary);">pdf-themes.yml</code></li>
               </ul>
             </div>
           {/if}
@@ -530,8 +541,8 @@
       </div>
       
       {#if hasCustomTheme}
-        <div class="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded">
-          <p class="text-sm text-blue-800 dark:text-blue-200">
+        <div class="mb-6 p-4 rounded border" style="background-color: var(--bg-secondary); border-color: var(--border);">
+          <p class="text-sm" style="color: var(--text-primary);">
             ✓ Custom theme configuration is active. It will be used instead of the default theme file.
           </p>
         </div>
@@ -578,17 +589,17 @@
               disabled={isSaving || isUploading}
               class="block w-full text-base md:text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-3 md:file:py-2 file:px-6 md:file:px-4 file:rounded-md file:border-0 file:text-base md:file:text-sm file:font-semibold file:bg-indigo-50 dark:file:bg-indigo-900/20 file:text-indigo-700 dark:file:text-indigo-300 hover:file:bg-indigo-100 dark:hover:file:bg-indigo-900/40 disabled:opacity-50 cursor-pointer"
             />
-            <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">
               Upload a pdf-themes.yml file to define available themes. Only the newest upload is used.
             </p>
           </div>
 
           {#if availableThemes.length > 0}
-            <div>
-              <p class="text-sm font-medium mb-3">Available Themes (from pdf-themes.yml):</p>
+            <div class="p-4 rounded border" style="background-color: var(--bg-primary); border-color: var(--border);">
+              <p class="text-sm font-medium mb-3" style="color: var(--text-primary);">Available Themes (from pdf-themes.yml):</p>
               <div class="flex flex-wrap gap-2">
                 {#each availableThemes as theme}
-                  <span class="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 rounded text-sm">
+                  <span class="px-3 py-1.5 rounded text-sm" style="background-color: var(--bg-secondary); color: var(--text-primary);">
                     {theme}
                   </span>
                 {/each}
@@ -626,7 +637,7 @@
               disabled={isSaving || isUploading}
               class="block w-full text-base md:text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-3 md:file:py-2 file:px-6 md:file:px-4 file:rounded-md file:border-0 file:text-base md:file:text-sm file:font-semibold file:bg-indigo-50 dark:file:bg-indigo-900/20 file:text-indigo-700 dark:file:text-indigo-300 hover:file:bg-indigo-100 dark:hover:file:bg-indigo-900/40 disabled:opacity-50 cursor-pointer"
             />
-            <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">
               Upload one or more theme files (e.g., my-theme.yml). These define the actual PDF styling.
             </p>
           </div>
@@ -636,11 +647,12 @@
               <p class="text-sm font-medium mb-3">Uploaded Theme Files:</p>
               <div class="space-y-2 max-h-64 md:max-h-96 overflow-y-auto">
                 {#each uploadedThemeFiles as file}
-                  <div class="flex items-center justify-between p-3 md:p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
-                    <span class="text-sm md:text-base font-mono break-all">{file.filename}</span>
+                  <div class="flex items-center justify-between p-3 md:p-2 rounded border" style="background-color: var(--bg-primary); border-color: var(--border);">
+                    <span class="text-sm md:text-base font-mono break-all" style="color: var(--text-primary);">{file.filename}</span>
                     <button
                       onclick={() => handleDeleteThemeFile(file.filename)}
-                      class="ml-4 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-lg md:text-base font-bold"
+                      class="ml-4 text-lg md:text-base font-bold hover:opacity-80"
+                      style="color: var(--accent);"
                       title="Delete theme file"
                     >
                       ✕
@@ -650,8 +662,8 @@
               </div>
             </div>
           {:else}
-            <div class="text-center py-8 text-gray-500 dark:text-gray-400">
-              <p>No theme files uploaded yet.</p>
+            <div class="text-center py-8 rounded border" style="background-color: var(--bg-primary); border-color: var(--border);">
+              <p style="color: var(--text-secondary);">No theme files uploaded yet.</p>
             </div>
           {/if}
         </div>

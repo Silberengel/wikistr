@@ -983,6 +983,20 @@ class RelayService {
   resetAllRelayFailuresPublic(): void {
     this.resetAllRelayFailures();
   }
+  
+  /**
+   * Public method to record relay failure
+   */
+  recordRelayFailurePublic(url: string): void {
+    this.recordRelayFailure(url);
+  }
+  
+  /**
+   * Public method to record relay success
+   */
+  recordRelaySuccessPublic(url: string): void {
+    this.recordRelaySuccess(url);
+  }
 }
 
 // Export singleton instance
