@@ -1,13 +1,4 @@
 <script lang="ts">
-  import { 
-    saveCustomThemeConfig, 
-    clearCustomThemeCache, 
-    getAvailableThemes,
-    saveThemeFile,
-    getUploadedThemeFiles,
-    deleteThemeFile
-  } from '$lib/pdfThemes';
-  import { get } from 'idb-keyval';
   import ModeToggle from '$components/ModeToggle.svelte';
   import { contentCache } from '$lib/contentCache';
   import { onMount } from 'svelte';
@@ -23,16 +14,9 @@
 
   let { createChild }: Props = $props();
 
-  let activeTab = $state<'general' | 'bookmarks' | 'themes' | 'versions'>('general');
-  let activeThemeTab = $state<'config' | 'files'>('config');
+  let activeTab = $state<'general' | 'bookmarks' | 'versions'>('general');
   
-  let isSaving = $state(false);
   let saveMessage = $state<{ type: 'success' | 'error'; text: string } | null>(null);
-  let hasCustomTheme = $state(false);
-  let availableThemes = $state<string[]>([]);
-  let uploadedThemeFiles = $state<Array<{ filename: string; content: string }>>([]);
-  let isUploading = $state(false);
-  let showInfo = $state(false);
   let currentRelays = $state<string[]>([]);
   let cacheRelays = $state<string[]>([]);
   let editingCacheRelays = $state(false);
@@ -60,21 +44,6 @@
     console.log('Build-time changelog:', buildTimeChangelog ? 'loaded' : 'not available');
   }
 
-  // Check if custom theme exists on mount
-  async function checkCustomTheme() {
-    try {
-      const cached = await get('pdf-themes-config');
-      hasCustomTheme = !!cached;
-      availableThemes = await getAvailableThemes();
-      uploadedThemeFiles = await getUploadedThemeFiles();
-    } catch (error) {
-      console.error('Failed to check custom theme:', error);
-    }
-  }
-
-  $effect(() => {
-    checkCustomTheme();
-  });
 
   function updateRelayStatuses() {
     // Include all current relays so we show status for all of them
@@ -174,118 +143,6 @@
 
 
 
-  async function handleClear() {
-    if (!confirm('Are you sure you want to clear the custom theme configuration? The default theme file will be used instead.')) {
-      return;
-    }
-
-    try {
-      await clearCustomThemeCache();
-      hasCustomTheme = false;
-      saveMessage = { type: 'success', text: 'Custom theme configuration cleared. Using default theme file.' };
-      availableThemes = await getAvailableThemes();
-      
-      setTimeout(() => {
-        saveMessage = null;
-      }, 5000);
-    } catch (error) {
-      saveMessage = { type: 'error', text: 'Failed to clear custom theme' };
-    }
-  }
-
-  async function handleThemeFileUpload(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const files = input.files;
-    if (!files || files.length === 0) return;
-
-    isUploading = true;
-    saveMessage = null;
-
-    try {
-      for (const file of Array.from(files)) {
-        if (!file.name.endsWith('.yml') && !file.name.endsWith('.yaml')) {
-          saveMessage = { type: 'error', text: `File ${file.name} must have .yml or .yaml extension` };
-          continue;
-        }
-
-        const content = await file.text();
-        const result = await saveThemeFile(file.name, content);
-
-        if (result.success) {
-          saveMessage = { type: 'success', text: `Theme file ${file.name} uploaded successfully!` };
-        } else {
-          saveMessage = { type: 'error', text: `Failed to upload ${file.name}: ${result.error}` };
-          break;
-        }
-      }
-
-      uploadedThemeFiles = await getUploadedThemeFiles();
-      
-      setTimeout(() => {
-        saveMessage = null;
-      }, 5000);
-    } catch (error) {
-      saveMessage = { type: 'error', text: error instanceof Error ? error.message : 'Failed to upload theme file' };
-    } finally {
-      isUploading = false;
-      input.value = ''; // Reset input
-    }
-  }
-
-  async function handlePdfThemesUpload(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-
-    if (file.name !== 'pdf-themes.yml' && file.name !== 'pdf-themes.yaml') {
-      saveMessage = { type: 'error', text: 'File must be named pdf-themes.yml or pdf-themes.yaml' };
-      input.value = '';
-      return;
-    }
-
-    isSaving = true;
-    saveMessage = null;
-
-    try {
-      const content = await file.text();
-      const result = await saveCustomThemeConfig(content);
-
-      if (result.success) {
-        saveMessage = { type: 'success', text: 'pdf-themes.yml uploaded and saved successfully! It will be used for all PDF/EPUB exports.' };
-        hasCustomTheme = true;
-        availableThemes = await getAvailableThemes();
-        
-        setTimeout(() => {
-          saveMessage = null;
-        }, 5000);
-      } else {
-        saveMessage = { type: 'error', text: result.error || 'Failed to save theme configuration' };
-      }
-    } catch (error) {
-      saveMessage = { type: 'error', text: error instanceof Error ? error.message : 'An unexpected error occurred' };
-    } finally {
-      isSaving = false;
-      input.value = ''; // Reset input
-    }
-  }
-
-  async function handleDeleteThemeFile(filename: string) {
-    if (!confirm(`Are you sure you want to delete ${filename}?`)) {
-      return;
-    }
-
-    try {
-      await deleteThemeFile(filename);
-      uploadedThemeFiles = await getUploadedThemeFiles();
-      saveMessage = { type: 'success', text: `Theme file ${filename} deleted.` };
-      
-      setTimeout(() => {
-        saveMessage = null;
-      }, 3000);
-    } catch (error) {
-      saveMessage = { type: 'error', text: 'Failed to delete theme file' };
-    }
-  }
 
 </script>
 
@@ -310,15 +167,6 @@
         onmouseleave={(e) => { if (activeTab !== 'bookmarks') { e.currentTarget.style.color = 'var(--text-secondary)'; } }}
       >
         Bookmarks
-      </button>
-      <button
-        onclick={() => activeTab = 'themes'}
-        class="py-4 px-1 border-b-2 font-medium text-sm transition-colors"
-        style="border-color: {activeTab === 'themes' ? 'var(--accent)' : 'transparent'}; color: {activeTab === 'themes' ? 'var(--accent)' : 'var(--text-secondary)'};"
-        onmouseenter={(e) => { if (activeTab !== 'themes') { e.currentTarget.style.color = 'var(--text-primary)'; } }}
-        onmouseleave={(e) => { if (activeTab !== 'themes') { e.currentTarget.style.color = 'var(--text-secondary)'; } }}
-      >
-        PDF Themes
       </button>
       <button
         onclick={() => activeTab = 'versions'}
@@ -488,175 +336,6 @@
     </div>
   {/if}
 
-  <!-- PDF Themes Tab -->
-  {#if activeTab === 'themes'}
-    <div class="border rounded-lg p-4 md:p-6 lg:p-8 min-h-[60vh] md:min-h-[70vh]" style="border-color: var(--border);">
-      <div class="flex items-center gap-2 mb-6">
-        <h2 class="text-2xl font-semibold">PDF Theme Configuration</h2>
-        <div class="relative">
-          <button
-            type="button"
-            onmouseenter={() => showInfo = true}
-            onmouseleave={() => showInfo = false}
-            class="w-6 h-6 rounded-full border border-gray-400 dark:border-gray-600 flex items-center justify-center text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-help"
-            title="Click for info"
-          >
-            i
-          </button>
-          {#if showInfo}
-            <div class="absolute left-0 top-8 w-80 md:w-96 p-4 rounded-lg shadow-lg z-10 text-sm border" style="background-color: var(--bg-primary); border-color: var(--border);">
-              <p class="mb-2 font-semibold" style="color: var(--text-primary);">How it works:</p>
-              <ul class="list-disc list-inside space-y-1" style="color: var(--text-primary);">
-                <li>Upload <code class="px-1 rounded" style="background-color: var(--bg-secondary);">pdf-themes.yml</code> to define which themes appear in the download menu dropdown</li>
-                <li>Upload individual theme files (e.g., <code class="px-1 rounded" style="background-color: var(--bg-secondary);">my-theme.yml</code>) that define the actual styling</li>
-                <li>The <code class="px-1 rounded" style="background-color: var(--bg-secondary);">pdf-themes.yml</code> file references these theme files via the <code class="px-1 rounded" style="background-color: var(--bg-secondary);">file</code> field</li>
-                <li>Only the newest <code class="px-1 rounded" style="background-color: var(--bg-secondary);">pdf-themes.yml</code> is used (uploading a new one replaces the old)</li>
-                <li>You can upload multiple theme files - all will be available if referenced in <code class="px-1 rounded" style="background-color: var(--bg-secondary);">pdf-themes.yml</code></li>
-              </ul>
-            </div>
-          {/if}
-        </div>
-      </div>
-      
-      {#if hasCustomTheme}
-        <div class="mb-6 p-4 rounded border" style="background-color: var(--bg-secondary); border-color: var(--border);">
-          <p class="text-sm" style="color: var(--text-primary);">
-            ✓ Custom theme configuration is active. It will be used instead of the default theme file.
-          </p>
-        </div>
-      {/if}
-
-      {#if saveMessage}
-        <div class="mb-6 p-4 rounded {saveMessage.type === 'success' ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'}">
-          <p class="text-sm {saveMessage.type === 'success' ? 'text-green-800 dark:text-green-200' : 'text-red-800 dark:text-red-200'}">
-            {saveMessage.text}
-          </p>
-        </div>
-      {/if}
-
-      <!-- Theme Sub-tabs -->
-      <div class="border-b mb-6" style="border-color: var(--border);">
-        <nav class="flex space-x-4 md:space-x-8 overflow-x-auto" aria-label="Theme sub-tabs">
-          <button
-            onclick={() => activeThemeTab = 'config'}
-            class="py-3 px-2 md:px-4 border-b-2 font-medium text-sm whitespace-nowrap transition-colors"
-            style="border-color: {activeThemeTab === 'config' ? 'var(--accent)' : 'transparent'}; color: {activeThemeTab === 'config' ? 'var(--accent)' : 'var(--text-secondary)'};"
-            onmouseenter={(e) => { if (activeThemeTab !== 'config') { e.currentTarget.style.color = 'var(--text-primary)'; } }}
-            onmouseleave={(e) => { if (activeThemeTab !== 'config') { e.currentTarget.style.color = 'var(--text-secondary)'; } }}
-          >
-            Configuration
-          </button>
-          <button
-            onclick={() => activeThemeTab = 'files'}
-            class="py-3 px-2 md:px-4 border-b-2 font-medium text-sm whitespace-nowrap transition-colors"
-            style="border-color: {activeThemeTab === 'files' ? 'var(--accent)' : 'transparent'}; color: {activeThemeTab === 'files' ? 'var(--accent)' : 'var(--text-secondary)'};"
-            onmouseenter={(e) => { if (activeThemeTab !== 'files') { e.currentTarget.style.color = 'var(--text-primary)'; } }}
-            onmouseleave={(e) => { if (activeThemeTab !== 'files') { e.currentTarget.style.color = 'var(--text-secondary)'; } }}
-          >
-            Theme Files
-          </button>
-        </nav>
-      </div>
-
-      <!-- Configuration Tab -->
-      {#if activeThemeTab === 'config'}
-        <div class="space-y-6">
-          <div>
-            <label for="pdf-themes-upload" class="block text-sm font-medium mb-3">
-              Upload pdf-themes.yml (replaces existing)
-            </label>
-            <input
-              type="file"
-              id="pdf-themes-upload"
-              accept=".yml,.yaml"
-              onchange={handlePdfThemesUpload}
-              disabled={isSaving || isUploading}
-              class="block w-full text-base md:text-sm file:mr-4 file:py-3 md:file:py-2 file:px-6 md:file:px-4 file:rounded-md file:border-0 file:text-base md:file:text-sm file:font-semibold disabled:opacity-50 cursor-pointer"
-              style="color: var(--text-primary);"
-            />
-            <p class="mt-2 text-sm" style="color: var(--text-secondary);">
-              Upload a pdf-themes.yml file to define available themes. Only the newest upload is used.
-            </p>
-          </div>
-
-          {#if availableThemes.length > 0}
-            <div class="p-4 rounded border" style="background-color: var(--bg-primary); border-color: var(--border);">
-              <p class="text-sm font-medium mb-3" style="color: var(--text-primary);">Available Themes (from pdf-themes.yml):</p>
-              <div class="flex flex-wrap gap-2">
-                {#each availableThemes as theme}
-                  <span class="px-3 py-1.5 rounded text-sm" style="background-color: var(--bg-secondary); color: var(--text-primary);">
-                    {theme}
-                  </span>
-                {/each}
-              </div>
-            </div>
-          {/if}
-
-          {#if hasCustomTheme}
-            <div>
-              <button
-                onclick={handleClear}
-                disabled={isSaving || isUploading}
-                class="inline-flex items-center px-6 py-3 border border-gray-300 dark:border-gray-700 text-base md:text-sm font-medium rounded-md shadow-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Clear Custom Theme Config
-              </button>
-            </div>
-          {/if}
-        </div>
-      {/if}
-
-      <!-- Theme Files Tab -->
-      {#if activeThemeTab === 'files'}
-        <div class="space-y-6">
-          <div>
-            <label for="theme-files-upload" class="block text-sm font-medium mb-3">
-              Upload Theme Files (.yml)
-            </label>
-            <input
-              type="file"
-              id="theme-files-upload"
-              accept=".yml,.yaml"
-              multiple
-              onchange={handleThemeFileUpload}
-              disabled={isSaving || isUploading}
-              class="block w-full text-base md:text-sm file:mr-4 file:py-3 md:file:py-2 file:px-6 md:file:px-4 file:rounded-md file:border-0 file:text-base md:file:text-sm file:font-semibold disabled:opacity-50 cursor-pointer"
-              style="color: var(--text-primary);"
-            />
-            <p class="mt-2 text-sm" style="color: var(--text-secondary);">
-              Upload one or more theme files (e.g., my-theme.yml). These define the actual PDF styling.
-            </p>
-          </div>
-
-          {#if uploadedThemeFiles.length > 0}
-            <div>
-              <p class="text-sm font-medium mb-3">Uploaded Theme Files:</p>
-              <div class="space-y-2 max-h-64 md:max-h-96 overflow-y-auto">
-                {#each uploadedThemeFiles as file}
-                  <div class="flex items-center justify-between p-3 md:p-2 rounded border" style="background-color: var(--bg-primary); border-color: var(--border);">
-                    <span class="text-sm md:text-base font-mono break-all" style="color: var(--text-primary);">{file.filename}</span>
-                    <button
-                      onclick={() => handleDeleteThemeFile(file.filename)}
-                      class="ml-4 text-lg md:text-base font-bold hover:opacity-80"
-                      style="color: var(--accent);"
-                      title="Delete theme file"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                {/each}
-              </div>
-            </div>
-          {:else}
-            <div class="text-center py-8 rounded border" style="background-color: var(--bg-primary); border-color: var(--border);">
-              <p style="color: var(--text-secondary);">No theme files uploaded yet.</p>
-            </div>
-          {/if}
-        </div>
-      {/if}
-    </div>
-  {/if}
-
   <!-- Versions Tab -->
   {#if activeTab === 'versions'}
     <div class="border rounded-lg p-4 md:p-6 lg:p-8 min-h-[60vh] md:min-h-[70vh]" style="border-color: var(--border);">
@@ -722,61 +401,6 @@
 </div>
 
 <style>
-  /* Style file input buttons with theme colors - ensure high contrast */
-  input[type="file"] {
-    color: var(--text-primary) !important;
-  }
-
-  /* Ensure the file input text (e.g., "No file chosen") has proper contrast */
-  input[type="file"]::placeholder {
-    color: var(--text-secondary);
-  }
-
-  /* Modern browsers - use darker background for better contrast */
-  input[type="file"]::file-selector-button {
-    background-color: #4f46e5; /* Use a darker indigo that works in both light/dark */
-    color: white !important;
-    border: none;
-    cursor: pointer;
-    transition: opacity 0.2s;
-    font-weight: 600;
-    padding: 0.5rem 1rem;
-    margin-right: 0.75rem;
-  }
-
-  input[type="file"]::file-selector-button:hover {
-    background-color: #4338ca;
-    opacity: 1;
-  }
-
-  input[type="file"]:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    color: var(--text-secondary) !important;
-  }
-
-  input[type="file"]:disabled::file-selector-button {
-    opacity: 0.5;
-    cursor: not-allowed;
-    background-color: var(--text-secondary);
-  }
-
-  /* Webkit browsers (Safari, older Chrome) */
-  input[type="file"]::-webkit-file-upload-button {
-    background-color: #4f46e5;
-    color: white !important;
-    border: none;
-    cursor: pointer;
-    font-weight: 600;
-    padding: 0.5rem 1rem;
-    margin-right: 0.75rem;
-    border-radius: 0.375rem;
-  }
-
-  input[type="file"]::-webkit-file-upload-button:hover {
-    background-color: #4338ca;
-  }
-
   /* Ensure proper scrolling on mobile */
   @media (max-width: 768px) {
     :global(.settings-container) {

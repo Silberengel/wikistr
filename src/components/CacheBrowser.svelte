@@ -29,7 +29,6 @@
     { value: '30023', label: '30023 - Long-form' },
     { value: '30040', label: '30040 - Book Index' },
     { value: '30041', label: '30041 - Book Content' },
-    { value: '30078', label: '30078 - Book Config' },
     { value: '30817', label: '30817 - Markdown Article' },
     { value: '30818', label: '30818 - AsciiDoc Article' }
   ];
