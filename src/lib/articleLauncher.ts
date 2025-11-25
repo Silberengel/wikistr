@@ -69,20 +69,9 @@ export function openOrCreateArticleCard(articleCard: Omit<ArticleCard, 'id'>): b
     return true;
   }
 
-  // Check for existing find card with matching identifier
-  const existingFindCard = currentCards.find(
-    card => card.type === 'find' && (card as SearchCard).data === identifier
-  );
-
-  if (existingFindCard) {
-    goto(buildPath(currentCards));
-    setTimeout(() => {
-      scrollCardIntoView(String(existingFindCard.id), true);
-      highlightedArticleCardId.set(existingFindCard.id);
-      setTimeout(() => highlightedArticleCardId.set(null), 1200);
-    }, 50);
-    return true;
-  }
+  // Don't check for find cards as duplicates - they're search results, not specific articles
+  // An ArticleCard with a specific pubkey is different from a SearchCard, even with the same d-tag
+  // This allows opening articles with the same d-tag but different authors
 
         // No existing card found, create a new one
         // Ensure d-tag is normalized in the card data
