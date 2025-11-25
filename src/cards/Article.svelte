@@ -35,6 +35,7 @@
     type PDFTheme
   } from '$lib/articleDownload';
   import { addBookmark, removeBookmark, isBookmarked, isBookmarkableKind } from '$lib/bookmarks';
+  import hljs from 'highlight.js';
 
   interface Props {
     card: Card;
@@ -880,6 +881,29 @@
       });
     } else {
       isBookmarkedState = false;
+    }
+  });
+
+  // Apply syntax highlighting to plaintext viewer when view changes to 'asciidoc'
+  let plaintextCodeElement = $state<HTMLElement | null>(null);
+  $effect(() => {
+    if (view === 'asciidoc' && event && plaintextCodeElement) {
+      // Use setTimeout to ensure DOM is ready
+      setTimeout(() => {
+        try {
+          const lang = event.kind === 30817 || event.kind === 30023 ? 'markdown' : 'asciidoc';
+          // Check if language is registered
+          const language = hljs.getLanguage(lang);
+          if (language) {
+            hljs.highlightElement(plaintextCodeElement);
+          } else {
+            // Try auto-detect if language not found
+            hljs.highlightElement(plaintextCodeElement);
+          }
+        } catch (error) {
+          console.warn('Failed to highlight plaintext content:', error);
+        }
+      }, 0);
     }
   });
 
@@ -1783,7 +1807,7 @@
       </div>
     {:else if view === 'asciidoc'}
       {#if event}
-        <div class="relative">
+        <div class="relative plaintext-viewer-container">
           <div class="absolute top-2 right-2 flex gap-2 z-10">
             <button
               onclick={async () => {
@@ -1810,7 +1834,7 @@
               {/if}
             </button>
           </div>
-      <div class="prose whitespace-pre-wrap">{event.content}</div>
+          <pre class="plaintext-viewer-content"><code bind:this={plaintextCodeElement} class="language-{event.kind === 30817 || event.kind === 30023 ? 'markdown' : 'asciidoc'} hljs">{event.content}</code></pre>
         </div>
       {/if}
     {:else if view === 'formatted'}

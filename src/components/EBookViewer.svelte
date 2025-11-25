@@ -838,7 +838,17 @@
       return;
     }
     
-    currentSearchIndex = (currentSearchIndex + 1) % searchResults.length;
+    // Ensure currentSearchIndex is valid before incrementing
+    if (currentSearchIndex < 0) {
+      currentSearchIndex = 0;
+    } else {
+      currentSearchIndex = (currentSearchIndex + 1) % searchResults.length;
+    }
+    
+    // Ensure currentSearchIndex is within bounds
+    if (currentSearchIndex >= searchResults.length) {
+      currentSearchIndex = 0;
+    }
     
     if (format === 'pdf') {
       highlightPDFSearch();
@@ -855,7 +865,17 @@
   function findPrevious() {
     if (searchResults.length === 0) return;
     
-    currentSearchIndex = currentSearchIndex <= 0 ? searchResults.length - 1 : currentSearchIndex - 1;
+    // Ensure currentSearchIndex is valid before decrementing
+    if (currentSearchIndex < 0) {
+      currentSearchIndex = searchResults.length - 1;
+    } else {
+      currentSearchIndex = currentSearchIndex <= 0 ? searchResults.length - 1 : currentSearchIndex - 1;
+    }
+    
+    // Ensure currentSearchIndex is within bounds
+    if (currentSearchIndex >= searchResults.length) {
+      currentSearchIndex = searchResults.length - 1;
+    }
     
     if (format === 'pdf') {
       highlightPDFSearch();
@@ -1080,7 +1100,11 @@
       />
       {#if searchResults.length > 0}
         <span style="color: var(--text-secondary); font-size: 0.9em; min-width: 5rem; text-align: center;">
-          {currentSearchIndex + 1} / {searchResults.length}
+          {#if currentSearchIndex >= 0 && currentSearchIndex < searchResults.length}
+            {currentSearchIndex + 1} / {searchResults.length}
+          {:else}
+            {searchResults.length > 0 ? `1 / ${searchResults.length}` : '0 / 0'}
+          {/if}
         </span>
         <button
           type="button"
@@ -1183,6 +1207,7 @@
     {:else}
       <div
         bind:this={searchContainer}
+        class="html-viewer-container"
         style="max-width: 100%; width: 100%; height: 100%; overflow: auto;"
       >
         {@html htmlContent}
@@ -1201,6 +1226,30 @@
     scroll-behavior: smooth;
     /* Ensure proper scrolling on all screen sizes */
     overflow: auto;
+  }
+
+  /* HTML viewer - always white background with black text and blue hyperlinks */
+  .html-viewer-container {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  .html-viewer-container * {
+    color: #000000 !important;
+  }
+
+  .html-viewer-container a {
+    color: #0000ff !important;
+    text-decoration: underline !important;
+  }
+
+  .html-viewer-container a:visited {
+    color: #800080 !important;
+  }
+
+  .html-viewer-container a:hover {
+    color: #0000ff !important;
+    text-decoration: underline !important;
   }
 
   /* Responsive adjustments */
