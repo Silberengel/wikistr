@@ -679,9 +679,7 @@ function generateFilename(title: string, extension: string): string {
 export async function getEPUBBlob(event: NostrEvent): Promise<{ blob: Blob; filename: string }> {
   let { content, title, author } = await getEventContent(event);
   
-  // Use QC services to fix empty headings before validation
-  content = fixEmptyHeadings(content);
-  // Apply full QC processing to ensure content is valid
+  // Apply full QC processing to fix empty headings, missing heading levels, and other issues
   content = await processContentQualityAsync(content, event, true);
   
   validateAsciiDocContent(content, true);
@@ -718,9 +716,7 @@ export async function getHTML5Blob(event: NostrEvent): Promise<{ blob: Blob; fil
     throw new Error('Failed to prepare content');
   }
   
-  // Use QC services to fix empty headings before validation
-  content = fixEmptyHeadings(content);
-  // Apply full QC processing to ensure content is valid
+  // Apply full QC processing to fix empty headings, missing heading levels, and other issues
   content = await processContentQualityAsync(content, event, true);
   
   validateAsciiDocContent(content, true);
@@ -1447,9 +1443,7 @@ export async function downloadBookAsAsciiDoc(indexEvent: NostrEvent, filename?: 
 export async function downloadBookAsEPUB(indexEvent: NostrEvent, filename?: string): Promise<void> {
   let { content, title, author } = await getEventContent(indexEvent);
   
-  // Use QC services to fix empty headings before validation
-  content = fixEmptyHeadings(content);
-  // Apply full QC processing to ensure content is valid
+  // Apply full QC processing to fix empty headings, missing heading levels, and other issues
   content = await processContentQualityAsync(content, indexEvent, true);
   
   validateAsciiDocContent(content, true);
@@ -1712,10 +1706,8 @@ export async function downloadBookSearchResultsAsEPUB(
   }
   
   try {
-    // Use QC services to fix empty headings before export
-    let fixedContent = fixEmptyHeadings(combined);
-    // Apply full QC processing to ensure content is valid
-    fixedContent = await processContentQualityAsync(fixedContent, firstEvent, true);
+    // Apply full QC processing to fix empty headings, missing heading levels, and other issues
+    const fixedContent = await processContentQualityAsync(combined, firstEvent, true);
     
     const blob = await exportToEPUB({
       content: fixedContent,
