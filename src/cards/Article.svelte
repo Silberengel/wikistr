@@ -24,8 +24,6 @@
     viewAsPDF,
     viewAsEPUB,
     viewAsHTML5,
-    viewAsMarkdown,
-    viewAsAsciiDoc,
     viewAsLaTeX,
     downloadBookAsAsciiDoc,
     downloadBookAsPDF,
@@ -35,7 +33,6 @@
     type PDFTheme
   } from '$lib/articleDownload';
   import { addBookmark, removeBookmark, isBookmarked, isBookmarkableKind } from '$lib/bookmarks';
-  import hljs from 'highlight.js';
 
   interface Props {
     card: Card;
@@ -59,14 +56,13 @@
   let likeStatus = $state<'liked' | 'disliked' | 'none'>('none');
   let canLike = $state<boolean | undefined>();
   let seenOn = $state<string[]>([]);
-  let view = $state<'formatted' | 'asciidoc' | 'raw'>('formatted');
+  let view = $state<'formatted' | 'raw'>('formatted');
   let voteCounts = $state<{ likes: number; dislikes: number }>({ likes: 0, dislikes: 0 });
   let lastEventId = $state<string | null>(null);
   let userReaction = $state<NostrEvent | null>(null);
   let isVoting = $state(false); // Prevent multiple votes
   let rawJsonWordWrap = $state(true); // Word-wrap ON by default
   let rawJsonCopied = $state(false);
-  let asciidocCopied = $state(false);
   let showDownloadMenu = $state(false);
   let showPdfStyleMenu = $state(false);
   let showEpubStyleMenu = $state(false);
@@ -884,34 +880,6 @@
     }
   });
 
-  // Apply syntax highlighting to plaintext viewer when view changes to 'asciidoc'
-  let plaintextCodeElement = $state<HTMLElement | null>(null);
-  $effect(() => {
-    if (view === 'asciidoc' && event && plaintextCodeElement) {
-      // Use setTimeout to ensure DOM is ready
-      setTimeout(() => {
-        if (!event || !plaintextCodeElement) return;
-        try {
-          const lang = event.kind === 30817 || event.kind === 30023 ? 'markdown' : 'asciidoc';
-          // Check if language is registered
-          const language = hljs.getLanguage(lang);
-          if (language) {
-            // Highlight the element - this will wrap text in spans but preserve content
-            hljs.highlightElement(plaintextCodeElement);
-            // Ensure the element remains find-friendly after highlighting
-            // highlight.js should preserve text content, but we ensure it's searchable
-            plaintextCodeElement.setAttribute('data-find-friendly', 'true');
-          } else {
-            // Try auto-detect if language not found
-            hljs.highlightElement(plaintextCodeElement);
-            plaintextCodeElement.setAttribute('data-find-friendly', 'true');
-          }
-        } catch (error) {
-          console.warn('Failed to highlight plaintext content:', error);
-        }
-      }, 0);
-    }
-  });
 
   async function toggleBookmark() {
     if (!event || !isBookmarkableKind(event.kind) || !$account) return;
@@ -1272,130 +1240,30 @@
                         {/if}
                       </button>
                     {:else if event}
-                      <!-- Markdown events (30023, 30817): Markdown, PDF, HTML5 -->
-                      {#if event.kind === 30023 || event.kind === 30817}
-                        <button
-                          onclick={async () => {
-                            if (!event) return;
-                            showDownloadMenu = false;
-                            isDownloading = true;
-                            try {
-                              await viewAsMarkdown(event);
-                            } catch (error) {
-                              console.error('Failed to process Markdown:', error);
-                              alert('Failed to process Markdown.');
-                            } finally {
-                              isDownloading = false;
-                            }
-                          }}
-                          disabled={isDownloading}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                          style="color: var(--text-primary);"
-                        >
-                          {#if isDownloading}
-                            Opening...
-                          {:else}
-                            Markdown
-                          {/if}
-                        </button>
-                        <button
-                          onclick={async () => {
-                            if (!event) return;
-                            showDownloadMenu = false;
-                            isDownloading = true;
-                            try {
-                              await viewAsPDF(event);
-                            } catch (error) {
-                              alert('Failed to process PDF. Make sure the AsciiDoctor server is running.');
-                            } finally {
-                              isDownloading = false;
-                            }
-                          }}
-                          disabled={isDownloading}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                          style="color: var(--text-primary);"
-                        >
-                          {#if isDownloading}
-                            Opening PDF...
-                          {:else}
-                            PDF
-                          {/if}
-                        </button>
-                        <button
-                          onclick={async () => {
-                            if (!event) return;
-                            showDownloadMenu = false;
-                            isDownloading = true;
-                            try {
-                              await viewAsHTML5(event);
-                            } catch (error) {
-                              alert('Failed to open HTML5. Make sure the AsciiDoctor server is running.');
-                            } finally {
-                              isDownloading = false;
-                            }
-                          }}
-                          disabled={isDownloading}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                          style="color: var(--text-primary);"
-                        >
-                          {#if isDownloading}
-                            Opening HTML5...
-                          {:else}
-                            HTML5
-                          {/if}
-                        </button>
-                      {/if}
-                      
-                      <!-- AsciiDoc events (30040, 30041, 30818): Markdown, PDF, AsciiDoc, EPUB -->
-                      {#if event.kind === 30040 || event.kind === 30041 || event.kind === 30818}
-                        <button
-                          onclick={async () => {
-                            if (!event) return;
-                            showDownloadMenu = false;
-                            isDownloading = true;
-                            try {
-                              await viewAsMarkdown(event);
-                            } catch (error) {
-                              console.error('Failed to open Markdown:', error);
-                              alert('Failed to open Markdown.');
-                            } finally {
-                              isDownloading = false;
-                            }
-                          }}
-                          disabled={isDownloading}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                          style="color: var(--text-primary);"
-                        >
-                          {#if isDownloading}
-                            Opening...
-                          {:else}
-                            Markdown
-                          {/if}
-                        </button>
-                        <button
-                          onclick={async () => {
-                            if (!event) return;
-                            showDownloadMenu = false;
-                            isDownloading = true;
-                            try {
-                              await viewAsAsciiDoc(event);
-                            } catch (error) {
-                              console.error('Failed to open AsciiDoc:', error);
-                              alert('Failed to open AsciiDoc.');
-                            } finally {
-                              isDownloading = false;
-                            }
-                          }}
-                          disabled={isDownloading}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                          style="color: var(--text-primary);"
-                        >
-                          {#if isDownloading}
-                            Opening...
-                          {:else}
-                            AsciiDoc
-                          {/if}
-                        </button>
+                      <!-- All events: HTML, PDF, EPUB -->
+                      <button
+                        onclick={async () => {
+                          if (!event) return;
+                          showDownloadMenu = false;
+                          isDownloading = true;
+                          try {
+                            await viewAsHTML5(event);
+                          } catch (error) {
+                            alert('Failed to open HTML. Make sure the AsciiDoctor server is running.');
+                          } finally {
+                            isDownloading = false;
+                          }
+                        }}
+                        disabled={isDownloading}
+                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                        style="color: var(--text-primary);"
+                      >
+                        {#if isDownloading}
+                          Opening HTML...
+                        {:else}
+                          HTML
+                        {/if}
+                      </button>
                         <!-- PDF with style submenu -->
                         <div class="relative">
                           <button
@@ -1488,55 +1356,6 @@
                             </div>
                           {/if}
                         </div>
-                        <div class="flex items-center gap-2">
-                          <button
-                            onclick={async () => {
-                              if (!event) return;
-                              showDownloadMenu = false;
-                              isDownloading = true;
-                            try {
-                              await viewAsHTML5(event);
-                            } catch (error) {
-                              alert('Failed to open HTML5. Make sure the AsciiDoctor server is running.');
-                            } finally {
-                              isDownloading = false;
-                            }
-                          }}
-                          disabled={isDownloading}
-                            class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                            style="color: var(--text-primary);"
-                          >
-                            {#if isDownloading}
-                              Opening HTML5...
-                            {:else}
-                              HTML5
-                            {/if}
-                          </button>
-                        </div>
-                        <button
-                          onclick={async () => {
-                            if (!event) return;
-                            showDownloadMenu = false;
-                            isDownloading = true;
-                            try {
-                              await viewAsLaTeX(event);
-                            } catch (error) {
-                              alert('Failed to open LaTeX. Make sure the AsciiDoctor server is running.');
-                            } finally {
-                              isDownloading = false;
-                            }
-                          }}
-                          disabled={isDownloading}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                          style="color: var(--text-primary);"
-                        >
-                          {#if isDownloading}
-                            Opening LaTeX...
-                          {:else}
-                            LaTeX
-                          {/if}
-                        </button>
-                      {/if}
                     {/if}
                   </div>
                 </div>
@@ -1650,12 +1469,12 @@
         <!-- Source Button -->
         <button
           onclick={() => {
-            view = view === 'formatted' ? 'asciidoc' : view === 'asciidoc' ? 'raw' : 'formatted';
+            view = view === 'formatted' ? 'raw' : 'formatted';
           }}
           class="font-normal text-xs px-2 py-1 rounded cursor-pointer transition-colors"
           style="color: var(--accent); background-color: var(--bg-primary); border: 1px solid var(--accent);"
         >
-          see {#if view === 'formatted'}markdown source{:else if view === 'asciidoc'}raw event{:else}formatted{/if}
+          see {#if view === 'formatted'}raw event{:else}formatted{/if}
         </button>
         
         <!-- Relays -->
@@ -1811,38 +1630,6 @@
         </div>
         <div class="font-mono {rawJsonWordWrap ? 'whitespace-pre-wrap' : 'whitespace-pre overflow-x-auto'}">{rawEvent}</div>
       </div>
-    {:else if view === 'asciidoc'}
-      {#if event}
-        <div class="relative plaintext-viewer-container">
-          <div class="absolute top-2 right-2 flex gap-2 z-10">
-            <button
-              onclick={async () => {
-                if (!event) return;
-                try {
-                  await navigator.clipboard.writeText(event.content);
-                  asciidocCopied = true;
-                  setTimeout(() => { asciidocCopied = false; }, 2000);
-                } catch (e) {
-                  console.error('Failed to copy:', e);
-                }
-              }}
-              class="code-copy-btn p-1.5 rounded transition-colors"
-              title="Copy markdown source"
-            >
-              {#if asciidocCopied}
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4" style="color: var(--accent);">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                </svg>
-              {:else}
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
-                </svg>
-              {/if}
-            </button>
-          </div>
-          <pre class="plaintext-viewer-content" data-find-friendly="true"><code bind:this={plaintextCodeElement} class="language-{event.kind === 30817 || event.kind === 30023 ? 'markdown' : 'asciidoc'} hljs" data-find-friendly="true">{event.content}</code></pre>
-        </div>
-      {/if}
     {:else if view === 'formatted'}
       <div class="prose prose-p:my-0 prose-li:my-0">
         <ArticleContent {event} {createChild} {replaceSelf} relayHints={seenOn} />

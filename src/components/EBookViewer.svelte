@@ -2,12 +2,11 @@
   import { onMount, onDestroy } from 'svelte';
   import * as pdfjsLib from 'pdfjs-dist';
   import { Book } from 'epubjs';
-  import hljs from 'highlight.js';
 
   interface Props {
     blob: Blob;
     filename: string;
-    format: 'pdf' | 'epub' | 'html' | 'markdown' | 'asciidoc' | 'json' | 'jsonl';
+    format: 'pdf' | 'epub' | 'html';
     onClose: () => void;
     validationMessages?: { errors?: string[]; warnings?: string[] };
     originalLaTeXBlob?: Blob; // For LaTeX: store original .tex file for download
@@ -34,9 +33,8 @@
   let epubContainer = $state<HTMLElement | null>(null);
   let epubLocation: any = $state(null);
 
-  // HTML/Text state
+  // HTML state
   let htmlContent = $state<string>('');
-  let codeContainer = $state<HTMLElement | null>(null);
   let isMaximized = $state(false);
   
   // Search state
@@ -113,8 +111,6 @@
         await loadEPUB();
       } else if (format === 'html') {
         await loadHTML();
-      } else if (format === 'markdown' || format === 'asciidoc' || format === 'json' || format === 'jsonl') {
-        await loadTextFile();
       }
     })();
 
@@ -406,106 +402,6 @@
     }
   }
 
-  async function loadTextFile() {
-    try {
-      let text = await blob.text();
-      
-      // Plaintext viewer: show raw markup with syntax highlighting for ALL formats
-      // For JSONL files, format each line as a separate JSON object for better readability
-      // For JSONL files, format each line as a separate JSON object for better readability
-      if (format === 'jsonl') {
-        const lines = text.split('\n').filter(line => line.trim());
-        const formattedLines: string[] = [];
-        for (const line of lines) {
-          try {
-            // Try to parse and pretty-print each JSON line
-            const parsed = JSON.parse(line.trim());
-            formattedLines.push(JSON.stringify(parsed, null, 2));
-          } catch {
-            // If parsing fails, keep the original line
-            formattedLines.push(line);
-          }
-        }
-        text = formattedLines.join('\n\n');
-      } else if (format === 'json') {
-        // Try to pretty-print JSON for better readability
-        try {
-          const parsed = JSON.parse(text);
-          text = JSON.stringify(parsed, null, 2);
-        } catch {
-          // If parsing fails, keep original text
-        }
-      }
-      
-      // Decode HTML entities that are already in the text (so they display as characters)
-      // This handles cases where the source text contains &lt;div&gt; etc.
-      // We decode first, then pass to highlight.js which will escape for us
-      // Order matters: decode &amp; last to avoid double-decoding
-      let decoded = text
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#039;/g, "'")
-        .replace(/&#39;/g, "'")
-        .replace(/&amp;/g, '&'); // Decode &amp; last
-      
-      // Use highlight.js to syntax highlight with correct language
-      // highlight.js expects raw text and will escape it internally
-      let language: string;
-      if (format === 'markdown') {
-        language = 'markdown';
-      } else if (format === 'asciidoc') {
-        language = 'asciidoc';
-      } else if (format === 'json' || format === 'jsonl') {
-        language = 'json';
-      } else {
-        language = 'plaintext';
-      }
-      
-      let highlighted;
-      try {
-        // Check if language is supported
-        // highlight.js will escape the text internally, so we pass the decoded text
-        const lang = hljs.getLanguage(language);
-        if (lang) {
-          highlighted = hljs.highlight(decoded, { language });
-        } else {
-          // Fallback to auto-detect
-          highlighted = hljs.highlightAuto(decoded);
-        }
-      } catch {
-        // Fallback if language not supported - try plaintext
-        try {
-          highlighted = hljs.highlight(decoded, { language: 'plaintext' });
-        } catch {
-          // Last resort: manually escape and use plain text
-          const escaped = decoded
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-          highlighted = { value: escaped };
-        }
-      }
-      
-      // Create a pre element with highlighted content
-      htmlContent = `<pre class="hljs"><code>${highlighted.value}</code></pre>`;
-      
-      // Re-highlight after DOM update
-      setTimeout(() => {
-        if (codeContainer) {
-          hljs.highlightAll();
-        }
-      }, 0);
-    } catch (error) {
-      console.error('Failed to load text file:', error);
-      htmlContent = `<div style="padding: 2rem; text-align: center; color: var(--text-primary);">
-        <h2>Failed to load content</h2>
-        <p>${error instanceof Error ? error.message : 'Unknown error'}</p>
-      </div>`;
-    }
-  }
 
   function nextPage() {
     if (format === 'pdf') {
@@ -626,7 +522,7 @@
       currentSearchIndex = -1;
     } else {
       // Clear text/HTML highlights by replacing highlight spans with text nodes
-      const containers = [codeContainer, searchContainer].filter(Boolean) as HTMLElement[];
+      const containers = [searchContainer].filter(Boolean) as HTMLElement[];
       for (const container of containers) {
         if (!container) continue;
         
@@ -730,7 +626,7 @@
   }
 
   function searchText(query: string) {
-    const container = codeContainer || searchContainer;
+    const container = searchContainer;
     if (!container) return;
     
     clearSearchHighlights();
@@ -755,7 +651,7 @@
   }
 
   function highlightTextSearch() {
-    const container = codeContainer || searchContainer;
+    const container = searchContainer;
     if (!container || searchResults.length === 0 || !searchQuery) return;
     
     const result = searchResults[currentSearchIndex];
@@ -1179,14 +1075,6 @@
       >
         <!-- EPUB will be rendered here by epubjs -->
       </div>
-    {:else if format === 'markdown' || format === 'asciidoc' || format === 'json' || format === 'jsonl'}
-      <div
-        bind:this={codeContainer}
-        class="code-viewer"
-        style="max-width: 100%; width: 100%; height: 100%; overflow: auto; padding: 1rem; box-sizing: border-box;"
-      >
-        {@html htmlContent}
-      </div>
     {:else}
       <div
         bind:this={searchContainer}
@@ -1240,15 +1128,6 @@
     .viewer-content {
       padding: 1rem;
     }
-    
-    .code-viewer {
-      font-size: 0.85rem;
-      padding: 0.75rem;
-    }
-    
-    .code-viewer :global(pre) {
-      padding: 0.75rem;
-    }
   }
 
   @media (min-width: 769px) {
@@ -1271,82 +1150,6 @@
     scroll-snap-type: y mandatory;
   }
 
-  /* Code viewer styling */
-  .code-viewer {
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-    font-size: 0.9rem;
-    line-height: 1.6;
-    overflow-x: auto;
-    overflow-y: auto;
-    background: var(--bg-primary, #ffffff);
-    color: var(--text-primary, #1c1917);
-  }
-
-  .code-viewer :global(pre) {
-    margin: 0;
-    padding: 1rem;
-    background: var(--code-bg, var(--bg-secondary, #f5f5f4));
-    color: var(--code-text, var(--text-primary, #1c1917));
-    border-radius: 0.25rem;
-    overflow-x: auto;
-    overflow-y: visible;
-    min-width: fit-content;
-  }
-
-  .code-viewer :global(pre code) {
-    background: transparent;
-    padding: 0;
-    border-radius: 0;
-    font-family: inherit;
-    font-size: inherit;
-    color: inherit;
-  }
-
-  .code-viewer :global(.hljs) {
-    background: var(--code-bg, var(--bg-secondary, #f5f5f4)) !important;
-    color: var(--text-primary, #1c1917) !important;
-  }
-  
-  /* Override highlight.js default colors to ensure readability in light mode */
-  /* Use theme text color with slight variations for syntax highlighting */
-  .code-viewer :global(.hljs-keyword),
-  .code-viewer :global(.hljs-selector-tag),
-  .code-viewer :global(.hljs-built_in),
-  .code-viewer :global(.hljs-name),
-  .code-viewer :global(.hljs-type),
-  .code-viewer :global(.hljs-function),
-  .code-viewer :global(.hljs-title),
-  .code-viewer :global(.hljs-params),
-  .code-viewer :global(.hljs-variable),
-  .code-viewer :global(.hljs-number),
-  .code-viewer :global(.hljs-literal),
-  .code-viewer :global(.hljs-meta),
-  .code-viewer :global(.hljs-tag),
-  .code-viewer :global(.hljs-section),
-  .code-viewer :global(.hljs-strong) {
-    color: var(--text-primary, #1c1917) !important;
-  }
-  
-  /* Comments can be slightly lighter but still readable */
-  .code-viewer :global(.hljs-comment),
-  .code-viewer :global(.hljs-quote),
-  .code-viewer :global(.hljs-doctag) {
-    color: var(--text-secondary, #78716c) !important;
-  }
-  
-  /* Strings and attributes - ensure they're readable */
-  .code-viewer :global(.hljs-string),
-  .code-viewer :global(.hljs-attr),
-  .code-viewer :global(.hljs-attribute) {
-    color: var(--text-primary, #1c1917) !important;
-    opacity: 0.95;
-  }
-  
-  /* Ensure emphasis is readable */
-  .code-viewer :global(.hljs-emphasis) {
-    color: var(--text-primary, #1c1917) !important;
-    font-style: italic;
-  }
 
   /* EPUB styling */
   :global(.epub-container) {
@@ -1459,12 +1262,6 @@
     z-index: 10000;
   }
 
-  /* JSON/JSONL specific styling */
-  .code-viewer :global(pre code.json),
-  .code-viewer :global(pre code.jsonl) {
-    white-space: pre-wrap;
-    word-wrap: break-word;
-  }
 
   /* Ensure viewer fits screen properly */
   .ebook-viewer {
