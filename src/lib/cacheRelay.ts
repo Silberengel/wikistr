@@ -39,13 +39,19 @@ async function loadCacheRelayUrls(userPubkey: string): Promise<string[]> {
       return [];
     }
     
-    // Query for kind 10432 event
-    const result = await relayService.queryEvents(
+    // Query for kind 10432 event with timeout
+    const queryPromise = relayService.queryEvents(
       userPubkey,
       'metadata-read',
       [{ kinds: [CACHE_RELAY_KIND], authors: [userPubkey], limit: 1 }],
       { excludeUserContent: false, currentUserPubkey }
     );
+    
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Cache relay query timeout')), 5000)
+    );
+    
+    const result = await Promise.race([queryPromise, timeoutPromise]);
     
     let relays: string[] = [];
     

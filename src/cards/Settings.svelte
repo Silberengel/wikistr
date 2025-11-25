@@ -61,32 +61,38 @@
     // Get current relays from cache
     currentRelays = contentCache.getAllRelays();
     
-    // Load cache relays
+    // Load cache relays (don't block on this)
     if ($account?.pubkey) {
-      cacheRelays = await getCacheRelayUrls();
+      getCacheRelayUrls().then(urls => {
+        cacheRelays = urls;
+      }).catch(error => {
+        console.warn('Failed to load cache relays:', error);
+        cacheRelays = [];
+      });
     }
     
-    // Load changelog entry for current version
-    try {
-      const response = await fetch('/CHANGELOG.md');
-      if (response.ok) {
-        const text = await response.text();
-        const entry = parseChangelogForVersion(text, appVersion);
-        if (entry) {
-          changelogEntry = entry;
+    // Load changelog entry for current version (don't block on this)
+    (async () => {
+      try {
+        const response = await fetch('/CHANGELOG.md');
+        if (response.ok) {
+          const text = await response.text();
+          const entry = parseChangelogForVersion(text, appVersion);
+          if (entry) {
+            changelogEntry = entry;
+          } else {
+            console.warn('Changelog entry not found for version:', appVersion);
+            changelogEntry = null;
+          }
         } else {
-          console.warn('Changelog entry not found for version:', appVersion);
-          // Set to empty object to show "Loading changelog..." message
+          console.error('Failed to fetch CHANGELOG.md:', response.status, response.statusText);
           changelogEntry = null;
         }
-      } else {
-        console.error('Failed to fetch CHANGELOG.md:', response.status, response.statusText);
+      } catch (error) {
+        console.error('Failed to load CHANGELOG:', error);
         changelogEntry = null;
       }
-    } catch (error) {
-      console.error('Failed to load CHANGELOG:', error);
-      changelogEntry = null;
-    }
+    })();
   });
 
   function parseChangelogForVersion(changelogText: string, version: string): { added?: string[]; changed?: string[]; fixed?: string[] } | null {
