@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "npm run themes && vite dev",
-    "build": "npm run themes && vite build",
+    "build": "npm run themes && svelte-kit sync && vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest",

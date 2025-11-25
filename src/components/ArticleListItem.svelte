@@ -56,6 +56,14 @@
       .slice(0, 190)
   );
 
+  let encodedPubkey = $derived.by(() => {
+    try {
+      return nip19.npubEncode(event.pubkey).slice(0, 16) + '...';
+    } catch {
+      return event.pubkey.slice(0, 16) + '...';
+    }
+  });
+
   function handleClick(ev: MouseEvent) {
     ev.preventDefault();
     ev.stopPropagation();
@@ -97,11 +105,7 @@
       {event.tags.find((e) => e[0] == 'author')?.[1]} • 
     {/if}
     <UserLabel pubkey={event.pubkey} showAvatar={false} /> • 
-    {#try}
-      {nip19.npubEncode(event.pubkey).slice(0, 16)}...
-    {:catch}
-      {event.pubkey.slice(0, 16)}...
-    {/try}
+    {encodedPubkey}
     • {formatRelativeTime(event.created_at)} 
   </p>
   <p class="text-xs text-wrap break-words whitespace-pre-wrap">
