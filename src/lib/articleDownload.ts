@@ -419,6 +419,14 @@ function convertMarkdownToAsciiDoc(markdown: string): string {
     return `image::${url}[${alt || ''}]`;
   });
   
+  // Convert markdown links: [text](url) -> link:url[text]
+  // Must be done after images to avoid matching image syntax
+  asciidoc = asciidoc.replace(/(?<!!)\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
+    // Escape special characters in text for AsciiDoc
+    const escapedText = text.replace(/\[/g, '\\[').replace(/\]/g, '\\]');
+    return `link:${url}[${escapedText}]`;
+  });
+  
   // Convert LaTeX inline math: $...$ -> stem:[...] (AsciiDoc inline math)
   // Handle both inline $...$ and display $$...$$
   asciidoc = asciidoc.replace(/\$\$([^$]+)\$\$/g, (match, math) => {

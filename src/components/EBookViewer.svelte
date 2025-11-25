@@ -410,6 +410,8 @@
     try {
       let text = await blob.text();
       
+      // Plaintext viewer: show raw markup with syntax highlighting for ALL formats
+      // For JSONL files, format each line as a separate JSON object for better readability
       // For JSONL files, format each line as a separate JSON object for better readability
       if (format === 'jsonl') {
         const lines = text.split('\n').filter(line => line.trim());
@@ -453,26 +455,7 @@
       if (format === 'markdown') {
         language = 'markdown';
       } else if (format === 'asciidoc') {
-        // AsciiDoc is not directly supported by highlight.js
-        // Fallback to markdown since they share many tags
-        try {
-          const asciidocLang = hljs.getLanguage('asciidoc');
-          if (asciidocLang) {
-            language = 'asciidoc';
-          } else {
-            // Try adoc as alternative name
-            const adocLang = hljs.getLanguage('adoc');
-            if (adocLang) {
-              language = 'adoc';
-            } else {
-              // Fallback to markdown (they share many tags like #, ==, etc.)
-              language = 'markdown';
-            }
-          }
-        } catch {
-          // Fallback to markdown
-          language = 'markdown';
-        }
+        language = 'asciidoc';
       } else if (format === 'json' || format === 'jsonl') {
         language = 'json';
       } else {

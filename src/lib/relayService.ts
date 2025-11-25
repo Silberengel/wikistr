@@ -832,17 +832,19 @@ class RelayService {
           
           // Try to ensure connections to all relays before subscribing
           // This helps us catch connection failures early
-          for (const url of filteredRelays) {
-            try {
-              await pool.ensureRelay(url);
-              connectedRelays.add(url);
-            } catch (err) {
-              // Connection failed - record it
-              failedRelays.add(url);
-              this.recordRelayFailure(url);
-              console.warn(`⚠️ Failed to connect to relay ${url}:`, err);
+          (async () => {
+            for (const url of filteredRelays) {
+              try {
+                await pool.ensureRelay(url);
+                connectedRelays.add(url);
+              } catch (err) {
+                // Connection failed - record it
+                failedRelays.add(url);
+                this.recordRelayFailure(url);
+                console.warn(`⚠️ Failed to connect to relay ${url}:`, err);
+              }
             }
-          }
+          })();
           
           // Use pool.subscribeMany with our controlled relay sets
           const subscription = pool.subscribeMany(filteredRelays, filters, {
