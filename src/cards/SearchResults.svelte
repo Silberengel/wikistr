@@ -172,11 +172,27 @@
             const articleKinds = [30023, 30817, 30041, 30040, 30818];
             if (articleKinds.includes(foundEvent.kind)) {
               if (foundEvent.kind === 30040) {
-                // Book index event - open as book card
-                const { openBookSearchCard } = await import('$lib/bookSearchLauncher');
-                const dTag = getTagOr(foundEvent, 'd') || '';
-                openBookSearchCard(`book::${dTag}`);
-                return;
+                // Check if it's a book (has bookstr tags) or a publication (no bookstr tags)
+                const { isBookEvent } = await import('$lib/books');
+                const isBook = isBookEvent(foundEvent as any);
+                
+                if (isBook) {
+                  // Book index event with bookstr tags - open as book card
+                  const { openBookSearchCard } = await import('$lib/bookSearchLauncher');
+                  const dTag = getTagOr(foundEvent, 'd') || '';
+                  openBookSearchCard(`book::${dTag}`);
+                  return;
+                } else {
+                  // Publication event (30040 without bookstr tags) - open as article card
+                  const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+                  openOrCreateArticleCard({
+                    type: 'article',
+                    data: [getTagOr(foundEvent, 'd') || '', foundEvent.pubkey],
+                    actualEvent: foundEvent,
+                    relayHints: result.relays
+                  });
+                  return;
+                }
               } else {
                 // Article event - create article card
                 const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
@@ -287,7 +303,8 @@
     if (trimmedQuery.includes('*')) {
       const parts = trimmedQuery.split('*');
       if (parts.length === 2) {
-        const dTagPart = normalizeIdentifier(parts[0].trim());
+        // Don't normalize - preserve foreign letters in d-tag
+        const dTagPart = parts[0].trim();
         const pubkeyPart = parts[1].trim();
         
         // Search for article with specific d-tag and pubkey
@@ -391,7 +408,7 @@
       results = Array.from(deduplicated.values());
       
       // Multi-tier sorting: WOT authors > search tier > wotness
-      let normalizedIdentifier = normalizeIdentifier(query);
+      // Use raw query to preserve foreign letters
       results = results.sort((a, b) => {
         const aWotScore = $wot[a.pubkey] || 0;
         const bWotScore = $wot[b.pubkey] || 0;
@@ -404,8 +421,9 @@
         if (!aInWot && bInWot) return 1;  // b is in WOT, a is not
         
         // If both or neither are in WOT, sort by search tier
-        const aSearchScore = getSearchScore(a, normalizedIdentifier, query);
-        const bSearchScore = getSearchScore(b, normalizedIdentifier, query);
+        const normalizedQuery = normalizeIdentifier(query);
+        const aSearchScore = getSearchScore(a, query, normalizedQuery);
+        const bSearchScore = getSearchScore(b, query, normalizedQuery);
         
         if (aSearchScore !== bSearchScore) {
           return bSearchScore - aSearchScore; // Higher score first
@@ -422,12 +440,12 @@
       // Check cache first for instant results
       const { contentCache } = await import('$lib/contentCache');
       const cachedEvents = contentCache.getEvents('wiki');
-      const normalizedQuery = normalizeIdentifier(query);
       
-      // Filter cached events by d-tag (exact match)
+      // Filter cached events by d-tag (exact match, preserving foreign letters)
       const cachedMatches = cachedEvents.filter(cached => {
         const dTag = cached.event.tags.find(([t]) => t === 'd')?.[1];
-        return dTag && normalizeIdentifier(dTag) === normalizedQuery;
+        // Match both exact and normalized for compatibility
+        return dTag && (dTag === query || normalizeIdentifier(dTag) === normalizeIdentifier(query));
       });
       
       if (cachedMatches.length > 0) {
@@ -467,10 +485,14 @@
       }
 
       // Support all wiki event kinds: 30818 (AsciiDoc), 30817 (Markdown), 30040 (Index), 30041 (Content)
+      // Don't normalize for search - preserve foreign letters (ë, ü, etc.)
+      // Search with both normalized and non-normalized to catch all cases
       const normalizedId = normalizeIdentifier(query);
       const searchQueries = [
-        // 1. Exact match by d-tag for all wiki kinds
-        { kinds: wikiKinds, '#d': [normalizedId], limit: 25 }
+        // 1. Exact match by d-tag (non-normalized to preserve foreign letters)
+        { kinds: wikiKinds, '#d': [query], limit: 25 },
+        // 2. Also try normalized version for backward compatibility
+        ...(normalizedId !== query ? [{ kinds: wikiKinds, '#d': [normalizedId], limit: 25 }] : [])
       ];
 
       // Search using relay service (it handles relay selection and batching)
@@ -583,7 +605,7 @@
       results = Array.from(deduplicated.values());
       
       // Multi-tier sorting: WOT authors > search tier > wotness
-      let normalizedIdentifier = normalizeIdentifier(query);
+      // Use raw query to preserve foreign letters
       results = results.sort((a, b) => {
         const aWotScore = $wot[a.pubkey] || 0;
         const bWotScore = $wot[b.pubkey] || 0;
@@ -596,8 +618,9 @@
         if (!aInWot && bInWot) return 1;  // b is in WOT, a is not
         
         // If both or neither are in WOT, sort by search tier
-        const aSearchScore = getSearchScore(a, normalizedIdentifier, query);
-        const bSearchScore = getSearchScore(b, normalizedIdentifier, query);
+        const normalizedQuery = normalizeIdentifier(query);
+        const aSearchScore = getSearchScore(a, query, normalizedQuery);
+        const bSearchScore = getSearchScore(b, query, normalizedQuery);
         
         if (aSearchScore !== bSearchScore) {
           return bSearchScore - aSearchScore; // Higher search score first
@@ -640,11 +663,21 @@
       if (relaysToUseNow.length === 0) return;
 
       // Use relay service for exact match search
+      // Don't normalize - preserve foreign letters
       if ($account) {
+        const normalizedId = normalizeIdentifier(query);
+        const searchFilters = [
+          { kinds: wikiKinds, '#d': [query], limit: 25 }
+        ];
+        // Also search normalized version if different
+        if (normalizedId !== query) {
+          searchFilters.push({ kinds: wikiKinds, '#d': [normalizedId], limit: 25 });
+        }
+        
         relayService.queryEvents(
           $account.pubkey,
           'wiki-read',
-          [{ kinds: wikiKinds, '#d': [normalizeIdentifier(query)], limit: 25 }],
+          searchFilters,
           {
             excludeUserContent: true,
             currentUserPubkey: $account.pubkey
@@ -708,9 +741,15 @@
   const debouncedPerformSearch = debounce(performSearch, 400);
 
   // Calculate search score for sorting (higher = better match)
-  function getSearchScore(event: NostrEvent, normalizedIdentifier: string, query: string): number {
-    // 1. d-tag exact match (highest priority)
-    if (getTagOr(event, 'd') === normalizedIdentifier) {
+  // Use raw query to preserve foreign letters
+  function getSearchScore(event: NostrEvent, query: string, _normalizedQuery?: string): number {
+    const dTag = getTagOr(event, 'd');
+    // 1. d-tag exact match (highest priority) - check raw query first to preserve foreign letters
+    if (dTag === query) {
+      return 100;
+    }
+    // Also check normalized for backward compatibility
+    if (_normalizedQuery && normalizeIdentifier(dTag) === _normalizedQuery) {
       return 100;
     }
     
@@ -748,8 +787,11 @@
       relayHints: seenCache[result.id],
       actualEvent: cleanEvent,
       versions:
-        getTagOr(result, 'd') === normalizeIdentifier(query)
-          ? results.filter((evt) => getTagOr(evt, 'd') === normalizeIdentifier(query)).map(evt => ({
+        getTagOr(result, 'd') === query || getTagOr(result, 'd') === normalizeIdentifier(query)
+          ? results.filter((evt) => {
+              const evtDTag = getTagOr(evt, 'd');
+              return evtDTag === query || evtDTag === normalizeIdentifier(query);
+            }).map(evt => ({
               id: evt.id,
               pubkey: evt.pubkey,
               created_at: evt.created_at,
