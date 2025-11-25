@@ -89,39 +89,15 @@
               const foundEvent = result.events[0];
               const articleKinds = [30023, 30817, 30041, 30040, 30818];
               if (articleKinds.includes(foundEvent.kind)) {
-                // Check if it's a book (kind 30040 with bookstr tags) or publication
-                if (foundEvent.kind === 30040) {
-                  const { isBookEvent } = await import('$lib/books');
-                  const isBook = isBookEvent(foundEvent as any);
-                  
-                  if (isBook) {
-                    // Book index event with bookstr tags - open as book card
-                    const { openBookSearchCard } = await import('$lib/bookSearchLauncher');
-                    const dTag = getTagOr(foundEvent, 'd') || '';
-                    openBookSearchCard(`book::${dTag}`);
-                    return;
-                  } else {
-                    // Publication event (30040 without bookstr tags) - open as article card
-                    const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
-                    openOrCreateArticleCard({
-                      type: 'article',
-                      data: [getTagOr(foundEvent, 'd') || '', foundEvent.pubkey],
-                      actualEvent: foundEvent,
-                      relayHints: result.relays
-                    });
-                    return;
-                  }
-                } else {
-                  // Article event - create article card
-                  const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
-                  openOrCreateArticleCard({
-                    type: 'article',
-                    data: [getTagOr(foundEvent, 'd') || '', foundEvent.pubkey],
-                    actualEvent: foundEvent,
-                    relayHints: result.relays
-                  });
-                  return;
-                }
+                // ALWAYS open as article card - never use book:: prefix for hex IDs
+                const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+                openOrCreateArticleCard({
+                  type: 'article',
+                  data: [getTagOr(foundEvent, 'd') || '', foundEvent.pubkey],
+                  actualEvent: foundEvent,
+                  relayHints: result.relays
+                });
+                return;
               } else {
                 // Not an article kind
                 tried = true;
@@ -176,26 +152,16 @@
                 if (result.events.length > 0) {
                   const foundEvent = result.events[0];
                   
-                  // Check if it has uppercase T tags (bookstr tags) - lowercase 't' is for topics, not bookstr
-                  const hasTTags = foundEvent.tags.some((tag: string[]) => tag[0] === 'T');
-                  
-                  if (hasTTags && (foundEvent.kind === 30040 || foundEvent.kind === 30041)) {
-                    // Bookstr event - open as book card
-                    const { openBookSearchCard } = await import('$lib/bookSearchLauncher');
-                    openBookSearchCard(`book::${decoded.data.identifier}`);
-                    return;
-                  } else {
-                    // Publication/article event (no T tags or not 30040/30041) - open as article card
-                    const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
-                    const { getTagOr } = await import('$lib/utils');
-                    openOrCreateArticleCard({
-                      type: 'article',
-                      data: [getTagOr(foundEvent, 'd') || decoded.data.identifier || '', foundEvent.pubkey],
-                      actualEvent: foundEvent,
-                      relayHints: result.relays
-                    });
-                    return;
-                  }
+                  // ALWAYS open as article card - never use book:: prefix for naddr
+                  const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+                  const { getTagOr } = await import('$lib/utils');
+                  openOrCreateArticleCard({
+                    type: 'article',
+                    data: [getTagOr(foundEvent, 'd') || decoded.data.identifier || '', foundEvent.pubkey],
+                    actualEvent: foundEvent,
+                    relayHints: result.relays
+                  });
+                  return;
                 } else {
                   // Event not found, but create article card from naddr data
                   const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
@@ -236,6 +202,7 @@
     }
     
     // Handle 64-character hex string - could be event ID or pubkey
+    // ALWAYS open as article - user didn't type book:: prefix
     if (trimmedQuery.match(/^[a-f0-9]{64}$/i)) {
       (async () => {
         try {
@@ -251,39 +218,15 @@
             const foundEvent = result.events[0];
             const articleKinds = [30023, 30817, 30041, 30040, 30818];
             if (articleKinds.includes(foundEvent.kind)) {
-              if (foundEvent.kind === 30040) {
-                // Check if it's a book (has bookstr tags) or a publication (no bookstr tags)
-                const { isBookEvent } = await import('$lib/books');
-                const isBook = isBookEvent(foundEvent as any);
-                
-                if (isBook) {
-                  // Book index event with bookstr tags - open as book card
-                  const { openBookSearchCard } = await import('$lib/bookSearchLauncher');
-                  const dTag = getTagOr(foundEvent, 'd') || '';
-                  openBookSearchCard(`book::${dTag}`);
-                  return;
-                } else {
-                  // Publication event (30040 without bookstr tags) - open as article card
-                  const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
-                  openOrCreateArticleCard({
-                    type: 'article',
-                    data: [getTagOr(foundEvent, 'd') || '', foundEvent.pubkey],
-                    actualEvent: foundEvent,
-                    relayHints: result.relays
-                  });
-                  return;
-                }
-              } else {
-                // Article event - create article card
-                const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
-                openOrCreateArticleCard({
-                  type: 'article',
-                  data: [getTagOr(foundEvent, 'd') || '', foundEvent.pubkey],
-                  actualEvent: foundEvent,
-                  relayHints: result.relays
-                });
-                return;
-              }
+              // ALWAYS open as article card - user didn't type book:: prefix
+              const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+              openOrCreateArticleCard({
+                type: 'article',
+                data: [getTagOr(foundEvent, 'd') || '', foundEvent.pubkey],
+                actualEvent: foundEvent,
+                relayHints: result.relays
+              });
+              return;
             } else {
               // Not an article/book kind - try as pubkey
               const pubkeyResult = await relayService.queryEvents(

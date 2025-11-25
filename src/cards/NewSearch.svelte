@@ -64,45 +64,17 @@ import Settings from '$cards/Settings.svelte';
               const articleKinds = [30023, 30817, 30041, 30040, 30818];
               
               if (articleKinds.includes(foundEvent.kind)) {
-                if (foundEvent.kind === 30040) {
-                  // Check if it's a book (has bookstr tags) or publication
-                  const { isBookEvent } = await import('$lib/books');
-                  const isBook = isBookEvent(foundEvent as any);
-                  
-                  if (isBook) {
-                    // Book index event with bookstr tags - open as book card
-                    const { openBookSearchCard } = await import('$lib/bookSearchLauncher');
-                    const { getTagOr } = await import('$lib/utils');
-                    const dTag = getTagOr(foundEvent, 'd') || '';
-                    openBookSearchCard(`book::${dTag}`);
-                    query = '';
-                    return;
-                  } else {
-                    // Publication event (30040 without bookstr tags) - open as article card
-                    const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
-                    const { getTagOr } = await import('$lib/utils');
-                    openOrCreateArticleCard({
-                      type: 'article',
-                      data: [getTagOr(foundEvent, 'd') || '', foundEvent.pubkey],
-                      actualEvent: foundEvent,
-                      relayHints: result.relays
-                    });
-                    query = '';
-                    return;
-                  }
-                } else {
-                  // Article event - create article card
-                  const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
-                  const { getTagOr } = await import('$lib/utils');
-                  openOrCreateArticleCard({
-                    type: 'article',
-                    data: [getTagOr(foundEvent, 'd') || '', foundEvent.pubkey],
-                    actualEvent: foundEvent,
-                    relayHints: result.relays
-                  });
-                  query = '';
-                  return;
-                }
+                // ALWAYS open as article card - never use book:: prefix for hex IDs
+                const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+                const { getTagOr } = await import('$lib/utils');
+                openOrCreateArticleCard({
+                  type: 'article',
+                  data: [getTagOr(foundEvent, 'd') || '', foundEvent.pubkey],
+                  actualEvent: foundEvent,
+                  relayHints: result.relays
+                });
+                query = '';
+                return;
               } else {
                 alert(`Event found but is not an article kind (30023, 30817, 30041, 30040, or 30818). Found kind: ${foundEvent.kind}`);
                 query = '';
@@ -160,41 +132,17 @@ import Settings from '$cards/Settings.svelte';
                     if (result.events.length > 0) {
                       const foundEvent = result.events[0];
                       
-                      if (foundEvent.kind === 30040 || foundEvent.kind === 30041) {
-                        // Check if it has uppercase T tags (bookstr tags) - lowercase 't' is for topics, not bookstr
-                        const hasTTags = foundEvent.tags.some((tag: string[]) => tag[0] === 'T');
-                        
-                        if (hasTTags) {
-                          // Bookstr event - open as book card
-                          const { openBookSearchCard } = await import('$lib/bookSearchLauncher');
-                          openBookSearchCard(`book::${decoded.data.identifier}`);
-                          query = '';
-                          return;
-                        } else {
-                          // Publication event (30040/30041 without T tags) - open as article card
-                          const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
-                          const { getTagOr } = await import('$lib/utils');
-                          openOrCreateArticleCard({
-                            type: 'article',
-                            data: [getTagOr(foundEvent, 'd') || decoded.data.identifier || '', foundEvent.pubkey],
-                            actualEvent: foundEvent,
-                            relayHints: result.relays
-                          });
-                          query = '';
-                          return;
-                        }
-                      } else {
-                        // Article event - create article card
-                        const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
-                        openOrCreateArticleCard({
-                          type: 'article',
-                          data: [decoded.data.identifier || '', decoded.data.pubkey || ''],
-                          actualEvent: foundEvent,
-                          relayHints: result.relays
-                        });
-                        query = '';
-                        return;
-                      }
+                      // ALWAYS open as article card - never use book:: prefix for naddr/nevent
+                      const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+                      const { getTagOr } = await import('$lib/utils');
+                      openOrCreateArticleCard({
+                        type: 'article',
+                        data: [getTagOr(foundEvent, 'd') || decoded.data.identifier || '', foundEvent.pubkey],
+                        actualEvent: foundEvent,
+                        relayHints: result.relays
+                      });
+                      query = '';
+                      return;
                     } else {
                       // Event not found, but we can still create an article card from naddr data
                       const articleCard: ArticleCard = {

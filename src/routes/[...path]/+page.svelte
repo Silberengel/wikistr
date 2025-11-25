@@ -164,31 +164,21 @@
       // If nevent decode failed or not a valid nevent, create find card
       return { id: next(), type: 'find', data: pathPart, preferredAuthors: [] } as SearchCard;
     } else if (ditem.startsWith('naddr1')) {
-      // Handle naddr - decode and create appropriate card
+      // Handle naddr - ALWAYS create article card, never book card
       try {
         const decoded = decode(ditem);
         if (decoded.type === 'naddr') {
           const articleKinds = [30023, 30817, 30041, 30040, 30818];
           if (decoded.data.kind && articleKinds.includes(decoded.data.kind)) {
-            if (decoded.data.kind === 30040) {
-              // Book index event - create book card
-              const identifier = decoded.data.identifier || '';
-              return { 
-                id: next(), 
-                type: 'book', 
-                data: `book::${identifier}`
-              } as BookCard;
-            } else {
-              // Article event - create article card
-              const identifier = decoded.data.identifier || '';
-              const pubkey = decoded.data.pubkey || '';
-              return { 
-                id: next(), 
-                type: 'article', 
-                data: [identifier, pubkey],
-                relayHints: decoded.data.relays || []
-              } as ArticleCard;
-            }
+            // ALWAYS create article card - never use book:: prefix for naddr
+            const identifier = decoded.data.identifier || '';
+            const pubkey = decoded.data.pubkey || '';
+            return { 
+              id: next(), 
+              type: 'article', 
+              data: [identifier, pubkey],
+              relayHints: decoded.data.relays || []
+            } as ArticleCard;
           }
         }
       } catch (e) {
