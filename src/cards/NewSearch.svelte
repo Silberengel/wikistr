@@ -234,9 +234,9 @@ import Settings from '$cards/Settings.svelte';
 </div>
 
   <!-- Bottom Panel -->
-<div class="mt-4 flex justify-between items-center">
+<div class="mt-4 flex flex-col md:flex-row md:justify-between md:items-center gap-2">
   <!-- About Statement (Bottom Left) -->
-  <div class="flex items-center space-x-2">
+  <div class="flex items-center space-x-2 flex-wrap">
     <span class="text-xs" style="color: var(--text-secondary);">
       Need help? Contact 
     </span>
@@ -253,7 +253,7 @@ import Settings from '$cards/Settings.svelte';
   </div>
 
   <!-- Browse Cache and Settings Buttons (Bottom Right) -->
-  <div class="flex items-center space-x-2">
+  <div class="flex items-center space-x-2 self-start md:self-auto">
     <!-- Browse Cache Button -->
     <button
       onclick={toggleCacheBrowser}

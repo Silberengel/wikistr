@@ -290,17 +290,23 @@
 
 <!-- Main Tabs -->
 <div class="w-full max-w-6xl mx-auto">
-  <div class="border-b border-gray-300 dark:border-gray-700 mb-6">
+  <div class="border-b mb-6" style="border-color: var(--border);">
     <nav class="flex space-x-8" aria-label="Tabs">
       <button
         onclick={() => activeTab = 'general'}
-        class="py-4 px-1 border-b-2 font-medium text-sm transition-colors {activeTab === 'general' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'}"
+        class="py-4 px-1 border-b-2 font-medium text-sm transition-colors"
+        style="border-color: {activeTab === 'general' ? 'var(--accent)' : 'transparent'}; color: {activeTab === 'general' ? 'var(--accent)' : 'var(--text-secondary)'};"
+        onmouseenter={(e) => { if (activeTab !== 'general') { e.currentTarget.style.color = 'var(--text-primary)'; } }}
+        onmouseleave={(e) => { if (activeTab !== 'general') { e.currentTarget.style.color = 'var(--text-secondary)'; } }}
       >
         General
       </button>
       <button
         onclick={() => activeTab = 'themes'}
-        class="py-4 px-1 border-b-2 font-medium text-sm transition-colors {activeTab === 'themes' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'}"
+        class="py-4 px-1 border-b-2 font-medium text-sm transition-colors"
+        style="border-color: {activeTab === 'themes' ? 'var(--accent)' : 'transparent'}; color: {activeTab === 'themes' ? 'var(--accent)' : 'var(--text-secondary)'};"
+        onmouseenter={(e) => { if (activeTab !== 'themes') { e.currentTarget.style.color = 'var(--text-primary)'; } }}
+        onmouseleave={(e) => { if (activeTab !== 'themes') { e.currentTarget.style.color = 'var(--text-secondary)'; } }}
       >
         PDF Themes
       </button>
@@ -512,7 +518,7 @@
 
   <!-- PDF Themes Tab -->
   {#if activeTab === 'themes'}
-    <div class="border border-gray-300 dark:border-gray-700 rounded-lg p-4 md:p-6 lg:p-8 min-h-[60vh] md:min-h-[70vh]">
+    <div class="border rounded-lg p-4 md:p-6 lg:p-8 min-h-[60vh] md:min-h-[70vh]" style="border-color: var(--border);">
       <div class="flex items-center gap-2 mb-6">
         <h2 class="text-2xl font-semibold">PDF Theme Configuration</h2>
         <div class="relative">
@@ -557,17 +563,23 @@
       {/if}
 
       <!-- Theme Sub-tabs -->
-      <div class="border-b border-gray-300 dark:border-gray-700 mb-6">
+      <div class="border-b mb-6" style="border-color: var(--border);">
         <nav class="flex space-x-4 md:space-x-8 overflow-x-auto" aria-label="Theme sub-tabs">
           <button
             onclick={() => activeThemeTab = 'config'}
-            class="py-3 px-2 md:px-4 border-b-2 font-medium text-sm whitespace-nowrap transition-colors {activeThemeTab === 'config' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'}"
+            class="py-3 px-2 md:px-4 border-b-2 font-medium text-sm whitespace-nowrap transition-colors"
+            style="border-color: {activeThemeTab === 'config' ? 'var(--accent)' : 'transparent'}; color: {activeThemeTab === 'config' ? 'var(--accent)' : 'var(--text-secondary)'};"
+            onmouseenter={(e) => { if (activeThemeTab !== 'config') { e.currentTarget.style.color = 'var(--text-primary)'; } }}
+            onmouseleave={(e) => { if (activeThemeTab !== 'config') { e.currentTarget.style.color = 'var(--text-secondary)'; } }}
           >
             Configuration
           </button>
           <button
             onclick={() => activeThemeTab = 'files'}
-            class="py-3 px-2 md:px-4 border-b-2 font-medium text-sm whitespace-nowrap transition-colors {activeThemeTab === 'files' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'}"
+            class="py-3 px-2 md:px-4 border-b-2 font-medium text-sm whitespace-nowrap transition-colors"
+            style="border-color: {activeThemeTab === 'files' ? 'var(--accent)' : 'transparent'}; color: {activeThemeTab === 'files' ? 'var(--accent)' : 'var(--text-secondary)'};"
+            onmouseenter={(e) => { if (activeThemeTab !== 'files') { e.currentTarget.style.color = 'var(--text-primary)'; } }}
+            onmouseleave={(e) => { if (activeThemeTab !== 'files') { e.currentTarget.style.color = 'var(--text-secondary)'; } }}
           >
             Theme Files
           </button>

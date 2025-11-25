@@ -605,7 +605,7 @@ class RelayService {
         const cacheRelayUrls = await getCacheRelayUrls();
         for (const cacheRelayUrl of cacheRelayUrls) {
           if (!inboxRelays.includes(cacheRelayUrl)) {
-            inboxRelays.push(cacheRelayUrl);
+        inboxRelays.push(cacheRelayUrl);
           }
         }
       } catch (error) {
@@ -665,7 +665,7 @@ class RelayService {
         const cacheRelayUrls = await getCacheRelayUrls();
         for (const cacheRelayUrl of cacheRelayUrls) {
           if (!outboxRelays.includes(cacheRelayUrl)) {
-            outboxRelays.push(cacheRelayUrl);
+        outboxRelays.push(cacheRelayUrl);
           }
         }
       } catch (error) {
@@ -921,20 +921,24 @@ class RelayService {
         
         await r.publish(event);
         publishedTo.push(url);
+        this.recordRelaySuccess(url);
         console.log('✅ Published to', url);
       } catch (err) {
         // Handle specific error types
         if (err instanceof Error) {
           if (err.message.includes('UNIQUE constraint failed')) {
             console.log('⚠️ Event already exists on', url, '- skipping');
+            this.recordRelaySuccess(url); // Count as success since event exists
             continue; // Skip this relay, don't count as failure
           }
           if (err.message.includes('rate-limited')) {
             console.log('⚠️ Rate limited on', url, '- skipping');
-            continue; // Skip this relay, don't count as failure
+            this.recordRelayFailure(url); // Rate limiting is a failure
+            continue; // Skip this relay, but count as failure
           }
         }
         failedRelays.push(url);
+        this.recordRelayFailure(url);
         console.warn('❌ Failed to publish to', url, err);
       }
     }

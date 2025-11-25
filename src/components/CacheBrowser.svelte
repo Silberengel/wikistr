@@ -87,7 +87,7 @@
           // Filter by specific kind
           const kindNum = parseInt(selectedKind);
           all = all.filter(e => e.kind === kindNum);
-        }
+      }
       }
       
       // Filter by search query if provided
@@ -95,14 +95,14 @@
         const query = searchQuery.toLowerCase();
         all = all.filter(e => {
           // Try to match event ID
-          if (searchQuery.length === 64 && /^[0-9a-f]+$/i.test(searchQuery)) {
+        if (searchQuery.length === 64 && /^[0-9a-f]+$/i.test(searchQuery)) {
             return e.id.toLowerCase().includes(query);
           }
           // Search in content and tags
           const contentMatch = e.content.toLowerCase().includes(query);
           const tagMatch = e.tags.some(t => t.some(v => String(v).toLowerCase().includes(query)));
-          return contentMatch || tagMatch;
-        });
+            return contentMatch || tagMatch;
+          });
       }
       
       cachedEvents = all;
