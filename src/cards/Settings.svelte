@@ -72,21 +72,28 @@
       if (response.ok) {
         const text = await response.text();
         const entry = parseChangelogForVersion(text, appVersion);
-        changelogEntry = entry;
-        if (!entry) {
+        if (entry) {
+          changelogEntry = entry;
+        } else {
           console.warn('Changelog entry not found for version:', appVersion);
+          // Set to empty object to show "Loading changelog..." message
+          changelogEntry = null;
         }
       } else {
-        console.warn('Failed to fetch CHANGELOG.md:', response.status, response.statusText);
+        console.error('Failed to fetch CHANGELOG.md:', response.status, response.statusText);
+        changelogEntry = null;
       }
     } catch (error) {
-      console.warn('Failed to load CHANGELOG:', error);
+      console.error('Failed to load CHANGELOG:', error);
+      changelogEntry = null;
     }
   });
 
   function parseChangelogForVersion(changelogText: string, version: string): { added?: string[]; changed?: string[]; fixed?: string[] } | null {
     // Find the section for this version - match ## [version] and ignore anything after it on that line
-    const versionRegex = new RegExp(`## \\[${version.replace(/\./g, '\\.')}\\][^\\n]*`, 'i');
+    const escapedVersion = version.replace(/\./g, '\\.');
+    const pattern = '## \\[' + escapedVersion + '\\][^\\n]*';
+    const versionRegex = new RegExp(pattern, 'i');
     const match = changelogText.match(versionRegex);
     if (!match) {
       console.warn('Version not found in changelog:', version);
@@ -402,13 +409,13 @@
         <div>WikiStr v{appVersion}</div>
         <div class="mt-1 opacity-75">from GitCitadel</div>
         <div class="mt-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-          <h4 class="font-semibold mb-2">Recent Changes</h4>
+          <h4 class="font-semibold mb-2 text-gray-900 dark:text-gray-100">Recent Changes</h4>
           {#if changelogEntry}
-            <div class="text-sm space-y-2">
+            <div class="text-sm space-y-2 text-gray-700 dark:text-gray-300">
               {#if changelogEntry.added && changelogEntry.added.length > 0}
                 <div>
                   <span class="font-medium text-green-600 dark:text-green-400">Added:</span>
-                  <ul class="list-disc list-inside ml-2 mt-1">
+                  <ul class="list-disc list-inside ml-2 mt-1 text-gray-700 dark:text-gray-300">
                     {#each changelogEntry.added as item}
                       <li>{item}</li>
                     {/each}
@@ -418,7 +425,7 @@
               {#if changelogEntry.changed && changelogEntry.changed.length > 0}
                 <div>
                   <span class="font-medium text-blue-600 dark:text-blue-400">Changed:</span>
-                  <ul class="list-disc list-inside ml-2 mt-1">
+                  <ul class="list-disc list-inside ml-2 mt-1 text-gray-700 dark:text-gray-300">
                     {#each changelogEntry.changed as item}
                       <li>{item}</li>
                     {/each}
@@ -428,7 +435,7 @@
               {#if changelogEntry.fixed && changelogEntry.fixed.length > 0}
                 <div>
                   <span class="font-medium text-orange-600 dark:text-orange-400">Fixed:</span>
-                  <ul class="list-disc list-inside ml-2 mt-1">
+                  <ul class="list-disc list-inside ml-2 mt-1 text-gray-700 dark:text-gray-300">
                     {#each changelogEntry.fixed as item}
                       <li>{item}</li>
                     {/each}
