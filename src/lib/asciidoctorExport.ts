@@ -291,65 +291,10 @@ export async function openInViewer(
   blob: Blob, 
   filename: string, 
   format: 'pdf' | 'epub' | 'html' | 'markdown' | 'asciidoc' | 'json' | 'jsonl',
-  validationMessages?: { errors?: string[]; warnings?: string[] },
-  originalLaTeXBlob?: Blob
+  validationMessages?: { errors?: string[]; warnings?: string[] }
 ): Promise<void> {
   // All files are downloaded instead of viewed (viewer removed)
   downloadBlob(blob, filename);
-}
-
-/**
- * Convert AsciiDoc content to LaTeX
- */
-export async function exportToLaTeX(options: ExportOptions): Promise<Blob> {
-  const baseUrl = ASCIIDOCTOR_SERVER_URL.endsWith('/') ? ASCIIDOCTOR_SERVER_URL : `${ASCIIDOCTOR_SERVER_URL}/`;
-  const url = `${baseUrl}convert/latex`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      content: options.content,
-      title: options.title,
-      author: options.author || '',
-    }),
-  });
-
-  if (!response.ok) {
-    // Try to read error message
-    const contentType = response.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-      throw new Error(error.error || error.message || `Failed to generate LaTeX: ${response.statusText}`);
-    }
-    throw new Error(`Failed to generate LaTeX: ${response.status} ${response.statusText}`);
-  }
-
-  // Verify we got a LaTeX response
-  const contentType = response.headers.get('content-type') || '';
-  if (!contentType.includes('text/x-latex') && !contentType.includes('text/plain')) {
-    // Might be an error response, try to read as JSON or text
-    const text = await response.text();
-    // Check if it's the SvelteKit app shell (common error when proxy fails)
-    if (text.includes('__sveltekit') || text.includes('sveltekit-preload-data')) {
-      throw new Error('Server returned SvelteKit app shell instead of LaTeX. Check AsciiDoctor server is running at /asciidoctor/ and proxy is configured correctly.');
-    }
-    try {
-      const error = JSON.parse(text);
-      throw new Error(error.error || error.message || 'Server returned non-LaTeX response');
-    } catch {
-      throw new Error(`Server returned unexpected content type: ${contentType}. Response preview: ${text.substring(0, 200)}`);
-    }
-  }
-
-  const blob = await response.blob();
-  
-  if (!blob || blob.size === 0) {
-    throw new Error('Server returned empty LaTeX file');
-  }
-  
-  return blob;
 }
 
 

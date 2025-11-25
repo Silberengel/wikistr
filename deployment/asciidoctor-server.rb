@@ -65,8 +65,7 @@ get '/healthz' do
     status: 'ok',
     endpoints: {
       epub: '/convert/epub',
-      html5: '/convert/html5',
-      latex: '/convert/latex'
+      html5: '/convert/html5'
     },
     port: settings.port
   }.to_json
@@ -78,7 +77,7 @@ get '/api' do
   {
     name: 'wikistr-asciidoctor',
     version: '1.0.0',
-    description: 'AsciiDoctor REST API for converting AsciiDoc content to various formats. All formats support automatic table of contents generation and LaTeX math rendering via stem blocks.',
+    description: 'AsciiDoctor REST API for converting AsciiDoc content to various formats. All formats support automatic table of contents generation and LaTeX math rendering via stem blocks (for display in HTML/EPUB).',
     base_url: "#{request.scheme}://#{request.host_with_port}/asciidoctor",
     endpoints: {
       health: {
@@ -147,28 +146,6 @@ get '/api' do
           latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks',
           diagrams: 'Diagram generation is supported via asciidoctor-diagram extension. Supported formats: PlantUML, Graphviz, Mermaid, BPMN (via PlantUML)'
         }
-      },
-      convert_latex: {
-        method: 'POST',
-        path: '/asciidoctor/convert/latex',
-        description: 'Convert AsciiDoc content to LaTeX with automatic table of contents and LaTeX math support',
-        request: {
-          type: 'application/json',
-          body: {
-            content: 'string (required) - AsciiDoc content. Supports LaTeX math via stem:[] for inline and [stem] blocks for display math',
-            title: 'string (required) - Document title',
-            author: 'string (optional) - Document author'
-          }
-        },
-        response: {
-          type: 'text/x-latex',
-          disposition: 'attachment'
-        },
-        features: {
-          table_of_contents: 'Automatic table of contents is generated when :toc: attribute is set (enabled by default)',
-          latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks. Math is rendered natively in LaTeX output',
-          diagrams: 'Diagram generation is supported via asciidoctor-diagram extension. TikZ diagrams work best with LaTeX backend. PlantUML, Graphviz, and Mermaid are also supported.'
-        }
       }
     },
     cors: {
@@ -185,8 +162,7 @@ get '/api' do
     },
     examples: {
       curl_epub: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/epub -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\"}' --output document.epub",
-      curl_html5: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/html5 -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\"}' --output document.html",
-      curl_latex: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/latex -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\"}' --output document.tex"
+      curl_html5: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/html5 -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\"}' --output document.html"
     }
   }.to_json
 end
@@ -595,91 +571,10 @@ get '/' do
     endpoints: {
       epub: '/convert/epub',
       html5: '/convert/html5',
-      latex: '/convert/latex',
       health: '/healthz',
       api_docs: '/api'
     }
   }.to_json
 end
 
-# Convert to LaTeX
-post '/convert/latex' do
-  begin
-    request.body.rewind
-    body_content = request.body.read
-    log_request_size(body_content, 'LaTeX')
-    data = JSON.parse(body_content)
-    content = data['content'] || data['asciidoc']
-    title = data['title'] || 'Document'
-    author = data['author'] || ''
-    
-    unless content
-      status 400
-      content_type :json
-      return { error: 'Missing content or asciidoc field' }.to_json
-    end
-    
-    # Create temporary file for AsciiDoc content
-    temp_adoc = Tempfile.new(['document', '.adoc'])
-    temp_adoc.write(content)
-    temp_adoc.close
-    
-    begin
-      # Convert to LaTeX
-      puts "[LaTeX] Starting conversion for: #{title}"
-      latex_content = Asciidoctor.convert content,
-        backend: 'latex',
-        safe: 'unsafe',
-        attributes: {
-          'title' => title,
-          'author' => author,
-          'doctype' => 'article',
-          'imagesdir' => '.',
-          'allow-uri-read' => ''
-        }
-      
-      puts "[LaTeX] Conversion successful, output size: #{latex_content.bytesize} bytes"
-      
-      # Set headers
-      content_type 'text/x-latex; charset=utf-8'
-      headers 'Content-Disposition' => "attachment; filename=\"#{title.gsub(/[^a-z0-9]/i, '_')}.tex\""
-      
-      latex_content
-    rescue => e
-      puts "[LaTeX] Conversion error: #{e.class.name}: #{e.message}"
-      puts "[LaTeX] Backtrace: #{e.backtrace.first(10).join("\n")}"
-      raise e
-    ensure
-      temp_adoc.unlink if temp_adoc
-    end
-  rescue JSON::ParserError => e
-    puts "[LaTeX] JSON parse error: #{e.message}"
-    status 400
-    content_type :json
-    { error: 'Invalid JSON', message: e.message }.to_json
-  rescue => e
-    puts "[LaTeX] Unexpected error: #{e.class.name}: #{e.message}"
-    puts "[LaTeX] Backtrace: #{e.backtrace.first(10).join("\n")}"
-    
-    error_details = {
-      error: 'LaTeX conversion failed',
-      message: e.message,
-      class: e.class.name
-    }
-    
-    # Add helpful hints
-    if e.message.include?('syntax') || e.message.include?('parse') || e.message.include?('invalid') || e.message.include?('AsciiDoc')
-      error_details[:hint] = 'This appears to be an AsciiDoc syntax error. Common issues include: unclosed blocks (----), invalid attribute syntax, malformed headings, or incorrect attribute block spacing.'
-    end
-    
-    # Include backtrace for debugging (first few lines only)
-    if e.backtrace && e.backtrace.length > 0
-      error_details[:backtrace] = e.backtrace.first(5)
-    end
-    
-    status 500
-    content_type :json
-    error_details.to_json
-  end
-end
 

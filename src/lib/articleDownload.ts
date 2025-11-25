@@ -6,7 +6,7 @@
 import type { NostrEvent } from '@nostr/tools/pure';
 import { nip19 } from '@nostr/tools';
 import { relayService } from '$lib/relayService';
-import { exportToEPUB, exportToHTML5, exportToLaTeX, downloadBlob } from './asciidoctorExport';
+import { exportToEPUB, exportToHTML5, downloadBlob } from './asciidoctorExport';
 import {
   processContentQuality,
   processContentQualityAsync,
@@ -732,24 +732,6 @@ export async function downloadAsHTML5(event: NostrEvent, filename?: string): Pro
   downloadBlob(blob, name);
 }
 
-
-
-/**
- * Download article as LaTeX
- */
-export async function downloadAsLaTeX(event: NostrEvent, filename?: string): Promise<void> {
-  const { content, title, author } = await getEventContent(event);
-  validateAsciiDocContent(content, true);
-  
-  const blob = await exportToLaTeX({ content, title, author });
-  
-  if (!blob || blob.size === 0) {
-    throw new Error('Server returned empty LaTeX file');
-  }
-  
-  const name = filename || generateFilename(title, 'tex');
-  downloadBlob(blob, name);
-}
 
 
 
@@ -1730,74 +1712,6 @@ export async function downloadBookSearchResultsAsEPUB(
   }
 }
 
-/**
- * Download book search results as LaTeX
- */
-export async function downloadBookSearchResultsAsLaTeX(
-  results: NostrEvent[],
-  parsedQuery: { references: any[]; version?: string; versions?: string[] } | null
-): Promise<void> {
-  if (results.length === 0) {
-    throw new Error('No results to download');
-  }
-  
-  const combined = await combineBookSearchResults(results, parsedQuery);
-  
-  const queryTitle = parsedQuery 
-    ? parsedQuery.references.map(ref => {
-        const parts: string[] = [];
-        if (ref.book) parts.push(ref.book);
-        if (ref.chapter) parts.push(String(ref.chapter));
-        if (ref.verse) parts.push(ref.verse);
-        return parts.join(' ');
-      }).join('; ')
-    : 'Book Search Results';
-  
-  const versions = parsedQuery?.versions || (parsedQuery?.version ? [parsedQuery.version] : []);
-  const versionStr = versions.length > 0 ? ` (${versions.join(', ')})` : '';
-  const title = `${queryTitle}${versionStr}`;
-  
-  const firstEvent = results[0];
-  let author = firstEvent.tags.find(([k]) => k === 'author')?.[1];
-  if (!author) {
-    author = await getUserHandle(firstEvent.pubkey);
-  }
-  
-  try {
-    const blob = await exportToLaTeX({
-      content: combined,
-      title,
-      author
-    });
-    
-    if (!blob || blob.size === 0) {
-      throw new Error('Server returned empty LaTeX file');
-    }
-    
-    const name = `${title.replace(/[^a-z0-9]/gi, '_')}.tex`;
-    downloadBlob(blob, name);
-  } catch (error) {
-    console.error('Failed to download book search results LaTeX:', error);
-    throw error;
-  }
-}
-
-/**
- * Download book (30040) as LaTeX with all branches and leaves
- */
-export async function downloadBookAsLaTeX(indexEvent: NostrEvent, filename?: string): Promise<void> {
-  const { content, title, author } = await getEventContent(indexEvent);
-  validateAsciiDocContent(content, true);
-  
-  const blob = await exportToLaTeX({ content, title, author });
-  
-  if (!blob || blob.size === 0) {
-    throw new Error('Server returned empty LaTeX file');
-  }
-  
-  const name = filename || generateFilename(title, 'tex');
-  downloadBlob(blob, name);
-}
 
 /**
  * Fetch all nested 30040 and 30041 events for a 30040 index event
