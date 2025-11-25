@@ -30,22 +30,30 @@ configure do
     min_threads: 2
 end
 
-# CORS configuration
+# CORS configuration - always allow all origins for development
+# In production, set ASCIIDOCTOR_ALLOW_ORIGIN environment variable
 before do
   origin = request.env['HTTP_ORIGIN']
   allowed_origins = (ENV['ASCIIDOCTOR_ALLOW_ORIGIN'] || '*').split(',').map(&:strip).reject(&:empty?)
   
-  if allowed_origins.include?('*') || (origin && allowed_origins.any? { |pattern| origin.match?(/#{pattern.gsub('*', '.*')}/) })
-    headers 'Access-Control-Allow-Origin' => origin || '*'
+  # Always set CORS headers - default to allow all origins
+  cors_origin = '*'
+  if allowed_origins.include?('*')
+    cors_origin = '*'
+  elsif origin && allowed_origins.any? { |pattern| origin.match?(/#{pattern.gsub('*', '.*')}/) }
+    cors_origin = origin
   end
   
-  headers 'Access-Control-Allow-Methods' => 'POST, OPTIONS'
+  headers 'Access-Control-Allow-Origin' => cors_origin
+  headers 'Access-Control-Allow-Methods' => 'POST, GET, OPTIONS'
   headers 'Access-Control-Allow-Headers' => 'Content-Type, Origin, Accept'
   headers 'Access-Control-Max-Age' => '86400'
 end
 
+# Handle OPTIONS requests for CORS preflight
 options '*' do
-  204
+  status 204
+  ''
 end
 
 
@@ -607,6 +615,7 @@ post '/convert/latex' do
     
     unless content
       status 400
+      content_type :json
       return { error: 'Missing content or asciidoc field' }.to_json
     end
     
@@ -638,9 +647,11 @@ post '/convert/latex' do
     end
   rescue JSON::ParserError => e
     status 400
+    content_type :json
     { error: 'Invalid JSON', message: e.message }.to_json
   rescue => e
     status 500
+    content_type :json
     { error: 'Conversion failed', message: e.message }.to_json
   end
 end
