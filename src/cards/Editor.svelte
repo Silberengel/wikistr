@@ -159,6 +159,37 @@
         Cancel
       </button>
       <button
+        onclick={() => {
+          try {
+            // Parse JSON
+            const eventTemplate = JSON.parse(jsonContent) as EventTemplate;
+            
+            // Validate required fields
+            if (!eventTemplate.kind || !eventTemplate.content || !eventTemplate.tags) {
+              error = 'Invalid event: missing required fields (kind, content, tags)';
+              return;
+            }
+            
+            // Update data from parsed JSON
+            data.title = getTagOr(eventTemplate, 'title') || getTagOr(eventTemplate, 'd') || '';
+            data.summary = getTagOr(eventTemplate, 'summary') || '';
+            data.content = eventTemplate.content || '';
+            data.image = getTagOr(eventTemplate, 'image') || '';
+            data.author = getTagOr(eventTemplate, 'author') || '';
+            
+            // Close JSON editor
+            editingJson = false;
+            error = undefined;
+          } catch (err) {
+            error = 'Invalid JSON: ' + String(err);
+          }
+        }}
+        class="cursor-pointer inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2"
+        style="font-family: {theme.typography.fontFamily};"
+      >
+        Save
+      </button>
+      <button
         onclick={async () => {
           if (!$account) return;
           
@@ -268,7 +299,7 @@
       Article
       {#if previewing}
         <div class="prose prose-p:my-0 prose-li:my-0">
-          {#if editingJson && jsonContent}
+          {#if jsonContent && jsonContent.trim()}
             {@const parsed = (() => {
               try {
                 return JSON.parse(jsonContent) as EventTemplate;
