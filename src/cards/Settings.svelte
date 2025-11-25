@@ -12,6 +12,8 @@
   import { contentCache } from '$lib/contentCache';
   import { onMount } from 'svelte';
   import type { Card } from '$lib/types';
+  import { account } from '$lib/nostr';
+  import { getCacheRelayUrls, saveCacheRelayUrls } from '$lib/cacheRelay';
 
   interface Props {
     createChild?: (card: Card) => void;
@@ -30,6 +32,10 @@
   let isUploading = $state(false);
   let showInfo = $state(false);
   let currentRelays = $state<string[]>([]);
+  let cacheRelays = $state<string[]>([]);
+  let editingCacheRelays = $state(false);
+  let cacheRelayInput = $state('');
+  let isSavingCacheRelays = $state(false);
   let changelogEntry = $state<{ added?: string[]; changed?: string[]; fixed?: string[] } | null>(null);
   
   // Get version from package.json (injected at build time via vite.config.ts)
@@ -54,6 +60,11 @@
   onMount(async () => {
     // Get current relays from cache
     currentRelays = contentCache.getAllRelays();
+    
+    // Load cache relays
+    if ($account?.pubkey) {
+      cacheRelays = await getCacheRelayUrls();
+    }
     
     // Load changelog entry for current version
     try {
@@ -279,13 +290,111 @@
         {#if currentRelays.length > 0}
           <ul class="space-y-1 max-h-64 overflow-y-auto list-none">
             {#each currentRelays as relay}
-              <li class="text-sm text-gray-700 dark:text-gray-300">{relay}</li>
+              <li class="text-sm text-gray-700 dark:text-gray-300">
+                {relay}
+                {#if cacheRelays.includes(relay)}
+                  <span class="ml-2 text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded">Cache Relay</span>
+                {/if}
+              </li>
             {/each}
           </ul>
         {:else}
           <p class="text-sm text-gray-500 dark:text-gray-400">No relays used yet</p>
         {/if}
       </div>
+
+      <!-- Cache Relays -->
+      {#if $account?.pubkey}
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-lg font-medium">Cache Relays</h3>
+            {#if !editingCacheRelays}
+              <button
+                onclick={() => {
+                  editingCacheRelays = true;
+                  cacheRelayInput = cacheRelays.join('\n');
+                }}
+                class="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300"
+              >
+                {cacheRelays.length > 0 ? 'Edit' : 'Add'}
+              </button>
+            {/if}
+          </div>
+          
+          {#if editingCacheRelays}
+            <div class="space-y-3">
+              <div>
+                <label for="cache-relay-input" class="block text-sm font-medium mb-1">
+                  Cache Relay URLs (one per line, ws:// or wss://)
+                </label>
+                <textarea
+                  id="cache-relay-input"
+                  bind:value={cacheRelayInput}
+                  placeholder="ws://localhost:8080&#10;ws://192.168.1.100:8080"
+                  rows="4"
+                  class="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                ></textarea>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Enter cache relay URLs (ws:// or wss:// addresses), one per line
+                </p>
+              </div>
+              <div class="flex gap-2">
+                <button
+                  onclick={async () => {
+                    isSavingCacheRelays = true;
+                    saveMessage = null;
+                    try {
+                      const urls = cacheRelayInput
+                        .split('\n')
+                        .map(line => line.trim())
+                        .filter(line => line.length > 0);
+                      
+                      const result = await saveCacheRelayUrls(urls);
+                      if (result.success) {
+                        cacheRelays = urls;
+                        editingCacheRelays = false;
+                        cacheRelayInput = '';
+                        saveMessage = { type: 'success', text: 'Cache relays saved successfully!' };
+                        setTimeout(() => { saveMessage = null; }, 5000);
+                      } else {
+                        saveMessage = { type: 'error', text: result.error || 'Failed to save cache relays' };
+                      }
+                    } catch (error) {
+                      saveMessage = { type: 'error', text: error instanceof Error ? error.message : 'Failed to save cache relays' };
+                    } finally {
+                      isSavingCacheRelays = false;
+                    }
+                  }}
+                  disabled={isSavingCacheRelays}
+                  class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                >
+                  {isSavingCacheRelays ? 'Saving...' : 'Save'}
+                </button>
+                <button
+                  onclick={() => {
+                    editingCacheRelays = false;
+                    cacheRelayInput = '';
+                  }}
+                  disabled={isSavingCacheRelays}
+                  class="px-4 py-2 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          {:else}
+            {#if cacheRelays.length > 0}
+              <ul class="space-y-1 list-none">
+                {#each cacheRelays as relay}
+                  <li class="text-sm text-gray-700 dark:text-gray-300">{relay}</li>
+                {/each}
+              </ul>
+            {:else}
+              <p class="text-sm text-gray-500 dark:text-gray-400">No cache relays configured</p>
+            {/if}
+          {/if}
+        </div>
+      {/if}
 
       <!-- Version -->
       <div>

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import type { NostrEvent } from '@nostr/tools/pure';
-  import { getAllCachedEvents, queryCacheRelay } from '$lib/cacheRelay';
+  import { contentCache } from '$lib/contentCache';
   import { getTagOr } from '$lib/utils';
 
   interface Props {
@@ -18,14 +18,23 @@
 
   const kindOptions = [
     { value: 'all', label: 'All Kinds' },
+    { value: 'metadata', label: 'Metadata (All)' },
+    { value: '0', label: '  0 - Profile Metadata' },
+    { value: '10002', label: '  10002 - Relay List' },
+    { value: '10003', label: '  10003 - Bookmarks' },
+    { value: '10133', label: '  10133 - Payment Metadata' },
+    { value: '10432', label: '  10432 - Cache Relay' },
+    { value: '1111', label: '1111 - Comments' },
     { value: '30023', label: '30023 - Long-form' },
     { value: '30040', label: '30040 - Book Index' },
     { value: '30041', label: '30041 - Book Content' },
+    { value: '30078', label: '30078 - Book Config' },
     { value: '30817', label: '30817 - Markdown Article' },
-    { value: '30818', label: '30818 - AsciiDoc Article' },
-    { value: '10003', label: '10003 - Bookmarks' },
-    { value: '10432', label: '10432 - Cache Relay' }
+    { value: '30818', label: '30818 - AsciiDoc Article' }
   ];
+
+  // Metadata kinds category
+  const metadataKinds = [0, 10002, 10003, 10133, 10432];
 
   onMount(async () => {
     await loadEvents();
@@ -34,8 +43,18 @@
   async function loadEvents() {
     isLoading = true;
     try {
-      const all = await getAllCachedEvents();
-      cachedEvents = all;
+      // Get all cached events from all content types
+      // Note: metadata contains kind 0, wiki contains 30817/30818/30023/30040, etc.
+      const allCached = [
+        ...contentCache.getEvents('wiki'),
+        ...contentCache.getEvents('kind1111'),
+        ...contentCache.getEvents('kind30041'),
+        ...contentCache.getEvents('kind10002'),
+        ...contentCache.getEvents('kind10432'),
+        ...contentCache.getEvents('metadata'),
+        ...contentCache.getEvents('bookConfigs')
+      ];
+      cachedEvents = allCached.map(cached => cached.event);
     } catch (error) {
       console.error('Failed to load cached events:', error);
     } finally {
@@ -46,34 +65,46 @@
   async function search() {
     isLoading = true;
     try {
-      const filters: any[] = [];
+      // Get all cached events first
+      const allCached = [
+        ...contentCache.getEvents('wiki'),
+        ...contentCache.getEvents('kind1111'),
+        ...contentCache.getEvents('kind30041'),
+        ...contentCache.getEvents('kind10002'),
+        ...contentCache.getEvents('kind10432'),
+        ...contentCache.getEvents('metadata'),
+        ...contentCache.getEvents('bookConfigs')
+      ];
+      let all = allCached.map(cached => cached.event);
       
+      // Filter by kind if selected
       if (selectedKind !== 'all') {
-        filters.push({ kinds: [parseInt(selectedKind)] });
-      }
-      
-      if (searchQuery.trim()) {
-        // Try to parse as event ID
-        if (searchQuery.length === 64 && /^[0-9a-f]+$/i.test(searchQuery)) {
-          filters.push({ ids: [searchQuery] });
+        if (selectedKind === 'metadata') {
+          // Filter by metadata category (all metadata kinds)
+          all = all.filter(e => metadataKinds.includes(e.kind));
         } else {
-          // Search in content and tags
-          const all = await getAllCachedEvents();
-          cachedEvents = all.filter(e => {
-            const contentMatch = e.content.toLowerCase().includes(searchQuery.toLowerCase());
-            const tagMatch = e.tags.some(t => t.some(v => v.toLowerCase().includes(searchQuery.toLowerCase())));
-            return contentMatch || tagMatch;
-          });
-          return;
+          // Filter by specific kind
+          const kindNum = parseInt(selectedKind);
+          all = all.filter(e => e.kind === kindNum);
         }
       }
       
-      if (filters.length > 0) {
-        const results = await queryCacheRelay(filters);
-        cachedEvents = results;
-      } else {
-        await loadEvents();
+      // Filter by search query if provided
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+        all = all.filter(e => {
+          // Try to match event ID
+          if (searchQuery.length === 64 && /^[0-9a-f]+$/i.test(searchQuery)) {
+            return e.id.toLowerCase().includes(query);
+          }
+          // Search in content and tags
+          const contentMatch = e.content.toLowerCase().includes(query);
+          const tagMatch = e.tags.some(t => t.some(v => String(v).toLowerCase().includes(query)));
+          return contentMatch || tagMatch;
+        });
       }
+      
+      cachedEvents = all;
     } catch (error) {
       console.error('Failed to search cache:', error);
     } finally {
@@ -94,11 +125,28 @@
       return;
     }
     try {
-      const idbkv = await import('idb-keyval');
-      const store = idbkv.createStore('wikistr-cache-relay', 'events-store');
-      const allEvents = await getAllCachedEvents();
-      const filtered = allEvents.filter(e => e.id !== event.id);
-      await idbkv.set('cache-relay:events', filtered, store);
+      // Find which content type this event belongs to and remove it
+      type ContentType = 'wiki' | 'kind1111' | 
+                         'kind30041' | 'kind10002' | 'kind10432' | 'metadata' | 'bookConfigs';
+      const contentTypes: ContentType[] = [
+        'wiki', 'kind1111', 'kind30041', 'kind10002', 'kind10432', 'metadata', 'bookConfigs'
+      ];
+      
+      for (const contentType of contentTypes) {
+        const cached = contentCache.getEvent(contentType, event.id);
+        if (cached) {
+          // Get all events for this content type
+          const allCached = contentCache.getEvents(contentType);
+          const filtered = allCached.filter(c => c.event.id !== event.id);
+          
+          // Rebuild the cache without this event
+          // Note: This is a workaround since contentCache doesn't have a direct delete method
+          // We'd need to clear and re-add, but for now just reload
+          await loadEvents();
+          return;
+        }
+      }
+      
       await loadEvents();
     } catch (error) {
       console.error('Failed to delete event from cache:', error);

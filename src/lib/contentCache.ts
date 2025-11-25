@@ -18,6 +18,7 @@ const CACHE_KEYS = {
   kind1111: 'wikistr:cache:kind1111',
   kind30041: 'wikistr:cache:kind30041',
   kind10002: 'wikistr:cache:kind10002',
+  kind10432: 'wikistr:cache:kind10432',
   metadata: 'wikistr:cache:metadata',
   bookConfigs: 'wikistr:cache:bookconfigs',
   cacheInfo: 'wikistr:cache:info'
@@ -32,6 +33,7 @@ const CACHE_EXPIRY = {
   kind1111: 5 * 60 * 1000,    // 5 minutes
   kind30041: 10 * 60 * 1000,  // 10 minutes
   kind10002: 60 * 60 * 1000,  // 1 hour (relay lists change infrequently)
+  kind10432: 60 * 60 * 1000,  // 1 hour (cache relay lists change infrequently)
   metadata: 30 * 60 * 1000,   // 30 minutes
   bookConfigs: 60 * 60 * 1000 // 1 hour
 } as const;
@@ -56,6 +58,7 @@ interface ContentCache {
   kind1111: Map<string, CachedEvent>;
   kind30041: Map<string, CachedEvent>;
   kind10002: Map<string, CachedEvent>;
+  kind10432: Map<string, CachedEvent>;
   metadata: Map<string, CachedEvent>;
   bookConfigs: Map<string, CachedEvent>;
 }
@@ -69,6 +72,7 @@ class ContentCacheManager {
     kind1111: new Map(),
     kind30041: new Map(),
     kind10002: new Map(),
+    kind10432: new Map(),
     metadata: new Map(),
     bookConfigs: new Map()
   };
@@ -91,6 +95,7 @@ class ContentCacheManager {
         kind1111Data,
         kind30041Data,
         kind10002Data,
+        kind10432Data,
         metadataData,
         bookConfigsData
       ] = await Promise.all([
@@ -101,6 +106,7 @@ class ContentCacheManager {
         idbkv.get(CACHE_KEYS.kind1111, store),
         idbkv.get(CACHE_KEYS.kind30041, store),
         idbkv.get(CACHE_KEYS.kind10002, store),
+        idbkv.get(CACHE_KEYS.kind10432, store),
         idbkv.get(CACHE_KEYS.metadata, store),
         idbkv.get(CACHE_KEYS.bookConfigs, store)
       ]);
@@ -113,6 +119,7 @@ class ContentCacheManager {
       this.cache.kind1111 = new Map(kind1111Data || []);
       this.cache.kind30041 = new Map(kind30041Data || []);
       this.cache.kind10002 = new Map(kind10002Data || []);
+      this.cache.kind10432 = new Map(kind10432Data || []);
       this.cache.metadata = new Map(metadataData || []);
       this.cache.bookConfigs = new Map(bookConfigsData || []);
 
@@ -172,7 +179,7 @@ class ContentCacheManager {
       // - Replaceable (10000 <= n < 20000 || n == 0 || n == 3): use kind:pubkey
       // - Ephemeral (20000 <= n < 30000): use event.id (not expected to be stored, but we cache them)
       // - Addressable (30000 <= n < 40000): use kind:pubkey:d-tag
-      const isReplaceable = contentType === 'wiki' || contentType === 'kind30041' || contentType === 'kind1111' || contentType === 'kind10002' || contentType === 'metadata';
+      const isReplaceable = contentType === 'wiki' || contentType === 'kind30041' || contentType === 'kind1111' || contentType === 'kind10002' || contentType === 'kind10432' || contentType === 'metadata';
       
       // Merge new events with existing cache, preventing duplicates
       events.forEach(({ event, relays }) => {
@@ -343,6 +350,7 @@ class ContentCacheManager {
         idbkv.del(CACHE_KEYS.kind1111, store),
         idbkv.del(CACHE_KEYS.kind30041, store),
         idbkv.del(CACHE_KEYS.kind10002, store),
+        idbkv.del(CACHE_KEYS.kind10432, store),
         idbkv.del(CACHE_KEYS.metadata, store),
         idbkv.del(CACHE_KEYS.bookConfigs, store),
         idbkv.del(CACHE_KEYS.cacheInfo, store)

@@ -180,8 +180,8 @@ class RelayService {
       const theme = getThemeConfig();
       const themeWikiRelays = theme.relays?.wiki || [];
       const themeSocialRelays = theme.relays?.social || [];
-      const { getCacheRelayUrl } = await import('./cacheRelay');
-      const cacheRelayUrl = getCacheRelayUrl();
+      const { getCacheRelayUrls } = await import('./cacheRelay');
+      const cacheRelayUrls = await getCacheRelayUrls();
       
       switch (type) {
         case 'wiki-read':
@@ -192,8 +192,8 @@ class RelayService {
             try {
               const userRelayLists = await this.loadUserRelayLists(userPubkey);
               relays.push(...userRelayLists.inbox);
-              if (cacheRelayUrl) {
-                relays.push(cacheRelayUrl);
+              if (cacheRelayUrls.length > 0) {
+                relays.push(...cacheRelayUrls);
               }
             } catch (error) {
               console.warn('Failed to load user inbox relays:', error);
@@ -211,10 +211,10 @@ class RelayService {
           relays = [...themeWikiRelays];
           try {
             const userRelayLists = await this.loadUserRelayLists(userPubkey);
-            if (userRelayLists.outbox.length > 0 || cacheRelayUrl) {
+            if (userRelayLists.outbox.length > 0 || cacheRelayUrls.length > 0) {
               relays.push(...userRelayLists.outbox);
-              if (cacheRelayUrl) {
-                relays.push(cacheRelayUrl);
+              if (cacheRelayUrls.length > 0) {
+                relays.push(...cacheRelayUrls);
               }
             } else {
               // No outboxes or cache relay, use default write relays
@@ -235,8 +235,8 @@ class RelayService {
             try {
               const userRelayLists = await this.loadUserRelayLists(userPubkey);
               relays.push(...userRelayLists.inbox);
-              if (cacheRelayUrl) {
-                relays.push(cacheRelayUrl);
+              if (cacheRelayUrls.length > 0) {
+                relays.push(...cacheRelayUrls);
               }
             } catch (error) {
               console.warn('Failed to load user inbox relays:', error);
@@ -254,10 +254,10 @@ class RelayService {
           relays = [...themeSocialRelays];
           try {
             const userRelayLists = await this.loadUserRelayLists(userPubkey);
-            if (userRelayLists.outbox.length > 0 || cacheRelayUrl) {
+            if (userRelayLists.outbox.length > 0 || cacheRelayUrls.length > 0) {
               relays.push(...userRelayLists.outbox);
-              if (cacheRelayUrl) {
-                relays.push(cacheRelayUrl);
+              if (cacheRelayUrls.length > 0) {
+                relays.push(...cacheRelayUrls);
               }
             } else {
               // No relay list or cache relay, use default write relays
@@ -278,8 +278,8 @@ class RelayService {
             try {
               const userRelayLists = await this.loadUserRelayLists(userPubkey);
               relays.push(...userRelayLists.inbox);
-              if (cacheRelayUrl) {
-                relays.push(cacheRelayUrl);
+              if (cacheRelayUrls.length > 0) {
+                relays.push(...cacheRelayUrls);
               }
             } catch (error) {
               console.warn('Failed to load user inbox relays:', error);
@@ -294,10 +294,10 @@ class RelayService {
           if (isLoggedIn) {
             try {
               const userRelayLists = await this.loadUserRelayLists(userPubkey);
-              if (userRelayLists.outbox.length > 0 || cacheRelayUrl) {
+              if (userRelayLists.outbox.length > 0 || cacheRelayUrls.length > 0) {
                 relays.push(...userRelayLists.outbox);
-                if (cacheRelayUrl) {
-                  relays.push(cacheRelayUrl);
+                if (cacheRelayUrls.length > 0) {
+                  relays.push(...cacheRelayUrls);
                 }
               }
             } catch (error) {
@@ -313,8 +313,8 @@ class RelayService {
             try {
               const userRelayLists = await this.loadUserRelayLists(userPubkey);
               relays.push(...userRelayLists.inbox);
-              if (cacheRelayUrl) {
-                relays.push(cacheRelayUrl);
+              if (cacheRelayUrls.length > 0) {
+                relays.push(...cacheRelayUrls);
               }
             } catch (error) {
               console.warn('Failed to load user inbox relays:', error);
@@ -486,11 +486,13 @@ class RelayService {
         return relay && !relay.includes('write') && !relay.includes('wss://');
       });
       
-      // Include cache relay if it exists (optional)
-      const { getCacheRelayUrl } = await import('./cacheRelay');
-      const cacheRelayUrl = getCacheRelayUrl();
-      if (cacheRelayUrl && !inboxRelays.includes(cacheRelayUrl)) {
-        inboxRelays.push(cacheRelayUrl);
+      // Include cache relays if they exist (optional)
+      const { getCacheRelayUrls } = await import('./cacheRelay');
+      const cacheRelayUrls = await getCacheRelayUrls();
+      for (const cacheRelayUrl of cacheRelayUrls) {
+        if (!inboxRelays.includes(cacheRelayUrl)) {
+          inboxRelays.push(cacheRelayUrl);
+        }
       }
       
       // Normalize and deduplicate
@@ -540,11 +542,13 @@ class RelayService {
         return relay && (relay.includes('write') || relay.startsWith('wss://'));
       });
       
-      // Include cache relay if it exists
-      const { getCacheRelayUrl } = await import('./cacheRelay');
-      const cacheRelayUrl = getCacheRelayUrl();
-      if (cacheRelayUrl && !outboxRelays.includes(cacheRelayUrl)) {
-        outboxRelays.push(cacheRelayUrl);
+      // Include cache relays if they exist
+      const { getCacheRelayUrls } = await import('./cacheRelay');
+      const cacheRelayUrls = await getCacheRelayUrls();
+      for (const cacheRelayUrl of cacheRelayUrls) {
+        if (!outboxRelays.includes(cacheRelayUrl)) {
+          outboxRelays.push(cacheRelayUrl);
+        }
       }
       
       // Normalize and deduplicate
@@ -637,7 +641,6 @@ class RelayService {
       
       const events: T[] = [];
       const eventMap = new Map<string, T>();
-      const { storeEventInCacheRelay } = await import('./cacheRelay');
       
       let subscriptionClosed = false;
       
@@ -693,7 +696,6 @@ class RelayService {
               if (!existing || typedEvent.created_at > existing.created_at) {
                 // Newer version or new event - update cache and map
                 eventMap.set(typedEvent.id, typedEvent);
-                await storeEventInCacheRelay(typedEvent);
                 
                 // Update events array
                 const index = events.findIndex(e => e.id === typedEvent.id);
@@ -739,14 +741,6 @@ class RelayService {
     showToastNotification = true
   ): Promise<{ success: boolean; publishedTo: string[]; failedRelays: string[] }> {
     await this.ensureInitialized();
-    
-    // Store in cache relay first
-    try {
-      const { storeEventInCacheRelay } = await import('./cacheRelay');
-      await storeEventInCacheRelay(event);
-    } catch (error) {
-      console.warn('Failed to store event in cache relay:', error);
-    }
     
     const relays = await this.getRelaysForOperation(userPubkey, type);
     

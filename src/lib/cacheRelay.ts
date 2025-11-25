@@ -1,179 +1,156 @@
 /**
  * Cache Relay System
- * Implements a local cache relay using kind 10432 events
- * Events are stored in IndexedDB and served as a local relay
+ * Handles kind 10432 events which store lists of cache relay URLs (ws:// addresses)
+ * Similar to kind 10002 which stores wss:// relay lists
  */
 
-import * as idbkv from 'idb-keyval';
-import type { NostrEvent, EventTemplate } from '@nostr/tools/pure';
-import { account, signer } from './nostr';
+import type { NostrEvent } from '@nostr/tools/pure';
+import { account } from './nostr';
 import { relayService } from './relayService';
+import { contentCache } from './contentCache';
 import { get as getStore } from 'svelte/store';
 
 const CACHE_RELAY_KIND = 10432;
-const CACHE_RELAY_STORE = idbkv.createStore('wikistr-cache-relay', 'events-store');
-const CACHE_RELAY_KEY = 'cache-relay:events';
 
 /**
- * Get the cache relay URL (websocket format for local cache)
- * Returns empty string if no cache relay is configured (optional)
+ * Load cache relay URLs from kind 10432 event for the current user
+ * Returns array of ws:// relay URLs
  */
-export function getCacheRelayUrl(): string {
-  // Return empty string if no cache relay is configured
-  // Users can override this to return their cache relay URL if they have one
-  return '';
-}
-
-/**
- * Store an event in the cache relay (kind 10432)
- */
-export async function storeEventInCacheRelay(event: NostrEvent): Promise<void> {
+async function loadCacheRelayUrls(userPubkey: string): Promise<string[]> {
   try {
-    const allEvents = await getAllCachedEvents();
+    // Check contentCache for kind 10432 event
+    const cachedEvents = contentCache.getEvents('kind10432');
+    const cachedEvent = cachedEvents.find(c => c.event.pubkey === userPubkey && c.event.kind === CACHE_RELAY_KIND);
     
-    // Check if we already have this event (by id)
-    const existingIndex = allEvents.findIndex(e => e.id === event.id);
-    if (existingIndex >= 0) {
-      // Update existing event
-      allEvents[existingIndex] = event;
-    } else {
-      // Add new event
-      allEvents.push(event);
+    if (cachedEvent) {
+      const relays = cachedEvent.event.tags
+        .filter(tag => tag[0] === 'r')
+        .map(tag => tag[1])
+        .filter(relay => relay && (relay.startsWith('ws://') || relay.startsWith('wss://')));
+      
+      return relays;
     }
     
-    // Store back to IndexedDB
-    await idbkv.set(CACHE_RELAY_KEY, allEvents, CACHE_RELAY_STORE);
+    // Only load cache relays for the logged-in user
+    const accountValue = getStore(account);
+    const currentUserPubkey = accountValue?.pubkey;
     
-    // Also create/update a kind 10432 event for this event
-    await createCacheRelayEvent(event);
+    if (userPubkey !== currentUserPubkey) {
+      return [];
+    }
+    
+    // Query for kind 10432 event
+    const result = await relayService.queryEvents(
+      userPubkey,
+      'metadata-read',
+      [{ kinds: [CACHE_RELAY_KIND], authors: [userPubkey], limit: 1 }],
+      { excludeUserContent: false, currentUserPubkey }
+    );
+    
+    let relays: string[] = [];
+    
+    if (result.events.length > 0) {
+      const event = result.events[0];
+      relays = event.tags
+        .filter(tag => tag[0] === 'r')
+        .map(tag => tag[1])
+        .filter(relay => relay && (relay.startsWith('ws://') || relay.startsWith('wss://')));
+      
+      // Store in contentCache for future use
+      await contentCache.storeEvents('kind10432', [{
+        event,
+        relays: result.relays
+      }]);
+    }
+    
+    return relays;
   } catch (error) {
-    console.error('Failed to store event in cache relay:', error);
-  }
-}
-
-/**
- * Get all events from cache relay
- */
-export async function getAllCachedEvents(): Promise<NostrEvent[]> {
-  try {
-    const events = await idbkv.get<NostrEvent[]>(CACHE_RELAY_KEY, CACHE_RELAY_STORE);
-    return events || [];
-  } catch (error) {
-    console.error('Failed to get cached events:', error);
+    console.error('Failed to load cache relay URLs:', error);
     return [];
   }
 }
 
 /**
- * Get events from cache relay matching filters
+ * Get cache relay URLs for the current user
+ * Returns array of ws:// relay URLs from kind 10432 events
  */
-export async function queryCacheRelay(filters: any[]): Promise<NostrEvent[]> {
-  const allEvents = await getAllCachedEvents();
-  const results: NostrEvent[] = [];
-  
-  for (const filter of filters) {
-    for (const event of allEvents) {
-      // Check kind filter
-      if (filter.kinds && !filter.kinds.includes(event.kind)) {
-        continue;
-      }
-      
-      // Check authors filter
-      if (filter.authors && !filter.authors.includes(event.pubkey)) {
-        continue;
-      }
-      
-      // Check ids filter
-      if (filter.ids && !filter.ids.includes(event.id)) {
-        continue;
-      }
-      
-      // Check #e filter
-      if (filter['#e']) {
-        const eventIds = event.tags.filter(t => t[0] === 'e').map(t => t[1]);
-        if (!filter['#e'].some((id: string) => eventIds.includes(id))) {
-          continue;
-        }
-      }
-      
-      // Check #p filter
-      if (filter['#p']) {
-        const pubkeys = event.tags.filter(t => t[0] === 'p').map(t => t[1]);
-        if (!filter['#p'].some((p: string) => pubkeys.includes(p))) {
-          continue;
-        }
-      }
-      
-      // Check #d filter
-      if (filter['#d']) {
-        const dTags = event.tags.filter(t => t[0] === 'd').map(t => t[1]);
-        if (!filter['#d'].some((d: string) => dTags.includes(d))) {
-          continue;
-        }
-      }
-      
-      // Check since/until filters
-      if (filter.since && event.created_at < filter.since) {
-        continue;
-      }
-      if (filter.until && event.created_at > filter.until) {
-        continue;
-      }
-      
-      // Check limit
-      if (filter.limit && results.length >= filter.limit) {
-        break;
-      }
-      
-      results.push(event);
-    }
+export async function getCacheRelayUrls(): Promise<string[]> {
+  const accountValue = getStore(account);
+  if (!accountValue?.pubkey) {
+    return [];
   }
   
-  // Deduplicate by event id
-  const uniqueResults = Array.from(new Map(results.map(e => [e.id, e])).values());
-  
-  return uniqueResults;
+  return await loadCacheRelayUrls(accountValue.pubkey);
 }
 
 /**
- * Create a kind 10432 event to store in the user's outbox
+ * Get a single cache relay URL (for backward compatibility)
+ * Returns the first cache relay URL, or empty string if none
  */
-async function createCacheRelayEvent(event: NostrEvent): Promise<void> {
-  const accountValue = getStore(account);
-  if (!accountValue) return;
-  
+export async function getCacheRelayUrl(): Promise<string> {
+  const urls = await getCacheRelayUrls();
+  return urls[0] || '';
+}
+
+/**
+ * Add cache relay to relay sets dynamically
+ * This is called to include cache relays in relay lists
+ */
+export async function addCacheRelayToRelaySets(): Promise<string[]> {
+  return await getCacheRelayUrls();
+}
+
+/**
+ * Save cache relay URLs as a kind 10432 event
+ * Creates or updates the user's cache relay list
+ */
+export async function saveCacheRelayUrls(urls: string[]): Promise<{ success: boolean; error?: string }> {
   try {
-    // Create a kind 10432 event that references the cached event
-    const cacheEvent: EventTemplate = {
+    const accountValue = getStore(account);
+    if (!accountValue?.pubkey) {
+      return { success: false, error: 'Not logged in' };
+    }
+
+    const { signer } = await import('./nostr');
+    const { relayService } = await import('./relayService');
+    
+    // Validate URLs - must be ws:// addresses
+    const validUrls = urls.filter(url => {
+      if (!url || typeof url !== 'string') return false;
+      return url.startsWith('ws://') || url.startsWith('wss://');
+    });
+
+    // Create kind 10432 event
+    const eventTemplate = {
       kind: CACHE_RELAY_KIND,
-      tags: [
-        ['e', event.id], // Reference to the cached event
-        ['kind', event.kind.toString()], // Store the kind
-        ['pubkey', event.pubkey], // Store the author
-      ],
-      content: JSON.stringify(event), // Store the full event as JSON
+      tags: validUrls.map(url => ['r', url]),
+      content: '',
       created_at: Math.round(Date.now() / 1000)
     };
+
+    const signedEvent = await signer.signEvent(eventTemplate);
     
-    // Add d-tag if present
-    const dTag = event.tags.find(t => t[0] === 'd')?.[1];
-    if (dTag) {
-      cacheEvent.tags.push(['d', dTag]);
+    // Publish to relays
+    const result = await relayService.publishEvent(
+      accountValue.pubkey,
+      'metadata-read', // Use metadata-read relay set for publishing
+      signedEvent,
+      false // Don't show toast
+    );
+
+    if (result.success) {
+      // Update cache
+      await contentCache.storeEvents('kind10432', [{
+        event: signedEvent,
+        relays: result.publishedTo
+      }]);
+      
+      return { success: true };
+    } else {
+      return { success: false, error: 'Failed to publish to relays' };
     }
-    
-    const signed = await signer.signEvent(cacheEvent);
-    
-    // Store locally (don't publish to relays, just cache)
-    await idbkv.set(`cache-relay:${event.id}`, signed, CACHE_RELAY_STORE);
   } catch (error) {
-    console.error('Failed to create cache relay event:', error);
+    console.error('Failed to save cache relay URLs:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
-
-/**
- * Add cache relay to inboxes/outboxes dynamically
- */
-export function addCacheRelayToRelaySets(): string {
-  return getCacheRelayUrl();
-}
-

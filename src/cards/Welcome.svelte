@@ -10,7 +10,7 @@
   import { contentCache } from '$lib/contentCache';
   import { cards } from '$lib/state';
   import { openOrCreateArticleCard } from '$lib/articleLauncher';
-  import { getCacheRelayUrl } from '$lib/cacheRelay';
+  import { getCacheRelayUrls } from '$lib/cacheRelay';
   
   // Components
   import UserBadge from '$components/UserBadge.svelte';
@@ -83,10 +83,10 @@
       }
     }
     
-    // Add cache relay
-    const cacheRelayUrl = getCacheRelayUrl();
-    if (cacheRelayUrl) {
-      allRelays.push(cacheRelayUrl);
+    // Add cache relays
+    const cacheRelayUrls = await getCacheRelayUrls();
+    if (cacheRelayUrls.length > 0) {
+      allRelays.push(...cacheRelayUrls);
     }
     
     // Deduplicate and return
