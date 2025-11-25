@@ -121,6 +121,7 @@
   });
 
   function cardFromPathPart(pathPart: string): Card {
+    // This function always returns a Card - all code paths end with a return statement
     let ditem = decodeURIComponent(pathPart);
     if (ditem.startsWith('edit:')) {
       return {
@@ -149,6 +150,52 @@
       return { id: next(), type: 'diff', data: ditem.substring(5) } as DiffCard;
     } else if (ditem.startsWith('npub1')) {
       return { id: next(), type: 'user', data: decode(ditem).data as string } as UserCard;
+    } else if (ditem.startsWith('nevent1')) {
+      // Handle nevent - decode and create appropriate card based on event kind
+      try {
+        const decoded = decode(ditem);
+        if (decoded.type === 'nevent' && decoded.data.id) {
+          // Create a find card that will handle the nevent lookup
+          return { id: next(), type: 'find', data: ditem, preferredAuthors: [] } as SearchCard;
+        }
+      } catch (e) {
+        // If decode fails, fall through to default
+      }
+      // If nevent decode failed or not a valid nevent, create find card
+      return { id: next(), type: 'find', data: pathPart, preferredAuthors: [] } as SearchCard;
+    } else if (ditem.startsWith('naddr1')) {
+      // Handle naddr - decode and create appropriate card
+      try {
+        const decoded = decode(ditem);
+        if (decoded.type === 'naddr') {
+          const articleKinds = [30023, 30817, 30041, 30040, 30818];
+          if (decoded.data.kind && articleKinds.includes(decoded.data.kind)) {
+            if (decoded.data.kind === 30040) {
+              // Book index event - create book card
+              const identifier = decoded.data.identifier || '';
+              return { 
+                id: next(), 
+                type: 'book', 
+                data: `book::${identifier}`
+              } as BookCard;
+            } else {
+              // Article event - create article card
+              const identifier = decoded.data.identifier || '';
+              const pubkey = decoded.data.pubkey || '';
+              return { 
+                id: next(), 
+                type: 'article', 
+                data: [identifier, pubkey],
+                relayHints: decoded.data.relays || []
+              } as ArticleCard;
+            }
+          }
+        }
+      } catch (e) {
+        // If decode fails, fall through to default
+      }
+      // If naddr decode succeeded but not a recognized kind, or decode failed, create find card
+      return { id: next(), type: 'find', data: pathPart, preferredAuthors: [] } as SearchCard;
     } else if (
       ditem.split('.').length >= 2 ||
       ditem.startsWith('wss://') ||
@@ -157,6 +204,10 @@
       return { id: next(), type: 'relay', data: normalizeURL(ditem) } as RelayCard;
     } else if (pathPart.match(/^[\w-]+\*[a-f0-9]{64}$/)) {
       return { id: next(), type: 'article', data: pathPart.split('*') } as ArticleCard;
+    } else if (pathPart.match(/^[a-f0-9]{64}$/i)) {
+      // 64-character hex string - could be event ID or pubkey
+      // Create a find card that will handle the lookup
+      return { id: next(), type: 'find', data: pathPart, preferredAuthors: [] } as SearchCard;
     } else {
       return { id: next(), type: 'find', data: pathPart, preferredAuthors: [] } as SearchCard;
     }

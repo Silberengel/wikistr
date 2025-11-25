@@ -155,6 +155,95 @@
       return;
     }
     
+    // Handle 64-character hex string - could be event ID or pubkey
+    if (trimmedQuery.match(/^[a-f0-9]{64}$/i)) {
+      (async () => {
+        try {
+          // First try as event ID
+          const result = await relayService.queryEvents(
+            $account?.pubkey || 'anonymous',
+            'wiki-read',
+            [{ ids: [trimmedQuery] }],
+            { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+          );
+
+          if (result.events.length > 0) {
+            const foundEvent = result.events[0];
+            const articleKinds = [30023, 30817, 30041, 30040, 30818];
+            if (articleKinds.includes(foundEvent.kind)) {
+              if (foundEvent.kind === 30040) {
+                // Book index event - open as book card
+                const { openBookSearchCard } = await import('$lib/bookSearchLauncher');
+                const dTag = getTagOr(foundEvent, 'd') || '';
+                openBookSearchCard(`book::${dTag}`);
+                return;
+              } else {
+                // Article event - create article card
+                const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+                openOrCreateArticleCard({
+                  type: 'article',
+                  data: [getTagOr(foundEvent, 'd') || '', foundEvent.pubkey],
+                  actualEvent: foundEvent,
+                  relayHints: result.relays
+                });
+                return;
+              }
+            } else {
+              // Not an article/book kind - try as pubkey
+              const pubkeyResult = await relayService.queryEvents(
+                $account?.pubkey || 'anonymous',
+                'wiki-read',
+                [{ kinds: wikiKinds, authors: [trimmedQuery], limit: 100 }],
+                { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+              );
+              
+              if (pubkeyResult.events.length > 0) {
+                pubkeyResult.events.forEach(evt => {
+                  if (addUniqueTaggedReplaceable(results, evt)) {
+                    results = results; // Trigger reactivity
+                  }
+                });
+                tried = true;
+                return;
+              } else {
+                tried = true;
+                results = [];
+                return;
+              }
+            }
+          } else {
+            // Event not found - try as pubkey
+            const pubkeyResult = await relayService.queryEvents(
+              $account?.pubkey || 'anonymous',
+              'wiki-read',
+              [{ kinds: wikiKinds, authors: [trimmedQuery], limit: 100 }],
+              { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+            );
+            
+            if (pubkeyResult.events.length > 0) {
+              pubkeyResult.events.forEach(evt => {
+                if (addUniqueTaggedReplaceable(results, evt)) {
+                  results = results; // Trigger reactivity
+                }
+              });
+              tried = true;
+              return;
+            } else {
+              tried = true;
+              results = [];
+              return;
+            }
+          }
+        } catch (error) {
+          console.error('Failed to query hex string:', error);
+          tried = true;
+          results = [];
+          return;
+        }
+      })();
+      return;
+    }
+    
     // Handle npub - search for all articles by this author
     if (trimmedQuery.startsWith('npub1')) {
       (async () => {
