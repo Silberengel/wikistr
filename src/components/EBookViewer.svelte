@@ -1271,25 +1271,49 @@
   }
 
   .code-viewer :global(.hljs) {
-    background: var(--code-bg, var(--bg-secondary, #f5f5f4));
-    color: var(--code-text, var(--text-primary, #1c1917));
+    background: var(--code-bg, var(--bg-secondary, #f5f5f4)) !important;
+    color: var(--text-primary, #1c1917) !important;
   }
   
-  /* Ensure syntax highlighting maintains contrast */
+  /* Override highlight.js default colors to ensure readability in light mode */
+  /* Use theme text color with slight variations for syntax highlighting */
   .code-viewer :global(.hljs-keyword),
   .code-viewer :global(.hljs-selector-tag),
   .code-viewer :global(.hljs-built_in),
   .code-viewer :global(.hljs-name),
-  .code-viewer :global(.hljs-type) {
-    color: var(--code-text, var(--text-primary, #1c1917));
-    opacity: 0.9;
+  .code-viewer :global(.hljs-type),
+  .code-viewer :global(.hljs-function),
+  .code-viewer :global(.hljs-title),
+  .code-viewer :global(.hljs-params),
+  .code-viewer :global(.hljs-variable),
+  .code-viewer :global(.hljs-number),
+  .code-viewer :global(.hljs-literal),
+  .code-viewer :global(.hljs-meta),
+  .code-viewer :global(.hljs-tag),
+  .code-viewer :global(.hljs-section),
+  .code-viewer :global(.hljs-strong) {
+    color: var(--text-primary, #1c1917) !important;
   }
   
+  /* Comments can be slightly lighter but still readable */
+  .code-viewer :global(.hljs-comment),
+  .code-viewer :global(.hljs-quote),
+  .code-viewer :global(.hljs-doctag) {
+    color: var(--text-secondary, #78716c) !important;
+  }
+  
+  /* Strings and attributes - ensure they're readable */
   .code-viewer :global(.hljs-string),
   .code-viewer :global(.hljs-attr),
   .code-viewer :global(.hljs-attribute) {
-    color: var(--code-text, var(--text-primary, #1c1917));
-    opacity: 0.85;
+    color: var(--text-primary, #1c1917) !important;
+    opacity: 0.95;
+  }
+  
+  /* Ensure emphasis is readable */
+  .code-viewer :global(.hljs-emphasis) {
+    color: var(--text-primary, #1c1917) !important;
+    font-style: italic;
   }
 
   /* EPUB styling */

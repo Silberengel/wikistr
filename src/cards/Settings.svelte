@@ -601,7 +601,7 @@
               disabled={isSaving || isUploading}
               class="block w-full text-base md:text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-3 md:file:py-2 file:px-6 md:file:px-4 file:rounded-md file:border-0 file:text-base md:file:text-sm file:font-semibold file:bg-indigo-50 dark:file:bg-indigo-900/20 file:text-indigo-700 dark:file:text-indigo-300 hover:file:bg-indigo-100 dark:hover:file:bg-indigo-900/40 disabled:opacity-50 cursor-pointer"
             />
-            <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">
+            <p class="mt-2 text-sm" style="color: var(--text-secondary);">
               Upload a pdf-themes.yml file to define available themes. Only the newest upload is used.
             </p>
           </div>
@@ -649,7 +649,7 @@
               disabled={isSaving || isUploading}
               class="block w-full text-base md:text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-3 md:file:py-2 file:px-6 md:file:px-4 file:rounded-md file:border-0 file:text-base md:file:text-sm file:font-semibold file:bg-indigo-50 dark:file:bg-indigo-900/20 file:text-indigo-700 dark:file:text-indigo-300 hover:file:bg-indigo-100 dark:hover:file:bg-indigo-900/40 disabled:opacity-50 cursor-pointer"
             />
-            <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">
+            <p class="mt-2 text-sm" style="color: var(--text-secondary);">
               Upload one or more theme files (e.g., my-theme.yml). These define the actual PDF styling.
             </p>
           </div>
