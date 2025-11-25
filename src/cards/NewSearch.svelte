@@ -161,8 +161,8 @@ import Settings from '$cards/Settings.svelte';
                       const foundEvent = result.events[0];
                       
                       if (foundEvent.kind === 30040 || foundEvent.kind === 30041) {
-                        // Check if it has T tags (bookstr tags) - if not, it's not a bookstr event
-                        const hasTTags = foundEvent.tags.some((tag: string[]) => tag[0] === 'T' || tag[0] === 't');
+                        // Check if it has uppercase T tags (bookstr tags) - lowercase 't' is for topics, not bookstr
+                        const hasTTags = foundEvent.tags.some((tag: string[]) => tag[0] === 'T');
                         
                         if (hasTTags) {
                           // Bookstr event - open as book card

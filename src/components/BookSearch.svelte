@@ -94,8 +94,8 @@
             
             if (result.events.length > 0) {
               const foundEvent = result.events[0];
-              // Check if it has T tags (bookstr tags) - if so, it's a bookstr event
-              const hasTTags = foundEvent.tags.some((tag: string[]) => tag[0] === 'T' || tag[0] === 't');
+              // Check if it has uppercase T tags (bookstr tags) - lowercase 't' is for topics, not bookstr
+              const hasTTags = foundEvent.tags.some((tag: string[]) => tag[0] === 'T');
               
               if (hasTTags && (foundEvent.kind === 30040 || foundEvent.kind === 30041)) {
                 // Bookstr event - open as book card
@@ -167,8 +167,8 @@
           
           if (result.events.length > 0) {
             const foundEvent = result.events[0];
-            // Check if it has T tags (bookstr tags) - if so, it's a bookstr event
-            const hasTTags = foundEvent.tags.some((tag: string[]) => tag[0] === 'T' || tag[0] === 't');
+            // Check if it has uppercase T tags (bookstr tags) - lowercase 't' is for topics, not bookstr
+            const hasTTags = foundEvent.tags.some((tag: string[]) => tag[0] === 'T');
             
             if (hasTTags && (foundEvent.kind === 30040 || foundEvent.kind === 30041)) {
               // Bookstr event - open as book card
