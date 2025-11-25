@@ -268,18 +268,44 @@
       Article
       {#if previewing}
         <div class="prose prose-p:my-0 prose-li:my-0">
-          <AsciidocContent 
-            event={{ 
-              content: data.content, 
-              pubkey: $account?.pubkey || '', 
-              created_at: Math.floor(Date.now() / 1000),
-              kind: 30023,
-              tags: [],
-              id: '',
-              sig: ''
-            } as any}
-            createChild={() => {}}
-          />
+          {#if editingJson && jsonContent}
+            {@const parsed = (() => {
+              try {
+                return JSON.parse(jsonContent) as EventTemplate;
+              } catch {
+                return null;
+              }
+            })()}
+            {#if parsed}
+              <AsciidocContent 
+                event={{ 
+                  content: parsed.content || data.content, 
+                  pubkey: $account?.pubkey || '', 
+                  created_at: parsed.created_at || Math.floor(Date.now() / 1000),
+                  kind: parsed.kind || 30023,
+                  tags: parsed.tags || [],
+                  id: '',
+                  sig: ''
+                } as any}
+                createChild={() => {}}
+              />
+            {:else}
+              <div class="text-red-600">Invalid JSON - cannot preview</div>
+            {/if}
+          {:else}
+            <AsciidocContent 
+              event={{ 
+                content: data.content, 
+                pubkey: $account?.pubkey || '', 
+                created_at: Math.floor(Date.now() / 1000),
+                kind: 30023,
+                tags: [],
+                id: '',
+                sig: ''
+              } as any}
+              createChild={() => {}}
+            />
+          {/if}
         </div>
       {:else}
         <textarea
