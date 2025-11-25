@@ -89,15 +89,39 @@
               const foundEvent = result.events[0];
               const articleKinds = [30023, 30817, 30041, 30040, 30818];
               if (articleKinds.includes(foundEvent.kind)) {
-                // It's an article - create article card
-                const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
-                openOrCreateArticleCard({
-                  type: 'article',
-                  data: [getTagOr(foundEvent, 'd') || '', foundEvent.pubkey],
-                  actualEvent: foundEvent,
-                  relayHints: result.relays
-                });
-                return;
+                // Check if it's a book (kind 30040 with bookstr tags) or publication
+                if (foundEvent.kind === 30040) {
+                  const { isBookEvent } = await import('$lib/books');
+                  const isBook = isBookEvent(foundEvent as any);
+                  
+                  if (isBook) {
+                    // Book index event with bookstr tags - open as book card
+                    const { openBookSearchCard } = await import('$lib/bookSearchLauncher');
+                    const dTag = getTagOr(foundEvent, 'd') || '';
+                    openBookSearchCard(`book::${dTag}`);
+                    return;
+                  } else {
+                    // Publication event (30040 without bookstr tags) - open as article card
+                    const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+                    openOrCreateArticleCard({
+                      type: 'article',
+                      data: [getTagOr(foundEvent, 'd') || '', foundEvent.pubkey],
+                      actualEvent: foundEvent,
+                      relayHints: result.relays
+                    });
+                    return;
+                  }
+                } else {
+                  // Article event - create article card
+                  const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+                  openOrCreateArticleCard({
+                    type: 'article',
+                    data: [getTagOr(foundEvent, 'd') || '', foundEvent.pubkey],
+                    actualEvent: foundEvent,
+                    relayHints: result.relays
+                  });
+                  return;
+                }
               } else {
                 // Not an article kind
                 tried = true;

@@ -473,6 +473,7 @@
       referenceOgLoading={referenceOgLoading}
       referenceOgErrors={referenceOgErrors}
       getReferenceKey={getReferenceKey}
+      showBibleGateway={bookType === 'bible'}
     />
   {:else if results.length > 0}
     {#if versionNotFound}

@@ -1539,6 +1539,7 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
         version={version}
         versionDisplayName={version.toUpperCase()}
         noWrapper={false}
+        showBibleGateway={bookCard.bookType === 'bible'}
       />
     {/each}
   {:else}
@@ -1551,6 +1552,7 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
       referenceOgErrors={referenceOgErrors}
       getReferenceKey={getReferenceKey}
       getReferenceKeyWithVersion={getReferenceKeyWithVersion}
+      showBibleGateway={bookCard.bookType === 'bible'}
     />
   {/if}
 {:else if results.length > 0}
@@ -1722,6 +1724,7 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
               version={versionKey}
               versionDisplayName={versionDisplayName}
               noWrapper={true}
+              showBibleGateway={bookCard.bookType === 'bible'}
             />
           {/if}
         </div>

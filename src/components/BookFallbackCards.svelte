@@ -18,6 +18,8 @@
     versionDisplayName?: string;
     // Optional: if true, don't wrap in version card container (for use inside existing version cards)
     noWrapper?: boolean;
+    // Only show BibleGateway fallback if bookType is 'bible'
+    showBibleGateway?: boolean;
   }
 
   let {
@@ -30,7 +32,8 @@
     getReferenceKeyWithVersion,
     version,
     versionDisplayName,
-    noWrapper = false
+    noWrapper = false,
+    showBibleGateway = false
   }: Props = $props();
 
   function getRefKey(ref: BookReference): string {
@@ -68,7 +71,7 @@
   );
 </script>
 
-{#if parsedQuery && parsedQuery.references.length > 0}
+{#if parsedQuery && parsedQuery.references.length > 0 && showBibleGateway}
   {#if noWrapper}
     <!-- No wrapper - content only (for use inside existing version cards) -->
     <!-- Informational message -->
