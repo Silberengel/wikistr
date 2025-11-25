@@ -63,18 +63,18 @@ export function getParentCard(element: HTMLElement): HTMLElement | null {
  */
 /**
  * Validate d-tag according to NIP-54 rules:
- * - Any non-letter character MUST be converted to a `-`
+ * - Any non-letter, non-number character MUST be converted to a `-`
  * - All letters MUST be converted to lowercase
  * Returns true if d-tag is valid (matches its normalized form), false otherwise
  * 
- * A valid d-tag should only contain lowercase letters and hyphens
+ * A valid d-tag should only contain lowercase letters, numbers, and hyphens
  */
 export function isValidDTag(dTag: string): boolean {
   if (!dTag || typeof dTag !== 'string') return false;
   
-  // According to NIP-54, a valid d-tag should only contain lowercase letters and hyphens
-  // This matches the normalized form (non-letters -> '-', letters -> lowercase)
-  return /^[a-z-]+$/.test(dTag);
+  // According to NIP-54, a valid d-tag should only contain lowercase letters, numbers, and hyphens
+  // This matches the normalized form (non-letters/non-numbers -> '-', letters -> lowercase)
+  return /^[a-z0-9-]+$/.test(dTag);
 }
 
 /**
@@ -92,9 +92,9 @@ export function isValidEvent(event: any): boolean {
   if (requiresDTag) {
     const dTag = event.tags?.find(([t]: any[]) => t === 'd')?.[1];
     if (dTag) {
-      // Validate d-tag according to NIP-54 - should only contain lowercase letters and hyphens
+      // Validate d-tag according to NIP-54 - should only contain lowercase letters, numbers, and hyphens
       if (!isValidDTag(dTag)) {
-        console.warn(`⚠️ Suppressing corrupt event ${event.id.slice(0, 8)}...: invalid d-tag "${dTag}" (does not match NIP-54 normalization rules - should only contain lowercase letters and hyphens)`);
+        console.warn(`⚠️ Suppressing corrupt event ${event.id.slice(0, 8)}...: invalid d-tag "${dTag}" (does not match NIP-54 normalization rules - should only contain lowercase letters, numbers, and hyphens)`);
         return false;
       }
     }
