@@ -37,14 +37,25 @@ function buildProxyUrl(url: string): string {
 export async function fetchOGMetadata(url: string): Promise<OGMetadata | null> {
   try {
     const proxied = buildProxyUrl(url);
+    
+    // Add timeout to prevent hanging when proxy is down
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    
     const response = await fetch(proxied, {
       headers: {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-      }
+      },
+      signal: controller.signal
     });
     
+    clearTimeout(timeoutId);
+    
     if (!response.ok) {
-      console.warn('OG fetch failed:', response.status, response.statusText, 'for', url);
+      // Don't log warnings for proxy failures - they're expected when proxy is down
+      if (response.status !== 404 && response.status !== 502 && response.status !== 503) {
+        console.warn('OG fetch failed:', response.status, response.statusText, 'for', url);
+      }
       return null;
     }
     
@@ -119,6 +130,16 @@ export async function fetchOGMetadata(url: string): Promise<OGMetadata | null> {
       urlFromOG
     };
   } catch (error) {
+    // Don't log errors for network failures or timeouts - proxy might be down
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      // Network error - proxy likely down, fail silently
+      return null;
+    }
+    if (error instanceof Error && error.name === 'AbortError') {
+      // Timeout - proxy likely down or slow, fail silently
+      return null;
+    }
+    // Only log unexpected errors
     console.error('Failed to fetch OG metadata for', url, ':', error);
     return null;
   }

@@ -2,6 +2,7 @@
   import type { NostrEvent } from '@nostr/tools/pure';
   import asciidoctor from '@asciidoctor/core';
   import { onMount, onDestroy } from 'svelte';
+  import { mount } from 'svelte';
   import { loadWikiAuthors } from '@nostr/gadgets/lists';
   import type { Card } from '$lib/types';
   import { preprocessContentForAsciidoc } from '$lib/utils';
@@ -49,6 +50,7 @@
   let bookSearchResults = $state<Array<{id: string, query: string, results: any[], bookType?: string}>>([]);
   let readInsteadData = $state<Array<{id: string, naddr: string, pubkey: string, identifier: string, displayName: string}>>([]);
   let standaloneLinks = $state<Array<{id: string, url: string, hasOG: boolean}>>([]);
+  let mountedComponents = $state<Map<string, ReturnType<typeof mount>>>(new Map());
 
   // Global functions for dynamically generated HTML
   function handleProfileAvatarClick(pubkey: string) {
@@ -186,6 +188,25 @@
         link.parentNode?.replaceChild(placeholder, link);
         
         newStandaloneLinks.push({ id: linkId, url, hasOG });
+        
+        // Mount component into placeholder immediately
+        setTimeout(() => {
+          const placeholderEl = document.getElementById(linkId);
+          if (placeholderEl && !mountedComponents.has(linkId)) {
+            try {
+              const Component = hasOG ? LinkOGCard : LinkFallback;
+              const instance = mount(Component, {
+                target: placeholderEl,
+                props: { url }
+              });
+              mountedComponents.set(linkId, instance);
+            } catch (error) {
+              console.error('Failed to mount link component:', error);
+              // Fallback: show a simple link if mounting fails
+              placeholderEl.innerHTML = `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">${url}</a>`;
+            }
+          }
+        }, 0);
       } else {
         // Mark as processed so we don't check again
         link.dataset.ogProcessed = 'true';
@@ -247,7 +268,7 @@
         }
       }
 
-      const userEvent = result.events.find(event => event.pubkey === pubkey);
+      const userEvent = result.events.find((evt: NostrEvent) => evt.pubkey === pubkey);
       if (userEvent) {
         try {
           const content = JSON.parse(userEvent.content);
@@ -1547,6 +1568,20 @@
     }, 100);
   });
 
+  onDestroy(() => {
+    // Clean up mounted components
+    mountedComponents.forEach((instance, linkId) => {
+      try {
+        if (typeof instance === 'object' && 'destroy' in instance) {
+          (instance as any).destroy();
+        }
+      } catch (error) {
+        console.error('Failed to destroy mounted component:', error);
+      }
+    });
+    mountedComponents.clear();
+  });
+
 
   // Setup collapsible TOC with button
   // Ensure admonition icons and titles are visible and properly styled
@@ -2065,14 +2100,7 @@
   {/if}
 </div>
 
-<!-- Standalone Link OG Cards -->
-{#each standaloneLinks as link (link.id)}
-  {#if link.hasOG}
-    <LinkOGCard url={link.url} />
-  {:else}
-    <LinkFallback url={link.url} />
-  {/if}
-{/each}
+<!-- Standalone Link OG Cards are now mounted into placeholders in the DOM -->
 
 <!-- Bookstr Passage Groups are now mounted inline at marker locations -->
 

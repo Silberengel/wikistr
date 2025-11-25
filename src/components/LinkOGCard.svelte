@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { fetchOGMetadata, type OGMetadata } from '$lib/ogUtils';
+  import LinkFallback from './LinkFallback.svelte';
 
   interface Props {
     url: string;
@@ -10,16 +11,24 @@
   
   let ogData = $state<OGMetadata | null>(null);
   let loading = $state(true);
-  let error = $state(false);
+  let showFallback = $state(false);
 
   onMount(async () => {
     try {
       const data = await fetchOGMetadata(url);
-      ogData = data;
-      error = !data;
+      if (data && data.title) {
+        // Only use OG data if we got a valid title
+        ogData = data;
+        showFallback = false;
+      } else {
+        // No data returned (proxy down, etc.) - show fallback
+        ogData = null;
+        showFallback = true;
+      }
     } catch (e) {
-      console.error('Failed to fetch OG data:', e);
-      error = true;
+      // Proxy might be down - fail silently and show fallback
+      ogData = null;
+      showFallback = true;
     } finally {
       loading = false;
     }
@@ -35,7 +44,7 @@
       <div class="h-4 rounded" style="background-color: var(--bg-tertiary); width: 60%;"></div>
     </div>
   </div>
-{:else if ogData && !error}
+{:else if ogData && !showFallback}
   <a
     href={url}
     target="_blank"
@@ -82,6 +91,7 @@
     </div>
   </a>
 {:else}
-  <!-- Will be handled by LinkFallback component -->
+  <!-- Show fallback when OG fetch fails (proxy down, etc.) -->
+  <LinkFallback url={url} />
 {/if}
 
