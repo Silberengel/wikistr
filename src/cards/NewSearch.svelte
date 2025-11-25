@@ -30,24 +30,30 @@ import Settings from '$cards/Settings.svelte';
   let showSettings = $state(false);
   let showCacheBrowser = $state(false);
   let showProfilePopup = $state(false);
+  let isSearching = $state(false);
   
   // Relay information
   let themeRelays = $state<{url: string, hasWiki: boolean, hasSocial: boolean, isUserRelay: boolean}[]>([]);
   let relaysLoaded = $state(false);
 
-  function search(ev: SubmitEvent) {
+  async function search(ev: SubmitEvent) {
     ev.preventDefault();
 
     if (query) {
       // Check if this is a book:: query - preserve the book:: prefix
       if (query.startsWith('book::')) {
         openBookSearchCard(query);
-      } else {
-        const trimmedQuery = query.trim();
-        
+        return;
+      }
+      
+      const trimmedQuery = query.trim();
+      isSearching = true;
+      
+      try {
         // Helper function to fetch and open an event by ID
-        const fetchAndOpenEvent = async (eventId: string, relayHints: string[] = []) => {
+        const fetchAndOpenEvent = async (eventId: string, relayHints: string[] = []): Promise<boolean> => {
           try {
+            console.log('🔍 Searching for event ID:', eventId);
             const result = await relayService.queryEvents(
               $account?.pubkey || 'anonymous',
               'wiki-read',
@@ -74,28 +80,29 @@ import Settings from '$cards/Settings.svelte';
                   relayHints: result.relays
                 });
                 query = '';
-                return;
+                return true;
               } else {
                 alert(`Event found but is not an article kind (30023, 30817, 30041, 30040, or 30818). Found kind: ${foundEvent.kind}`);
                 query = '';
-                return;
+                return true;
               }
             } else {
-              alert('Event not found on any relays.');
+              console.warn('⚠️ Event not found on any relays:', eventId);
+              alert('Event not found on any relays. Make sure you have the correct event ID and that the relays are accessible.');
               query = '';
-              return;
+              return true;
             }
           } catch (error) {
-            console.error('Failed to fetch event:', error);
+            console.error('❌ Failed to fetch event:', error);
             alert(`Failed to fetch event: ${error instanceof Error ? error.message : 'Unknown error'}`);
             query = '';
-            return;
+            return true;
           }
         };
         
         // Check if this is a hex ID (64-character hex string)
         if (/^[a-f0-9]{64}$/i.test(trimmedQuery)) {
-          fetchAndOpenEvent(trimmedQuery);
+          await fetchAndOpenEvent(trimmedQuery);
           return;
         }
         
@@ -110,56 +117,42 @@ import Settings from '$cards/Settings.svelte';
               if (decoded.type === 'naddr' && decoded.data.kind && articleKinds.includes(decoded.data.kind)) {
                 // For naddr, we need to fetch the event to check for bookstr tags
                 // Build the filter to query by kind, pubkey, and identifier
-                (async () => {
-                  try {
-                    const filters: any[] = [{
-                      kinds: [decoded.data.kind],
-                      authors: [decoded.data.pubkey],
-                      '#d': [decoded.data.identifier]
-                    }];
-                    
-                    const result = await relayService.queryEvents(
-                      $account?.pubkey || 'anonymous',
-                      'wiki-read',
-                      filters,
-                      { 
-                        excludeUserContent: false, 
-                        currentUserPubkey: $account?.pubkey,
-                        customRelays: decoded.data.relays || []
-                      }
-                    );
-
-                    if (result.events.length > 0) {
-                      const foundEvent = result.events[0];
-                      
-                      // ALWAYS open as article card - never use book:: prefix for naddr/nevent
-                      const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
-                      const { getTagOr } = await import('$lib/utils');
-                      openOrCreateArticleCard({
-                        type: 'article',
-                        data: [getTagOr(foundEvent, 'd') || decoded.data.identifier || '', foundEvent.pubkey],
-                        actualEvent: foundEvent,
-                        relayHints: result.relays
-                      });
-                      query = '';
-                      return;
-                    } else {
-                      // Event not found, but we can still create an article card from naddr data
-                      const articleCard: ArticleCard = {
-                        id: next(),
-                        type: 'article',
-                        data: [decoded.data.identifier || '', decoded.data.pubkey || ''],
-                        back: undefined,
-                        actualEvent: undefined,
-                        relayHints: decoded.data.relays || []
-                      };
-                      replaceNewCard(articleCard);
-                      query = '';
-                      return;
+                console.log('🔍 Searching for naddr:', trimmedQuery);
+                try {
+                  const filters: any[] = [{
+                    kinds: [decoded.data.kind],
+                    authors: [decoded.data.pubkey],
+                    '#d': [decoded.data.identifier]
+                  }];
+                  
+                  const result = await relayService.queryEvents(
+                    $account?.pubkey || 'anonymous',
+                    'wiki-read',
+                    filters,
+                    { 
+                      excludeUserContent: false, 
+                      currentUserPubkey: $account?.pubkey,
+                      customRelays: decoded.data.relays || []
                     }
-                  } catch (error) {
-                    console.error('Failed to fetch naddr event:', error);
-                    // Fallback: create article card from naddr data
+                  );
+
+                  if (result.events.length > 0) {
+                    const foundEvent = result.events[0];
+                    
+                    // ALWAYS open as article card - never use book:: prefix for naddr/nevent
+                    const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+                    const { getTagOr } = await import('$lib/utils');
+                    openOrCreateArticleCard({
+                      type: 'article',
+                      data: [getTagOr(foundEvent, 'd') || decoded.data.identifier || '', foundEvent.pubkey],
+                      actualEvent: foundEvent,
+                      relayHints: result.relays
+                    });
+                    query = '';
+                    return;
+                  } else {
+                    // Event not found, but we can still create an article card from naddr data
+                    console.log('⚠️ Event not found, creating article card from naddr data');
                     const articleCard: ArticleCard = {
                       id: next(),
                       type: 'article',
@@ -172,11 +165,25 @@ import Settings from '$cards/Settings.svelte';
                     query = '';
                     return;
                   }
-                })();
-                return;
+                } catch (error) {
+                  console.error('❌ Failed to fetch naddr event:', error);
+                  // Fallback: create article card from naddr data
+                  const articleCard: ArticleCard = {
+                    id: next(),
+                    type: 'article',
+                    data: [decoded.data.identifier || '', decoded.data.pubkey || ''],
+                    back: undefined,
+                    actualEvent: undefined,
+                    relayHints: decoded.data.relays || []
+                  };
+                  replaceNewCard(articleCard);
+                  query = '';
+                  return;
+                }
               } else if (decoded.type === 'nevent' && decoded.data.id) {
                 // For nevent, fetch the event directly and open it
-                fetchAndOpenEvent(decoded.data.id, decoded.data.relays || []);
+                console.log('🔍 Searching for nevent:', trimmedQuery);
+                await fetchAndOpenEvent(decoded.data.id, decoded.data.relays || []);
                 return;
               } else {
                 // Not an article kind or couldn't determine
@@ -187,13 +194,14 @@ import Settings from '$cards/Settings.svelte';
             }
           } catch (error) {
             // Invalid naddr/nevent format
+            console.error('❌ Invalid naddr/nevent format:', error);
             alert('Invalid naddr or nevent identifier. Could not decode.');
             query = '';
             return;
           }
         }
         
-        // Regular search
+        // Regular search - create a search card
         const newCard: SearchCard = {
           id: next(),
           type: 'find',
@@ -201,8 +209,10 @@ import Settings from '$cards/Settings.svelte';
           preferredAuthors: []
         };
         replaceNewCard(newCard);
+        query = '';
+      } finally {
+        isSearching = false;
       }
-      query = '';
     }
   }
 
@@ -297,9 +307,10 @@ import Settings from '$cards/Settings.svelte';
   </div>
   <button
     type="submit"
-    class="inline-flex items-center space-x-2 px-3 py-2 text-sm font-medium rounded-r-md border transition-colors hover:opacity-90"
+    disabled={isSearching}
+    class="inline-flex items-center space-x-2 px-3 py-2 text-sm font-medium rounded-r-md border transition-colors hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
     style="font-family: {theme.typography.fontFamily}; background-color: var(--bg-primary); color: var(--accent); border-color: var(--accent);"
-    >Go</button>
+    >{isSearching ? 'Searching...' : 'Go'}</button>
 </form>
 
 <!-- Search Instructions -->

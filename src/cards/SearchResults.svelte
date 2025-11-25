@@ -74,6 +74,7 @@
     if (trimmedQuery.startsWith('nevent1')) {
       (async () => {
         try {
+          console.log('🔍 Searching for nevent:', trimmedQuery);
           const { decode } = await import('@nostr/tools/nip19');
           const decoded = decode(trimmedQuery);
           if (decoded.type === 'nevent' && decoded.data.id) {
@@ -82,7 +83,11 @@
               $account?.pubkey || 'anonymous',
               'wiki-read',
               [{ ids: [decoded.data.id] }],
-              { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+              { 
+                excludeUserContent: false, 
+                currentUserPubkey: $account?.pubkey,
+                customRelays: decoded.data.relays || []
+              }
             );
 
             if (result.events.length > 0) {
@@ -97,22 +102,30 @@
                   actualEvent: foundEvent,
                   relayHints: result.relays
                 });
+                tried = true;
                 return;
               } else {
                 // Not an article kind
+                console.warn('⚠️ Event found but is not an article kind:', foundEvent.kind);
                 tried = true;
                 results = [];
                 return;
               }
             } else {
               // Event not found
+              console.warn('⚠️ Event not found for nevent:', trimmedQuery);
               tried = true;
               results = [];
               return;
             }
+          } else {
+            console.warn('⚠️ Invalid nevent structure');
+            tried = true;
+            results = [];
+            return;
           }
         } catch (error) {
-          console.error('Failed to decode nevent:', error);
+          console.error('❌ Failed to decode/fetch nevent:', error);
           tried = true;
           results = [];
           return;
@@ -125,6 +138,7 @@
     if (trimmedQuery.startsWith('naddr1')) {
       (async () => {
         try {
+          console.log('🔍 Searching for naddr:', trimmedQuery);
           const { decode } = await import('@nostr/tools/nip19');
           const decoded = decode(trimmedQuery);
           if (decoded.type === 'naddr') {
@@ -161,9 +175,11 @@
                     actualEvent: foundEvent,
                     relayHints: result.relays
                   });
+                  tried = true;
                   return;
                 } else {
                   // Event not found, but create article card from naddr data
+                  console.log('⚠️ Event not found, creating article card from naddr data');
                   const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
                   openOrCreateArticleCard({
                     type: 'article',
@@ -171,10 +187,11 @@
                     actualEvent: undefined,
                     relayHints: decoded.data.relays || []
                   });
+                  tried = true;
                   return;
                 }
               } catch (error) {
-                console.error('Failed to fetch naddr event:', error);
+                console.error('❌ Failed to fetch naddr event:', error);
                 // Fallback: create article card from naddr data
                 const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
                 openOrCreateArticleCard({
@@ -183,16 +200,23 @@
                   actualEvent: undefined,
                   relayHints: decoded.data.relays || []
                 });
+                tried = true;
                 return;
               }
             } else {
+              console.warn('⚠️ naddr is not an article kind:', decoded.data.kind);
               tried = true;
               results = [];
               return;
             }
+          } else {
+            console.warn('⚠️ Invalid naddr structure');
+            tried = true;
+            results = [];
+            return;
           }
         } catch (error) {
-          console.error('Failed to decode naddr:', error);
+          console.error('❌ Failed to decode naddr:', error);
           tried = true;
           results = [];
           return;
@@ -206,6 +230,7 @@
     if (trimmedQuery.match(/^[a-f0-9]{64}$/i)) {
       (async () => {
         try {
+          console.log('🔍 Searching for hex ID:', trimmedQuery);
           // First try as event ID
           const result = await relayService.queryEvents(
             $account?.pubkey || 'anonymous',
@@ -226,9 +251,11 @@
                 actualEvent: foundEvent,
                 relayHints: result.relays
               });
+              tried = true;
               return;
             } else {
               // Not an article/book kind - try as pubkey
+              console.log('⚠️ Not an article kind, trying as pubkey');
               const pubkeyResult = await relayService.queryEvents(
                 $account?.pubkey || 'anonymous',
                 'wiki-read',
@@ -245,6 +272,7 @@
                 tried = true;
                 return;
               } else {
+                console.warn('⚠️ No events found for hex string');
                 tried = true;
                 results = [];
                 return;
@@ -252,6 +280,7 @@
             }
           } else {
             // Event not found - try as pubkey
+            console.log('⚠️ Event not found, trying as pubkey');
             const pubkeyResult = await relayService.queryEvents(
               $account?.pubkey || 'anonymous',
               'wiki-read',
@@ -268,13 +297,14 @@
               tried = true;
               return;
             } else {
+              console.warn('⚠️ No events found for hex string');
               tried = true;
               results = [];
               return;
             }
           }
         } catch (error) {
-          console.error('Failed to query hex string:', error);
+          console.error('❌ Failed to query hex string:', error);
           tried = true;
           results = [];
           return;
