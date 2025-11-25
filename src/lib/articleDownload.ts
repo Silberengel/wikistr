@@ -288,9 +288,13 @@ async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, pro
   
   // Add description as abstract if available (only if not empty)
   if (description && description.trim()) {
+    // CRITICAL: Block attribute must be directly followed by heading with NO blank line
+    doc = doc.trimEnd() + '\n';
     doc += `[abstract]\n== Abstract\n\n`;
     doc += `${description}\n\n`;
   } else if (summary && summary.trim()) {
+    // CRITICAL: Block attribute must be directly followed by heading with NO blank line
+    doc = doc.trimEnd() + '\n';
     doc += `[abstract]\n== Abstract\n\n`;
     doc += `${summary}\n\n`;
   }
@@ -560,9 +564,13 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
         doc += `\n`;
         // Only add abstract section if description or summary actually exists and is not empty
         if (description && description.trim()) {
+          // CRITICAL: Block attribute must be directly followed by heading with NO blank line
+          doc = doc.trimEnd() + '\n';
           doc += `[abstract]\n== Abstract\n\n`;
           doc += `${description}\n\n`;
         } else if (summary && summary.trim()) {
+          // CRITICAL: Block attribute must be directly followed by heading with NO blank line
+          doc = doc.trimEnd() + '\n';
           doc += `[abstract]\n== Abstract\n\n`;
           doc += `${summary}\n\n`;
         }
@@ -1219,6 +1227,8 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
 
   // Create cover page with title, author, version, and image
   // Use a dedicated cover page section with proper formatting for e-books
+  // CRITICAL: Block attribute must be directly followed by heading with NO blank line
+  doc = doc.trimEnd() + '\n';
   doc += `[dedication]\n== \n\n`; // Empty title for cover page
   doc += `[.cover-page]\n`;
   
@@ -1344,6 +1354,8 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   // Add metadata page only if there are fields to display
   if (metadataFields.length > 0) {
     // CRITICAL: Block attribute must be directly followed by heading with NO blank line
+    // Ensure doc ends with exactly one newline before adding the attribute
+    doc = doc.trimEnd() + '\n';
     doc += `[.book-metadata]\n== Book Metadata\n\n`;
     for (const field of metadataFields) {
       if (field.value && field.value.trim()) {
@@ -1355,9 +1367,13 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
 
   // Add abstract/description after metadata page
   if (description && description.trim()) {
+    // CRITICAL: Block attribute must be directly followed by heading with NO blank line
+    doc = doc.trimEnd() + '\n';
     doc += `[abstract]\n== Abstract\n\n`;
     doc += `${description}\n\n`;
   } else if (summary && summary.trim()) {
+    // CRITICAL: Block attribute must be directly followed by heading with NO blank line
+    doc = doc.trimEnd() + '\n';
     doc += `[abstract]\n== Abstract\n\n`;
     doc += `${summary}\n\n`;
   }
@@ -1499,6 +1515,8 @@ async function combineBookSearchResults(
   doc += `\n`;
   
   // Create styled title page
+  // CRITICAL: Block attribute must be directly followed by heading with NO blank line
+  doc = doc.trimEnd() + '\n';
   doc += `[.title-page]\n== ${title}\n\n`;
   doc += `[.author]\n`;
   doc += `${author}\n\n`;
