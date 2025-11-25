@@ -84,8 +84,21 @@ def get_server_theme_name(client_theme)
   else
     # Fallback to default
     default_theme = config['default'] || 'classic'
-    config['themes'][default_theme]['server_name']
+    default_def = config['themes'][default_theme]
+    if default_def && default_def['server_name']
+      default_def['server_name']
+    else
+      # Ultimate fallback
+      'classic-novel'
+    end
   end
+end
+
+# Verify theme file exists
+def verify_theme_file_exists(theme_name, themesdir)
+  return false unless theme_name && themesdir
+  theme_file = File.join(themesdir, "#{theme_name}-theme.yml")
+  File.exist?(theme_file)
 end
 
 # Health check
@@ -348,22 +361,27 @@ post '/convert/pdf' do
       # Theme mapping from client theme names to server theme files (loaded from YAML)
       
       # Use theme from parameter if provided, otherwise check if already in content, otherwise default
-      if theme_param
-        theme = get_server_theme_name(theme_param)
+      if theme_param && !theme_param.to_s.strip.empty?
+        theme = get_server_theme_name(theme_param.to_s.strip)
+        puts "[PDF] Using theme from parameter: #{theme_param} -> #{theme}"
       elsif content.include?(':pdf-theme:')
         theme = nil # Content already specifies theme
+        puts "[PDF] Theme already specified in content, not overriding"
       else
         # Use default from config
         config = load_theme_config
         default_theme = config['default'] || 'classic'
         theme = get_server_theme_name(default_theme)
+        puts "[PDF] Using default theme: #{default_theme} -> #{theme}"
       end
       
       # Use custom themes directory if provided, otherwise default
       if temp_themes_dir
         themesdir = temp_themes_dir
+        puts "[PDF] Using custom themes directory: #{themesdir}"
       else
         themesdir = content.include?(':pdf-themesdir:') ? nil : '/app/deployment'
+        puts "[PDF] Using themes directory: #{themesdir || 'from content'}"
       end
       
       attributes = {
@@ -380,9 +398,35 @@ post '/convert/pdf' do
       
       # Only set theme if not already specified in content
       if theme
-        attributes['pdf-theme'] = theme
-        attributes['pdf-themesdir'] = themesdir
+        # Verify theme file exists before using it
+        if verify_theme_file_exists(theme, themesdir)
+          attributes['pdf-theme'] = theme
+          attributes['pdf-themesdir'] = themesdir if themesdir
+          puts "[PDF] Setting PDF theme: #{theme}, themesdir: #{themesdir}"
+        else
+          theme_file = File.join(themesdir, "#{theme}-theme.yml")
+          puts "[PDF] WARNING: Theme file not found: #{theme_file}"
+          # List available theme files for debugging
+          if themesdir && Dir.exist?(themesdir)
+            available_themes = Dir.glob(File.join(themesdir, '*-theme.yml')).map { |f| File.basename(f) }
+            puts "[PDF] Available theme files: #{available_themes.join(', ')}"
+          end
+          # Fall back to default theme
+          default_theme = 'classic-novel'
+          default_file = File.join(themesdir, "#{default_theme}-theme.yml")
+          if File.exist?(default_file)
+            puts "[PDF] Falling back to default theme: #{default_theme}"
+            attributes['pdf-theme'] = default_theme
+            attributes['pdf-themesdir'] = themesdir if themesdir
+          else
+            puts "[PDF] ERROR: Default theme file also not found: #{default_file}"
+          end
+        end
+      else
+        puts "[PDF] No theme set (theme already in content or not specified)"
       end
+      
+      puts "[PDF] Final attributes: #{attributes.inspect}"
       
       # Diagrams are automatically registered when asciidoctor-diagram is required
       # Supported: PlantUML, Graphviz, Mermaid, BPMN (via PlantUML), TikZ (via LaTeX)
@@ -489,9 +533,11 @@ post '/convert/epub' do
       }
       
       # Add stylesheet if available
+      stylesheet_attempted = false
       if stylesheet_name && File.exist?(stylesheet_path)
         epub_attributes['epub3-stylesdir'] = '/app/deployment'
         epub_attributes['stylesheet'] = stylesheet_name
+        stylesheet_attempted = true
       end
       
       # Convert to EPUB using convert_file with to_file
@@ -499,6 +545,7 @@ post '/convert/epub' do
       puts "[EPUB] Starting conversion: #{temp_adoc.path} -> #{epub_file}"
       puts "[EPUB] Attributes: #{epub_attributes.inspect}"
       
+      conversion_succeeded = false
       begin
         result = Asciidoctor.convert_file(
           temp_adoc.path,
@@ -508,32 +555,59 @@ post '/convert/epub' do
           attributes: epub_attributes
         )
         puts "[EPUB] Conversion completed, result: #{result.inspect}"
+        conversion_succeeded = true
       rescue => e
         puts "[EPUB] Conversion error: #{e.class.name}: #{e.message}"
         puts "[EPUB] Backtrace: #{e.backtrace.first(5).join("\n")}"
         
-        error_details = {
-          error: 'EPUB conversion failed',
-          message: e.message,
-          class: e.class.name
-        }
-        
-        # Add helpful hints based on error type
-        if e.message.include?('syntax') || e.message.include?('parse') || e.message.include?('invalid')
-          error_details[:hint] = 'This appears to be an AsciiDoc syntax error. Please check your document for: unclosed blocks, invalid attribute syntax, or malformed headings.'
-        elsif e.message.include?('stylesheet') || e.message.include?('css')
-          error_details[:hint] = 'Stylesheet error. The EPUB conversion will continue without custom styling.'
+        # If this is a stylesheet error and we tried to use a stylesheet, retry without it
+        if stylesheet_attempted && (e.message.include?('stylesheet') || e.message.include?('css') || e.message.include?('style'))
+          puts "[EPUB] Stylesheet error detected, retrying without custom stylesheet"
+          # Remove stylesheet attributes and retry
+          retry_attributes = epub_attributes.dup
+          retry_attributes.delete('epub3-stylesdir')
+          retry_attributes.delete('stylesheet')
+          
+          begin
+            result = Asciidoctor.convert_file(
+              temp_adoc.path,
+              backend: 'epub3',
+              safe: 'unsafe',
+              to_file: epub_file,
+              attributes: retry_attributes
+            )
+            puts "[EPUB] Conversion completed without stylesheet, result: #{result.inspect}"
+            conversion_succeeded = true
+          rescue => retry_error
+            puts "[EPUB] Retry also failed: #{retry_error.class.name}: #{retry_error.message}"
+            # Fall through to error handling below
+            e = retry_error
+          end
         end
         
-        # Include line number if available
-        if e.message.match(/line\s+(\d+)/i)
-          line_num = e.message.match(/line\s+(\d+)/i)[1]
-          error_details[:line] = line_num.to_i
-          error_details[:hint] = "Error detected around line #{line_num}. Please check the AsciiDoc syntax at that location."
+        # If conversion still failed, return error
+        unless conversion_succeeded
+          error_details = {
+            error: 'EPUB conversion failed',
+            message: e.message,
+            class: e.class.name
+          }
+          
+          # Add helpful hints based on error type
+          if e.message.include?('syntax') || e.message.include?('parse') || e.message.include?('invalid')
+            error_details[:hint] = 'This appears to be an AsciiDoc syntax error. Please check your document for: unclosed blocks, invalid attribute syntax, or malformed headings.'
+          end
+          
+          # Include line number if available
+          if e.message.match(/line\s+(\d+)/i)
+            line_num = e.message.match(/line\s+(\d+)/i)[1]
+            error_details[:line] = line_num.to_i
+            error_details[:hint] = "Error detected around line #{line_num}. Please check the AsciiDoc syntax at that location."
+          end
+          
+          status 500
+          return error_details.to_json
         end
-        
-        status 500
-        return error_details.to_json
       end
       
       # Check if EPUB file was created
