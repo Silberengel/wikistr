@@ -180,32 +180,35 @@
   }
 </script>
 
-<div class="cache-browser fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }} onkeydown={(e) => { if (e.key === 'Escape') onClose(); }} role="dialog" aria-modal="true" tabindex="-1">
-  <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] flex flex-col" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="0">
+<div class="cache-browser fixed inset-0 z-50 flex items-center justify-center" style="background-color: rgba(0, 0, 0, 0.5);" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }} onkeydown={(e) => { if (e.key === 'Escape') onClose(); }} role="dialog" aria-modal="true" tabindex="-1">
+  <div class="rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] flex flex-col" style="background-color: var(--bg-primary);" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="0">
     <!-- Header -->
-    <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-      <h2 class="text-2xl font-bold">Cache Browser</h2>
+    <div class="flex items-center justify-between p-4 border-b" style="border-color: var(--border);">
+      <h2 class="text-2xl font-bold" style="color: var(--text-primary);">Cache Browser</h2>
       <button
         onclick={onClose}
-        class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+        class="hover:opacity-70"
+        style="color: var(--text-secondary);"
       >
         ✕
       </button>
     </div>
 
     <!-- Search and Filters -->
-    <div class="p-4 border-b border-gray-200 dark:border-gray-700 space-y-2">
+    <div class="p-4 border-b space-y-2" style="border-color: var(--border);">
       <div class="flex gap-2">
         <input
           type="text"
           bind:value={searchQuery}
           placeholder="Search by ID, content, or tags..."
-          class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
+          class="flex-1 px-3 py-2 border rounded-md"
+          style="background-color: var(--bg-secondary); color: var(--text-primary); border-color: var(--border);"
           onkeydown={(e) => e.key === 'Enter' && search()}
         />
         <select
           bind:value={selectedKind}
-          class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
+          class="px-3 py-2 border rounded-md"
+          style="background-color: var(--bg-secondary); color: var(--text-primary); border-color: var(--border);"
         >
           {#each kindOptions as option}
             <option value={option.value}>{option.label}</option>
@@ -213,20 +216,23 @@
         </select>
         <button
           onclick={search}
-          class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+          class="px-4 py-2 text-white rounded-md hover:opacity-90"
+          style="background-color: var(--accent);"
         >
           Search
         </button>
         <button
           onclick={loadEvents}
-          class="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+          class="px-4 py-2 text-white rounded-md hover:opacity-90"
+          style="background-color: var(--text-secondary);"
         >
           Refresh
         </button>
         <button
           onclick={clearAllCache}
           disabled={isClearing || cachedEvents.length === 0}
-          class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          class="px-4 py-2 text-white rounded-md hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+          style="background-color: #dc2626;"
           title={cachedEvents.length === 0 ? 'No events to clear' : 'Clear all cached events'}
         >
           {isClearing ? 'Clearing...' : 'Clear Cache'}
@@ -237,14 +243,15 @@
     <!-- Content -->
     <div class="flex-1 overflow-auto p-4">
       {#if isLoading}
-        <div class="text-center py-8">Loading...</div>
+        <div class="text-center py-8" style="color: var(--text-primary);">Loading...</div>
       {:else if cachedEvents.length === 0}
-        <div class="text-center py-8 text-gray-500">No cached events found</div>
+        <div class="text-center py-8" style="color: var(--text-secondary);">No cached events found</div>
       {:else}
         <div class="space-y-2">
           {#each cachedEvents as event (event.id)}
             <div
-              class="p-3 border border-gray-200 dark:border-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+              class="cache-event-item p-3 border rounded-md cursor-pointer"
+              style="background-color: var(--bg-secondary); border-color: var(--border);"
               onclick={() => selectedEvent = selectedEvent?.id === event.id ? null : event}
               onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectedEvent = selectedEvent?.id === event.id ? null : event; } }}
               role="button"
@@ -252,21 +259,22 @@
             >
               <div class="flex items-center justify-between">
                 <div class="flex-1">
-                  <div class="font-semibold">{getEventTitle(event)}</div>
-                  <div class="text-sm text-gray-500">
+                  <div class="font-semibold" style="color: var(--text-primary);">{getEventTitle(event)}</div>
+                  <div class="text-sm" style="color: var(--text-secondary);">
                     Kind {event.kind} • {new Date(event.created_at * 1000).toLocaleString()}
                   </div>
                 </div>
                 <button
                   onclick={(e) => { e.stopPropagation(); deleteEvent(event); }}
-                  class="ml-2 text-red-600 hover:text-red-800"
+                  class="ml-2 hover:opacity-80"
+                  style="color: #dc2626;"
                 >
                   Delete
                 </button>
               </div>
               {#if selectedEvent?.id === event.id}
-                <div class="mt-3 p-3 bg-gray-100 dark:bg-gray-900 rounded text-xs font-mono overflow-auto max-h-96">
-                  <pre>{formatEvent(event)}</pre>
+                <div class="mt-3 p-3 rounded text-xs font-mono overflow-auto max-h-96" style="background-color: var(--bg-tertiary); color: var(--text-primary);">
+                  <pre style="color: var(--text-primary);">{formatEvent(event)}</pre>
                 </div>
               {/if}
             </div>
@@ -276,13 +284,22 @@
     </div>
 
     <!-- Footer -->
-    <div class="p-4 border-t border-gray-200 dark:border-gray-700 text-sm text-gray-500">
+    <div class="p-4 border-t text-sm" style="border-color: var(--border); color: var(--text-secondary);">
       Total: {cachedEvents.length} events
     </div>
   </div>
 </div>
 
 <style>
+  .cache-event-item:hover {
+    background-color: var(--bg-tertiary) !important;
+  }
+
+  select option {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+
   @media (max-width: 768px) {
     .cache-browser {
       align-items: flex-end;

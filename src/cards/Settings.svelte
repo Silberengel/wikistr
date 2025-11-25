@@ -571,7 +571,8 @@
               accept=".yml,.yaml"
               onchange={handlePdfThemesUpload}
               disabled={isSaving || isUploading}
-              class="block w-full text-base md:text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-3 md:file:py-2 file:px-6 md:file:px-4 file:rounded-md file:border-0 file:text-base md:file:text-sm file:font-semibold file:bg-indigo-50 dark:file:bg-indigo-900/20 file:text-indigo-700 dark:file:text-indigo-300 hover:file:bg-indigo-100 dark:hover:file:bg-indigo-900/40 disabled:opacity-50 cursor-pointer"
+              class="block w-full text-base md:text-sm file:mr-4 file:py-3 md:file:py-2 file:px-6 md:file:px-4 file:rounded-md file:border-0 file:text-base md:file:text-sm file:font-semibold disabled:opacity-50 cursor-pointer"
+              style="color: var(--text-primary);"
             />
             <p class="mt-2 text-sm" style="color: var(--text-secondary);">
               Upload a pdf-themes.yml file to define available themes. Only the newest upload is used.
@@ -619,7 +620,8 @@
               multiple
               onchange={handleThemeFileUpload}
               disabled={isSaving || isUploading}
-              class="block w-full text-base md:text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-3 md:file:py-2 file:px-6 md:file:px-4 file:rounded-md file:border-0 file:text-base md:file:text-sm file:font-semibold file:bg-indigo-50 dark:file:bg-indigo-900/20 file:text-indigo-700 dark:file:text-indigo-300 hover:file:bg-indigo-100 dark:hover:file:bg-indigo-900/40 disabled:opacity-50 cursor-pointer"
+              class="block w-full text-base md:text-sm file:mr-4 file:py-3 md:file:py-2 file:px-6 md:file:px-4 file:rounded-md file:border-0 file:text-base md:file:text-sm file:font-semibold disabled:opacity-50 cursor-pointer"
+              style="color: var(--text-primary);"
             />
             <p class="mt-2 text-sm" style="color: var(--text-secondary);">
               Upload one or more theme files (e.g., my-theme.yml). These define the actual PDF styling.
@@ -720,6 +722,61 @@
 </div>
 
 <style>
+  /* Style file input buttons with theme colors - ensure high contrast */
+  input[type="file"] {
+    color: var(--text-primary) !important;
+  }
+
+  /* Ensure the file input text (e.g., "No file chosen") has proper contrast */
+  input[type="file"]::placeholder {
+    color: var(--text-secondary);
+  }
+
+  /* Modern browsers - use darker background for better contrast */
+  input[type="file"]::file-selector-button {
+    background-color: #4f46e5; /* Use a darker indigo that works in both light/dark */
+    color: white !important;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    font-weight: 600;
+    padding: 0.5rem 1rem;
+    margin-right: 0.75rem;
+  }
+
+  input[type="file"]::file-selector-button:hover {
+    background-color: #4338ca;
+    opacity: 1;
+  }
+
+  input[type="file"]:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    color: var(--text-secondary) !important;
+  }
+
+  input[type="file"]:disabled::file-selector-button {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background-color: var(--text-secondary);
+  }
+
+  /* Webkit browsers (Safari, older Chrome) */
+  input[type="file"]::-webkit-file-upload-button {
+    background-color: #4f46e5;
+    color: white !important;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+    padding: 0.5rem 1rem;
+    margin-right: 0.75rem;
+    border-radius: 0.375rem;
+  }
+
+  input[type="file"]::-webkit-file-upload-button:hover {
+    background-color: #4338ca;
+  }
+
   /* Ensure proper scrolling on mobile */
   @media (max-width: 768px) {
     :global(.settings-container) {
