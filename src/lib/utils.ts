@@ -65,16 +65,48 @@ export function getParentCard(element: HTMLElement): HTMLElement | null {
  * Validate d-tag according to NIP-54 rules:
  * - Any non-letter, non-number character MUST be converted to a `-`
  * - All letters MUST be converted to lowercase
- * Returns true if d-tag is valid (matches its normalized form), false otherwise
+ * Returns true if d-tag is valid, false otherwise
  * 
- * A valid d-tag should only contain lowercase letters, numbers, and hyphens
+ * Allows Unicode letters (like French/Swedish accented characters) but blocks:
+ * - URLs (http://, https://, wss://, ws://)
+ * - Path separators (/)
+ * - Asterisks (*)
+ * - Other URL-like patterns
  */
 export function isValidDTag(dTag: string): boolean {
   if (!dTag || typeof dTag !== 'string') return false;
   
-  // According to NIP-54, a valid d-tag should only contain lowercase letters, numbers, and hyphens
-  // This matches the normalized form (non-letters/non-numbers -> '-', letters -> lowercase)
-  return /^[a-z0-9-]+$/.test(dTag);
+  // Block obvious URL patterns and problematic characters
+  const blockedPatterns = [
+    /https?:\/\//i,  // http:// or https://
+    /wss?:\/\//i,    // ws:// or wss://
+    /\//,            // Forward slashes
+    /\\/,            // Backslashes
+    /\*/,            // Asterisks
+    /:/,             // Colons (except as part of URLs which are already blocked)
+    /_/,             // Underscores
+  ];
+  
+  for (const pattern of blockedPatterns) {
+    if (pattern.test(dTag)) {
+      return false;
+    }
+  }
+  
+  try {
+    // Use NIP-54 normalization to check if d-tag normalizes correctly
+    // This allows Unicode characters (like à, é, ö) that normalize to ASCII
+    const { normalizeIdentifier } = require('@nostr/tools/nip54');
+    const normalized = normalizeIdentifier(dTag);
+    
+    // The normalized form should only contain lowercase letters, numbers, and hyphens
+    // If the d-tag contains Unicode letters that normalize correctly, allow it
+    return /^[a-z0-9-]+$/.test(normalized);
+  } catch (e) {
+    // Fallback: if normalization fails, check if it's already in valid format
+    // But still block the problematic patterns
+    return /^[a-z0-9-]+$/.test(dTag);
+  }
 }
 
 /**
