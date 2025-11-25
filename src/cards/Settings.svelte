@@ -15,6 +15,7 @@
   import { account } from '$lib/nostr';
   import { getCacheRelayUrls, saveCacheRelayUrls } from '$lib/cacheRelay';
   import { relayService } from '$lib/relayService';
+  import BookmarksPanel from '$components/BookmarksPanel.svelte';
 
   interface Props {
     createChild?: (card: Card) => void;
@@ -22,7 +23,7 @@
 
   let { createChild }: Props = $props();
 
-  let activeTab = $state<'general' | 'themes'>('general');
+  let activeTab = $state<'general' | 'bookmarks' | 'themes' | 'versions'>('general');
   let activeThemeTab = $state<'config' | 'files'>('config');
   
   let isSaving = $state(false);
@@ -302,6 +303,15 @@
         General
       </button>
       <button
+        onclick={() => activeTab = 'bookmarks'}
+        class="py-4 px-1 border-b-2 font-medium text-sm transition-colors"
+        style="border-color: {activeTab === 'bookmarks' ? 'var(--accent)' : 'transparent'}; color: {activeTab === 'bookmarks' ? 'var(--accent)' : 'var(--text-secondary)'};"
+        onmouseenter={(e) => { if (activeTab !== 'bookmarks') { e.currentTarget.style.color = 'var(--text-primary)'; } }}
+        onmouseleave={(e) => { if (activeTab !== 'bookmarks') { e.currentTarget.style.color = 'var(--text-secondary)'; } }}
+      >
+        Bookmarks
+      </button>
+      <button
         onclick={() => activeTab = 'themes'}
         class="py-4 px-1 border-b-2 font-medium text-sm transition-colors"
         style="border-color: {activeTab === 'themes' ? 'var(--accent)' : 'transparent'}; color: {activeTab === 'themes' ? 'var(--accent)' : 'var(--text-secondary)'};"
@@ -309,6 +319,15 @@
         onmouseleave={(e) => { if (activeTab !== 'themes') { e.currentTarget.style.color = 'var(--text-secondary)'; } }}
       >
         PDF Themes
+      </button>
+      <button
+        onclick={() => activeTab = 'versions'}
+        class="py-4 px-1 border-b-2 font-medium text-sm transition-colors"
+        style="border-color: {activeTab === 'versions' ? 'var(--accent)' : 'transparent'}; color: {activeTab === 'versions' ? 'var(--accent)' : 'var(--text-secondary)'};"
+        onmouseenter={(e) => { if (activeTab !== 'versions') { e.currentTarget.style.color = 'var(--text-primary)'; } }}
+        onmouseleave={(e) => { if (activeTab !== 'versions') { e.currentTarget.style.color = 'var(--text-secondary)'; } }}
+      >
+        Versions
       </button>
     </nav>
   </div>
@@ -458,61 +477,14 @@
         </div>
       {/if}
 
-      <!-- Version -->
-      <div>
-        <h3 class="text-lg font-medium mb-2">Version</h3>
-        <div>WikiStr v{appVersion}</div>
-        <div class="mt-1 opacity-75">from GitCitadel</div>
-        <div class="mt-4 p-4 rounded-lg border" style="background-color: var(--bg-primary); border-color: var(--border);">
-          <h4 class="font-semibold mb-2" style="color: var(--text-primary);">Recent Changes</h4>
-          {#if changelogEntry}
-            <div class="text-sm space-y-2" style="color: var(--text-primary);">
-              {#if changelogEntry.added && changelogEntry.added.length > 0}
-                <div>
-                  <span class="font-medium" style="color: var(--accent);">Added:</span>
-                  <ul class="list-disc list-inside ml-2 mt-1" style="color: var(--text-primary);">
-                    {#each changelogEntry.added as item}
-                      <li>{item}</li>
-                    {/each}
-                  </ul>
-                </div>
-              {/if}
-              {#if changelogEntry.changed && changelogEntry.changed.length > 0}
-                <div>
-                  <span class="font-medium" style="color: var(--accent);">Changed:</span>
-                  <ul class="list-disc list-inside ml-2 mt-1" style="color: var(--text-primary);">
-                    {#each changelogEntry.changed as item}
-                      <li>{item}</li>
-                    {/each}
-                  </ul>
-                </div>
-              {/if}
-              {#if changelogEntry.fixed && changelogEntry.fixed.length > 0}
-                <div>
-                  <span class="font-medium" style="color: var(--accent);">Fixed:</span>
-                  <ul class="list-disc list-inside ml-2 mt-1" style="color: var(--text-primary);">
-                    {#each changelogEntry.fixed as item}
-                      <li>{item}</li>
-                    {/each}
-                  </ul>
-                </div>
-              {/if}
-            </div>
-          {:else if changelogLoading}
-            <div class="text-sm" style="color: var(--text-secondary);">
-              Loading changelog...
-            </div>
-          {:else if changelogError}
-            <div class="text-sm" style="color: var(--text-secondary);">
-              {changelogError}
-            </div>
-          {:else}
-            <div class="text-sm" style="color: var(--text-secondary);">
-              No changelog available for this version.
-            </div>
-          {/if}
-        </div>
-      </div>
+    </div>
+  {/if}
+
+  <!-- Bookmarks Tab -->
+  {#if activeTab === 'bookmarks'}
+    <div class="border rounded-lg p-4 md:p-6 lg:p-8 min-h-[60vh] md:min-h-[70vh]" style="border-color: var(--border);">
+      <h2 class="text-2xl font-semibold mb-6">Bookmarks & Reading Places</h2>
+      <BookmarksPanel />
     </div>
   {/if}
 
@@ -680,6 +652,69 @@
           {/if}
         </div>
       {/if}
+    </div>
+  {/if}
+
+  <!-- Versions Tab -->
+  {#if activeTab === 'versions'}
+    <div class="border rounded-lg p-4 md:p-6 lg:p-8 min-h-[60vh] md:min-h-[70vh]" style="border-color: var(--border);">
+      <h2 class="text-2xl font-semibold mb-6">Version Information</h2>
+      <div class="space-y-6">
+        <div>
+          <h3 class="text-lg font-medium mb-2">Version</h3>
+          <div style="color: var(--text-primary);">WikiStr v{appVersion}</div>
+          <div class="mt-1" style="color: var(--text-secondary);">from GitCitadel</div>
+        </div>
+        <div class="p-4 rounded-lg border" style="background-color: var(--bg-primary); border-color: var(--border);">
+          <h4 class="font-semibold mb-2" style="color: var(--text-primary);">Recent Changes</h4>
+          {#if changelogEntry}
+            <div class="text-sm space-y-2" style="color: var(--text-primary);">
+              {#if changelogEntry.added && changelogEntry.added.length > 0}
+                <div>
+                  <span class="font-medium" style="color: var(--accent);">Added:</span>
+                  <ul class="list-disc list-inside ml-2 mt-1" style="color: var(--text-primary);">
+                    {#each changelogEntry.added as item}
+                      <li>{item}</li>
+                    {/each}
+                  </ul>
+                </div>
+              {/if}
+              {#if changelogEntry.changed && changelogEntry.changed.length > 0}
+                <div>
+                  <span class="font-medium" style="color: var(--accent);">Changed:</span>
+                  <ul class="list-disc list-inside ml-2 mt-1" style="color: var(--text-primary);">
+                    {#each changelogEntry.changed as item}
+                      <li>{item}</li>
+                    {/each}
+                  </ul>
+                </div>
+              {/if}
+              {#if changelogEntry.fixed && changelogEntry.fixed.length > 0}
+                <div>
+                  <span class="font-medium" style="color: var(--accent);">Fixed:</span>
+                  <ul class="list-disc list-inside ml-2 mt-1" style="color: var(--text-primary);">
+                    {#each changelogEntry.fixed as item}
+                      <li>{item}</li>
+                    {/each}
+                  </ul>
+                </div>
+              {/if}
+            </div>
+          {:else if changelogLoading}
+            <div class="text-sm" style="color: var(--text-secondary);">
+              Loading changelog...
+            </div>
+          {:else if changelogError}
+            <div class="text-sm" style="color: var(--text-secondary);">
+              {changelogError}
+            </div>
+          {:else}
+            <div class="text-sm" style="color: var(--text-secondary);">
+              No changelog available for this version.
+            </div>
+          {/if}
+        </div>
+      </div>
     </div>
   {/if}
 </div>
