@@ -58,7 +58,7 @@
   let uwrcancel: () => void;
   let subs: SubCloser[] = [];
 
-  onMount(() => {
+  onMount(async () => {
     // Check if query is in new NKBIP-08 format (with or without brackets)
     let queryToParse = query;
     if (query.startsWith('book::')) {
@@ -73,6 +73,71 @@
       // NKBIP-08 format: parse with NKBIP-08 parser
       const parsed = parseBookWikilinkNKBIP08(queryToParse);
       if (parsed && parsed.references.length > 0) {
+        // Check if this is actually a valid book reference (has chapter:section)
+        // If not, treat it as a publication identifier
+        const hasChapterOrSection = parsed.references.some(ref => ref.chapter || (ref.section && ref.section.length > 0));
+        
+        if (!hasChapterOrSection) {
+          // This is not a book reference, it's a publication identifier
+          // Extract the identifier (everything after book::)
+          const identifier = query.replace(/^book::/, '').trim();
+          
+          // Search for kind 30040 or 30041 events with this d-tag
+          try {
+            const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+            const result = await relayService.queryEvents(
+              'anonymous',
+              'wiki-read',
+              [{ kinds: [30040, 30041], '#d': [identifier] }],
+              { excludeUserContent: false, currentUserPubkey: undefined }
+            );
+            
+            if (result.events.length > 0) {
+              const foundEvent = result.events[0];
+              // Check if it has T tags (bookstr tags) - if so, it's a bookstr event
+              const hasTTags = foundEvent.tags.some((tag: string[]) => tag[0] === 'T' || tag[0] === 't');
+              
+              if (hasTTags && (foundEvent.kind === 30040 || foundEvent.kind === 30041)) {
+                // Bookstr event - open as book card
+                const { openBookSearchCard } = await import('$lib/bookSearchLauncher');
+                openBookSearchCard(`book::${identifier}`);
+                return;
+              } else {
+                // Regular publication/article - open as article card
+                const { getTagOr } = await import('$lib/utils');
+                openOrCreateArticleCard({
+                  type: 'article',
+                  data: [getTagOr(foundEvent, 'd') || identifier, foundEvent.pubkey],
+                  actualEvent: foundEvent,
+                  relayHints: result.relays
+                });
+                return;
+              }
+            } else {
+              // Event not found, but create article card anyway
+              openOrCreateArticleCard({
+                type: 'article',
+                data: [identifier, ''],
+                actualEvent: undefined,
+                relayHints: []
+              });
+              return;
+            }
+          } catch (error) {
+            console.error('Failed to search for publication:', error);
+            // Fallback: create article card
+            const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+            openOrCreateArticleCard({
+              type: 'article',
+              data: [identifier, ''],
+              actualEvent: undefined,
+              relayHints: []
+            });
+            return;
+          }
+        }
+        
+        // Valid book reference - proceed with book search
         // Convert NKBIP-08 format to BookReference format
         const references: BookReference[] = parsed.references.map(ref => ({
           book: ref.title,
@@ -88,6 +153,59 @@
           bookType = parsed.references[0].collection;
         }
         performBookSearch();
+      } else {
+        // Parsing failed - treat as publication identifier
+        const identifier = query.replace(/^book::/, '').trim();
+        try {
+          const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+          const result = await relayService.queryEvents(
+            'anonymous',
+            'wiki-read',
+            [{ kinds: [30040, 30041], '#d': [identifier] }],
+            { excludeUserContent: false, currentUserPubkey: undefined }
+          );
+          
+          if (result.events.length > 0) {
+            const foundEvent = result.events[0];
+            // Check if it has T tags (bookstr tags) - if so, it's a bookstr event
+            const hasTTags = foundEvent.tags.some((tag: string[]) => tag[0] === 'T' || tag[0] === 't');
+            
+            if (hasTTags && (foundEvent.kind === 30040 || foundEvent.kind === 30041)) {
+              // Bookstr event - open as book card
+              const { openBookSearchCard } = await import('$lib/bookSearchLauncher');
+              openBookSearchCard(`book::${identifier}`);
+              return;
+            } else {
+              // Regular publication/article - open as article card
+              const { getTagOr } = await import('$lib/utils');
+              openOrCreateArticleCard({
+                type: 'article',
+                data: [getTagOr(foundEvent, 'd') || identifier, foundEvent.pubkey],
+                actualEvent: foundEvent,
+                relayHints: result.relays
+              });
+              return;
+            }
+          } else {
+            openOrCreateArticleCard({
+              type: 'article',
+              data: [identifier, ''],
+              actualEvent: undefined,
+              relayHints: []
+            });
+            return;
+          }
+        } catch (error) {
+          console.error('Failed to search for publication:', error);
+          const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+          openOrCreateArticleCard({
+            type: 'article',
+            data: [identifier, ''],
+            actualEvent: undefined,
+            relayHints: []
+          });
+          return;
+        }
       }
     } else {
       // Invalid format - query must start with book::

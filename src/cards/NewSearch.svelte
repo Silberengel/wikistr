@@ -160,23 +160,23 @@ import Settings from '$cards/Settings.svelte';
                     if (result.events.length > 0) {
                       const foundEvent = result.events[0];
                       
-                      if (foundEvent.kind === 30040) {
-                        // Check if it's a book (has bookstr tags) or publication
-                        const { isBookEvent } = await import('$lib/books');
-                        const isBook = isBookEvent(foundEvent as any);
+                      if (foundEvent.kind === 30040 || foundEvent.kind === 30041) {
+                        // Check if it has T tags (bookstr tags) - if not, it's not a bookstr event
+                        const hasTTags = foundEvent.tags.some((tag: string[]) => tag[0] === 'T' || tag[0] === 't');
                         
-                        if (isBook) {
-                          // Book index event with bookstr tags - open as book card
+                        if (hasTTags) {
+                          // Bookstr event - open as book card
                           const { openBookSearchCard } = await import('$lib/bookSearchLauncher');
                           openBookSearchCard(`book::${decoded.data.identifier}`);
                           query = '';
                           return;
                         } else {
-                          // Publication event (30040 without bookstr tags) - open as article card
+                          // Publication event (30040/30041 without T tags) - open as article card
                           const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+                          const { getTagOr } = await import('$lib/utils');
                           openOrCreateArticleCard({
                             type: 'article',
-                            data: [decoded.data.identifier || '', decoded.data.pubkey || ''],
+                            data: [getTagOr(foundEvent, 'd') || decoded.data.identifier || '', foundEvent.pubkey],
                             actualEvent: foundEvent,
                             relayHints: result.relays
                           });

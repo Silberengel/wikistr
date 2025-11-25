@@ -154,15 +154,71 @@
           if (decoded.type === 'naddr') {
             const articleKinds = [30023, 30817, 30041, 30040, 30818];
             if (decoded.data.kind && articleKinds.includes(decoded.data.kind)) {
-              // It's an article - create article card
-              const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
-              openOrCreateArticleCard({
-                type: 'article',
-                data: [decoded.data.identifier || '', decoded.data.pubkey || ''],
-                actualEvent: undefined,
-                relayHints: decoded.data.relays || []
-              });
-              return;
+              // Fetch the event using kind, pubkey, and identifier
+              try {
+                const filters: any[] = [{
+                  kinds: [decoded.data.kind],
+                  authors: [decoded.data.pubkey],
+                  '#d': [decoded.data.identifier]
+                }];
+                
+                const result = await relayService.queryEvents(
+                  $account?.pubkey || 'anonymous',
+                  'wiki-read',
+                  filters,
+                  { 
+                    excludeUserContent: false, 
+                    currentUserPubkey: $account?.pubkey,
+                    customRelays: decoded.data.relays || []
+                  }
+                );
+
+                if (result.events.length > 0) {
+                  const foundEvent = result.events[0];
+                  
+                  // Check if it has T tags (bookstr tags) - if not, it's not a bookstr event
+                  const hasTTags = foundEvent.tags.some((tag: string[]) => tag[0] === 'T' || tag[0] === 't');
+                  
+                  if (hasTTags && (foundEvent.kind === 30040 || foundEvent.kind === 30041)) {
+                    // Bookstr event - open as book card
+                    const { openBookSearchCard } = await import('$lib/bookSearchLauncher');
+                    openBookSearchCard(`book::${decoded.data.identifier}`);
+                    return;
+                  } else {
+                    // Publication/article event (no T tags or not 30040/30041) - open as article card
+                    const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+                    const { getTagOr } = await import('$lib/utils');
+                    openOrCreateArticleCard({
+                      type: 'article',
+                      data: [getTagOr(foundEvent, 'd') || decoded.data.identifier || '', foundEvent.pubkey],
+                      actualEvent: foundEvent,
+                      relayHints: result.relays
+                    });
+                    return;
+                  }
+                } else {
+                  // Event not found, but create article card from naddr data
+                  const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+                  openOrCreateArticleCard({
+                    type: 'article',
+                    data: [decoded.data.identifier || '', decoded.data.pubkey || ''],
+                    actualEvent: undefined,
+                    relayHints: decoded.data.relays || []
+                  });
+                  return;
+                }
+              } catch (error) {
+                console.error('Failed to fetch naddr event:', error);
+                // Fallback: create article card from naddr data
+                const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+                openOrCreateArticleCard({
+                  type: 'article',
+                  data: [decoded.data.identifier || '', decoded.data.pubkey || ''],
+                  actualEvent: undefined,
+                  relayHints: decoded.data.relays || []
+                });
+                return;
+              }
             } else {
               tried = true;
               results = [];
