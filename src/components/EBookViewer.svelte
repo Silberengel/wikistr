@@ -91,13 +91,11 @@
           // Proxy works, use it
           pdfjsLib.GlobalWorkerOptions.workerSrc = proxiedWorkerUrl;
         } else {
-          // Proxy failed, use CDN directly
-          console.warn('PDF.js worker proxy unavailable, using CDN directly');
+          // Proxy failed, use CDN directly (silently)
           pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
         }
       } catch (error) {
-        // Proxy failed, use CDN directly
-        console.warn('PDF.js worker proxy unavailable, using CDN directly');
+        // Proxy failed, use CDN directly (silently - this is expected in many setups)
         pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
       }
     };
@@ -335,28 +333,71 @@
       await epubBook.ready;
       
       // Wait for container to be available, then initialize
+      // Use a more robust approach with multiple checks
+      let attempts = 0;
+      const maxAttempts = 100; // 5 seconds at 50ms intervals
+      
       const checkContainer = setInterval(() => {
+        attempts++;
         if (epubContainer) {
           clearInterval(checkContainer);
-          initializeEPUBRendition();
+          // Ensure container has dimensions before initializing
+          if (epubContainer.offsetWidth > 0 && epubContainer.offsetHeight > 0) {
+            initializeEPUBRendition();
+          } else {
+            // Wait a bit more for layout to settle
+            setTimeout(() => {
+              if (epubContainer && epubContainer.offsetWidth > 0 && epubContainer.offsetHeight > 0) {
+                initializeEPUBRendition();
+              }
+            }, 100);
+          }
+        } else if (attempts >= maxAttempts) {
+          clearInterval(checkContainer);
+          console.error('EPUB container not found after waiting');
+          htmlContent = `<div style="padding: 2rem; text-align: center; color: var(--text-primary);">
+            <h2>Failed to load EPUB</h2>
+            <p>Container element not found. Please try downloading the EPUB file instead.</p>
+          </div>`;
         }
       }, 50);
-      
-      // Timeout after 2 seconds
-      setTimeout(() => clearInterval(checkContainer), 2000);
     } catch (error) {
       console.error('Failed to load EPUB:', error);
       htmlContent = `<div style="padding: 2rem; text-align: center; color: var(--text-primary);">
         <h2>Failed to load EPUB</h2>
         <p>${error instanceof Error ? error.message : 'Unknown error'}</p>
+        <p style="margin-top: 1rem; font-size: 0.9em;">You can download the EPUB file using the download button.</p>
       </div>`;
     }
   }
 
   function initializeEPUBRendition() {
-    if (!epubBook || !epubContainer) return;
+    if (!epubBook || !epubContainer) {
+      console.warn('Cannot initialize EPUB: missing book or container');
+      return;
+    }
+    
+    // Ensure container has dimensions
+    if (epubContainer.offsetWidth === 0 || epubContainer.offsetHeight === 0) {
+      console.warn('EPUB container has no dimensions, waiting...');
+      setTimeout(() => {
+        if (epubContainer && epubContainer.offsetWidth > 0 && epubContainer.offsetHeight > 0) {
+          initializeEPUBRendition();
+        }
+      }, 100);
+      return;
+    }
     
     try {
+      // Destroy existing rendition if any
+      if (epubRendition) {
+        try {
+          epubRendition.destroy();
+        } catch (e) {
+          // Ignore errors when destroying
+        }
+      }
+      
       epubRendition = epubBook.renderTo(epubContainer, {
         width: '100%',
         height: '100%',
@@ -369,15 +410,38 @@
       epubRendition.on('relocated', (location: any) => {
         epubLocation = location;
       });
+      
+      epubRendition.on('rendered', () => {
+        console.log('EPUB page rendered successfully');
+      });
+      
+      epubRendition.on('displayError', (error: any) => {
+        console.error('EPUB display error:', error);
+        htmlContent = `<div style="padding: 2rem; text-align: center; color: var(--text-primary);">
+          <h2>Failed to display EPUB</h2>
+          <p>${error?.message || 'Unknown display error'}</p>
+          <p style="margin-top: 1rem; font-size: 0.9em;">You can download the EPUB file using the download button.</p>
+        </div>`;
+      });
     } catch (error) {
       console.error('Failed to initialize EPUB rendition:', error);
+      htmlContent = `<div style="padding: 2rem; text-align: center; color: var(--text-primary);">
+        <h2>Failed to initialize EPUB viewer</h2>
+        <p>${error instanceof Error ? error.message : 'Unknown error'}</p>
+        <p style="margin-top: 1rem; font-size: 0.9em;">You can download the EPUB file using the download button.</p>
+      </div>`;
     }
   }
 
   // Watch for epubContainer changes
   $effect(() => {
     if (epubContainer && epubBook && !epubRendition) {
-      initializeEPUBRendition();
+      // Use a small delay to ensure DOM is fully ready
+      setTimeout(() => {
+        if (epubContainer && epubBook && !epubRendition) {
+          initializeEPUBRendition();
+        }
+      }, 50);
     }
   });
 
@@ -1049,7 +1113,11 @@
     class="viewer-content"
     class:horizontal={isHorizontal && format === 'pdf'}
     class:vertical={!isHorizontal && format === 'pdf'}
-    style="flex: 1; display: flex; align-items: center; padding: 2rem; background: var(--page-bg); scroll-behavior: smooth; overflow: auto; min-height: 0;"
+    class:epub-content={format === 'epub'}
+    style:align-items={format === 'epub' ? 'stretch' : 'center'}
+    style:padding={format === 'epub' ? '0' : '2rem'}
+    style:overflow={format === 'epub' ? 'hidden' : 'auto'}
+    style="flex: 1; display: flex; background: var(--page-bg); scroll-behavior: smooth; min-height: 0;"
   >
     {#if format === 'pdf'}
       <div
@@ -1063,9 +1131,14 @@
     {:else if format === 'epub'}
       <div
         bind:this={epubContainer}
-        style="width: 100%; height: 100%; overflow: auto;"
+        style="width: 100%; height: 100%; overflow: auto; position: relative; display: block;"
       >
         <!-- EPUB will be rendered here by epubjs -->
+        {#if !epubRendition && epubBook}
+          <div style="padding: 2rem; text-align: center; color: var(--text-secondary);">
+            Loading EPUB...
+          </div>
+        {/if}
       </div>
     {:else}
       <div

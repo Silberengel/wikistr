@@ -61,12 +61,53 @@ export async function exportToPDF(options: ExportOptions): Promise<Blob> {
 
   if (!response.ok) {
     // Try to read error message
+    let errorMessage = `Failed to generate PDF: ${response.status} ${response.statusText}`;
     const contentType = response.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-      throw new Error(error.error || error.message || `Failed to generate PDF: ${response.statusText}`);
+    
+    try {
+      if (contentType.includes('application/json')) {
+        const error = await response.json().catch(() => null);
+        if (error) {
+          errorMessage = error.error || error.message || errorMessage;
+          if (error.hint) {
+            errorMessage += `\n\nHint: ${error.hint}`;
+          }
+          if (error.line) {
+            errorMessage += `\n\nError detected at line ${error.line}`;
+          }
+        }
+      } else {
+        // Try to read as text even if not JSON
+        const text = await response.text();
+        if (text) {
+          // Check if it's the SvelteKit app shell
+          if (text.includes('__sveltekit') || text.includes('sveltekit-preload-data')) {
+            errorMessage = 'Server returned SvelteKit app shell instead of PDF. Check AsciiDoctor server is running and proxy is configured correctly.';
+          } else {
+            // Try to parse as JSON in case content-type is wrong
+            try {
+              const error = JSON.parse(text);
+              errorMessage = error.error || error.message || errorMessage;
+              if (error.hint) {
+                errorMessage += `\n\nHint: ${error.hint}`;
+              }
+              if (error.line) {
+                errorMessage += `\n\nError detected at line ${error.line}`;
+              }
+            } catch {
+              // Not JSON, use text as error message (limit length)
+              const preview = text.length > 200 ? text.substring(0, 200) + '...' : text;
+              errorMessage = `${errorMessage}\n\nServer response: ${preview}`;
+            }
+          }
+        }
+      }
+    } catch (err) {
+      // If we can't read the error response, use the default message
+      console.error('Failed to read error response:', err);
     }
-    throw new Error(`Failed to generate PDF: ${response.status} ${response.statusText}`);
+    
+    throw new Error(errorMessage);
   }
 
   // Verify we got a PDF response
