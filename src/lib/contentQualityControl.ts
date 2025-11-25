@@ -1375,8 +1375,60 @@ export async function processNostrAddresses(
   }
   
   // Process hex IDs (64 char hex strings) as event IDs
+  // But exclude hex strings that are part of URLs (http://, https://, image::, link:, etc.)
+  // First, protect URLs by replacing hex strings in URLs with placeholders
+  const urlHexPlaceholders = new Map<string, string>();
+  let placeholderIndex = 0;
+  
+  // Protect hex strings in URLs
+  processed = processed.replace(/(https?:\/\/[^\s\)]+)/gi, (urlMatch) => {
+    // Check if URL contains a 64-char hex string
+    const hexInUrl = urlMatch.match(/\b([0-9a-f]{64})\b/gi);
+    if (hexInUrl) {
+      let protectedUrl = urlMatch;
+      for (const hex of hexInUrl) {
+        const placeholder = `__URL_HEX_PLACEHOLDER_${placeholderIndex++}__`;
+        urlHexPlaceholders.set(placeholder, hex);
+        protectedUrl = protectedUrl.replace(hex, placeholder);
+      }
+      return protectedUrl;
+    }
+    return urlMatch;
+  });
+  
+  // Protect hex strings in AsciiDoc image syntax: image::url[alt]
+  processed = processed.replace(/(image::?[^\[]+)\[([^\]]*)\]/gi, (imageMatch, urlPart, altPart) => {
+    const hexInUrl = urlPart.match(/\b([0-9a-f]{64})\b/gi);
+    if (hexInUrl) {
+      let protectedUrl = urlPart;
+      for (const hex of hexInUrl) {
+        const placeholder = `__URL_HEX_PLACEHOLDER_${placeholderIndex++}__`;
+        urlHexPlaceholders.set(placeholder, hex);
+        protectedUrl = protectedUrl.replace(hex, placeholder);
+      }
+      return `${protectedUrl}[${altPart}]`;
+    }
+    return imageMatch;
+  });
+  
+  // Protect hex strings in markdown images: ![alt](url)
+  processed = processed.replace(/!\[([^\]]*)\]\(([^)]+)\)/gi, (imageMatch, altPart, urlPart) => {
+    const hexInUrl = urlPart.match(/\b([0-9a-f]{64})\b/gi);
+    if (hexInUrl) {
+      let protectedUrl = urlPart;
+      for (const hex of hexInUrl) {
+        const placeholder = `__URL_HEX_PLACEHOLDER_${placeholderIndex++}__`;
+        urlHexPlaceholders.set(placeholder, hex);
+        protectedUrl = protectedUrl.replace(hex, placeholder);
+      }
+      return `![${altPart}](${protectedUrl})`;
+    }
+    return imageMatch;
+  });
+  
+  // Now process remaining hex IDs (64 char hex strings) as event IDs
   processed = processed.replace(/\b([0-9a-f]{64})\b/gi, (match, hexId) => {
-    // Only replace if it looks like an event ID (not part of a larger hex string)
+    // Only replace if it looks like an event ID (not part of a larger hex string or URL)
     if (match.length === 64) {
       const displayText = hexId.slice(0, 20) + '...';
       if (isAsciiDoc) {
@@ -1387,6 +1439,11 @@ export async function processNostrAddresses(
     }
     return match;
   });
+  
+  // Restore protected hex strings in URLs
+  for (const [placeholder, hex] of urlHexPlaceholders.entries()) {
+    processed = processed.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), hex);
+  }
   
   // Now replace npub placeholders with actual display names (async)
   const npubPlaceholders = processed.match(/__NOSTR_NPUB_([a-zA-Z0-9]+)__/g);

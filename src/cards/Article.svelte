@@ -21,10 +21,10 @@
   import { nip19 } from '@nostr/tools';
   import { cards } from '$lib/state';
   import {
-    viewAsPDF,
-    viewAsEPUB,
-    viewAsHTML5,
-    viewAsLaTeX,
+    downloadAsPDF,
+    downloadAsEPUB,
+    downloadAsHTML5,
+    downloadAsLaTeX,
     downloadBookAsAsciiDoc,
     downloadBookAsPDF,
     downloadBookAsEPUB,
@@ -1072,17 +1072,16 @@
                       Open:
                     </div>
                     {#if event && event.kind === 30040}
-                      <!-- Download overview option for 30040 events -->
+                      <!-- Book (30040) - same menu as articles: HTML, PDF, EPUB -->
                       <button
                         onclick={async () => {
                           if (!event) return;
                           showDownloadMenu = false;
                           isDownloading = true;
                           try {
-                            await downloadBookOverview(event);
+                            await downloadAsHTML5(event);
                           } catch (error) {
-                            alert('Failed to download overview. Make sure all content events are available.');
-                            console.error('Download overview error:', error);
+                            alert('Failed to open HTML. Make sure the AsciiDoctor server is running.');
                           } finally {
                             isDownloading = false;
                           }
@@ -1092,35 +1091,9 @@
                         style="color: var(--text-primary);"
                       >
                         {#if isDownloading}
-                          Preparing overview...
+                          Opening HTML...
                         {:else}
-                          Download the overview
-                        {/if}
-                      </button>
-                      <div class="border-t my-1" style="border-color: var(--border);"></div>
-                      <!-- Book (30040) - download with all branches and leaves -->
-                      <!-- Book (30040) - download with all branches and leaves -->
-                      <button
-                        onclick={async () => {
-                          if (!event) return;
-                          showDownloadMenu = false;
-                          isDownloading = true;
-                          try {
-                            await downloadBookAsAsciiDoc(event);
-                          } catch (error) {
-                            alert('Failed to download book. Make sure all content events are available.');
-                          } finally {
-                            isDownloading = false;
-                          }
-                        }}
-                        disabled={isDownloading}
-                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                        style="color: var(--text-primary);"
-                      >
-                        {#if isDownloading}
-                          Fetching book content...
-                        {:else}
-                          AsciiDoc (with all branches & leaves)
+                          HTML
                         {/if}
                       </button>
                       <button
@@ -1129,9 +1102,9 @@
                           showDownloadMenu = false;
                           isDownloading = true;
                           try {
-                            await downloadBookAsPDF(event);
+                            await downloadAsPDF(event);
                           } catch (error) {
-                            alert('Failed to download book PDF. Make sure the AsciiDoctor server is running and all content events are available.');
+                            alert('Failed to open PDF. Make sure the AsciiDoctor server is running.');
                           } finally {
                             isDownloading = false;
                           }
@@ -1141,9 +1114,9 @@
                         style="color: var(--text-primary);"
                       >
                         {#if isDownloading}
-                          Generating PDF...
+                          Opening PDF...
                         {:else}
-                          PDF (with all branches & leaves)
+                          PDF
                         {/if}
                       </button>
                       <button
@@ -1152,9 +1125,11 @@
                           showDownloadMenu = false;
                           isDownloading = true;
                           try {
-                            await downloadBookAsEPUB(event);
+                            await downloadAsEPUB(event);
                           } catch (error) {
-                            alert('Failed to download book EPUB. Make sure the AsciiDoctor server is running and all content events are available.');
+                            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                            console.error('EPUB open failed:', error);
+                            alert(`Failed to open EPUB: ${errorMessage}`);
                           } finally {
                             isDownloading = false;
                           }
@@ -1164,32 +1139,9 @@
                         style="color: var(--text-primary);"
                       >
                         {#if isDownloading}
-                          Generating EPUB...
+                          Opening EPUB...
                         {:else}
-                          EPUB (with all branches & leaves)
-                        {/if}
-                      </button>
-                      <button
-                        onclick={async () => {
-                          if (!event) return;
-                          showDownloadMenu = false;
-                          isDownloading = true;
-                          try {
-                            await downloadBookAsLaTeX(event);
-                          } catch (error) {
-                            alert('Failed to download book LaTeX. Make sure the AsciiDoctor server is running and all content events are available.');
-                          } finally {
-                            isDownloading = false;
-                          }
-                        }}
-                        disabled={isDownloading}
-                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                        style="color: var(--text-primary);"
-                      >
-                        {#if isDownloading}
-                          Generating LaTeX...
-                        {:else}
-                          LaTeX (with all branches & leaves)
+                          EPUB
                         {/if}
                       </button>
                     {:else if event}
@@ -1200,7 +1152,7 @@
                           showDownloadMenu = false;
                           isDownloading = true;
                           try {
-                            await viewAsHTML5(event);
+                            await downloadAsHTML5(event);
                           } catch (error) {
                             alert('Failed to open HTML. Make sure the AsciiDoctor server is running.');
                           } finally {
@@ -1223,7 +1175,7 @@
                             showDownloadMenu = false;
                             isDownloading = true;
                             try {
-                              await viewAsPDF(event);
+                              await downloadAsPDF(event);
                             } catch (error) {
                               alert('Failed to open PDF. Make sure the AsciiDoctor server is running.');
                             } finally {
@@ -1246,7 +1198,7 @@
                             showDownloadMenu = false;
                             isDownloading = true;
                             try {
-                              await viewAsEPUB(event);
+                              await downloadAsEPUB(event);
                             } catch (error) {
                               const errorMessage = error instanceof Error ? error.message : 'Unknown error';
                               console.error('EPUB open failed:', error);

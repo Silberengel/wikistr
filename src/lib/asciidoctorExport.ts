@@ -380,7 +380,8 @@ export function downloadBlob(blob: Blob, filename: string): void {
 }
 
 /**
- * Open a file in the e-book viewer instead of downloading
+ * openInViewer removed - all files are now downloaded directly
+ * This function is kept for backwards compatibility but just downloads the file
  */
 export async function openInViewer(
   blob: Blob, 
@@ -389,8 +390,8 @@ export async function openInViewer(
   validationMessages?: { errors?: string[]; warnings?: string[] },
   originalLaTeXBlob?: Blob
 ): Promise<void> {
-  const { openViewer } = await import('./viewer');
-  openViewer({ blob, filename, format, validationMessages, originalLaTeXBlob });
+  // All files are downloaded instead of viewed (viewer removed)
+  downloadBlob(blob, filename);
 }
 
 /**

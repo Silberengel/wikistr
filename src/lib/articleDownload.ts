@@ -6,7 +6,7 @@
 import type { NostrEvent } from '@nostr/tools/pure';
 import { nip19 } from '@nostr/tools';
 import { relayService } from '$lib/relayService';
-import { exportToPDF, exportToEPUB, exportToHTML5, exportToLaTeX, downloadBlob, openInViewer } from './asciidoctorExport';
+import { exportToPDF, exportToEPUB, exportToHTML5, exportToLaTeX, downloadBlob } from './asciidoctorExport';
 import {
   processContentQuality,
   processContentQualityAsync,
@@ -286,12 +286,12 @@ async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, pro
   
   doc += `\n`;
   
-  // Add description as abstract if available
-  if (description) {
+  // Add description as abstract if available (only if not empty)
+  if (description && description.trim()) {
     doc += `[abstract]\n`;
     doc += `== Abstract\n\n`;
     doc += `${description}\n\n`;
-  } else if (summary) {
+  } else if (summary && summary.trim()) {
     doc += `[abstract]\n`;
     doc += `== Abstract\n\n`;
     doc += `${summary}\n\n`;
@@ -560,11 +560,12 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
           doc += `:front-cover-image: ${image}\n`;
         }
         doc += `\n`;
-        if (description) {
+        // Only add abstract section if description or summary actually exists and is not empty
+        if (description && description.trim()) {
           doc += `[abstract]\n`;
           doc += `== Abstract\n\n`;
           doc += `${description}\n\n`;
-        } else if (summary) {
+        } else if (summary && summary.trim()) {
           doc += `[abstract]\n`;
           doc += `== Abstract\n\n`;
           doc += `${summary}\n\n`;
@@ -602,89 +603,104 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
 }
 
 /**
- * Get PDF blob (for viewing)
+ * Helper: Get book content (for 30040 events) or single event content
  */
-export async function getPDFBlob(event: NostrEvent): Promise<{ blob: Blob; filename: string }> {
-  if (!event.content || event.content.trim().length === 0) {
-    throw new Error('Cannot generate PDF: article content is empty');
-  }
-  
-  // Prepare AsciiDoc content with metadata (includes cover image, abstract, etc.)
-  const asciiDocContent = await prepareAsciiDocContent(event, true);
-  
-  // Validate AsciiDoc content before exporting
-  const validation = validateAsciiDoc(asciiDocContent);
-  // Always log to console
-  if (!validation.valid) {
-    const errorMsg = `Invalid AsciiDoc syntax: ${validation.error}${validation.warnings ? '\nWarnings: ' + validation.warnings.join('; ') : ''}\n\nPlease fix the AsciiDoc syntax errors and try again.`;
-    console.error('AsciiDoc validation error:', validation.error);
-    if (validation.warnings && validation.warnings.length > 0) {
-      console.warn('AsciiDoc warnings:', validation.warnings);
+async function getEventContent(event: NostrEvent): Promise<{ content: string; title: string; author: string }> {
+  if (event.kind === 30040) {
+    // For books, fetch all branches and leaves
+    const contentEvents = await fetchBookContentEvents(event);
+    const combined = await combineBookEvents(event, contentEvents);
+    
+    if (!combined || combined.trim().length === 0) {
+      throw new Error('Book content is empty');
     }
-    throw new Error(errorMsg);
+    
+    const title = event.tags.find(([k]) => k === 'title')?.[1] || 
+                  event.tags.find(([k]) => k === 'T')?.[1] ||
+                  event.id.slice(0, 8);
+    
+    let author = event.tags.find(([k]) => k === 'author')?.[1];
+    if (!author) {
+      author = await getUserHandle(event.pubkey);
+    }
+    
+    return { content: combined, title, author };
+  } else {
+    // For regular events, prepare AsciiDoc content
+    const content = await prepareAsciiDocContent(event, true);
+    const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
+    const author = await getAuthorName(event);
+    return { content, title, author };
   }
+}
+
+/**
+ * Helper: Validate AsciiDoc content and return validation messages
+ */
+function validateAsciiDocContent(content: string, throwOnError: boolean = false): { errors?: string[]; warnings?: string[] } {
+  const validation = validateAsciiDoc(content);
+  const validationMessages: { errors?: string[]; warnings?: string[] } = {};
+  
+  if (!validation.valid) {
+    const errorMsg = `Invalid AsciiDoc syntax: ${validation.error || 'Unknown error'}${validation.warnings ? '\nWarnings: ' + validation.warnings.join('; ') : ''}\n\nPlease fix the AsciiDoc syntax errors and try again.`;
+    if (validation.error) {
+      validationMessages.errors = [validation.error];
+    }
+    console.error('AsciiDoc validation error:', validation.error);
+    if (throwOnError) {
+      throw new Error(errorMsg);
+    }
+  }
+  
   if (validation.warnings && validation.warnings.length > 0) {
-    // Always log to console
+    validationMessages.warnings = validation.warnings;
     console.warn('AsciiDoc warnings:', validation.warnings);
   }
   
-  const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
-  const author = await getAuthorName(event);
+  return validationMessages;
+}
+
+
+/**
+ * Helper: Generate filename with timestamp
+ */
+function generateFilename(title: string, extension: string): string {
+  const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '').slice(2, 15);
+  return `${title.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.${extension}`;
+}
+
+/**
+ * Get PDF blob (for viewing)
+ */
+export async function getPDFBlob(event: NostrEvent): Promise<{ blob: Blob; filename: string }> {
+  const { content, title, author } = await getEventContent(event);
+  validateAsciiDocContent(content, true);
   
-  const blob = await exportToPDF({
-    content: asciiDocContent,
-    title,
-    author,
-  });
+  const blob = await exportToPDF({ content, title, author });
   
   if (!blob || blob.size === 0) {
     throw new Error('Server returned empty PDF file');
   }
   
-  const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '').slice(2, 15); // yymmddHHmmss
-  const filename = `${title.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.pdf`;
+  const filename = generateFilename(title, 'pdf');
   return { blob, filename };
 }
 
-export async function downloadAsPDF(event: NostrEvent, filename?: string): Promise<void> {
-  const { blob, filename: defaultFilename } = await getPDFBlob(event);
-  const name = filename || defaultFilename;
-  downloadBlob(blob, name);
-}
-
 /**
- * View PDF in browser tab
+ * Download PDF (renamed from viewAsPDF - viewer removed)
  */
-export async function viewAsPDF(event: NostrEvent): Promise<void> {
-  // Prepare AsciiDoc content with metadata (includes cover image, abstract, etc.)
-  const asciiDocContent = await prepareAsciiDocContent(event, true);
+export async function downloadAsPDF(event: NostrEvent, filename?: string): Promise<void> {
+  const { content, title, author } = await getEventContent(event);
+  validateAsciiDocContent(content, true);
   
-  // Validate AsciiDoc content before exporting
-  const validation = validateAsciiDoc(asciiDocContent);
+  const blob = await exportToPDF({ content, title, author });
   
-  // Always log to console
-  if (!validation.valid && validation.error) {
-    console.error('AsciiDoc validation error:', validation.error);
-  }
-  if (validation.warnings && validation.warnings.length > 0) {
-    console.warn('AsciiDoc warnings:', validation.warnings);
+  if (!blob || blob.size === 0) {
+    throw new Error('Server returned empty PDF file');
   }
   
-  const { blob, filename } = await getPDFBlob(event);
-  
-  // Open PDF in new browser tab
-  const url = URL.createObjectURL(blob);
-  const newWindow = window.open(url, '_blank');
-  if (!newWindow) {
-    // If popup blocked, fall back to download
-    downloadBlob(blob, filename);
-    URL.revokeObjectURL(url);
-  } else {
-    // Clean up URL when window closes (best effort)
-    newWindow.addEventListener('beforeunload', () => {
-      URL.revokeObjectURL(url);
-    });
-  }
+  const name = filename || generateFilename(title, 'pdf');
+  downloadBlob(blob, name);
 }
 
 /**
@@ -694,70 +710,26 @@ export async function viewAsPDF(event: NostrEvent): Promise<void> {
  * Get EPUB blob (for viewing)
  */
 export async function getEPUBBlob(event: NostrEvent): Promise<{ blob: Blob; filename: string }> {
-  if (!event.content || event.content.trim().length === 0) {
-    throw new Error('Cannot generate EPUB: article content is empty');
-  }
+  const { content, title, author } = await getEventContent(event);
+  validateAsciiDocContent(content, true);
   
-  // Prepare AsciiDoc content with metadata (includes cover image, abstract, etc.)
-  const asciiDocContent = await prepareAsciiDocContent(event, true);
-  
-  // Validate AsciiDoc content before exporting
-  const validation = validateAsciiDoc(asciiDocContent);
-  if (!validation.valid) {
-    const errorMsg = `Invalid AsciiDoc syntax: ${validation.error}${validation.warnings ? '\nWarnings: ' + validation.warnings.join('; ') : ''}\n\nPlease fix the AsciiDoc syntax errors and try again.`;
-    throw new Error(errorMsg);
-  }
-  if (validation.warnings && validation.warnings.length > 0) {
-    console.warn('AsciiDoc warnings:', validation.warnings);
-  }
-  
-  const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
-  const author = await getAuthorName(event);
-  
-  const blob = await exportToEPUB({
-    content: asciiDocContent,
-    title,
-    author,
-  });
+  const blob = await exportToEPUB({ content, title, author });
   
   if (!blob || blob.size === 0) {
     throw new Error('Server returned empty EPUB file');
   }
   
-  const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '').slice(2, 15); // yymmddHHmmss
-  const filename = `${title.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.epub`;
+  const filename = generateFilename(title, 'epub');
   return { blob, filename };
 }
 
+/**
+ * Download EPUB (renamed from viewAsEPUB - viewer removed)
+ */
 export async function downloadAsEPUB(event: NostrEvent, filename?: string): Promise<void> {
   const { blob, filename: defaultFilename } = await getEPUBBlob(event);
   const name = filename || defaultFilename;
   downloadBlob(blob, name);
-}
-
-/**
- * View EPUB in e-book viewer
- */
-export async function viewAsEPUB(event: NostrEvent): Promise<void> {
-  // Prepare AsciiDoc content with metadata (includes cover image, abstract, etc.)
-  const asciiDocContent = await prepareAsciiDocContent(event, true);
-  
-  // Validate AsciiDoc content before exporting
-  const validation = validateAsciiDoc(asciiDocContent);
-  const validationMessages: { errors?: string[]; warnings?: string[] } = {};
-  
-  // Always log to console AND pass to viewer
-  if (!validation.valid && validation.error) {
-    validationMessages.errors = [validation.error];
-    console.error('AsciiDoc validation error:', validation.error);
-  }
-  if (validation.warnings && validation.warnings.length > 0) {
-    validationMessages.warnings = validation.warnings;
-    console.warn('AsciiDoc warnings:', validation.warnings);
-  }
-  
-  const { blob, filename } = await getEPUBBlob(event);
-  await openInViewer(blob, filename, 'epub', validationMessages);
 }
 
 /**
@@ -767,249 +739,59 @@ export async function viewAsEPUB(event: NostrEvent): Promise<void> {
  * Get HTML5 blob (for viewing)
  */
 export async function getHTML5Blob(event: NostrEvent): Promise<{ blob: Blob; filename: string }> {
-  if (!event.content || event.content.trim().length === 0) {
-    throw new Error('Cannot generate HTML5: article content is empty');
+  const { content, title, author } = await getEventContent(event);
+  
+  if (!content || content.trim().length === 0) {
+    throw new Error('Failed to prepare content');
   }
   
-  // Prepare AsciiDoc content with metadata
-  // This converts Markdown (30817, 30023) to AsciiDoc and wraps with metadata
-  const asciiDocContent = await prepareAsciiDocContent(event, true);
+  validateAsciiDocContent(content, true);
   
-  // Verify AsciiDoc content was created
-  if (!asciiDocContent || asciiDocContent.trim().length === 0) {
-    throw new Error('Failed to prepare AsciiDoc content');
-  }
-  
-  // Validate AsciiDoc content before exporting
-  const validation = validateAsciiDoc(asciiDocContent);
-  if (!validation.valid) {
-    const errorMsg = `Invalid AsciiDoc syntax: ${validation.error}${validation.warnings ? '\nWarnings: ' + validation.warnings.join('; ') : ''}\n\nPlease fix the AsciiDoc syntax errors and try again.`;
-    throw new Error(errorMsg);
-  }
-  if (validation.warnings && validation.warnings.length > 0) {
-    console.warn('AsciiDoc warnings:', validation.warnings);
-  }
-  
-  const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
-  const author = await getAuthorName(event);
-  
-  // Send AsciiDoc content to AsciiDoctor server and request HTML
-  const blob = await exportToHTML5({
-    content: asciiDocContent,
-    title,
-    author
-  });
+  const blob = await exportToHTML5({ content, title, author });
   
   if (!blob || blob.size === 0) {
     throw new Error('Server returned empty HTML file');
   }
   
-  const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '').slice(2, 15); // yymmddHHmmss
-  const filename = `${title.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.html`;
+  const filename = generateFilename(title, 'html');
   return { blob, filename };
 }
 
+/**
+ * Download HTML5 (renamed from viewAsHTML5 - viewer removed)
+ */
 export async function downloadAsHTML5(event: NostrEvent, filename?: string): Promise<void> {
   const { blob, filename: defaultFilename } = await getHTML5Blob(event);
   const name = filename || defaultFilename;
   downloadBlob(blob, name);
 }
 
-/**
- * View HTML5 in browser tab
- */
-export async function viewAsHTML5(event: NostrEvent): Promise<void> {
-  const { blob, filename } = await getHTML5Blob(event);
-  
-  // Open HTML in new browser tab
-  const url = URL.createObjectURL(blob);
-  const newWindow = window.open(url, '_blank');
-  if (!newWindow) {
-    // If popup blocked, fall back to download
-    downloadBlob(blob, filename);
-    URL.revokeObjectURL(url);
-  } else {
-    // Clean up URL when window closes (best effort)
-    newWindow.addEventListener('beforeunload', () => {
-      URL.revokeObjectURL(url);
-    });
-  }
-}
 
-/**
- * View Markdown in e-book viewer
- */
-export async function viewAsMarkdown(event: NostrEvent): Promise<void> {
-  if (!event.content || event.content.trim().length === 0) {
-    throw new Error('Cannot view Markdown: article content is empty');
-  }
-  
-  // Get the processed markdown content
-  let content: string;
-  if (event.kind === 30023 || event.kind === 30817) {
-    // Markdown events - process quality control
-    content = await processContentQualityAsync(event.content, event, false);
-  } else {
-    // Convert from AsciiDoc to Markdown (using existing function)
-    content = convertAsciiDocToMarkdown(event.content);
-    // Apply basic quality control
-    content = processContentQuality(content, event, false);
-  }
-  
-  // Validate content (convert to AsciiDoc for validation if needed)
-  let validationMessages: { errors?: string[]; warnings?: string[] } = {};
-  try {
-    // Convert markdown to AsciiDoc for validation
-    const asciiDocForValidation = convertMarkdownToAsciiDoc(content);
-    const validation = validateAsciiDoc(asciiDocForValidation);
-    // Always log to console AND pass to viewer
-    if (!validation.valid && validation.error) {
-      validationMessages.errors = [validation.error];
-      console.error('Markdown validation error:', validation.error);
-    }
-    if (validation.warnings && validation.warnings.length > 0) {
-      validationMessages.warnings = validation.warnings;
-      console.warn('Markdown warnings:', validation.warnings);
-    }
-  } catch (error) {
-    // If validation fails, just log it
-    console.warn('Failed to validate markdown content:', error);
-  }
-  
-  const title = getTitleFromEvent(event);
-  const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '').slice(2, 15); // yymmddHHmmss
-  const filename = `${title.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.md`;
-  const blob = new Blob([content], { type: 'text/markdown' });
-  await openInViewer(blob, filename, 'markdown', validationMessages);
-}
-
-/**
- * View AsciiDoc in e-book viewer
- */
-export async function viewAsAsciiDoc(event: NostrEvent): Promise<void> {
-  if (!event.content || event.content.trim().length === 0) {
-    throw new Error('Cannot view AsciiDoc: article content is empty');
-  }
-  
-  // Get the processed asciidoc content
-  let content: string;
-  if (event.kind === 30023 || event.kind === 30817) {
-    // Markdown events - convert to AsciiDoc (using existing function)
-    content = convertMarkdownToAsciiDoc(event.content);
-    // Apply basic quality control
-    content = processContentQuality(content, event, true);
-  } else {
-    // AsciiDoc events - process quality control
-    content = await processContentQualityAsync(event.content, event, true);
-  }
-  
-  // Validate AsciiDoc content
-  const validation = validateAsciiDoc(content);
-  const validationMessages: { errors?: string[]; warnings?: string[] } = {};
-  // Always log to console AND pass to viewer
-  if (!validation.valid && validation.error) {
-    validationMessages.errors = [validation.error];
-    console.error('AsciiDoc validation error:', validation.error);
-  }
-  if (validation.warnings && validation.warnings.length > 0) {
-    validationMessages.warnings = validation.warnings;
-    console.warn('AsciiDoc warnings:', validation.warnings);
-  }
-  
-  const title = getTitleFromEvent(event);
-  const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '').slice(2, 15); // yymmddHHmmss
-  const filename = `${title.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.adoc`;
-  const blob = new Blob([content], { type: 'text/asciidoc' });
-  await openInViewer(blob, filename, 'asciidoc', validationMessages);
-}
 
 /**
  * Download article as LaTeX
  */
 export async function downloadAsLaTeX(event: NostrEvent, filename?: string): Promise<void> {
-  if (!event.content || event.content.trim().length === 0) {
-    throw new Error('Cannot download LaTeX: article content is empty');
+  const { content, title, author } = await getEventContent(event);
+  validateAsciiDocContent(content, true);
+  
+  const blob = await exportToLaTeX({ content, title, author });
+  
+  if (!blob || blob.size === 0) {
+    throw new Error('Server returned empty LaTeX file');
   }
   
-  try {
-    // Prepare AsciiDoc content with metadata
-    const asciiDocContent = await prepareAsciiDocContent(event, true);
-    
-    // Validate AsciiDoc content before exporting
-    const validation = validateAsciiDoc(asciiDocContent);
-    if (!validation.valid) {
-      const errorMsg = `Invalid AsciiDoc syntax: ${validation.error}${validation.warnings ? '\nWarnings: ' + validation.warnings.join('; ') : ''}\n\nPlease fix the AsciiDoc syntax errors and try again.`;
-      throw new Error(errorMsg);
-    }
-    if (validation.warnings && validation.warnings.length > 0) {
-      console.warn('AsciiDoc warnings:', validation.warnings);
-    }
-    
-    const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
-    const author = await getAuthorName(event);
-    
-    const blob = await exportToLaTeX({
-      content: asciiDocContent,
-      title,
-      author
-    });
-    
-    if (!blob || blob.size === 0) {
-      throw new Error('Server returned empty LaTeX file');
-    }
-    
-    const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.tex`;
-    downloadBlob(blob, name);
-  } catch (error) {
-    console.error('Failed to download LaTeX:', error);
-    throw error;
-  }
-}
-
-/**
- * View LaTeX in e-book viewer (converts to PDF first)
- */
-export async function viewAsLaTeX(event: NostrEvent): Promise<void> {
-  if (!event.content || event.content.trim().length === 0) {
-    throw new Error('Cannot view LaTeX: article content is empty');
-  }
-  
-  // Prepare AsciiDoc content with metadata (includes cover image, abstract, etc.)
-  const asciiDocContent = await prepareAsciiDocContent(event, true);
-  
-  // Validate AsciiDoc content before exporting
-  const validation = validateAsciiDoc(asciiDocContent);
-  const validationMessages: { errors?: string[]; warnings?: string[] } = {};
-  
-  // Always log to console AND pass to viewer
-  if (!validation.valid && validation.error) {
-    validationMessages.errors = [validation.error];
-    console.error('AsciiDoc validation error:', validation.error);
-  }
-  if (validation.warnings && validation.warnings.length > 0) {
-    validationMessages.warnings = validation.warnings;
-    console.warn('AsciiDoc warnings:', validation.warnings);
-  }
-  
-  // Get PDF blob
-  const { blob, filename } = await getPDFBlob(event);
-  
-  // Also get LaTeX blob for download option
-  const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
-  const author = await getAuthorName(event);
-  const latexBlob = await exportToLaTeX({
-    content: asciiDocContent,
-    title,
-    author
-  });
-  
-  await openInViewer(blob, filename, 'pdf', validationMessages, latexBlob);
+  const name = filename || generateFilename(title, 'tex');
+  downloadBlob(blob, name);
 }
 
 
 
+
 /**
- * Fetch all 30041 events referenced by a 30040 index event
+ * Fetch all 30040 (branches) and 30041 (leaves) events referenced by a 30040 index event
+ * 30041 events can be referenced via 'a' tags (usually) or 'e' tags
+ * 30040 events are referenced via 'a' tags
  * Prevents circular references and self-references
  */
 export async function fetchBookContentEvents(
@@ -1026,8 +808,7 @@ export async function fetchBookContentEvents(
   const currentVisited = new Set(visitedIds);
   currentVisited.add(indexEvent.id);
 
-  // Extract all 'e' tags which reference 30041 events
-  // Filter out the current event's ID to prevent self-reference
+  // Extract all 'e' tags which might reference 30041 events (leaves)
   const eventIds = indexEvent.tags
     .filter(([tag]) => tag === 'e')
     .map(([, eventId]) => eventId)
@@ -1035,82 +816,156 @@ export async function fetchBookContentEvents(
     .filter(id => id !== indexEvent.id) // Prevent self-reference
     .filter(id => !visitedIds.has(id)); // Prevent circular references
 
-  if (eventIds.length === 0) {
-    return [];
-  }
+  // Extract all 'a' tags which can reference 30040 (branches) or 30041 (leaves, usually)
+  const aTags = indexEvent.tags
+    .filter(([tag]) => tag === 'a')
+    .map(([, aTag]) => aTag)
+    .filter(Boolean);
 
-  // Fetch all referenced events
-  try {
-    // Query events by IDs - use a single filter with all IDs
-    // If relay doesn't support multiple IDs, we'll need to query separately
-    const result = await relayService.queryEvents(
-      'anonymous',
-      'wiki-read',
-      [{ kinds: [30041], ids: eventIds }],
-      { excludeUserContent: false, currentUserPubkey: undefined }
-    );
-    
-    // If we didn't get all events, try querying individually
-    const foundIds = new Set(result.events.map(e => e.id));
-    const missingIds = eventIds.filter(id => !foundIds.has(id));
-    
-    if (missingIds.length > 0) {
-      // Query missing events individually
-      for (const id of missingIds) {
-        // Skip if already visited (circular reference prevention)
-        if (currentVisited.has(id)) {
-          console.warn(`Skipping circular reference to event ${id}`);
-          continue;
-        }
+  const allEvents: NostrEvent[] = [];
 
-        try {
-          const individualResult = await relayService.queryEvents(
-            'anonymous',
-            'wiki-read',
-            [{ kinds: [30041], ids: [id] }],
-            { excludeUserContent: false, currentUserPubkey: undefined }
-          );
-          
-          // Process any 30040 events recursively (for nested book structures)
-          // but prevent circular references
-          for (const event of individualResult.events) {
-            if (event.kind === 30040 && !currentVisited.has(event.id)) {
-              // Recursively fetch nested content, but pass visited set
-              const nestedContent = await fetchBookContentEvents(event, currentVisited);
-              result.events.push(...nestedContent);
-            }
+  // Fetch events referenced by 'a' tags (30040 branches and 30041 leaves, usually)
+  if (aTags.length > 0) {
+    try {
+      // Build filters for each a-tag - can be 30040 or 30041
+      const aTagFilters: any[] = [];
+      for (const aTag of aTags) {
+        const [kindStr, pubkey, dTag] = aTag.split(':');
+        if (kindStr && pubkey && dTag) {
+          const kind = parseInt(kindStr, 10);
+          // Fetch both 30040 (branches) and 30041 (leaves) via a-tags
+          if (kind === 30040 || kind === 30041) {
+            aTagFilters.push({
+              kinds: [kind],
+              authors: [pubkey],
+              '#d': [dTag]
+            });
           }
-          
-          result.events.push(...individualResult.events.filter(e => e.kind === 30041));
-        } catch (e) {
-          console.warn(`Failed to fetch event ${id}:`, e);
+        }
+      }
+
+      if (aTagFilters.length > 0) {
+        const result = await relayService.queryEvents(
+          'anonymous',
+          'wiki-read',
+          aTagFilters,
+          { excludeUserContent: false, currentUserPubkey: undefined }
+        );
+
+        // Process branches (30040) - recursively fetch their content
+        for (const branchEvent of result.events.filter(e => e.kind === 30040)) {
+          if (!currentVisited.has(branchEvent.id)) {
+            // Add branch event itself
+            allEvents.push(branchEvent);
+            // Recursively fetch its content (branches and leaves)
+            const nestedContent = await fetchBookContentEvents(branchEvent, currentVisited);
+            allEvents.push(...nestedContent);
+          }
+        }
+
+        // Process leaves (30041) - just add them
+        allEvents.push(...result.events.filter(e => e.kind === 30041));
+      }
+    } catch (error) {
+      console.error('Failed to fetch book content events (a-tags):', error);
+    }
+  }
+
+  // Fetch events referenced by 'e' tags (30041 leaves, fallback)
+  if (eventIds.length > 0) {
+    try {
+      // Query events by IDs - use a single filter with all IDs
+      const result = await relayService.queryEvents(
+        'anonymous',
+        'wiki-read',
+        [{ kinds: [30041], ids: eventIds }],
+        { excludeUserContent: false, currentUserPubkey: undefined }
+      );
+      
+      // If we didn't get all events, try querying individually
+      const foundIds = new Set(result.events.map(e => e.id));
+      const missingIds = eventIds.filter(id => !foundIds.has(id));
+      
+      if (missingIds.length > 0) {
+        // Query missing events individually
+        for (const id of missingIds) {
+          // Skip if already visited (circular reference prevention)
+          if (currentVisited.has(id)) {
+            console.warn(`Skipping circular reference to event ${id}`);
+            continue;
+          }
+
+          try {
+            const individualResult = await relayService.queryEvents(
+              'anonymous',
+              'wiki-read',
+              [{ kinds: [30041], ids: [id] }],
+              { excludeUserContent: false, currentUserPubkey: undefined }
+            );
+            
+            result.events.push(...individualResult.events.filter(e => e.kind === 30041));
+          } catch (e) {
+            console.warn(`Failed to fetch event ${id}:`, e);
+          }
+        }
+      }
+
+      // Only add events that weren't already added via a-tags
+      const existingIds = new Set(allEvents.map(e => e.id));
+      allEvents.push(...result.events.filter(e => e.kind === 30041 && !existingIds.has(e.id)));
+    } catch (error) {
+      console.error('Failed to fetch book content events (e-tags):', error);
+    }
+  }
+
+  if (allEvents.length === 0) {
+    return [];
+  }
+
+  // Sort by the order in the index event's tags
+  // First process a-tags (usually), then e-tags (fallback)
+  const orderMap = new Map<string, number>();
+  let orderIndex = 0;
+  
+  // Add a-tag order (for both branches and leaves)
+  aTags.forEach((aTag) => {
+    const [kindStr, pubkey, dTag] = aTag.split(':');
+    if (kindStr && pubkey && dTag) {
+      const kind = parseInt(kindStr, 10);
+      // We'll match events by their a-tag representation
+      const aTagKey = `${kind}:${pubkey}:${dTag}`;
+      // Find matching events and assign order
+      for (const event of allEvents) {
+        if (event.kind === kind && event.pubkey === pubkey) {
+          const eventDTag = event.tags.find(([k]) => k === 'd')?.[1];
+          if (eventDTag === dTag && !orderMap.has(event.id)) {
+            orderMap.set(event.id, orderIndex++);
+          }
         }
       }
     }
-
-    // Sort by the order in the index event's 'e' tags
-    const orderMap = new Map<string, number>();
-    eventIds.forEach((id, index) => {
-      orderMap.set(id, index);
-    });
-
-    // Remove duplicates (in case of nested fetching)
-    const uniqueEvents = new Map<string, NostrEvent>();
-    for (const event of result.events) {
-      if (!uniqueEvents.has(event.id)) {
-        uniqueEvents.set(event.id, event);
-      }
+  });
+  
+  // Add e-tag order (for leaves not found via a-tags)
+  eventIds.forEach((id) => {
+    if (!orderMap.has(id)) {
+      orderMap.set(id, orderIndex++);
     }
+  });
 
-    return Array.from(uniqueEvents.values()).sort((a, b) => {
-      const orderA = orderMap.get(a.id) ?? 999;
-      const orderB = orderMap.get(b.id) ?? 999;
-      return orderA - orderB;
-    });
-  } catch (error) {
-    console.error('Failed to fetch book content events:', error);
-    return [];
+  // Remove duplicates (in case of nested fetching)
+  const uniqueEvents = new Map<string, NostrEvent>();
+  for (const event of allEvents) {
+    if (!uniqueEvents.has(event.id)) {
+      uniqueEvents.set(event.id, event);
+    }
   }
+
+  return Array.from(uniqueEvents.values()).sort((a, b) => {
+    const orderA = orderMap.get(a.id) ?? 999;
+    const orderB = orderMap.get(b.id) ?? 999;
+    return orderA - orderB;
+  });
 }
 
 /**
@@ -1409,7 +1264,51 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   }
   
   doc += `\n`;
-  
+
+  // Add bookstr tags (written for humans) on title page
+  const bookstrTags: string[] = [];
+  const bookstrTagNames: Record<string, string> = {
+    'C': 'Collection',
+    'c': 'Collection',
+    'T': 'Title',
+    't': 'Title',
+    's': 'Series',
+    'S': 'Series',
+    'v': 'Volume',
+    'V': 'Volume'
+  };
+
+  // Collect all bookstr tags from index event
+  const bookstrTagTypes = ['C', 'c', 'T', 't', 's', 'S', 'v', 'V'];
+  for (const tagType of bookstrTagTypes) {
+    const tagValues = indexEvent.tags
+      .filter(([k]) => k === tagType)
+      .map(([, v]) => v)
+      .filter(Boolean);
+    
+    if (tagValues.length > 0) {
+      const tagName = bookstrTagNames[tagType] || tagType;
+      // Format values nicely
+      const formattedValues = tagValues.map(v => {
+        // Title case for display
+        return v.split(/[-_\s]+/)
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+          .join(' ');
+      }).join(', ');
+      bookstrTags.push(`${tagName}: ${formattedValues}`);
+    }
+  }
+
+  // Add bookstr tags to title page if present
+  if (bookstrTags.length > 0) {
+    doc += `[.bookstr-tags]\n`;
+    doc += `== Book Metadata\n\n`;
+    for (const tagLine of bookstrTags) {
+      doc += `${tagLine}\n`;
+    }
+    doc += `\n`;
+  }
+
   // Add abstract/description after title page
   if (description) {
     doc += `[abstract]\n`;
@@ -1492,100 +1391,34 @@ export async function downloadBookAsAsciiDoc(indexEvent: NostrEvent, filename?: 
  * Download book (30040) as PDF with all branches and leaves
  */
 export async function downloadBookAsPDF(indexEvent: NostrEvent, filename?: string): Promise<void> {
-  const contentEvents = await fetchBookContentEvents(indexEvent);
-  const combined = await combineBookEvents(indexEvent, contentEvents);
+  const { content, title, author } = await getEventContent(indexEvent);
+  validateAsciiDocContent(content, true);
   
-  if (!combined || combined.trim().length === 0) {
-    throw new Error('Cannot download PDF: book content is empty');
-  }
+  const blob = await exportToPDF({ content, title, author });
   
-  // Validate AsciiDoc content before exporting
-  const validation = validateAsciiDoc(combined);
-  if (!validation.valid) {
-    const errorMsg = `Invalid AsciiDoc syntax: ${validation.error}${validation.warnings ? '\nWarnings: ' + validation.warnings.join('; ') : ''}\n\nPlease fix the AsciiDoc syntax errors and try again.`;
-    throw new Error(errorMsg);
-  }
-  if (validation.warnings && validation.warnings.length > 0) {
-    console.warn('AsciiDoc warnings:', validation.warnings);
+  if (!blob || blob.size === 0) {
+    throw new Error('Server returned empty PDF file');
   }
   
-  const title = indexEvent.tags.find(([k]) => k === 'title')?.[1] || 
-                indexEvent.tags.find(([k]) => k === 'T')?.[1] ||
-                indexEvent.id.slice(0, 8);
-  
-  // Get author from the combined document or fetch it
-  let author = indexEvent.tags.find(([k]) => k === 'author')?.[1];
-  if (!author) {
-    author = await getUserHandle(indexEvent.pubkey);
-  }
-
-  try {
-    const blob = await exportToPDF({
-      content: combined,
-      title,
-      author
-    });
-    
-    if (!blob || blob.size === 0) {
-      throw new Error('Server returned empty PDF file');
-    }
-    
-    const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.pdf`;
-    downloadBlob(blob, name);
-  } catch (error) {
-    console.error('Failed to download book PDF:', error);
-    throw error;
-  }
+  const name = filename || generateFilename(title, 'pdf');
+  downloadBlob(blob, name);
 }
 
 /**
  * Download book (30040) as EPUB with all branches and leaves
  */
 export async function downloadBookAsEPUB(indexEvent: NostrEvent, filename?: string): Promise<void> {
-  const contentEvents = await fetchBookContentEvents(indexEvent);
-  const combined = await combineBookEvents(indexEvent, contentEvents);
+  const { content, title, author } = await getEventContent(indexEvent);
+  validateAsciiDocContent(content, true);
   
-  if (!combined || combined.trim().length === 0) {
-    throw new Error('Cannot download EPUB: book content is empty');
-  }
+  const blob = await exportToEPUB({ content, title, author });
   
-  // Validate AsciiDoc content before exporting
-  const validation = validateAsciiDoc(combined);
-  if (!validation.valid) {
-    const errorMsg = `Invalid AsciiDoc syntax: ${validation.error}${validation.warnings ? '\nWarnings: ' + validation.warnings.join('; ') : ''}\n\nPlease fix the AsciiDoc syntax errors and try again.`;
-    throw new Error(errorMsg);
-  }
-  if (validation.warnings && validation.warnings.length > 0) {
-    console.warn('AsciiDoc warnings:', validation.warnings);
+  if (!blob || blob.size === 0) {
+    throw new Error('Server returned empty EPUB file');
   }
   
-  const title = indexEvent.tags.find(([k]) => k === 'title')?.[1] || 
-                indexEvent.tags.find(([k]) => k === 'T')?.[1] ||
-                indexEvent.id.slice(0, 8);
-  
-  // Get author from the combined document or fetch it
-  let author = indexEvent.tags.find(([k]) => k === 'author')?.[1];
-  if (!author) {
-    author = await getUserHandle(indexEvent.pubkey);
-  }
-
-  try {
-    const blob = await exportToEPUB({
-      content: combined,
-      title,
-      author
-    });
-    
-    if (!blob || blob.size === 0) {
-      throw new Error('Server returned empty EPUB file');
-    }
-    
-    const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.epub`;
-    downloadBlob(blob, name);
-  } catch (error) {
-    console.error('Failed to download book EPUB:', error);
-    throw error;
-  }
+  const name = filename || generateFilename(title, 'epub');
+  downloadBlob(blob, name);
 }
 
 /**
@@ -1963,40 +1796,17 @@ export async function downloadBookSearchResultsAsLaTeX(
  * Download book (30040) as LaTeX with all branches and leaves
  */
 export async function downloadBookAsLaTeX(indexEvent: NostrEvent, filename?: string): Promise<void> {
-  const contentEvents = await fetchBookContentEvents(indexEvent);
-  const combined = await combineBookEvents(indexEvent, contentEvents);
+  const { content, title, author } = await getEventContent(indexEvent);
+  validateAsciiDocContent(content, true);
   
-  if (!combined || combined.trim().length === 0) {
-    throw new Error('Cannot download LaTeX: book content is empty');
+  const blob = await exportToLaTeX({ content, title, author });
+  
+  if (!blob || blob.size === 0) {
+    throw new Error('Server returned empty LaTeX file');
   }
   
-  const title = indexEvent.tags.find(([k]) => k === 'title')?.[1] || 
-                indexEvent.tags.find(([k]) => k === 'T')?.[1] ||
-                indexEvent.id.slice(0, 8);
-  
-  // Get author from the combined document or fetch it
-  let author = indexEvent.tags.find(([k]) => k === 'author')?.[1];
-  if (!author) {
-    author = await getUserHandle(indexEvent.pubkey);
-  }
-
-  try {
-    const blob = await exportToLaTeX({
-      content: combined,
-      title,
-      author
-    });
-    
-    if (!blob || blob.size === 0) {
-      throw new Error('Server returned empty LaTeX file');
-    }
-    
-    const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.tex`;
-    downloadBlob(blob, name);
-  } catch (error) {
-    console.error('Failed to download book LaTeX:', error);
-    throw error;
-  }
+  const name = filename || generateFilename(title, 'tex');
+  downloadBlob(blob, name);
 }
 
 /**
