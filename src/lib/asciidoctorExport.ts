@@ -41,52 +41,52 @@ export interface ExportOptions {
 
 /**
  * Convert AsciiDoc content to PDF
+ * With retry logic and better error handling
  */
 export async function exportToPDF(options: ExportOptions): Promise<Blob> {
-  // Normalize baseUrl - remove trailing slash, then add it back to ensure clean URL construction
+  // Normalize baseUrl - ensure it ends with exactly one slash
   const normalizedBase = ASCIIDOCTOR_SERVER_URL.replace(/\/+$/, '');
   const baseUrl = `${normalizedBase}/`;
   const url = `${baseUrl}convert/pdf`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      content: options.content,
-      title: options.title,
-      author: options.author || '',
-    }),
-  });
-
-  if (!response.ok) {
-    // Try to read error message
-    let errorMessage = `Failed to generate PDF: ${response.status} ${response.statusText}`;
-    const contentType = response.headers.get('content-type') || '';
-    
+  
+  console.log('[PDF Export] Request URL:', url);
+  console.log('[PDF Export] Content length:', options.content.length);
+  console.log('[PDF Export] Title:', options.title);
+  
+  // Retry logic - try up to 3 times
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      if (contentType.includes('application/json')) {
-        const error = await response.json().catch(() => null);
-        if (error) {
-          errorMessage = error.error || error.message || errorMessage;
-          if (error.hint) {
-            errorMessage += `\n\nHint: ${error.hint}`;
-          }
-          if (error.line) {
-            errorMessage += `\n\nError detected at line ${error.line}`;
-          }
-        }
-      } else {
-        // Try to read as text even if not JSON
-        const text = await response.text();
-        if (text) {
-          // Check if it's the SvelteKit app shell
-          if (text.includes('__sveltekit') || text.includes('sveltekit-preload-data')) {
-            errorMessage = 'Server returned SvelteKit app shell instead of PDF. Check AsciiDoctor server is running and proxy is configured correctly.';
-          } else {
-            // Try to parse as JSON in case content-type is wrong
-            try {
-              const error = JSON.parse(text);
+      if (attempt > 1) {
+        console.log(`[PDF Export] Retry attempt ${attempt}/3`);
+        // Wait before retry (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+      }
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: options.content,
+          title: options.title,
+          author: options.author || '',
+        }),
+      });
+
+      console.log('[PDF Export] Response status:', response.status);
+      console.log('[PDF Export] Response headers:', Object.fromEntries(response.headers.entries()));
+
+      if (!response.ok) {
+        // Try to read error message
+        let errorMessage = `Failed to generate PDF: ${response.status} ${response.statusText}`;
+        const contentType = response.headers.get('content-type') || '';
+        
+        try {
+          if (contentType.includes('application/json')) {
+            const error = await response.json().catch(() => null);
+            if (error) {
               errorMessage = error.error || error.message || errorMessage;
               if (error.hint) {
                 errorMessage += `\n\nHint: ${error.hint}`;
@@ -94,46 +94,122 @@ export async function exportToPDF(options: ExportOptions): Promise<Blob> {
               if (error.line) {
                 errorMessage += `\n\nError detected at line ${error.line}`;
               }
-            } catch {
-              // Not JSON, use text as error message (limit length)
-              const preview = text.length > 200 ? text.substring(0, 200) + '...' : text;
-              errorMessage = `${errorMessage}\n\nServer response: ${preview}`;
+            }
+          } else {
+            // Try to read as text even if not JSON
+            const text = await response.text();
+            if (text) {
+              // Check if it's the SvelteKit app shell
+              if (text.includes('__sveltekit') || text.includes('sveltekit-preload-data') || text.includes('_app/immutable')) {
+                errorMessage = `Server returned SvelteKit app shell instead of PDF (attempt ${attempt}/3). This usually means:\n1. AsciiDoctor server is not running on port 8091\n2. Apache proxy is not configured correctly\n3. The /asciidoctor/ path is being rewritten to index.html\n\nCheck: docker ps | grep asciidoctor\nCheck: Apache proxy config for /asciidoctor/\nURL attempted: ${url}`;
+              } else {
+                // Try to parse as JSON in case content-type is wrong
+                try {
+                  const error = JSON.parse(text);
+                  errorMessage = error.error || error.message || errorMessage;
+                  if (error.hint) {
+                    errorMessage += `\n\nHint: ${error.hint}`;
+                  }
+                  if (error.line) {
+                    errorMessage += `\n\nError detected at line ${error.line}`;
+                  }
+                } catch {
+                  // Not JSON, use text as error message (limit length)
+                  const preview = text.length > 200 ? text.substring(0, 200) + '...' : text;
+                  errorMessage = `${errorMessage}\n\nServer response: ${preview}`;
+                }
+              }
             }
           }
+        } catch (err) {
+          // If we can't read the error response, use the default message
+          console.error('[PDF Export] Failed to read error response:', err);
+        }
+        
+        lastError = new Error(errorMessage);
+        
+        // Don't retry on 4xx errors (client errors)
+        if (response.status >= 400 && response.status < 500) {
+          throw lastError;
+        }
+        
+        // Retry on 5xx errors or network errors
+        if (attempt < 3) {
+          continue;
+        } else {
+          throw lastError;
         }
       }
-    } catch (err) {
-      // If we can't read the error response, use the default message
-      console.error('Failed to read error response:', err);
-    }
-    
-    throw new Error(errorMessage);
-  }
 
-  // Verify we got a PDF response
-  const contentType = response.headers.get('content-type') || '';
-  if (!contentType.includes('application/pdf')) {
-    // Might be an error response, try to read as JSON or text
-    const text = await response.text();
-    // Check if it's the SvelteKit app shell (common error when proxy fails)
-    if (text.includes('__sveltekit') || text.includes('sveltekit-preload-data')) {
-      throw new Error('Server returned SvelteKit app shell instead of PDF. Check AsciiDoctor server is running at /asciidoctor/ and proxy is configured correctly.');
-    }
-    try {
-      const error = JSON.parse(text);
-      throw new Error(error.error || error.message || 'Server returned non-PDF response');
-    } catch {
-      throw new Error(`Server returned unexpected content type: ${contentType}. Response preview: ${text.substring(0, 200)}`);
-    }
-  }
+      // Verify we got a PDF response
+      const contentType = response.headers.get('content-type') || '';
+      console.log('[PDF Export] Content-Type:', contentType);
+      
+      if (!contentType.includes('application/pdf')) {
+        // Might be an error response, try to read as JSON or text
+        const text = await response.text();
+        console.error('[PDF Export] Non-PDF response received:', text.substring(0, 500));
+        
+        // Check if it's the SvelteKit app shell (common error when proxy fails)
+        if (text.includes('__sveltekit') || text.includes('sveltekit-preload-data') || text.includes('_app/immutable')) {
+          const errorMsg = `Server returned SvelteKit app shell instead of PDF (attempt ${attempt}/3). The /asciidoctor/ proxy is not working.\n\nURL attempted: ${url}\n\nCheck:\n1. AsciiDoctor server is running: docker ps | grep asciidoctor\n2. Apache proxy config has: ProxyPass /asciidoctor http://...\n3. The proxy path is excluded from rewrite rules`;
+          lastError = new Error(errorMsg);
+          if (attempt < 3) {
+            continue;
+          } else {
+            throw lastError;
+          }
+        }
+        try {
+          const error = JSON.parse(text);
+          throw new Error(error.error || error.message || 'Server returned non-PDF response');
+        } catch {
+          throw new Error(`Server returned unexpected content type: ${contentType}. Response preview: ${text.substring(0, 200)}`);
+        }
+      }
 
-  const blob = await response.blob();
-  
-  if (!blob || blob.size === 0) {
-    throw new Error('Server returned empty PDF file');
+      const blob = await response.blob();
+      console.log('[PDF Export] Blob size:', blob.size, 'bytes');
+      
+      if (!blob || blob.size === 0) {
+        lastError = new Error('Server returned empty PDF file');
+        if (attempt < 3) {
+          continue;
+        } else {
+          throw lastError;
+        }
+      }
+      
+      // Validate it's actually a PDF (check for PDF magic bytes)
+      const arrayBuffer = await blob.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer.slice(0, 4));
+      const pdfMagic = String.fromCharCode(...uint8Array);
+      if (pdfMagic !== '%PDF') {
+        console.error('[PDF Export] Invalid PDF magic bytes:', pdfMagic);
+        lastError = new Error('Server returned invalid PDF file (missing PDF magic bytes). The file may be corrupted or not a PDF.');
+        if (attempt < 3) {
+          continue;
+        } else {
+          throw lastError;
+        }
+      }
+      
+      console.log('[PDF Export] Successfully generated PDF');
+      return blob;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      console.error(`[PDF Export] Attempt ${attempt} failed:`, lastError.message);
+      
+      // If this is the last attempt, throw the error
+      if (attempt === 3) {
+        throw lastError;
+      }
+      // Otherwise, continue to retry
+    }
   }
   
-  return blob;
+  // Should never reach here, but TypeScript needs it
+  throw lastError || new Error('PDF generation failed after 3 attempts');
 }
 
 /**
