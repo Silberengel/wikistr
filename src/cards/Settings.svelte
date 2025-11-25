@@ -14,6 +14,7 @@
   import type { Card } from '$lib/types';
   import { account } from '$lib/nostr';
   import { getCacheRelayUrls, saveCacheRelayUrls } from '$lib/cacheRelay';
+  import { relayService } from '$lib/relayService';
 
   interface Props {
     createChild?: (card: Card) => void;
@@ -37,6 +38,8 @@
   let cacheRelayInput = $state('');
   let isSavingCacheRelays = $state(false);
   let changelogEntry = $state<{ added?: string[]; changed?: string[]; fixed?: string[] } | null>(null);
+  let relayStatuses = $state<Map<string, 'parked' | 'retrying' | 'connected'>>(new Map());
+  let isRefreshingRelays = $state(false);
   
   // Get version from package.json (injected at build time via vite.config.ts)
   const appVersion = typeof __VERSION__ !== 'undefined' ? __VERSION__ : '5.0.0';
@@ -57,14 +60,70 @@
     checkCustomTheme();
   });
 
-  onMount(async () => {
+  function updateRelayStatuses() {
+    // Include all current relays so we show status for all of them
+    relayStatuses = relayService.getAllRelayStatusesPublic([...currentRelays, ...cacheRelays]);
+  }
+
+  async function refreshAllRelays() {
+    isRefreshingRelays = true;
+    try {
+      relayService.resetAllRelayFailuresPublic();
+      updateRelayStatuses();
+      // Reload relays from cache to refresh the list
+      currentRelays = contentCache.getAllRelays();
+      saveMessage = { type: 'success', text: 'All relay failures reset. Relays will be retried on next use.' };
+      setTimeout(() => { saveMessage = null; }, 5000);
+    } catch (error) {
+      saveMessage = { type: 'error', text: 'Failed to refresh relays' };
+    } finally {
+      isRefreshingRelays = false;
+    }
+  }
+  
+  function getRelayStatusColor(status: 'parked' | 'retrying' | 'connected'): string {
+    switch (status) {
+      case 'parked':
+        return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300';
+      case 'retrying':
+        return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300';
+      case 'connected':
+        return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300';
+      default:
+        return 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300';
+    }
+  }
+  
+  function getRelayStatusLabel(status: 'parked' | 'retrying' | 'connected'): string {
+    switch (status) {
+      case 'parked':
+        return 'Parked (failed 3+ times)';
+      case 'retrying':
+        return 'Retrying (will retry with backoff)';
+      case 'connected':
+        return 'Connected';
+      default:
+        return 'Unknown';
+    }
+  }
+
+  onMount(() => {
     // Get current relays from cache
     currentRelays = contentCache.getAllRelays();
+    
+    // Update relay statuses
+    updateRelayStatuses();
+    
+    // Update relay statuses periodically
+    const statusInterval = setInterval(() => {
+      updateRelayStatuses();
+    }, 5000); // Update every 5 seconds
     
     // Load cache relays (don't block on this)
     if ($account?.pubkey) {
       getCacheRelayUrls().then(urls => {
         cacheRelays = urls;
+        updateRelayStatuses();
       }).catch(error => {
         console.warn('Failed to load cache relays:', error);
         cacheRelays = [];
@@ -93,6 +152,10 @@
         changelogEntry = null;
       }
     })();
+    
+    return () => {
+      clearInterval(statusInterval);
+    };
   });
 
   function parseChangelogForVersion(changelogText: string, version: string): { added?: string[]; changed?: string[]; fixed?: string[] } | null {
@@ -299,18 +362,36 @@
 
       <!-- Relays -->
       <div>
-        <h3 class="text-lg font-medium mb-2">Relays</h3>
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-lg font-medium">Relays</h3>
+          <button
+            onclick={refreshAllRelays}
+            disabled={isRefreshingRelays}
+            class="text-sm px-3 py-1.5 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isRefreshingRelays ? 'Refreshing...' : 'Refresh Relays'}
+          </button>
+        </div>
         {#if currentRelays.length > 0}
-          <ul class="space-y-1 max-h-64 overflow-y-auto list-none">
+          <ul class="space-y-2 max-h-64 overflow-y-auto list-none">
             {#each currentRelays as relay}
-              <li class="text-sm text-gray-700 dark:text-gray-300">
-                {relay}
+              {@const status = relayStatuses.get(relay) || 'connected'}
+              <li class="flex items-center gap-2 text-sm">
+                <span class="flex-1 text-gray-700 dark:text-gray-300 break-all">{relay}</span>
+                <span class="text-xs px-2 py-0.5 rounded {getRelayStatusColor(status)}" title={getRelayStatusLabel(status)}>
+                  {status === 'parked' ? '🔴' : status === 'retrying' ? '🟡' : '🟢'}
+                </span>
                 {#if cacheRelays.includes(relay)}
-                  <span class="ml-2 text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded">Cache Relay</span>
+                  <span class="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded">Cache</span>
                 {/if}
               </li>
             {/each}
           </ul>
+          <div class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            <div>🟢 Connected</div>
+            <div>🟡 Retrying (1-2 failures)</div>
+            <div>🔴 Parked (3+ failures, click Refresh to retry)</div>
+          </div>
         {:else}
           <p class="text-sm text-gray-500 dark:text-gray-400">No relays used yet</p>
         {/if}

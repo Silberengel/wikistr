@@ -34,6 +34,113 @@ class RelayService {
   private isProcessingQueue = false;
   private requestDeduplication = new Map<string, Promise<any>>(); // Deduplicate identical requests
   
+  // Relay failure tracking (session-based)
+  private readonly MAX_FAILURES = 3;
+  private relayFailureCounts = new Map<string, number>();
+  private relayLastFailureTime = new Map<string, number>();
+  private relayLastSuccessTime = new Map<string, number>();
+  
+  /**
+   * Get backoff delay for retry attempt (exponential backoff: 1s, 2s, 4s)
+   */
+  private getBackoffDelay(attempt: number): number {
+    return Math.min(1000 * Math.pow(2, attempt - 1), 4000);
+  }
+  
+  /**
+   * Record a relay failure
+   */
+  recordRelayFailure(url: string): void {
+    const failures = this.relayFailureCounts.get(url) || 0;
+    this.relayFailureCounts.set(url, failures + 1);
+    this.relayLastFailureTime.set(url, Date.now());
+  }
+  
+  /**
+   * Record a relay success (reset failure count)
+   */
+  recordRelaySuccess(url: string): void {
+    this.relayFailureCounts.delete(url);
+    this.relayLastFailureTime.delete(url);
+    this.relayLastSuccessTime.set(url, Date.now());
+  }
+  
+  /**
+   * Get relay status: 'parked' (failed 3+ times), 'retrying' (1-2 failures), or 'connected' (working)
+   */
+  getRelayStatus(url: string): 'parked' | 'retrying' | 'connected' {
+    const failures = this.relayFailureCounts.get(url) || 0;
+    const lastFailure = this.relayLastFailureTime.get(url) || 0;
+    const lastSuccess = this.relayLastSuccessTime.get(url) || 0;
+    
+    if (failures >= this.MAX_FAILURES) {
+      return 'parked';
+    }
+    
+    if (failures > 0) {
+      // Check if we're still in backoff period
+      const attempt = failures + 1;
+      const backoffDelay = this.getBackoffDelay(attempt);
+      const timeSinceLastFailure = Date.now() - lastFailure;
+      
+      if (timeSinceLastFailure < backoffDelay && lastFailure > 0) {
+        return 'retrying';
+      }
+    }
+    
+    // If we have a recent success, consider it connected
+    if (lastSuccess > 0 && (Date.now() - lastSuccess) < 60000) {
+      return 'connected';
+    }
+    
+    // No failures or backoff expired - consider it connected (will be tested on next use)
+    return failures > 0 ? 'retrying' : 'connected';
+  }
+  
+  /**
+   * Filter out parked relays (failed 3+ times) and relays still in backoff
+   */
+  filterWorkingRelays(relays: string[]): string[] {
+    return relays.filter(url => {
+      const status = this.getRelayStatus(url);
+      return status !== 'parked';
+    });
+  }
+  
+  /**
+   * Reset all relay failures (for "refresh" button)
+   */
+  resetAllRelayFailures(): void {
+    this.relayFailureCounts.clear();
+    this.relayLastFailureTime.clear();
+    this.relayLastSuccessTime.clear();
+  }
+  
+  /**
+   * Get all relay statuses for display
+   * Optionally accepts a list of all relays to include untracked ones
+   */
+  getAllRelayStatuses(allRelays?: string[]): Map<string, 'parked' | 'retrying' | 'connected'> {
+    const statuses = new Map<string, 'parked' | 'retrying' | 'connected'>();
+    
+    // Get all unique relays from failure tracking
+    const trackedRelays = new Set([
+      ...this.relayFailureCounts.keys(),
+      ...this.relayLastSuccessTime.keys()
+    ]);
+    
+    // If allRelays is provided, include those too (for untracked relays, default to 'connected')
+    const relaysToCheck = allRelays 
+      ? new Set([...trackedRelays, ...allRelays])
+      : trackedRelays;
+    
+    for (const url of relaysToCheck) {
+      statuses.set(url, this.getRelayStatus(url));
+    }
+    
+    return statuses;
+  }
+  
   /**
    * Manage subscription queue to prevent relay overload
    */
@@ -180,8 +287,14 @@ class RelayService {
       const theme = getThemeConfig();
       const themeWikiRelays = theme.relays?.wiki || [];
       const themeSocialRelays = theme.relays?.social || [];
-      const { getCacheRelayUrls } = await import('./cacheRelay');
-      const cacheRelayUrls = await getCacheRelayUrls();
+      // Load cache relays non-blocking (don't await, use cached version if available)
+      let cacheRelayUrls: string[] = [];
+      try {
+        const { getCacheRelayUrls } = await import('./cacheRelay');
+        cacheRelayUrls = await getCacheRelayUrls();
+      } catch (error) {
+        // Silently fail - cache relays are optional
+      }
       
       switch (type) {
         case 'wiki-read':
@@ -486,13 +599,17 @@ class RelayService {
         return relay && !relay.includes('write') && !relay.includes('wss://');
       });
       
-      // Include cache relays if they exist (optional)
-      const { getCacheRelayUrls } = await import('./cacheRelay');
-      const cacheRelayUrls = await getCacheRelayUrls();
-      for (const cacheRelayUrl of cacheRelayUrls) {
-        if (!inboxRelays.includes(cacheRelayUrl)) {
-          inboxRelays.push(cacheRelayUrl);
+      // Include cache relays if they exist (optional, non-blocking)
+      try {
+        const { getCacheRelayUrls } = await import('./cacheRelay');
+        const cacheRelayUrls = await getCacheRelayUrls();
+        for (const cacheRelayUrl of cacheRelayUrls) {
+          if (!inboxRelays.includes(cacheRelayUrl)) {
+            inboxRelays.push(cacheRelayUrl);
+          }
         }
+      } catch (error) {
+        // Silently fail - cache relays are optional
       }
       
       // Normalize and deduplicate
@@ -542,13 +659,17 @@ class RelayService {
         return relay && (relay.includes('write') || relay.startsWith('wss://'));
       });
       
-      // Include cache relays if they exist
-      const { getCacheRelayUrls } = await import('./cacheRelay');
-      const cacheRelayUrls = await getCacheRelayUrls();
-      for (const cacheRelayUrl of cacheRelayUrls) {
-        if (!outboxRelays.includes(cacheRelayUrl)) {
-          outboxRelays.push(cacheRelayUrl);
+      // Include cache relays if they exist (optional, non-blocking)
+      try {
+        const { getCacheRelayUrls } = await import('./cacheRelay');
+        const cacheRelayUrls = await getCacheRelayUrls();
+        for (const cacheRelayUrl of cacheRelayUrls) {
+          if (!outboxRelays.includes(cacheRelayUrl)) {
+            outboxRelays.push(cacheRelayUrl);
+          }
         }
+      } catch (error) {
+        // Silently fail - cache relays are optional
       }
       
       // Normalize and deduplicate
@@ -627,12 +748,15 @@ class RelayService {
       const relays = options.customRelays || await this.getRelaysForOperation(userPubkey, type);
       
       // Extra safety filter for undefined/null relays
-      const filteredRelays = relays.filter(url => url && 
+      let filteredRelays = relays.filter(url => url && 
                                     url !== 'undefined' && 
                                     url !== 'null' && 
                                     url !== '' && 
                                     typeof url === 'string' &&
                                     (url.startsWith('ws://') || url.startsWith('wss://')));
+      
+      // Filter out parked relays (failed 3+ times) and relays in backoff
+      filteredRelays = this.filterWorkingRelays(filteredRelays);
       
       if (filteredRelays.length === 0) {
         console.warn('No relays available for query');
@@ -649,6 +773,22 @@ class RelayService {
           if (!subscriptionClosed) {
             subscriptionClosed = true;
             console.log(`Query timeout for ${subscriptionId}, returning partial results`);
+            
+            // Timeout occurred - if no events received, mark relays as potentially failed
+            // We'll be conservative: only mark as failed if we got no events AND haven't seen success recently
+            if (events.length === 0) {
+              filteredRelays.forEach(url => {
+                const lastSuccess = this.relayLastSuccessTime.get(url) || 0;
+                // Only mark as failed if no success in last 30 seconds
+                if (Date.now() - lastSuccess > 30000) {
+                  this.recordRelayFailure(url);
+                }
+              });
+            } else {
+              // Got some events - mark all relays as successful
+              filteredRelays.forEach(url => this.recordRelaySuccess(url));
+            }
+            
             resolve({ events: Array.from(eventMap.values()), relays });
           }
         }, 8000); // 8 second timeout
@@ -706,11 +846,18 @@ class RelayService {
                 }
               }
             },
-            oneose: () => {
+            oneose: (relayUrl?: string) => {
               if (!subscriptionClosed) {
                 subscriptionClosed = true;
                 clearTimeout(timeout);
                 subscription.close();
+                
+                // Record success for relays - if we got events, mark all as successful
+                // (since pool.subscribeMany doesn't tell us which specific relay responded)
+                if (events.length > 0) {
+                  filteredRelays.forEach(url => this.recordRelaySuccess(url));
+                }
+                
                 resolve({ events: Array.from(eventMap.values()), relays });
               }
             }
@@ -814,6 +961,27 @@ class RelayService {
    */
   isInitialized(): boolean {
     return this.initialized;
+  }
+  
+  /**
+   * Public method to get relay status
+   */
+  getRelayStatusPublic(url: string): 'parked' | 'retrying' | 'connected' {
+    return this.getRelayStatus(url);
+  }
+  
+  /**
+   * Public method to get all relay statuses
+   */
+  getAllRelayStatusesPublic(allRelays?: string[]): Map<string, 'parked' | 'retrying' | 'connected'> {
+    return this.getAllRelayStatuses(allRelays);
+  }
+  
+  /**
+   * Public method to reset all relay failures
+   */
+  resetAllRelayFailuresPublic(): void {
+    this.resetAllRelayFailures();
   }
 }
 

@@ -39,39 +39,44 @@ async function loadCacheRelayUrls(userPubkey: string): Promise<string[]> {
       return [];
     }
     
-    // Query for kind 10432 event with timeout
-    const queryPromise = relayService.queryEvents(
-      userPubkey,
-      'metadata-read',
-      [{ kinds: [CACHE_RELAY_KIND], authors: [userPubkey], limit: 1 }],
-      { excludeUserContent: false, currentUserPubkey }
-    );
-    
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Cache relay query timeout')), 5000)
-    );
-    
-    const result = await Promise.race([queryPromise, timeoutPromise]);
-    
-    let relays: string[] = [];
-    
-    if (result.events.length > 0) {
-      const event = result.events[0];
-      relays = event.tags
-        .filter(tag => tag[0] === 'r')
-        .map(tag => tag[1])
-        .filter(relay => relay && (relay.startsWith('ws://') || relay.startsWith('wss://')));
+    // Query for kind 10432 event with timeout (non-blocking, fails silently)
+    try {
+      const queryPromise = relayService.queryEvents(
+        userPubkey,
+        'metadata-read',
+        [{ kinds: [CACHE_RELAY_KIND], authors: [userPubkey], limit: 1 }],
+        { excludeUserContent: false, currentUserPubkey }
+      );
       
-      // Store in contentCache for future use
-      await contentCache.storeEvents('kind10432', [{
-        event,
-        relays: result.relays
-      }]);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Cache relay query timeout')), 3000)
+      );
+      
+      const result = await Promise.race([queryPromise, timeoutPromise]);
+      
+      if (result.events.length > 0) {
+        const event = result.events[0];
+        const relays = event.tags
+          .filter(tag => tag[0] === 'r')
+          .map(tag => tag[1])
+          .filter(relay => relay && (relay.startsWith('ws://') || relay.startsWith('wss://')));
+        
+        // Store in contentCache for future use
+        await contentCache.storeEvents('kind10432', [{
+          event,
+          relays: result.relays
+        }]);
+        
+        return relays;
+      }
+    } catch (error) {
+      // Silently fail - cache relays are optional, don't log errors
+      // This prevents startup blocking and error spam
     }
     
-    return relays;
+    return [];
   } catch (error) {
-    console.error('Failed to load cache relay URLs:', error);
+    // Silently fail - cache relays are optional
     return [];
   }
 }
@@ -79,6 +84,7 @@ async function loadCacheRelayUrls(userPubkey: string): Promise<string[]> {
 /**
  * Get cache relay URLs for the current user
  * Returns array of ws:// relay URLs from kind 10432 events
+ * Filtering of failed relays is handled by relayService
  */
 export async function getCacheRelayUrls(): Promise<string[]> {
   const accountValue = getStore(account);
