@@ -427,7 +427,12 @@
   /**
    * Open article
    */
-  function openArticle(result: Event) {
+  function openArticle(result: Event, ev: MouseEvent) {
+    // Don't open if middle-click or ctrl/cmd-click (for opening in new tab)
+    if (ev.button === 1 || ev.ctrlKey || ev.metaKey) {
+      return;
+    }
+    
     const cleanEvent = {
       id: result.id,
       pubkey: result.pubkey,

@@ -70,8 +70,11 @@
     if ((target instanceof HTMLInputElement && target.type === 'checkbox') || 
         target.closest('input[type="checkbox"]') ||
         target.closest('.checkbox-container')) {
+      ev.stopPropagation(); // Stop propagation for checkbox clicks
       return; // Let the checkbox handle its own click
     }
+    // Prevent default to avoid any navigation issues
+    ev.preventDefault();
     openArticle(event, ev);
   }
 </script>
@@ -85,7 +88,7 @@
   <!-- Checkbox for diff selection -->
   {#if toggleArticleSelection}
     <div 
-      class="checkbox-container absolute top-2 right-2 z-10"
+      class="checkbox-container absolute top-2 right-2 z-10 pointer-events-auto"
       onclick={(e) => e.stopPropagation()}
       onmousedown={(e) => e.stopPropagation()}
       onmouseup={(e) => e.stopPropagation()}
@@ -102,7 +105,7 @@
         }}
         onmousedown={(e) => e.stopPropagation()}
         onmouseup={(e) => e.stopPropagation()}
-        class="w-4 h-4 rounded focus:ring-2 cursor-pointer"
+        class="w-4 h-4 rounded focus:ring-2 cursor-pointer pointer-events-auto"
         style="accent-color: {theme.accentColor}; --tw-ring-color: {theme.accentColor};"
       />
     </div>
