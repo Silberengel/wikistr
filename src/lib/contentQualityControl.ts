@@ -118,6 +118,29 @@ function getHeadingLevel(line: string, nextLine?: string): number | { level: num
  * Works recursively by making multiple passes until no more levels need to be added
  * Note: Document-level header (level 1) counts as level 1, so we don't add another
  */
+/**
+ * Fix empty headings (lines with only = signs and optional whitespace)
+ * Removes these lines as they are invalid AsciiDoc syntax
+ */
+export function fixEmptyHeadings(content: string): string {
+  if (!content || content.trim().length === 0) return content;
+  
+  const lines = content.split('\n');
+  const fixed: string[] = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    // Match lines that are only = signs with optional whitespace
+    if (line.match(/^=+\s*$/)) {
+      // Skip empty headings - remove them
+      continue;
+    }
+    fixed.push(lines[i]);
+  }
+  
+  return fixed.join('\n');
+}
+
 export function fixMissingHeadingLevels(content: string): string {
   if (!content || content.trim().length === 0) return content;
   
@@ -1501,7 +1524,10 @@ export function processContentQuality(
   // 5. Fix missing heading levels (after doc header is in place)
   processed = fixMissingHeadingLevels(processed);
   
-  // 6. Fix preamble content (move content before first section to Preamble)
+  // 6. Fix empty headings (remove lines with only = signs)
+  processed = fixEmptyHeadings(processed);
+  
+  // 7. Fix preamble content (move content before first section to Preamble)
   processed = fixPreambleContent(processed, isAsciiDoc);
   
   return processed;
