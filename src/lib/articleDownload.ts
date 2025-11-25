@@ -1219,8 +1219,7 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
 
   // Create cover page with title, author, version, and image
   // Use a dedicated cover page section with proper formatting for e-books
-  doc += `[dedication]\n`;
-  doc += `== \n\n`; // Empty title for cover page
+  doc += `[dedication]\n== \n\n`; // Empty title for cover page
   doc += `[.cover-page]\n`;
   
   // Add cover image if available (centered, full width)
