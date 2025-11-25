@@ -978,7 +978,8 @@
       replaceState('/' + replacementURL.join('/'), currentState[0] === index ? [] : currentState);
 
       // update stored card state
-      searchCard.data = normalizeIdentifier(query);
+      // Preserve original query with diacritics - search will handle both normalized and non-normalized
+      searchCard.data = query; // Don't normalize - preserve foreign letters (ë, ü, etc.)
       searchCard.results = undefined;
 
       // redo the query

@@ -1343,6 +1343,7 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
 
   // Add metadata page only if there are fields to display
   if (metadataFields.length > 0) {
+    // CRITICAL: Block attribute must be directly followed by heading with NO blank line
     doc += `[.book-metadata]\n== Book Metadata\n\n`;
     for (const field of metadataFields) {
       if (field.value && field.value.trim()) {

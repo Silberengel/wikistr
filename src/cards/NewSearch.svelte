@@ -202,10 +202,11 @@ import Settings from '$cards/Settings.svelte';
         }
         
         // Regular search - create a search card
+        // Preserve original query with diacritics - search will handle both normalized and non-normalized
         const newCard: SearchCard = {
           id: next(),
           type: 'find',
-          data: normalizeIdentifier(query),
+          data: query, // Don't normalize - preserve foreign letters (ë, ü, etc.)
           preferredAuthors: []
         };
         replaceNewCard(newCard);
