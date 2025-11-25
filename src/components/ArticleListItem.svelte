@@ -65,6 +65,11 @@
   });
 
   function handleClick(ev: MouseEvent) {
+    // Don't open if clicking on the checkbox
+    const target = ev.target as HTMLElement;
+    if ((target instanceof HTMLInputElement && target.type === 'checkbox') || target.closest('input[type="checkbox"]')) {
+      return; // Let the checkbox handle its own click
+    }
     ev.preventDefault();
     ev.stopPropagation();
     openArticle(event, ev);
@@ -79,12 +84,21 @@
 >
   <!-- Checkbox for diff selection -->
   {#if toggleArticleSelection}
-    <div class="absolute top-2 right-2" style="pointer-events: auto; z-index: 10;">
+    <div 
+      class="absolute top-2 right-2" 
+      style="pointer-events: none; z-index: 10;"
+      onclick={(e) => e.stopPropagation()}
+      onmousedown={(e) => e.stopPropagation()}
+      onmouseup={(e) => e.stopPropagation()}
+    >
       <input
         type="checkbox"
         checked={selected}
         onchange={() => toggleArticleSelection(event.id)}
-        onclick={(e) => e.stopPropagation()}
+        onclick={(e) => {
+          e.stopPropagation();
+          toggleArticleSelection(event.id);
+        }}
         onmousedown={(e) => e.stopPropagation()}
         onmouseup={(e) => e.stopPropagation()}
         class="w-4 h-4 rounded focus:ring-2"
