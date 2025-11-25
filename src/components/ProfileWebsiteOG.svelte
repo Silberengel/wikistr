@@ -74,6 +74,11 @@
           {ogData.siteName}
         </div>
       {/if}
+      {#if ogData.url && !ogData.urlFromOG}
+        <div class="text-xs truncate mt-1 pt-1 border-t" style="color: var(--text-secondary); border-color: var(--border);">
+          {ogData.url}
+        </div>
+      {/if}
     </div>
   </a>
 {:else}

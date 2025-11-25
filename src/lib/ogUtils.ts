@@ -10,6 +10,7 @@ export interface OGMetadata {
   image?: string;
   url?: string;
   siteName?: string;
+  urlFromOG?: boolean; // True if URL came from og:url meta tag, false if it was a fallback
 }
 
 /**
@@ -98,6 +99,7 @@ export async function fetchOGMetadata(url: string): Promise<OGMetadata | null> {
     
     const image = getMetaContent('og:image') || undefined;
     
+    const urlFromOG = !!getMetaContent('og:url');
     const urlMeta = getMetaContent('og:url') || url;
     
     const siteName = getMetaContent('og:site_name') || undefined;
@@ -113,7 +115,8 @@ export async function fetchOGMetadata(url: string): Promise<OGMetadata | null> {
       description,
       image,
       url: urlMeta,
-      siteName
+      siteName,
+      urlFromOG
     };
   } catch (error) {
     console.error('Failed to fetch OG metadata for', url, ':', error);

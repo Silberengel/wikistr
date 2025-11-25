@@ -70,8 +70,13 @@
         </div>
       {/if}
       {#if ogData.siteName}
-        <div class="text-xs" style="color: var(--text-secondary);">
+        <div class="text-xs mb-2" style="color: var(--text-secondary);">
           {ogData.siteName}
+        </div>
+      {/if}
+      {#if ogData.url && !ogData.urlFromOG}
+        <div class="text-xs truncate pt-2 border-t" style="color: var(--text-secondary); border-color: var(--border);">
+          {ogData.url}
         </div>
       {/if}
     </div>
