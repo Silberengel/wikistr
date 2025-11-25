@@ -288,12 +288,10 @@ async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, pro
   
   // Add description as abstract if available (only if not empty)
   if (description && description.trim()) {
-    doc += `[abstract]\n`;
-    doc += `== Abstract\n\n`;
+    doc += `[abstract]\n== Abstract\n\n`;
     doc += `${description}\n\n`;
   } else if (summary && summary.trim()) {
-    doc += `[abstract]\n`;
-    doc += `== Abstract\n\n`;
+    doc += `[abstract]\n== Abstract\n\n`;
     doc += `${summary}\n\n`;
   }
   
@@ -562,12 +560,10 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
         doc += `\n`;
         // Only add abstract section if description or summary actually exists and is not empty
         if (description && description.trim()) {
-          doc += `[abstract]\n`;
-          doc += `== Abstract\n\n`;
+          doc += `[abstract]\n== Abstract\n\n`;
           doc += `${description}\n\n`;
         } else if (summary && summary.trim()) {
-          doc += `[abstract]\n`;
-          doc += `== Abstract\n\n`;
+          doc += `[abstract]\n== Abstract\n\n`;
           doc += `${summary}\n\n`;
         }
         
@@ -1359,12 +1355,10 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
 
   // Add abstract/description after metadata page
   if (description && description.trim()) {
-    doc += `[abstract]\n`;
-    doc += `== Abstract\n\n`;
+    doc += `[abstract]\n== Abstract\n\n`;
     doc += `${description}\n\n`;
   } else if (summary && summary.trim()) {
-    doc += `[abstract]\n`;
-    doc += `== Abstract\n\n`;
+    doc += `[abstract]\n== Abstract\n\n`;
     doc += `${summary}\n\n`;
   }
 
