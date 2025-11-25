@@ -65,13 +65,13 @@
   });
 
   function handleClick(ev: MouseEvent) {
-    // Don't open if clicking on the checkbox
+    // Don't open if clicking on the checkbox or its container
     const target = ev.target as HTMLElement;
-    if ((target instanceof HTMLInputElement && target.type === 'checkbox') || target.closest('input[type="checkbox"]')) {
+    if ((target instanceof HTMLInputElement && target.type === 'checkbox') || 
+        target.closest('input[type="checkbox"]') ||
+        target.closest('.checkbox-container')) {
       return; // Let the checkbox handle its own click
     }
-    ev.preventDefault();
-    ev.stopPropagation();
     openArticle(event, ev);
   }
 </script>
@@ -85,8 +85,7 @@
   <!-- Checkbox for diff selection -->
   {#if toggleArticleSelection}
     <div 
-      class="absolute top-2 right-2" 
-      style="pointer-events: none; z-index: 10;"
+      class="checkbox-container absolute top-2 right-2 z-10"
       onclick={(e) => e.stopPropagation()}
       onmousedown={(e) => e.stopPropagation()}
       onmouseup={(e) => e.stopPropagation()}
@@ -94,15 +93,17 @@
       <input
         type="checkbox"
         checked={selected}
-        onchange={() => toggleArticleSelection(event.id)}
-        onclick={(e) => {
+        onchange={(e) => {
           e.stopPropagation();
           toggleArticleSelection(event.id);
         }}
+        onclick={(e) => {
+          e.stopPropagation();
+        }}
         onmousedown={(e) => e.stopPropagation()}
         onmouseup={(e) => e.stopPropagation()}
-        class="w-4 h-4 rounded focus:ring-2"
-        style="pointer-events: auto; accent-color: {theme.accentColor}; --tw-ring-color: {theme.accentColor}; background-color: {selected ? theme.accentColor : 'white'}; border-color: {theme.accentColor};"
+        class="w-4 h-4 rounded focus:ring-2 cursor-pointer"
+        style="accent-color: {theme.accentColor}; --tw-ring-color: {theme.accentColor};"
       />
     </div>
   {/if}
