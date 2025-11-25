@@ -199,7 +199,16 @@
       <div class="space-y-2">
         {#each bookmarks as bookmark (bookmark.id)}
           <div 
-            class="flex items-center gap-2 p-3 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+            class="flex items-center gap-2 p-3 rounded transition-colors cursor-pointer"
+            style="
+              background-color: transparent;
+            "
+            onmouseenter={(e) => {
+              e.currentTarget.style.backgroundColor = 'var(--bg-secondary)';
+            }}
+            onmouseleave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
             role="button"
             tabindex="0"
             onclick={() => openEvent(bookmark.id)}
@@ -233,7 +242,16 @@
         {#each readingPlaces as place (place.eventId)}
           {@const event = readingPlaceEvents.get(place.eventId)}
           <div 
-            class="flex items-center gap-2 p-3 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+            class="flex items-center gap-2 p-3 rounded transition-colors cursor-pointer"
+            style="
+              background-color: transparent;
+            "
+            onmouseenter={(e) => {
+              e.currentTarget.style.backgroundColor = 'var(--bg-secondary)';
+            }}
+            onmouseleave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
             role="button"
             tabindex="0"
             onclick={() => openEvent(place.eventId)}

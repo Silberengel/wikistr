@@ -810,7 +810,14 @@ class RelayService {
                     await r.auth(signer);
                   } catch (authErr) {
                     // If auth fails, continue anyway - some relays don't need auth for reading
-                    // Connection errors are also expected for some relays
+                    // Connection errors should be recorded as failures
+                    if (authErr instanceof Error && (
+                      authErr.message.includes('WebSocket') ||
+                      authErr.message.includes('connection') ||
+                      authErr.message.includes('failed')
+                    )) {
+                      this.recordRelayFailure(url);
+                    }
                   }
                 }
               }
@@ -818,6 +825,24 @@ class RelayService {
               // Ignore auth errors - continue with subscription anyway
             }
           })();
+          
+          // Track which relays successfully connected
+          const connectedRelays = new Set<string>();
+          const failedRelays = new Set<string>();
+          
+          // Try to ensure connections to all relays before subscribing
+          // This helps us catch connection failures early
+          for (const url of filteredRelays) {
+            try {
+              await pool.ensureRelay(url);
+              connectedRelays.add(url);
+            } catch (err) {
+              // Connection failed - record it
+              failedRelays.add(url);
+              this.recordRelayFailure(url);
+              console.warn(`⚠️ Failed to connect to relay ${url}:`, err);
+            }
+          }
           
           // Use pool.subscribeMany with our controlled relay sets
           const subscription = pool.subscribeMany(filteredRelays, filters, {
@@ -858,11 +883,13 @@ class RelayService {
                 clearTimeout(timeout);
                 subscription.close();
                 
-                // Record success for relays - if we got events, mark all as successful
-                // (since pool.subscribeMany doesn't tell us which specific relay responded)
+                // Record success for relays that connected and provided events
+                // Record failures for relays that failed to connect
                 if (events.length > 0) {
-                  filteredRelays.forEach(url => this.recordRelaySuccess(url));
+                  // If we got events, mark connected relays as successful
+                  connectedRelays.forEach(url => this.recordRelaySuccess(url));
                 }
+                // Failed relays are already recorded above
                 
                 resolve({ events: Array.from(eventMap.values()), relays });
               }
@@ -877,6 +904,17 @@ class RelayService {
             subscriptionClosed = true;
             clearTimeout(timeout);
             console.error(`Failed to create subscription for ${subscriptionId}:`, error);
+            
+            // Record failures for all relays that were attempted
+            // If it's a connection error, mark all relays as failed
+            if (error instanceof Error && (
+              error.message.includes('WebSocket') ||
+              error.message.includes('connection') ||
+              error.message.includes('failed')
+            )) {
+              filteredRelays.forEach(url => this.recordRelayFailure(url));
+            }
+            
             resolve({ events: Array.from(eventMap.values()), relays });
           }
         }
