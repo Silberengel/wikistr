@@ -11,6 +11,7 @@ declare global {
 	// Vite build-time constants
 	const __THEME__: string;
 	const __VERSION__: string;
+	const __CHANGELOG__: string | { added?: string[]; changed?: string[]; fixed?: string[] } | null;
 }
 
 export {};

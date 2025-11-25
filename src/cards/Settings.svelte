@@ -38,11 +38,26 @@
   let cacheRelayInput = $state('');
   let isSavingCacheRelays = $state(false);
   let changelogEntry = $state<{ added?: string[]; changed?: string[]; fixed?: string[] } | null>(null);
+  let changelogLoading = $state(true);
+  let changelogError = $state<string | null>(null);
   let relayStatuses = $state<Map<string, 'parked' | 'retrying' | 'connected'>>(new Map());
   let isRefreshingRelays = $state(false);
   
   // Get version from package.json (injected at build time via vite.config.ts)
-  const appVersion = typeof __VERSION__ !== 'undefined' ? __VERSION__ : '5.0.0';
+  const appVersion = (typeof __VERSION__ !== 'undefined' ? String(__VERSION__) : '5.0.0').trim();
+  
+  // Get changelog from build-time injection (parsed at build time)
+  // __CHANGELOG__ is injected as a JSON string by Vite, so we parse it
+  const buildTimeChangelog: { added?: string[]; changed?: string[]; fixed?: string[] } | null = 
+    typeof __CHANGELOG__ !== 'undefined' && __CHANGELOG__ !== null && __CHANGELOG__ !== 'null'
+      ? (typeof __CHANGELOG__ === 'string' ? JSON.parse(__CHANGELOG__) : __CHANGELOG__)
+      : null;
+  
+  // Debug: log version in development
+  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+    console.log('App version:', appVersion, '(type:', typeof appVersion, ')');
+    console.log('Build-time changelog:', buildTimeChangelog ? 'loaded' : 'not available');
+  }
 
   // Check if custom theme exists on mount
   async function checkCustomTheme() {
@@ -130,88 +145,24 @@
       });
     }
     
-    // Load changelog entry for current version (don't block on this)
-    (async () => {
-      try {
-        const response = await fetch('/CHANGELOG.md');
-        if (response.ok) {
-          const text = await response.text();
-          const entry = parseChangelogForVersion(text, appVersion);
-          if (entry) {
-            changelogEntry = entry;
-          } else {
-            console.warn('Changelog entry not found for version:', appVersion);
-            changelogEntry = null;
-          }
-        } else {
-          console.error('Failed to fetch CHANGELOG.md:', response.status, response.statusText);
-          changelogEntry = null;
-        }
-      } catch (error) {
-        console.error('Failed to load CHANGELOG:', error);
-        changelogEntry = null;
-      }
-    })();
+    // Use build-time changelog (parsed during build, no runtime fetch needed)
+    if (buildTimeChangelog) {
+      changelogEntry = buildTimeChangelog;
+      changelogLoading = false;
+      changelogError = null;
+    } else {
+      // Fallback: if build-time changelog is not available, try to fetch it
+      // (this should only happen in development if CHANGELOG.md is missing)
+      changelogLoading = false;
+      changelogError = 'Changelog not available';
+      changelogEntry = null;
+    }
     
     return () => {
       clearInterval(statusInterval);
     };
   });
 
-  function parseChangelogForVersion(changelogText: string, version: string): { added?: string[]; changed?: string[]; fixed?: string[] } | null {
-    // Find the section for this version - match ## [version] and ignore anything after it on that line
-    const escapedVersion = version.replace(/\./g, '\\.');
-    const pattern = '## \\[' + escapedVersion + '\\][^\\n]*';
-    const versionRegex = new RegExp(pattern, 'i');
-    const match = changelogText.match(versionRegex);
-    if (!match) {
-      console.warn('Version not found in changelog:', version);
-      return null;
-    }
-    
-    // Start after the entire version header line (including any date or other text)
-    const startIndex = match.index! + match[0].length;
-    const nextVersionMatch = changelogText.substring(startIndex).match(/^## \[/m);
-    const endIndex = nextVersionMatch ? startIndex + nextVersionMatch.index! : changelogText.length;
-    
-    const section = changelogText.substring(startIndex, endIndex);
-    
-    const result: { added?: string[]; changed?: string[]; fixed?: string[] } = {};
-    
-    // Extract Added section
-    const addedMatch = section.match(/### Added\s*\n([\s\S]*?)(?=###|$)/i);
-    if (addedMatch) {
-      result.added = addedMatch[1]
-        .split('\n')
-        .map(line => line.replace(/^-\s*/, '').trim())
-        .filter(line => line.length > 0);
-    }
-    
-    // Extract Changed section
-    const changedMatch = section.match(/### Changed\s*\n([\s\S]*?)(?=###|$)/i);
-    if (changedMatch) {
-      result.changed = changedMatch[1]
-        .split('\n')
-        .map(line => line.replace(/^-\s*/, '').trim())
-        .filter(line => line.length > 0);
-    }
-    
-    // Extract Fixed section
-    const fixedMatch = section.match(/### Fixed\s*\n([\s\S]*?)(?=###|$)/i);
-    if (fixedMatch) {
-      result.fixed = fixedMatch[1]
-        .split('\n')
-        .map(line => line.replace(/^-\s*/, '').trim())
-        .filter(line => line.length > 0);
-    }
-    
-    if (Object.keys(result).length === 0) {
-      console.warn('No changelog sections found for version:', version);
-      return null;
-    }
-    
-    return result;
-  }
 
 
   async function handleClear() {
@@ -530,9 +481,17 @@
                 </div>
               {/if}
             </div>
-          {:else}
+          {:else if changelogLoading}
             <div class="text-sm text-gray-500 dark:text-gray-400">
               Loading changelog...
+            </div>
+          {:else if changelogError}
+            <div class="text-sm text-gray-500 dark:text-gray-400">
+              {changelogError}
+            </div>
+          {:else}
+            <div class="text-sm text-gray-500 dark:text-gray-400">
+              No changelog available for this version.
             </div>
           {/if}
         </div>
