@@ -626,6 +626,7 @@ post '/convert/latex' do
     
     begin
       # Convert to LaTeX
+      puts "[LaTeX] Starting conversion for: #{title}"
       latex_content = Asciidoctor.convert content,
         backend: 'latex',
         safe: 'unsafe',
@@ -637,22 +638,48 @@ post '/convert/latex' do
           'allow-uri-read' => ''
         }
       
+      puts "[LaTeX] Conversion successful, output size: #{latex_content.bytesize} bytes"
+      
       # Set headers
       content_type 'text/x-latex; charset=utf-8'
       headers 'Content-Disposition' => "attachment; filename=\"#{title.gsub(/[^a-z0-9]/i, '_')}.tex\""
       
       latex_content
+    rescue => e
+      puts "[LaTeX] Conversion error: #{e.class.name}: #{e.message}"
+      puts "[LaTeX] Backtrace: #{e.backtrace.first(10).join("\n")}"
+      raise e
     ensure
-      temp_adoc.unlink
+      temp_adoc.unlink if temp_adoc
     end
   rescue JSON::ParserError => e
+    puts "[LaTeX] JSON parse error: #{e.message}"
     status 400
     content_type :json
     { error: 'Invalid JSON', message: e.message }.to_json
   rescue => e
+    puts "[LaTeX] Unexpected error: #{e.class.name}: #{e.message}"
+    puts "[LaTeX] Backtrace: #{e.backtrace.first(10).join("\n")}"
+    
+    error_details = {
+      error: 'LaTeX conversion failed',
+      message: e.message,
+      class: e.class.name
+    }
+    
+    # Add helpful hints
+    if e.message.include?('syntax') || e.message.include?('parse') || e.message.include?('invalid') || e.message.include?('AsciiDoc')
+      error_details[:hint] = 'This appears to be an AsciiDoc syntax error. Common issues include: unclosed blocks (----), invalid attribute syntax, malformed headings, or incorrect attribute block spacing.'
+    end
+    
+    # Include backtrace for debugging (first few lines only)
+    if e.backtrace && e.backtrace.length > 0
+      error_details[:backtrace] = e.backtrace.first(5)
+    end
+    
     status 500
     content_type :json
-    { error: 'Conversion failed', message: e.message }.to_json
+    error_details.to_json
   end
 end
 
