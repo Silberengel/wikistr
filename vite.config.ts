@@ -114,6 +114,43 @@ const config: UserConfig = {
       }
     }
   },
+  build: {
+    // Optimize build performance
+    target: 'esnext',
+    minify: 'esbuild', // Faster than terser
+    sourcemap: false, // Disable sourcemaps for faster builds (can enable for debugging)
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          // Split large dependencies into separate chunks
+          if (id.includes('node_modules')) {
+            if (id.includes('@asciidoctor')) {
+              return 'asciidoctor';
+            }
+            if (id.includes('pdfjs-dist')) {
+              return 'pdfjs';
+            }
+            if (id.includes('epubjs')) {
+              return 'epubjs';
+            }
+            if (id.includes('highlight.js')) {
+              return 'highlight';
+            }
+            if (id.includes('katex')) {
+              return 'katex';
+            }
+            if (id.includes('@nostr')) {
+              return 'nostr';
+            }
+            // All other node_modules
+            return 'vendor';
+          }
+        }
+      }
+    },
+    // Increase chunk size warning limit (default is 500kb)
+    chunkSizeWarningLimit: 1000
+  },
   define: {
     __THEME__: JSON.stringify((process as any).env.THEME || 'wikistr'),
     __VERSION__: JSON.stringify(packageJson.version),
