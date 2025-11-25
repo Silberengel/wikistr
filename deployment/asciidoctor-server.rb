@@ -325,26 +325,10 @@ post '/convert/pdf' do
     content = data['content'] || data['asciidoc']
     title = data['title'] || 'Document'
     author = data['author'] || ''
-    theme_param = data['theme']
-    theme_files = data['theme_files'] || {}
     
     unless content
       status 400
       return { error: 'Missing content or asciidoc field' }.to_json
-    end
-    
-    # Create temporary directory for theme files if custom themes are provided
-    temp_themes_dir = nil
-    if theme_files.is_a?(Hash) && !theme_files.empty?
-      temp_themes_dir = Dir.mktmpdir('custom-themes-')
-      theme_files.each do |filename, file_content|
-        # Sanitize filename to prevent directory traversal
-        safe_filename = File.basename(filename)
-        next unless safe_filename.end_with?('.yml') || safe_filename.end_with?('.yaml')
-        
-        theme_file_path = File.join(temp_themes_dir, safe_filename)
-        File.write(theme_file_path, file_content)
-      end
     end
     
     # Create temporary file for AsciiDoc content
@@ -357,31 +341,17 @@ post '/convert/pdf' do
     temp_pdf.close
     
     begin
-      # Convert to PDF with enhanced attributes for better rendering
-      # Theme mapping from client theme names to server theme files (loaded from YAML)
+      # Convert to PDF - always use classic-novel theme
+      # Only override if theme is already specified in content
+      theme = 'classic-novel'
+      themesdir = '/app/deployment'
       
-      # Use theme from parameter if provided, otherwise check if already in content, otherwise default
-      if theme_param && !theme_param.to_s.strip.empty?
-        theme = get_server_theme_name(theme_param.to_s.strip)
-        puts "[PDF] Using theme from parameter: #{theme_param} -> #{theme}"
-      elsif content.include?(':pdf-theme:')
+      # Check if theme is already specified in content
+      if content.include?(':pdf-theme:')
         theme = nil # Content already specifies theme
         puts "[PDF] Theme already specified in content, not overriding"
       else
-        # Use default from config
-        config = load_theme_config
-        default_theme = config['default'] || 'classic'
-        theme = get_server_theme_name(default_theme)
-        puts "[PDF] Using default theme: #{default_theme} -> #{theme}"
-      end
-      
-      # Use custom themes directory if provided, otherwise default
-      if temp_themes_dir
-        themesdir = temp_themes_dir
-        puts "[PDF] Using custom themes directory: #{themesdir}"
-      else
-        themesdir = content.include?(':pdf-themesdir:') ? nil : '/app/deployment'
-        puts "[PDF] Using themes directory: #{themesdir || 'from content'}"
+        puts "[PDF] Using default theme: classic-novel"
       end
       
       attributes = {
@@ -396,37 +366,12 @@ post '/convert/pdf' do
         'pdf-fontsdir' => '/usr/share/fonts',
       }
       
-      # Only set theme if not already specified in content
+      # Set theme if not already in content
       if theme
-        # Verify theme file exists before using it
-        if verify_theme_file_exists(theme, themesdir)
-          attributes['pdf-theme'] = theme
-          attributes['pdf-themesdir'] = themesdir if themesdir
-          puts "[PDF] Setting PDF theme: #{theme}, themesdir: #{themesdir}"
-        else
-          theme_file = File.join(themesdir, "#{theme}-theme.yml")
-          puts "[PDF] WARNING: Theme file not found: #{theme_file}"
-          # List available theme files for debugging
-          if themesdir && Dir.exist?(themesdir)
-            available_themes = Dir.glob(File.join(themesdir, '*-theme.yml')).map { |f| File.basename(f) }
-            puts "[PDF] Available theme files: #{available_themes.join(', ')}"
-          end
-          # Fall back to default theme
-          default_theme = 'classic-novel'
-          default_file = File.join(themesdir, "#{default_theme}-theme.yml")
-          if File.exist?(default_file)
-            puts "[PDF] Falling back to default theme: #{default_theme}"
-            attributes['pdf-theme'] = default_theme
-            attributes['pdf-themesdir'] = themesdir if themesdir
-          else
-            puts "[PDF] ERROR: Default theme file also not found: #{default_file}"
-          end
-        end
-      else
-        puts "[PDF] No theme set (theme already in content or not specified)"
+        attributes['pdf-theme'] = theme
+        attributes['pdf-themesdir'] = themesdir
+        puts "[PDF] Setting PDF theme: #{theme}"
       end
-      
-      puts "[PDF] Final attributes: #{attributes.inspect}"
       
       # Diagrams are automatically registered when asciidoctor-diagram is required
       # Supported: PlantUML, Graphviz, Mermaid, BPMN (via PlantUML), TikZ (via LaTeX)
@@ -448,10 +393,6 @@ post '/convert/pdf' do
     ensure
       temp_adoc.unlink
       temp_pdf.unlink
-      # Clean up temporary themes directory
-      if temp_themes_dir && Dir.exist?(temp_themes_dir)
-        FileUtils.rm_rf(temp_themes_dir)
-      end
     end
   rescue JSON::ParserError => e
     status 400
@@ -472,7 +413,6 @@ post '/convert/epub' do
     content = data['content'] || data['asciidoc']
     title = data['title'] || 'Document'
     author = data['author'] || ''
-    theme_param = data['theme']
     
     unless content
       status 400
@@ -489,37 +429,17 @@ post '/convert/epub' do
     epub_file = File.join(temp_dir, 'document.epub')
     
     begin
-      # EPUB stylesheet selection based on theme
-      # Map client theme names to EPUB stylesheet files
-      theme_stylesheet_map = {
-        'classic' => 'epub-classic.css',
-        'antique' => 'epub-antique.css',
-        'modern' => 'epub-modern.css',
-        'documentation' => 'epub-documentation.css',
-        'scientific' => 'epub-scientific.css',
-        'pop' => 'epub-pop.css',
-        'bible-paragraph' => 'epub-bible-paragraph.css',
-        'bible-versed' => 'epub-bible-versed.css',
-        'poster' => 'epub-poster.css'
-      }
-      
-      # Select stylesheet based on theme, default to classic
-      selected_theme = theme_param || 'classic'
-      stylesheet_name = theme_stylesheet_map[selected_theme] || 'epub-classic.css'
+      # EPUB - always use classic stylesheet
+      stylesheet_name = 'epub-classic.css'
       stylesheet_path = File.join('/app/deployment', stylesheet_name)
       
       # Verify stylesheet exists
       unless File.exist?(stylesheet_path)
-        puts "[EPUB] Warning: Stylesheet not found at #{stylesheet_path}, falling back to classic"
-        stylesheet_name = 'epub-classic.css'
-        stylesheet_path = File.join('/app/deployment', stylesheet_name)
-        unless File.exist?(stylesheet_path)
-          puts "[EPUB] Warning: Classic stylesheet also not found, proceeding without custom stylesheet"
-          stylesheet_name = nil
-        end
+        puts "[EPUB] Warning: Classic stylesheet not found, proceeding without custom stylesheet"
+        stylesheet_name = nil
+      else
+        puts "[EPUB] Using stylesheet: #{stylesheet_name}"
       end
-      
-      puts "[EPUB] Using stylesheet: #{stylesheet_name} for theme: #{selected_theme}"
       
       # Build EPUB attributes
       epub_attributes = {

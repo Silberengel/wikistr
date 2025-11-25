@@ -37,8 +37,6 @@ export interface ExportOptions {
   content: string;
   title: string;
   author?: string;
-  theme?: string;
-  themeFiles?: Record<string, string>; // filename -> content mapping for custom theme files
 }
 
 /**
@@ -58,8 +56,6 @@ export async function exportToPDF(options: ExportOptions): Promise<Blob> {
       content: options.content,
       title: options.title,
       author: options.author || '',
-      theme: options.theme,
-      theme_files: options.themeFiles || {},
     }),
   });
 
@@ -123,7 +119,6 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
       content: options.content, // AsciiDoc content
       title: options.title,
       author: options.author || '',
-      theme: options.theme,
     }),
   });
 
@@ -214,11 +209,10 @@ export async function exportToEPUB(options: ExportOptions): Promise<Blob> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        content: options.content,
-        title: options.title,
-        author: options.author || '',
-        theme: options.theme,
-      }),
+      content: options.content,
+      title: options.title,
+      author: options.author || '',
+    }),
     });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Network error';
@@ -373,7 +367,6 @@ export async function exportToLaTeX(options: ExportOptions): Promise<Blob> {
       content: options.content,
       title: options.title,
       author: options.author || '',
-      theme: options.theme,
     }),
   });
 

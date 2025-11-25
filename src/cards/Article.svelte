@@ -29,8 +29,7 @@
     downloadBookAsPDF,
     downloadBookAsEPUB,
     downloadBookAsLaTeX,
-    downloadBookOverview,
-    type PDFTheme
+    downloadBookOverview
   } from '$lib/articleDownload';
   import { addBookmark, removeBookmark, isBookmarked, isBookmarkableKind } from '$lib/bookmarks';
 
@@ -64,8 +63,6 @@
   let rawJsonWordWrap = $state(true); // Word-wrap ON by default
   let rawJsonCopied = $state(false);
   let showDownloadMenu = $state(false);
-  let showPdfStyleMenu = $state(false);
-  let showEpubStyleMenu = $state(false);
   let isDownloading = $state(false);
   let showLevelHigherMenu = $state(false);
   let showBookMenu = $state(false);
@@ -122,16 +119,6 @@
   let selectedUserBech32 = $state('');
 
   let title = $derived(event?.tags?.find?.(([k]) => k === 'title')?.[1] || dTag);
-  
-  // Get available themes - include poster only if event has an image
-  const availableThemes = $derived.by(() => {
-    const baseThemes = ['classic', 'antique', 'modern', 'documentation', 'scientific', 'pop', 'bible-paragraph', 'bible-versed'];
-    const hasImage = event?.tags?.find(([k]) => k === 'image')?.[1];
-    if (hasImage) {
-      return [...baseThemes, 'poster'];
-    }
-    return baseThemes;
-  });
   
   // Get emoji for event type
   function getEventEmoji(event: NostrEvent | null): string {
@@ -1136,34 +1123,13 @@
                           AsciiDoc (with all branches & leaves)
                         {/if}
                       </button>
-                      <!-- PDF with style submenu for books -->
-                      <div class="relative">
-                        <button
-                          onclick={(e) => { e.stopPropagation(); showPdfStyleMenu = !showPdfStyleMenu; }}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 flex items-center justify-between"
-                          style="color: var(--text-primary);"
-                        >
-                          <span>PDF (with all branches & leaves)</span>
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                          </svg>
-                        </button>
-                        {#if showPdfStyleMenu}
-                          <div
-                            class="absolute right-full mr-2 top-0 w-48 rounded-lg shadow-lg z-[60]"
-                            style="background-color: var(--bg-primary); border: 1px solid var(--border);"
-                            onclick={(e) => e.stopPropagation()}
-                          >
-                            <div class="py-1">
-                              {#each ['classic', 'antique', 'modern', 'documentation', 'scientific', 'pop'] as style}
                       <button
                         onclick={async () => {
                           if (!event) return;
-                                    showPdfStyleMenu = false;
                           showDownloadMenu = false;
                           isDownloading = true;
                           try {
-                                      await downloadBookAsPDF(event, undefined, style as PDFTheme);
+                            await downloadBookAsPDF(event);
                           } catch (error) {
                             alert('Failed to download book PDF. Make sure the AsciiDoctor server is running and all content events are available.');
                           } finally {
@@ -1171,61 +1137,38 @@
                           }
                         }}
                         disabled={isDownloading}
-                                  class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 capitalize"
+                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                         style="color: var(--text-primary);"
                       >
-                                  {style}
-                                </button>
-                              {/each}
-                            </div>
-                          </div>
+                        {#if isDownloading}
+                          Generating PDF...
+                        {:else}
+                          PDF (with all branches & leaves)
                         {/if}
-                      </div>
-                      <!-- EPUB with style submenu for books -->
-                      <div class="relative">
-                        <button
-                          onclick={(e) => { e.stopPropagation(); showEpubStyleMenu = !showEpubStyleMenu; }}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 flex items-center justify-between"
-                          style="color: var(--text-primary);"
-                        >
-                          <span>EPUB (with all branches & leaves)</span>
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                          </svg>
                       </button>
-                        {#if showEpubStyleMenu}
-                          <div
-                            class="absolute right-full mr-2 top-0 w-48 rounded-lg shadow-lg z-[60]"
-                            style="background-color: var(--bg-primary); border: 1px solid var(--border);"
-                            onclick={(e) => e.stopPropagation()}
-                          >
-                            <div class="py-1">
-                              {#each ['classic', 'antique', 'modern', 'documentation', 'scientific', 'pop'] as style}
                       <button
                         onclick={async () => {
                           if (!event) return;
-                                    showEpubStyleMenu = false;
                           showDownloadMenu = false;
                           isDownloading = true;
                           try {
-                                      await downloadBookAsEPUB(event, undefined, style as PDFTheme);
+                            await downloadBookAsEPUB(event);
                           } catch (error) {
                             alert('Failed to download book EPUB. Make sure the AsciiDoctor server is running and all content events are available.');
-                                    } finally {
-                                      isDownloading = false;
-                                    }
-                                  }}
-                                  disabled={isDownloading}
-                                  class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 capitalize"
-                                  style="color: var(--text-primary);"
-                                >
-                                  {style}
-                                </button>
-                              {/each}
-                            </div>
-                          </div>
+                          } finally {
+                            isDownloading = false;
+                          }
+                        }}
+                        disabled={isDownloading}
+                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                        style="color: var(--text-primary);"
+                      >
+                        {#if isDownloading}
+                          Generating EPUB...
+                        {:else}
+                          EPUB (with all branches & leaves)
                         {/if}
-                      </div>
+                      </button>
                       <button
                         onclick={async () => {
                           if (!event) return;
@@ -1274,34 +1217,13 @@
                           HTML
                         {/if}
                       </button>
-                        <!-- PDF with style submenu -->
-                        <div class="relative">
-                          <button
-                            onclick={(e) => { e.stopPropagation(); showPdfStyleMenu = !showPdfStyleMenu; }}
-                            class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 flex items-center justify-between"
-                            style="color: var(--text-primary);"
-                          >
-                            <span>PDF</span>
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                            </svg>
-                          </button>
-                          {#if showPdfStyleMenu}
-                            <div
-                              class="absolute right-full mr-2 top-0 w-48 rounded-lg shadow-lg z-[60]"
-                              style="background-color: var(--bg-primary); border: 1px solid var(--border);"
-                              onclick={(e) => e.stopPropagation()}
-                            >
-                              <div class="py-1">
-                                {#each availableThemes as style}
                         <button
                           onclick={async () => {
                             if (!event) return;
-                                      showPdfStyleMenu = false;
                             showDownloadMenu = false;
                             isDownloading = true;
                             try {
-                                        await viewAsPDF(event, style as PDFTheme);
+                              await viewAsPDF(event);
                             } catch (error) {
                               alert('Failed to open PDF. Make sure the AsciiDoctor server is running.');
                             } finally {
@@ -1309,44 +1231,22 @@
                             }
                           }}
                           disabled={isDownloading}
-                                    class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 capitalize"
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                           style="color: var(--text-primary);"
                         >
-                                    {style}
-                                  </button>
-                                {/each}
-                              </div>
-                            </div>
+                          {#if isDownloading}
+                            Opening PDF...
+                          {:else}
+                            PDF
                           {/if}
-                        </div>
-                        <!-- EPUB with style submenu -->
-                        <div class="relative">
-                          <button
-                            onclick={(e) => { e.stopPropagation(); showEpubStyleMenu = !showEpubStyleMenu; }}
-                            class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 flex items-center justify-between"
-                            style="color: var(--text-primary);"
-                          >
-                            <span>EPUB</span>
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                            </svg>
                         </button>
-                          {#if showEpubStyleMenu}
-                            <div
-                              class="absolute right-full mr-2 top-0 w-48 rounded-lg shadow-lg z-[60]"
-                              style="background-color: var(--bg-primary); border: 1px solid var(--border);"
-                              onclick={(e) => e.stopPropagation()}
-                            >
-                              <div class="py-1">
-                                {#each availableThemes as style}
                         <button
                           onclick={async () => {
                             if (!event) return;
-                                    showEpubStyleMenu = false;
                             showDownloadMenu = false;
                             isDownloading = true;
                             try {
-                                      await viewAsEPUB(event, style as PDFTheme);
+                              await viewAsEPUB(event);
                             } catch (error) {
                               const errorMessage = error instanceof Error ? error.message : 'Unknown error';
                               console.error('EPUB open failed:', error);
@@ -1356,16 +1256,15 @@
                             }
                           }}
                           disabled={isDownloading}
-                                    class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 capitalize"
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                           style="color: var(--text-primary);"
                         >
-                                    {style}
-                                  </button>
-                                {/each}
-                              </div>
-                            </div>
+                          {#if isDownloading}
+                            Opening EPUB...
+                          {:else}
+                            EPUB
                           {/if}
-                        </div>
+                        </button>
                     {/if}
                   </div>
                 </div>
