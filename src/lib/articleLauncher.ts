@@ -1,7 +1,7 @@
 import { get, writable } from 'svelte/store';
 import { goto } from '$app/navigation';
 import { cards } from '$lib/state';
-import { next, scrollCardIntoView } from '$lib/utils';
+import { next, scrollCardIntoView, normalizeDTag } from '$lib/utils';
 import type { Card, ArticleCard, SearchCard } from '$lib/types';
 
 function cardToPath(card: Card): string | null {
@@ -46,14 +46,16 @@ export const highlightedArticleCardId = writable<number | null>(null);
  */
 export function openOrCreateArticleCard(articleCard: Omit<ArticleCard, 'id'>): boolean {
   const currentCards = get(cards);
-  const identifier = articleCard.data[0];
+  // Normalize d-tag to ensure consistency
+  const identifier = normalizeDTag(articleCard.data[0]);
   const pubkey = articleCard.data[1];
 
   // Check for existing article card with matching [dTag, pubkey]
   // Only consider duplicates if both dTag AND pubkey match
+  // Normalize d-tags for comparison
   const existingArticleCard = currentCards.find(
     card => card.type === 'article' && 
-      (card as ArticleCard).data[0] === identifier &&
+      normalizeDTag((card as ArticleCard).data[0]) === identifier &&
       (card as ArticleCard).data[1] === pubkey
   );
 
@@ -82,11 +84,13 @@ export function openOrCreateArticleCard(articleCard: Omit<ArticleCard, 'id'>): b
     return true;
   }
 
-  // No existing card found, create a new one
-  const newCard: ArticleCard = {
-    id: next(),
-    ...articleCard
-  };
+        // No existing card found, create a new one
+        // Ensure d-tag is normalized in the card data
+        const newCard: ArticleCard = {
+          id: next(),
+          ...articleCard,
+          data: [identifier, pubkey] // Use normalized identifier
+        };
 
   const updatedCards = [...currentCards, newCard];
   goto(buildPath(updatedCards));

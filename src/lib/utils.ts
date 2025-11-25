@@ -144,13 +144,17 @@ export function addUniqueTaggedReplaceable(events: any[], newEvent: any): boolea
   if (isReplaceable) {
     const dTag = newEvent.tags?.find(([t]: any[]) => t === 'd')?.[1];
     if (dTag) {
-      const aTag = `${newEvent.kind}:${newEvent.pubkey}:${dTag}`;
+      // Normalize d-tag for comparison
+      const normalizedDTag = normalizeDTag(dTag);
+      const aTag = `${newEvent.kind}:${newEvent.pubkey}:${normalizedDTag}`;
       
       // Find existing event with same a-tag
       const existingIndex = events.findIndex((evt: any) => {
         const evtDTag = evt.tags?.find(([t]: any[]) => t === 'd')?.[1];
         if (!evtDTag) return false;
-        const evtATag = `${evt.kind}:${evt.pubkey}:${evtDTag}`;
+        // Normalize for comparison
+        const normalizedEvtDTag = normalizeDTag(evtDTag);
+        const evtATag = `${evt.kind}:${evt.pubkey}:${normalizedEvtDTag}`;
         return evtATag === aTag;
       });
       
@@ -178,13 +182,37 @@ export function addUniqueTaggedReplaceable(events: any[], newEvent: any): boolea
 }
 
 /**
+ * Normalize a d-tag according to NIP-54 rules
+ * Always returns lowercase, normalized form
+ */
+export function normalizeDTag(dTag: string): string {
+  if (!dTag || typeof dTag !== 'string') return dTag;
+  
+  try {
+    const { normalizeIdentifier } = require('@nostr/tools/nip54');
+    return normalizeIdentifier(dTag);
+  } catch (e) {
+    // Fallback: just lowercase if normalization fails
+    return dTag.toLowerCase();
+  }
+}
+
+/**
  * Get tag value or return default
+ * Automatically normalizes d-tags to ensure consistency
  */
 export function getTagOr(event: any, tagName: string, defaultValue = ''): string {
   if (!event || !event.tags) return defaultValue;
   
   const tag = event.tags.find((t: any[]) => t[0] === tagName);
-  return tag ? tag[1] || defaultValue : defaultValue;
+  const value = tag ? tag[1] || defaultValue : defaultValue;
+  
+  // Normalize d-tags to ensure they're always in lowercase, normalized form
+  if (tagName === 'd' && value && value !== defaultValue) {
+    return normalizeDTag(value);
+  }
+  
+  return value;
 }
 
 /**
