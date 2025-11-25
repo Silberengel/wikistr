@@ -11,7 +11,7 @@
   // Support all wiki kinds: 30818 (AsciiDoc), 30817 (Markdown), 30040 (Index), 30041 (Content)
   const wikiKinds = [30818, 30817, 30040, 30041, 30023];
   import type { ArticleCard, SearchCard, Card, BookCard } from '$lib/types';
-  import { addUniqueTaggedReplaceable, getTagOr, next, unique } from '$lib/utils';
+  import { addUniqueTaggedReplaceable, getTagOr, next, unique, normalizeDTag, scrollCardIntoView } from '$lib/utils';
   import { getThemeConfig } from '$lib/themes';
   import ArticleListItem from '$components/ArticleListItem.svelte';
   import { replaceState } from '$app/navigation';
@@ -830,21 +830,15 @@
       // Middle-click: open in new card with duplicate checking
       openOrCreateArticleCard(articleCardData);
     } else {
-      // Left-click: check for duplicates first, then replace or navigate
-      const existing = openOrCreateArticleCard(articleCardData);
-      
-      if (!existing) {
-        // No duplicate found - replace current card with new article card
-        const articleCard: ArticleCard = {
-          id: next(),
-          ...articleCardData
-        };
-        if (direct)
-          // if this is called with 'direct' we won't give it a back button
-          replaceSelf(articleCard);
-        else replaceSelf({ ...articleCard, back: card }); // otherwise we will
-      }
-      // If existing card was found, openOrCreateArticleCard already navigated to it
+      // Left-click: replace current search card with article card directly
+      const articleCard: ArticleCard = {
+        id: next(),
+        ...articleCardData
+      };
+      if (direct)
+        // if this is called with 'direct' we won't give it a back button
+        replaceSelf(articleCard);
+      else replaceSelf({ ...articleCard, back: card }); // otherwise we will
     }
   }
 
