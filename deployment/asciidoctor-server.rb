@@ -673,6 +673,104 @@ post '/convert/html5' do
         html_content = "<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<title>#{title}</title>\n</head>\n<body>\n#{html_content}\n</body>\n</html>"
       end
       
+      # Inject custom CSS to prevent source blocks and verbatim elements from overflowing
+      source_block_css = <<~CSS
+        <style>
+          /* Prevent horizontal overflow on body and containers */
+          body {
+            max-width: 100%;
+            overflow-x: auto;
+            box-sizing: border-box;
+          }
+          
+          /* All code and source blocks */
+          pre, pre code, .listingblock pre, .literalblock pre, .sourceblock pre {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-wrap: break-word;
+            word-wrap: break-word;
+            box-sizing: border-box;
+          }
+          
+          /* Ensure code blocks scroll instead of overflow */
+          pre code {
+            display: block;
+            max-width: 100%;
+            overflow-x: auto;
+          }
+          
+          /* Blockquotes and quotes - can contain long lines */
+          blockquote, .quoteblock, .quote-block {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-wrap: break-word;
+            word-wrap: break-word;
+            box-sizing: border-box;
+          }
+          
+          blockquote p, .quoteblock p, .quote-block p,
+          blockquote div, .quoteblock div, .quote-block div {
+            max-width: 100%;
+            overflow-wrap: break-word;
+            word-wrap: break-word;
+          }
+          
+          /* Verse blocks (poetry) */
+          .verseblock, .verse-block {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-wrap: break-word;
+            word-wrap: break-word;
+            box-sizing: border-box;
+          }
+          
+          .verseblock pre, .verse-block pre {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-wrap: break-word;
+            word-wrap: break-word;
+          }
+          
+          /* Any element with pre-formatted content */
+          [class*="literal"], [class*="listing"], [class*="source"] {
+            max-width: 100%;
+            overflow-x: auto;
+            box-sizing: border-box;
+          }
+          
+          /* Tables - can also get wide */
+          table {
+            max-width: 100%;
+            overflow-x: auto;
+            display: block;
+            box-sizing: border-box;
+          }
+          
+          /* Container constraints */
+          .content, #content, [role="main"], main, article, section {
+            max-width: 100%;
+            overflow-x: auto;
+            box-sizing: border-box;
+          }
+          
+          /* Ensure inline code doesn't break layout */
+          code:not(pre code) {
+            overflow-wrap: break-word;
+            word-wrap: break-word;
+          }
+        </style>
+      CSS
+      
+      # Inject CSS into <head> if it exists, otherwise before </body>
+      if html_content.include?('</head>')
+        html_content = html_content.sub('</head>', "#{source_block_css}</head>")
+      elsif html_content.include?('</body>')
+        html_content = html_content.sub('</body>', "#{source_block_css}</body>")
+      else
+        # If no head or body, prepend to content
+        html_content = source_block_css + html_content
+      end
+      
       # Set headers
       content_type 'text/html; charset=utf-8'
       headers 'Content-Disposition' => "attachment; filename=\"#{title.gsub(/[^a-z0-9]/i, '_')}.html\""
