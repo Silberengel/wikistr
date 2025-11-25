@@ -890,15 +890,21 @@
     if (view === 'asciidoc' && event && plaintextCodeElement) {
       // Use setTimeout to ensure DOM is ready
       setTimeout(() => {
+        if (!event || !plaintextCodeElement) return;
         try {
           const lang = event.kind === 30817 || event.kind === 30023 ? 'markdown' : 'asciidoc';
           // Check if language is registered
           const language = hljs.getLanguage(lang);
           if (language) {
+            // Highlight the element - this will wrap text in spans but preserve content
             hljs.highlightElement(plaintextCodeElement);
+            // Ensure the element remains find-friendly after highlighting
+            // highlight.js should preserve text content, but we ensure it's searchable
+            plaintextCodeElement.setAttribute('data-find-friendly', 'true');
           } else {
             // Try auto-detect if language not found
             hljs.highlightElement(plaintextCodeElement);
+            plaintextCodeElement.setAttribute('data-find-friendly', 'true');
           }
         } catch (error) {
           console.warn('Failed to highlight plaintext content:', error);
@@ -1834,7 +1840,7 @@
               {/if}
             </button>
           </div>
-          <pre class="plaintext-viewer-content"><code bind:this={plaintextCodeElement} class="language-{event.kind === 30817 || event.kind === 30023 ? 'markdown' : 'asciidoc'} hljs">{event.content}</code></pre>
+          <pre class="plaintext-viewer-content" data-find-friendly="true"><code bind:this={plaintextCodeElement} class="language-{event.kind === 30817 || event.kind === 30023 ? 'markdown' : 'asciidoc'} hljs" data-find-friendly="true">{event.content}</code></pre>
         </div>
       {/if}
     {:else if view === 'formatted'}
