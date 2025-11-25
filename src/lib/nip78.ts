@@ -1,6 +1,6 @@
 /**
- * NIP-78: Arbitrary custom app data support for Wikistr
- * Handles book configuration events with kind 30078
+ * Arbitrary custom app data support for Wikistr
+ * Handles book configurations
  */
 
 import type { NostrEvent } from '@nostr/tools/pure';
@@ -260,28 +260,6 @@ export async function loadBookConfigurations(): Promise<BookConfiguration[]> {
   }
 }
 
-/**
- * Create a NIP-78 book configuration event
- */
-export function createBookConfigEvent(
-  signer: any,
-  config: NIP78BookConfig,
-  dTag: string = 'wikistr-book-config'
-): Promise<NostrEvent> {
-  const eventTemplate = {
-    kind: 30078,
-    content: JSON.stringify(config),
-    tags: [
-      ['d', dTag],
-      ['app', 'Wikistr'],
-      ['type', 'book-config'],
-      ['name', config.name]
-    ],
-    created_at: Math.floor(Date.now() / 1000)
-  };
-  
-  return signer.signEvent(eventTemplate);
-}
 
 /**
  * Store for managing book configurations

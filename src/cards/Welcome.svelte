@@ -267,18 +267,6 @@
         }
       }
       
-      // Update bookConfigs cache
-      const bookConfigsResult = await relayService.queryEvents(
-        userPubkey,
-        'wiki-read',
-        [{ kinds: [30078], '#d': ['wikistr-book-config'], limit: 50 }],
-        { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
-      );
-      
-      if (bookConfigsResult.events.length > 0) {
-        await contentCache.storeEvents('bookConfigs', bookConfigsResult.events.map(event => ({ event, relays: bookConfigsResult.relays })));
-      }
-      
     } catch (error) {
       console.error('❌ Failed to update all caches on mount:', error);
     }

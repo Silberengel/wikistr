@@ -172,6 +172,16 @@
               return;
             }
             
+            // Normalize d-tags according to NIP-54
+            if (eventTemplate.tags) {
+              eventTemplate.tags = eventTemplate.tags.map(tag => {
+                if (tag[0] === 'd' && tag[1]) {
+                  return ['d', normalizeIdentifier(tag[1])];
+                }
+                return tag;
+              });
+            }
+            
             // Sign the event
             let event = await signer.signEvent(eventTemplate);
             

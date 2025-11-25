@@ -4,7 +4,6 @@
   import { onMount } from 'svelte';
 
   export let onClose: () => void;
-  export let onCreateNew: () => void;
 
   let configs: any[] = [];
   let selectedConfig: any = null;
@@ -84,13 +83,6 @@
             ×
           </button>
         </div>
-        <button
-          onclick={onCreateNew}
-          class="mt-3 w-full px-3 py-2 rounded-md text-sm transition-colors"
-          style="background-color: var(--accent); color: white; border: 1px solid var(--accent);"
-        >
-          + Create New Configuration
-        </button>
       </div>
 
       <div class="flex-1 overflow-y-auto">

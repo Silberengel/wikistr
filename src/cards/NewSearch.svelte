@@ -11,8 +11,6 @@ import { openBookSearchCard } from '$lib/bookSearchLauncher';
 import ModeToggle from '$components/ModeToggle.svelte';
 import ProfilePopup from '$components/ProfilePopup.svelte';
 import UserBadge from '$components/UserBadge.svelte';
-import BookConfigList from '$components/BookConfigList.svelte';
-import BookConfigForm from '$components/BookConfigForm.svelte';
 import CacheBrowser from '$components/CacheBrowser.svelte';
 import Settings from '$cards/Settings.svelte';
   import { nip19 } from '@nostr/tools';
@@ -32,8 +30,6 @@ import Settings from '$cards/Settings.svelte';
   let showSettings = $state(false);
   let showCacheBrowser = $state(false);
   let showProfilePopup = $state(false);
-  let showBookConfigList = $state(false);
-  let showBookConfigForm = $state(false);
   
   // Relay information
   let themeRelays = $state<{url: string, hasWiki: boolean, hasSocial: boolean, isUserRelay: boolean}[]>([]);
@@ -157,28 +153,7 @@ import Settings from '$cards/Settings.svelte';
   });
 
 
-  function openBookConfigList() {
-    showBookConfigList = true;
-  }
 
-  function closeBookConfigList() {
-    showBookConfigList = false;
-  }
-
-  function openBookConfigForm() {
-    showBookConfigForm = true;
-  }
-
-  function closeBookConfigForm() {
-    showBookConfigForm = false;
-  }
-
-  function onConfigCreated() {
-    // Refresh the book config list when a new config is created
-    closeBookConfigForm();
-    // Optionally refresh the book config list
-    // This could trigger a reload of the BookConfigList component
-  }
 
   function toggleSettings() {
     showSettings = !showSettings;
@@ -338,21 +313,5 @@ import Settings from '$cards/Settings.svelte';
     bech32="npub1l5sga6xg72phsz5422ykujprejwud075ggrr3z2hwyrfgr7eylqstegx9z"
     isOpen={showProfilePopup}
     onClose={closeProfilePopup}
-  />
-{/if}
-
-<!-- Book Configuration Modal -->
-{#if showBookConfigList}
-  <BookConfigList
-    onClose={closeBookConfigList}
-    onCreateNew={openBookConfigForm}
-  />
-{/if}
-
-<!-- Book Configuration Form Modal -->
-{#if showBookConfigForm}
-  <BookConfigForm
-    onClose={closeBookConfigForm}
-    onSuccess={onConfigCreated}
   />
 {/if}
