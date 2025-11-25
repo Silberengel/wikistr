@@ -678,7 +678,7 @@ export async function downloadAsPDF(event: NostrEvent, filename?: string, theme:
 }
 
 /**
- * View PDF in e-book viewer
+ * View PDF in browser tab
  */
 export async function viewAsPDF(event: NostrEvent, theme: PDFTheme = 'classic'): Promise<void> {
   // Prepare AsciiDoc content with metadata (includes cover image, abstract, etc.)
@@ -686,20 +686,30 @@ export async function viewAsPDF(event: NostrEvent, theme: PDFTheme = 'classic'):
   
   // Validate AsciiDoc content before exporting
   const validation = validateAsciiDoc(asciiDocContent);
-  const validationMessages: { errors?: string[]; warnings?: string[] } = {};
   
-  // Always log to console AND pass to viewer
+  // Always log to console
   if (!validation.valid && validation.error) {
-    validationMessages.errors = [validation.error];
     console.error('AsciiDoc validation error:', validation.error);
   }
   if (validation.warnings && validation.warnings.length > 0) {
-    validationMessages.warnings = validation.warnings;
     console.warn('AsciiDoc warnings:', validation.warnings);
   }
   
   const { blob, filename } = await getPDFBlob(event, theme);
-  await openInViewer(blob, filename, 'pdf', validationMessages);
+  
+  // Open PDF in new browser tab
+  const url = URL.createObjectURL(blob);
+  const newWindow = window.open(url, '_blank');
+  if (!newWindow) {
+    // If popup blocked, fall back to download
+    downloadBlob(blob, filename);
+    URL.revokeObjectURL(url);
+  } else {
+    // Clean up URL when window closes (best effort)
+    newWindow.addEventListener('beforeunload', () => {
+      URL.revokeObjectURL(url);
+    });
+  }
 }
 
 /**
@@ -833,11 +843,24 @@ export async function downloadAsHTML5(event: NostrEvent, filename?: string): Pro
 }
 
 /**
- * View HTML5 in e-book viewer
+ * View HTML5 in browser tab
  */
 export async function viewAsHTML5(event: NostrEvent): Promise<void> {
   const { blob, filename } = await getHTML5Blob(event);
-  await openInViewer(blob, filename, 'html');
+  
+  // Open HTML in new browser tab
+  const url = URL.createObjectURL(blob);
+  const newWindow = window.open(url, '_blank');
+  if (!newWindow) {
+    // If popup blocked, fall back to download
+    downloadBlob(blob, filename);
+    URL.revokeObjectURL(url);
+  } else {
+    // Clean up URL when window closes (best effort)
+    newWindow.addEventListener('beforeunload', () => {
+      URL.revokeObjectURL(url);
+    });
+  }
 }
 
 /**

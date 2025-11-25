@@ -57,7 +57,8 @@
     checkMobile();
     window.addEventListener('resize', checkMobile);
 
-    // Set up PDF.js worker with proxy support and offline fallback
+    // Set up PDF.js worker - always use a valid worker URL
+    // Never set workerSrc to empty string as it causes errors
     const pdfVersion = pdfjsLib.version || '5.4.394';
     const workerUrl = `https://unpkg.com/pdfjs-dist@${pdfVersion}/build/pdf.worker.min.js`;
     
@@ -79,26 +80,30 @@
       return `${basePath}?url=${encoded}`;
     }
     
-    // Use proxy for worker URL
+    // Try proxy first, fallback to direct CDN URL
     const proxiedWorkerUrl = buildProxyUrl(workerUrl);
-    pdfjsLib.GlobalWorkerOptions.workerSrc = proxiedWorkerUrl;
     
-    // Test if worker is available, if not, disable it for offline support
-    // This will use "fake worker" mode (runs on main thread) - slower but works offline
+    // Test if worker is available through proxy
     const testWorkerAvailability = async () => {
       try {
-        // Try to fetch the worker through proxy to see if it's available
         const response = await fetch(proxiedWorkerUrl, { method: 'HEAD' });
-        if (!response.ok) {
-          throw new Error('Worker not available');
+        if (response.ok) {
+          // Proxy works, use it
+          pdfjsLib.GlobalWorkerOptions.workerSrc = proxiedWorkerUrl;
+        } else {
+          // Proxy failed, use CDN directly
+          console.warn('PDF.js worker proxy unavailable, using CDN directly');
+          pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
         }
       } catch (error) {
-        console.warn('PDF.js worker unavailable through proxy, disabling worker for offline support (may be slower)');
-        // Disable worker - PDF.js will use "fake worker" mode (runs on main thread)
-        // This works offline but may be slower for large PDFs
-        pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+        // Proxy failed, use CDN directly
+        console.warn('PDF.js worker proxy unavailable, using CDN directly');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
       }
     };
+    
+    // Set initial worker (will be updated if proxy test fails)
+    pdfjsLib.GlobalWorkerOptions.workerSrc = proxiedWorkerUrl;
     
     // Test worker availability asynchronously (don't block initialization)
     testWorkerAvailability();
@@ -178,29 +183,16 @@
     try {
       const arrayBuffer = await blob.arrayBuffer();
       
-      // If worker failed to load, disable it and retry with fake worker mode
-      let retryWithoutWorker = false;
-      try {
-        pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      } catch (workerError) {
-        const errorMessage = workerError instanceof Error ? workerError.message : String(workerError);
-        if (errorMessage.includes('worker') || errorMessage.includes('Setting up fake worker')) {
-          console.warn('Worker failed, retrying without worker (offline mode)');
-          // Disable worker and retry
-          pdfjsLib.GlobalWorkerOptions.workerSrc = '';
-          retryWithoutWorker = true;
-          pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        } else {
-          throw workerError;
-        }
+      // Ensure worker is set before loading PDF (should already be set in onMount)
+      if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+        // Fallback: use CDN directly
+        const pdfVersion = pdfjsLib.version || '5.4.394';
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfVersion}/build/pdf.worker.min.js`;
       }
       
+      pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
       totalPages = pdfDoc.numPages;
       await renderPages();
-      
-      if (retryWithoutWorker) {
-        console.info('PDF loaded successfully in offline mode (without worker). Performance may be slower for large PDFs.');
-      }
     } catch (error) {
       console.error('Failed to load PDF:', error);
       
