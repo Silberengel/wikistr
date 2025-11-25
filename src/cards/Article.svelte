@@ -123,6 +123,16 @@
 
   let title = $derived(event?.tags?.find?.(([k]) => k === 'title')?.[1] || dTag);
   
+  // Get available themes - include poster only if event has an image
+  const availableThemes = $derived.by(() => {
+    const baseThemes = ['classic', 'antique', 'modern', 'documentation', 'scientific', 'pop', 'bible-paragraph', 'bible-versed'];
+    const hasImage = event?.tags?.find(([k]) => k === 'image')?.[1];
+    if (hasImage) {
+      return [...baseThemes, 'poster'];
+    }
+    return baseThemes;
+  });
+  
   // Get emoji for event type
   function getEventEmoji(event: NostrEvent | null): string {
     if (!event) return '';
@@ -1283,7 +1293,7 @@
                               onclick={(e) => e.stopPropagation()}
                             >
                               <div class="py-1">
-                                {#each ['classic', 'antique', 'modern', 'documentation', 'scientific', 'pop', 'bible-paragraph', 'bible-versed', 'poster'] as style}
+                                {#each availableThemes as style}
                         <button
                           onclick={async () => {
                             if (!event) return;
@@ -1328,7 +1338,7 @@
                               onclick={(e) => e.stopPropagation()}
                             >
                               <div class="py-1">
-                                {#each ['classic', 'antique', 'modern', 'documentation', 'scientific', 'pop', 'bible-paragraph', 'bible-versed', 'poster'] as style}
+                                {#each availableThemes as style}
                         <button
                           onclick={async () => {
                             if (!event) return;

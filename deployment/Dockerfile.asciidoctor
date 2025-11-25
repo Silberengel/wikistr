@@ -25,10 +25,10 @@ WORKDIR /app/deployment
 # Runtime verification happens in the startup script
 RUN bundle install --without development test --path vendor/bundle
 
-# Copy server script, themes, and EPUB stylesheet
+# Copy server script, themes, and EPUB stylesheets
 COPY deployment/asciidoctor-server.rb ./
 COPY deployment/*-theme.yml ./
-COPY deployment/epub-classic.css ./
+COPY deployment/epub-*.css ./
 
 # Expose port
 EXPOSE 8091

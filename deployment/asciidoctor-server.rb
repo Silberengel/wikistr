@@ -5,7 +5,6 @@ require 'rack'
 require 'asciidoctor'
 require 'asciidoctor-pdf'
 require 'asciidoctor-epub3'
-require 'asciidoctor-revealjs'
 require 'asciidoctor-diagram'  # For PlantUML, Graphviz, BPMN, Mermaid, TikZ, etc.
 require 'json'
 require 'tempfile'
@@ -99,7 +98,6 @@ get '/healthz' do
       pdf: '/convert/pdf',
       epub: '/convert/epub',
       html5: '/convert/html5',
-      revealjs: '/convert/revealjs',
       latex: '/convert/latex'
     },
     port: settings.port
@@ -244,23 +242,6 @@ get '/api' do
           table_of_contents: 'Automatic table of contents is generated when :toc: attribute is set (enabled by default)',
           latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks',
           diagrams: 'Diagram generation is supported via asciidoctor-diagram extension. Supported formats: PlantUML, Graphviz, Mermaid, BPMN (via PlantUML)'
-        }
-      },
-      convert_revealjs: {
-        method: 'POST',
-        path: '/asciidoctor/convert/revealjs',
-        description: 'Convert AsciiDoc content to Reveal.js presentation',
-        request: {
-          type: 'application/json',
-          body: {
-            content: 'string (required) - AsciiDoc content',
-            title: 'string (required) - Document title',
-            author: 'string (optional) - Document author'
-          }
-        },
-        response: {
-          type: 'text/html',
-          disposition: 'attachment'
         }
       },
       convert_latex: {
@@ -448,25 +429,10 @@ post '/convert/epub' do
     title = data['title'] || 'Document'
     author = data['author'] || ''
     theme_param = data['theme']
-    theme_files = data['theme_files'] || {}
     
     unless content
       status 400
       return { error: 'Missing content or asciidoc field' }.to_json
-    end
-    
-    # Create temporary directory for theme files if custom themes are provided
-    temp_themes_dir = nil
-    if theme_files.is_a?(Hash) && !theme_files.empty?
-      temp_themes_dir = Dir.mktmpdir('custom-themes-')
-      theme_files.each do |filename, file_content|
-        # Sanitize filename to prevent directory traversal
-        safe_filename = File.basename(filename)
-        next unless safe_filename.end_with?('.yml') || safe_filename.end_with?('.yaml')
-        
-        theme_file_path = File.join(temp_themes_dir, safe_filename)
-        File.write(theme_file_path, file_content)
-      end
     end
     
     # Create temporary file for AsciiDoc content
@@ -475,70 +441,91 @@ post '/convert/epub' do
     temp_adoc.close
     
     # Create temporary directory for EPUB output
-    temp_dir = Dir.mktmpdir
+    temp_dir = Dir.mktmpdir('epub-')
     epub_file = File.join(temp_dir, 'document.epub')
     
     begin
-      # Extract cover image from content if present
-      cover_image = nil
-      if content.include?('[cover]') || content.include?('image::')
-        # Try to extract image URL from content
-        image_match = content.match(/image::([^\[]+)\[/)
-        cover_image = image_match[1] if image_match
-      end
-      
       # EPUB stylesheet selection based on theme
-      # Note: EPUB uses CSS stylesheets, not PDF themes
-      # For now, use classic.css for all themes (could be extended with theme-specific stylesheets)
-      stylesheet = 'epub-classic.css'
-      if theme_param
-        theme_stylesheet_map = {
-          'classic' => 'epub-classic.css',
-          'antique' => 'epub-classic.css',
-          'modern' => 'epub-classic.css',
-          'bible-paragraph' => 'epub-classic.css',
-          'bible-versed' => 'epub-classic.css'
-        }
-        stylesheet = theme_stylesheet_map[theme_param] || 'epub-classic.css'
+      # Map client theme names to EPUB stylesheet files
+      theme_stylesheet_map = {
+        'classic' => 'epub-classic.css',
+        'antique' => 'epub-antique.css',
+        'modern' => 'epub-modern.css',
+        'documentation' => 'epub-documentation.css',
+        'scientific' => 'epub-scientific.css',
+        'pop' => 'epub-pop.css',
+        'bible-paragraph' => 'epub-bible-paragraph.css',
+        'bible-versed' => 'epub-bible-versed.css',
+        'poster' => 'epub-poster.css'
+      }
+      
+      # Select stylesheet based on theme, default to classic
+      selected_theme = theme_param || 'classic'
+      stylesheet_name = theme_stylesheet_map[selected_theme] || 'epub-classic.css'
+      stylesheet_path = File.join('/app/deployment', stylesheet_name)
+      
+      # Verify stylesheet exists
+      unless File.exist?(stylesheet_path)
+        puts "[EPUB] Warning: Stylesheet not found at #{stylesheet_path}, falling back to classic"
+        stylesheet_name = 'epub-classic.css'
+        stylesheet_path = File.join('/app/deployment', stylesheet_name)
+        unless File.exist?(stylesheet_path)
+          puts "[EPUB] Warning: Classic stylesheet also not found, proceeding without custom stylesheet"
+          stylesheet_name = nil
+        end
       end
       
-      # Convert to EPUB with enhanced attributes for better rendering
+      puts "[EPUB] Using stylesheet: #{stylesheet_name} for theme: #{selected_theme}"
+      
+      # Build EPUB attributes
       epub_attributes = {
         'title' => title,
         'author' => author,
         'doctype' => 'book',
-        'imagesdir' => '.',  # Allow images from any location
-        'allow-uri-read' => '',  # Allow reading images from URLs
-        'epub3-cover-image-format' => 'jpg',
-        'epub3-stylesdir' => '/app/deployment',
-        'stylesheet' => stylesheet
+        'imagesdir' => '.',
+        'allow-uri-read' => '',
+        'toc' => '',  # Enable table of contents
+        'stem' => ''  # Enable LaTeX math support
       }
       
-      if cover_image
-        epub_attributes['epub3-cover-image'] = cover_image
+      # Add stylesheet if available
+      if stylesheet_name && File.exist?(stylesheet_path)
+        epub_attributes['epub3-stylesdir'] = '/app/deployment'
+        epub_attributes['stylesheet'] = stylesheet_name
       end
       
-      # Convert to EPUB
+      # Convert to EPUB using convert_file with to_file
+      # This is the recommended approach for EPUB3
+      puts "[EPUB] Starting conversion: #{temp_adoc.path} -> #{epub_file}"
+      puts "[EPUB] Attributes: #{epub_attributes.inspect}"
+      
       begin
-        result = Asciidoctor.convert_file temp_adoc.path,
+        result = Asciidoctor.convert_file(
+          temp_adoc.path,
           backend: 'epub3',
           safe: 'unsafe',
           to_file: epub_file,
           attributes: epub_attributes
+        )
+        puts "[EPUB] Conversion completed, result: #{result.inspect}"
       rescue => e
-        # Provide detailed error message for AsciiDoc conversion failures
+        puts "[EPUB] Conversion error: #{e.class.name}: #{e.message}"
+        puts "[EPUB] Backtrace: #{e.backtrace.first(5).join("\n")}"
+        
         error_details = {
           error: 'EPUB conversion failed',
           message: e.message,
           class: e.class.name
         }
         
-        # Check if it's an AsciiDoc syntax error
+        # Add helpful hints based on error type
         if e.message.include?('syntax') || e.message.include?('parse') || e.message.include?('invalid')
           error_details[:hint] = 'This appears to be an AsciiDoc syntax error. Please check your document for: unclosed blocks, invalid attribute syntax, or malformed headings.'
+        elsif e.message.include?('stylesheet') || e.message.include?('css')
+          error_details[:hint] = 'Stylesheet error. The EPUB conversion will continue without custom styling.'
         end
         
-        # Include line number if available in error message
+        # Include line number if available
         if e.message.match(/line\s+(\d+)/i)
           line_num = e.message.match(/line\s+(\d+)/i)[1]
           error_details[:line] = line_num.to_i
@@ -549,90 +536,91 @@ post '/convert/epub' do
         return error_details.to_json
       end
       
-      # Verify EPUB file was created and exists
+      # Check if EPUB file was created
       unless File.exist?(epub_file)
+        puts "[EPUB] Error: EPUB file was not created at #{epub_file}"
         status 500
-        return { error: 'EPUB file was not created', debug: "Expected file: #{epub_file}", hint: 'The conversion completed but no EPUB file was generated. This may indicate an AsciiDoc syntax error or missing content.' }.to_json
+        return { 
+          error: 'EPUB file was not created', 
+          debug: "Expected file: #{epub_file}",
+          hint: 'The conversion completed but no EPUB file was generated. Check server logs for details.'
+        }.to_json
       end
       
       # Check file size
       file_size = File.size(epub_file)
+      puts "[EPUB] File created: #{epub_file}, size: #{file_size} bytes"
+      
       if file_size == 0
         status 500
         return { error: 'Generated EPUB file is empty' }.to_json
       end
       
-      # Verify it's a valid ZIP file (EPUB is a ZIP archive)
-      # Check for ZIP magic bytes
+      # Basic validation: Check for ZIP magic bytes (EPUB is a ZIP archive)
       begin
         File.open(epub_file, 'rb') do |f|
           magic = f.read(4)
-          unless magic == "PK\x03\x04"  # ZIP file signature
+          unless magic == "PK\x03\x04"
+            puts "[EPUB] Error: Invalid ZIP magic bytes: #{magic.unpack('H*').first}"
             status 500
-            return { error: 'Generated file is not a valid ZIP/EPUB', magic: magic.unpack('H*').first }.to_json
+            return { 
+              error: 'Generated file is not a valid ZIP/EPUB', 
+              magic: magic.unpack('H*').first,
+              hint: 'The file was created but does not appear to be a valid EPUB (ZIP) file.'
+            }.to_json
           end
         end
-        
-        # Verify ZIP structure using rubyzip
-        require 'zip'
-        Zip::File.open(epub_file) do |zip_file|
-          # Check for required EPUB files
-          unless zip_file.find_entry('META-INF/container.xml')
-            status 500
-            return { error: 'Generated EPUB is missing required META-INF/container.xml' }.to_json
-          end
-        end
-      rescue Zip::Error => e
-        status 500
-        return { error: 'Generated EPUB is not a valid ZIP file', message: e.message }.to_json
       rescue => e
+        puts "[EPUB] Error validating ZIP structure: #{e.message}"
         status 500
-        return { error: 'Failed to validate EPUB file', message: e.message }.to_json
+        return { 
+          error: 'Failed to validate EPUB file', 
+          message: e.message 
+        }.to_json
       end
       
       # Read EPUB content as binary
       epub_content = File.binread(epub_file)
       
-      # Verify file is not empty (double check)
       if epub_content.nil? || epub_content.empty?
         status 500
         return { error: 'Generated EPUB file is empty after reading' }.to_json
       end
       
-      # Set headers before sending binary content
+      puts "[EPUB] Successfully generated EPUB: #{epub_content.bytesize} bytes"
+      
+      # Set headers and return binary content
       content_type 'application/epub+zip'
       headers 'Content-Disposition' => "attachment; filename=\"#{title.gsub(/[^a-z0-9]/i, '_')}.epub\""
       headers 'Content-Length' => epub_content.bytesize.to_s
       
-      # Return binary content
       epub_content
     ensure
-      temp_adoc.unlink
-      FileUtils.rm_rf(temp_dir) if temp_dir
-      # Clean up temporary themes directory
-      if temp_themes_dir && Dir.exist?(temp_themes_dir)
-        FileUtils.rm_rf(temp_themes_dir)
-      end
+      # Cleanup
+      temp_adoc.unlink if temp_adoc
+      FileUtils.rm_rf(temp_dir) if temp_dir && Dir.exist?(temp_dir)
     end
   rescue JSON::ParserError => e
     status 400
     { error: 'Invalid JSON', message: e.message }.to_json
   rescue => e
-    # Provide detailed error information for EPUB conversion
+    puts "[EPUB] Unexpected error: #{e.class.name}: #{e.message}"
+    puts "[EPUB] Backtrace: #{e.backtrace.first(10).join("\n")}"
+    
     error_details = {
       error: 'EPUB conversion failed',
       message: e.message,
       class: e.class.name
     }
     
-    # Check if it's an AsciiDoc syntax error
+    # Add helpful hints
     if e.message.include?('syntax') || e.message.include?('parse') || e.message.include?('invalid') || e.message.include?('AsciiDoc')
-      error_details[:hint] = 'This appears to be an AsciiDoc syntax error. Common issues include: unclosed blocks (----), invalid attribute syntax, malformed headings, or incorrect attribute block spacing (attribute blocks like [abstract], [discrete], etc. should be followed directly by the heading without a blank line).'
+      error_details[:hint] = 'This appears to be an AsciiDoc syntax error. Common issues include: unclosed blocks (----), invalid attribute syntax, malformed headings, or incorrect attribute block spacing.'
     end
     
     # Include backtrace for debugging (first few lines only)
     if e.backtrace && e.backtrace.length > 0
-      error_details[:backtrace] = e.backtrace.first(3)
+      error_details[:backtrace] = e.backtrace.first(5)
     end
     
     status 500
@@ -702,60 +690,6 @@ post '/convert/html5' do
   end
 end
 
-# Convert to Reveal.js presentation
-post '/convert/revealjs' do
-  begin
-    request.body.rewind
-    body_content = request.body.read
-    log_request_size(body_content, 'RevealJS')
-    data = JSON.parse(body_content)
-    content = data['content'] || data['asciidoc']
-    title = data['title'] || 'Document'
-    author = data['author'] || ''
-    
-    unless content
-      status 400
-      return { error: 'Missing content or asciidoc field' }.to_json
-    end
-    
-    # Create temporary file for AsciiDoc content
-    temp_adoc = Tempfile.new(['document', '.adoc'])
-    temp_adoc.write(content)
-    temp_adoc.close
-    
-    begin
-      # Convert to Reveal.js
-      html_content = Asciidoctor.convert content,
-        backend: 'revealjs',
-        safe: 'unsafe',
-        attributes: {
-          'title' => title,
-          'author' => author,
-          'doctype' => 'article',
-          'imagesdir' => '.',
-          'allow-uri-read' => '',
-          'revealjsdir' => 'https://cdn.jsdelivr.net/npm/reveal.js@4.3.1',
-          'revealjs_theme' => 'white',
-          'revealjs_transition' => 'slide'
-        }
-      
-      # Set headers
-      content_type 'text/html; charset=utf-8'
-      headers 'Content-Disposition' => "attachment; filename=\"#{title.gsub(/[^a-z0-9]/i, '_')}.html\""
-      
-      html_content
-    ensure
-      temp_adoc.unlink
-    end
-  rescue JSON::ParserError => e
-    status 400
-    { error: 'Invalid JSON', message: e.message }.to_json
-  rescue => e
-    status 500
-    { error: 'Conversion failed', message: e.message }.to_json
-  end
-end
-
 # Root endpoint
 get '/' do
   content_type :json
@@ -768,7 +702,6 @@ get '/' do
       pdf: '/convert/pdf',
       epub: '/convert/epub',
       html5: '/convert/html5',
-      revealjs: '/convert/revealjs',
       latex: '/convert/latex',
       health: '/healthz',
       api_docs: '/api'

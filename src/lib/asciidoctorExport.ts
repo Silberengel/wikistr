@@ -201,53 +201,80 @@ export async function exportToEPUB(options: ExportOptions): Promise<Blob> {
   const normalizedBase = ASCIIDOCTOR_SERVER_URL.replace(/\/+$/, '');
   const baseUrl = `${normalizedBase}/`;
   const url = `${baseUrl}convert/epub`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      content: options.content,
-      title: options.title,
-      author: options.author || '',
-      theme: options.theme,
-    }),
-  });
+  
+  console.log('[EPUB Export] Sending request to:', url);
+  console.log('[EPUB Export] Content length:', options.content.length);
+  console.log('[EPUB Export] Title:', options.title);
+  
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        content: options.content,
+        title: options.title,
+        author: options.author || '',
+        theme: options.theme,
+      }),
+    });
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : 'Network error';
+    console.error('[EPUB Export] Network error:', errorMessage);
+    throw new Error(`Failed to connect to EPUB conversion server: ${errorMessage}. Make sure the AsciiDoctor server is running.`);
+  }
 
   if (!response.ok) {
     // Try to read error message from response body
-    let errorMessage = `Failed to generate EPUB: ${response.status} ${response.statusText}`;
+    let errorMessage = `EPUB conversion failed: ${response.status} ${response.statusText}`;
+    let errorDetails: any = null;
     
     try {
       const contentType = response.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
-        const error = await response.json();
-        errorMessage = error.error || error.message || errorMessage;
+        errorDetails = await response.json();
+        errorMessage = errorDetails.error || errorDetails.message || errorMessage;
+        
+        // Add hint if available
+        if (errorDetails.hint) {
+          errorMessage += `\n\nHint: ${errorDetails.hint}`;
+        }
+        
+        // Add line number if available
+        if (errorDetails.line) {
+          errorMessage += `\n\nError detected at line ${errorDetails.line}`;
+        }
       } else {
         // Try to read as text even if not JSON
         const text = await response.text();
         if (text) {
           // Try to parse as JSON in case content-type is wrong
           try {
-            const error = JSON.parse(text);
-            errorMessage = error.error || error.message || errorMessage;
+            errorDetails = JSON.parse(text);
+            errorMessage = errorDetails.error || errorDetails.message || errorMessage;
+            if (errorDetails.hint) {
+              errorMessage += `\n\nHint: ${errorDetails.hint}`;
+            }
           } catch {
             // Not JSON, use text as error message (limit length)
             const preview = text.length > 200 ? text.substring(0, 200) + '...' : text;
-            errorMessage = `${errorMessage}\nServer response: ${preview}`;
+            errorMessage = `${errorMessage}\n\nServer response: ${preview}`;
           }
         }
       }
     } catch (err) {
-      console.error('Failed to read error response:', err);
+      console.error('[EPUB Export] Failed to read error response:', err);
       // Use default error message
     }
     
-    console.error('EPUB conversion failed:', {
+    console.error('[EPUB Export] Conversion failed:', {
       status: response.status,
       statusText: response.statusText,
       url,
-      errorMessage
+      errorMessage,
+      errorDetails
     });
     
     throw new Error(errorMessage);
@@ -281,6 +308,8 @@ export async function exportToEPUB(options: ExportOptions): Promise<Blob> {
     throw new Error('Server returned empty EPUB file');
   }
   
+  console.log('[EPUB Export] Received blob:', blob.size, 'bytes');
+  
   // Verify it's actually a ZIP file (EPUB is a ZIP archive)
   // Check ZIP magic bytes (first 4 bytes should be "PK\x03\x04")
   const arrayBuffer = await blob.slice(0, 4).arrayBuffer();
@@ -297,6 +326,7 @@ export async function exportToEPUB(options: ExportOptions): Promise<Blob> {
     }
   }
   
+  console.log('[EPUB Export] Successfully generated EPUB file');
   return blob;
 }
 
