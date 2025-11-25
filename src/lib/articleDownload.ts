@@ -6,7 +6,7 @@
 import type { NostrEvent } from '@nostr/tools/pure';
 import { nip19 } from '@nostr/tools';
 import { relayService } from '$lib/relayService';
-import { exportToPDF, exportToEPUB, exportToHTML5, exportToLaTeX, downloadBlob } from './asciidoctorExport';
+import { exportToEPUB, exportToHTML5, exportToLaTeX, downloadBlob } from './asciidoctorExport';
 import {
   processContentQuality,
   processContentQualityAsync,
@@ -254,7 +254,6 @@ async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, pro
   doc += `:toc:\n`; // Enable table of contents
   doc += `:stem:\n`; // Enable STEM (math) support for LaTeX rendering
   doc += `:page-break-mode: auto\n`; // Reduce unnecessary page breaks
-  doc += `:pdf-page-break-mode: auto\n`; // Allow content to flow naturally
   
   if (version) {
     doc += `:version: ${version}\n`;
@@ -669,39 +668,6 @@ function generateFilename(title: string, extension: string): string {
   return `${title.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.${extension}`;
 }
 
-/**
- * Get PDF blob (for viewing)
- */
-export async function getPDFBlob(event: NostrEvent): Promise<{ blob: Blob; filename: string }> {
-  const { content, title, author } = await getEventContent(event);
-  validateAsciiDocContent(content, true);
-  
-  const blob = await exportToPDF({ content, title, author });
-  
-  if (!blob || blob.size === 0) {
-    throw new Error('Server returned empty PDF file');
-  }
-  
-  const filename = generateFilename(title, 'pdf');
-  return { blob, filename };
-}
-
-/**
- * Download PDF (renamed from viewAsPDF - viewer removed)
- */
-export async function downloadAsPDF(event: NostrEvent, filename?: string): Promise<void> {
-  const { content, title, author } = await getEventContent(event);
-  validateAsciiDocContent(content, true);
-  
-  const blob = await exportToPDF({ content, title, author });
-  
-  if (!blob || blob.size === 0) {
-    throw new Error('Server returned empty PDF file');
-  }
-  
-  const name = filename || generateFilename(title, 'pdf');
-  downloadBlob(blob, name);
-}
 
 /**
  * Download article as EPUB
@@ -1387,22 +1353,6 @@ export async function downloadBookAsAsciiDoc(indexEvent: NostrEvent, filename?: 
   downloadBlob(blob, name);
 }
 
-/**
- * Download book (30040) as PDF with all branches and leaves
- */
-export async function downloadBookAsPDF(indexEvent: NostrEvent, filename?: string): Promise<void> {
-  const { content, title, author } = await getEventContent(indexEvent);
-  validateAsciiDocContent(content, true);
-  
-  const blob = await exportToPDF({ content, title, author });
-  
-  if (!blob || blob.size === 0) {
-    throw new Error('Server returned empty PDF file');
-  }
-  
-  const name = filename || generateFilename(title, 'pdf');
-  downloadBlob(blob, name);
-}
 
 /**
  * Download book (30040) as EPUB with all branches and leaves
@@ -1463,11 +1413,9 @@ async function combineBookSearchResults(
   let doc = `= ${title}\n`;
   doc += `:author: ${author}\n`;
   doc += `:doctype: book\n`;
-  doc += `:pdf-themesdir: /app/deployment\n`;
   doc += `:toc:\n`; // Enable table of contents
   doc += `:stem:\n`; // Enable STEM (math) support for LaTeX rendering
   doc += `:page-break-mode: auto\n`; // Reduce unnecessary page breaks
-  doc += `:pdf-page-break-mode: auto\n`; // Allow content to flow naturally
   doc += `\n`;
   
   // Create styled title page
@@ -1636,57 +1584,6 @@ export async function downloadBookSearchResultsAsAsciiDoc(
   downloadBlob(blob, name);
 }
 
-/**
- * Download book search results as PDF
- */
-export async function downloadBookSearchResultsAsPDF(
-  results: NostrEvent[],
-  parsedQuery: { references: any[]; version?: string; versions?: string[] } | null,
-): Promise<void> {
-  if (results.length === 0) {
-    throw new Error('No results to download');
-  }
-  
-  const combined = await combineBookSearchResults(results, parsedQuery);
-  
-  const queryTitle = parsedQuery 
-    ? parsedQuery.references.map(ref => {
-        const parts: string[] = [];
-        if (ref.book) parts.push(ref.book);
-        if (ref.chapter) parts.push(String(ref.chapter));
-        if (ref.verse) parts.push(ref.verse);
-        return parts.join(' ');
-      }).join('; ')
-    : 'Book Search Results';
-  
-  const versions = parsedQuery?.versions || (parsedQuery?.version ? [parsedQuery.version] : []);
-  const versionStr = versions.length > 0 ? ` (${versions.join(', ')})` : '';
-  const title = `${queryTitle}${versionStr}`;
-  
-  const firstEvent = results[0];
-  let author = firstEvent.tags.find(([k]) => k === 'author')?.[1];
-  if (!author) {
-    author = await getUserHandle(firstEvent.pubkey);
-  }
-  
-  try {
-    const blob = await exportToPDF({
-      content: combined,
-      title,
-      author
-    });
-    
-    if (!blob || blob.size === 0) {
-      throw new Error('Server returned empty PDF file');
-    }
-    
-    const name = `${title.replace(/[^a-z0-9]/gi, '_')}.pdf`;
-    downloadBlob(blob, name);
-  } catch (error) {
-    console.error('Failed to download book search results PDF:', error);
-    throw error;
-  }
-}
 
 /**
  * Download book search results as EPUB

@@ -3,7 +3,6 @@ require 'sinatra'
 require 'puma'
 require 'rack'
 require 'asciidoctor'
-require 'asciidoctor-pdf'
 require 'asciidoctor-epub3'
 require 'asciidoctor-diagram'  # For PlantUML, Graphviz, BPMN, Mermaid, TikZ, etc.
 require 'json'
@@ -49,57 +48,6 @@ options '*' do
   204
 end
 
-# Load theme configuration from YAML file
-def load_theme_config
-  @theme_config ||= begin
-    config_path = File.join(File.dirname(__FILE__), '..', 'pdf-themes.yml')
-    if File.exist?(config_path)
-      YAML.load_file(config_path)
-    else
-      # Fallback configuration if file doesn't exist
-      {
-        'themes' => {
-          'classic' => { 'server_name' => 'classic-novel' },
-          'antique' => { 'server_name' => 'antique-novel' },
-          'modern' => { 'server_name' => 'modern-book' },
-          'documentation' => { 'server_name' => 'documentation' },
-          'scientific' => { 'server_name' => 'scientific' },
-          'pop' => { 'server_name' => 'pop-book' },
-          'bible-paragraph' => { 'server_name' => 'bible-paragraph' },
-          'bible-versed' => { 'server_name' => 'bible-versed' },
-          'poster' => { 'server_name' => 'poster' }
-        },
-        'default' => 'classic'
-      }
-    end
-  end
-end
-
-# Get server theme name from client theme name
-def get_server_theme_name(client_theme)
-  config = load_theme_config
-  theme_def = config['themes'][client_theme]
-  if theme_def && theme_def['server_name']
-    theme_def['server_name']
-  else
-    # Fallback to default
-    default_theme = config['default'] || 'classic'
-    default_def = config['themes'][default_theme]
-    if default_def && default_def['server_name']
-      default_def['server_name']
-    else
-      # Ultimate fallback
-      'classic-novel'
-    end
-  end
-end
-
-# Verify theme file exists
-def verify_theme_file_exists(theme_name, themesdir)
-  return false unless theme_name && themesdir
-  theme_file = File.join(themesdir, "#{theme_name}-theme.yml")
-  File.exist?(theme_file)
-end
 
 # Health check
 get '/healthz' do
@@ -108,7 +56,6 @@ get '/healthz' do
     name: 'wikistr-asciidoctor',
     status: 'ok',
     endpoints: {
-      pdf: '/convert/pdf',
       epub: '/convert/epub',
       html5: '/convert/html5',
       latex: '/convert/latex'
@@ -137,70 +84,6 @@ get '/api' do
             status: 'string',
             endpoints: 'object',
             port: 'number'
-          }
-        }
-      },
-      convert_pdf: {
-        method: 'POST',
-        path: '/asciidoctor/convert/pdf',
-        description: 'Convert AsciiDoc content to PDF with automatic table of contents and LaTeX math support',
-        request: {
-          type: 'application/json',
-          body: {
-            content: 'string (required) - AsciiDoc content. Supports LaTeX math via stem:[] for inline and [stem] blocks for display math',
-            title: 'string (required) - Document title',
-            author: 'string (optional) - Document author',
-            theme: 'string (optional) - PDF theme. Valid values: classic, antique, modern, documentation, scientific, pop, bible-paragraph, bible-versed, poster. Default: classic (maps to classic-novel theme)'
-          }
-        },
-        response: {
-          type: 'application/pdf',
-          disposition: 'attachment'
-        },
-        features: {
-          table_of_contents: 'Automatic table of contents is generated when :toc: attribute is set (enabled by default)',
-          latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks. Use stem:[E = mc^2] for inline math or [stem] blocks for display math',
-          diagrams: 'Diagram generation is supported via asciidoctor-diagram extension. Supported formats: PlantUML, Graphviz, Mermaid, BPMN (via PlantUML), TikZ (via LaTeX backend)',
-          math_examples: {
-            inline: 'stem:[E = mc^2]',
-            display: '[stem]\n----\n\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}\n----'
-          },
-          diagram_examples: {
-            plantuml: '[plantuml]\n----\n@startuml\nAlice -> Bob: Hello\n@enduml\n----',
-            graphviz: '[graphviz]\n----\ndigraph G {\n  A -> B\n}\n----',
-            mermaid: '[mermaid]\n----\ngraph TD\n  A --> B\n----',
-            bpmn: '[plantuml]\n----\n@startbpmn\nstart\n:Process;\nstop\n@endbpmn\n----'
-          }
-        },
-        themes: {
-          classic: 'Classic novel style (default)',
-          antique: 'Antique book style',
-          modern: 'Modern book style',
-          documentation: 'Technical documentation style',
-          scientific: 'Scientific paper style',
-          pop: 'Pop book style',
-          'bible-paragraph': 'Bible in paragraph format',
-          'bible-versed': 'Bible with verse numbers',
-          poster: 'Poster layout style'
-        },
-        example: {
-          request: {
-            content: '= My Document\n\nThis is the content.',
-            title: 'My Document',
-            author: 'John Doe',
-            theme: 'classic'
-          },
-          with_theme: {
-            content: '= Bible Verse\n\nJohn 3:16 content here.',
-            title: 'Bible Passage',
-            author: 'KJV',
-            theme: 'bible-paragraph'
-          },
-          with_math: {
-            content: '= Math Document\n\nInline: stem:[E = mc^2]\n\nDisplay:\n[stem]\n----\n\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}\n----',
-            title: 'Math Document',
-            author: 'Author',
-            theme: 'scientific'
           }
         }
       },
@@ -293,11 +176,9 @@ get '/api' do
       note: 'The server can handle documents up to 50MB. The Bible (~4MB) is well within limits. Very large documents may take longer to process.'
     },
     examples: {
-      curl_pdf: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/pdf -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\",\"theme\":\"classic\"}' --output document.pdf",
-      curl_pdf_bible: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/pdf -H 'Content-Type: application/json' -d '{\"content\":\"= John 3:16\\n\\nFor God so loved the world...\",\"title\":\"Bible Passage\",\"author\":\"KJV\",\"theme\":\"bible-paragraph\"}' --output bible.pdf",
-      curl_epub: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/epub -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"theme\":\"classic\"}' --output document.epub",
-      javascript_fetch: "fetch('#{request.scheme}://#{request.host_with_port}/asciidoctor/convert/pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: '= Test\\n\\nHello world', title: 'Test Document', theme: 'classic' }) })",
-      javascript_fetch_with_theme: "fetch('#{request.scheme}://#{request.host_with_port}/asciidoctor/convert/pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: '= My Book\\n\\nContent here', title: 'My Book', author: 'Author', theme: 'bible-paragraph' }) }).then(r => r.blob()).then(blob => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'book.pdf'; a.click(); })"
+      curl_epub: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/epub -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\"}' --output document.epub",
+      curl_html5: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/html5 -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\"}' --output document.html",
+      curl_latex: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/latex -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\"}' --output document.tex"
     }
   }.to_json
 end
@@ -315,93 +196,6 @@ def log_request_size(content, endpoint)
   end
 end
 
-# Convert to PDF
-post '/convert/pdf' do
-  begin
-    request.body.rewind
-    body_content = request.body.read
-    log_request_size(body_content, 'PDF')
-    data = JSON.parse(body_content)
-    content = data['content'] || data['asciidoc']
-    title = data['title'] || 'Document'
-    author = data['author'] || ''
-    
-    unless content
-      status 400
-      return { error: 'Missing content or asciidoc field' }.to_json
-    end
-    
-    # Create temporary file for AsciiDoc content
-    temp_adoc = Tempfile.new(['document', '.adoc'])
-    temp_adoc.write(content)
-    temp_adoc.close
-    
-    # Create temporary PDF file
-    temp_pdf = Tempfile.new(['document', '.pdf'])
-    temp_pdf.close
-    
-    begin
-      # Convert to PDF - always use classic-novel theme
-      # Only override if theme is already specified in content
-      theme = 'classic-novel'
-      themesdir = '/app/deployment'
-      
-      # Check if theme is already specified in content
-      if content.include?(':pdf-theme:')
-        theme = nil # Content already specifies theme
-        puts "[PDF] Theme already specified in content, not overriding"
-      else
-        puts "[PDF] Using default theme: classic-novel"
-      end
-      
-      attributes = {
-        'title' => title,
-        'author' => author,
-        'doctype' => 'book',
-        'imagesdir' => '.',  # Allow images from any location
-        'allow-uri-read' => '',  # Allow reading images from URLs
-        'pdf-page-size' => 'Letter',
-        'pdf-page-margin' => '[0.75in, 0.75in, 0.75in, 0.75in]',
-        'pdf-page-layout' => 'portrait',
-        'pdf-fontsdir' => '/usr/share/fonts',
-      }
-      
-      # Set theme if not already in content
-      if theme
-        attributes['pdf-theme'] = theme
-        attributes['pdf-themesdir'] = themesdir
-        puts "[PDF] Setting PDF theme: #{theme}"
-      end
-      
-      # Diagrams are automatically registered when asciidoctor-diagram is required
-      # Supported: PlantUML, Graphviz, Mermaid, BPMN (via PlantUML), TikZ (via LaTeX)
-      
-      Asciidoctor.convert_file temp_adoc.path,
-        backend: 'pdf',
-        safe: 'unsafe',
-        to_file: temp_pdf.path,
-        attributes: attributes
-      
-      # Read PDF content
-      pdf_content = File.read(temp_pdf.path)
-      
-      # Set headers
-      content_type 'application/pdf'
-      headers 'Content-Disposition' => "attachment; filename=\"#{title.gsub(/[^a-z0-9]/i, '_')}.pdf\""
-      
-      pdf_content
-    ensure
-      temp_adoc.unlink
-      temp_pdf.unlink
-    end
-  rescue JSON::ParserError => e
-    status 400
-    { error: 'Invalid JSON', message: e.message }.to_json
-  rescue => e
-    status 500
-    { error: 'Conversion failed', message: e.message }.to_json
-  end
-end
 
 # Convert to EPUB
 post '/convert/epub' do
@@ -791,7 +585,6 @@ get '/' do
     version: '1.0.0',
     message: 'Visit /api for REST API documentation',
     endpoints: {
-      pdf: '/convert/pdf',
       epub: '/convert/epub',
       html5: '/convert/html5',
       latex: '/convert/latex',

@@ -127,9 +127,6 @@ const config: UserConfig = {
             if (id.includes('@asciidoctor')) {
               return 'asciidoctor';
             }
-            if (id.includes('pdfjs-dist')) {
-              return 'pdfjs';
-            }
             if (id.includes('epubjs')) {
               return 'epubjs';
             }

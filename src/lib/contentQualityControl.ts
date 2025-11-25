@@ -813,7 +813,7 @@ export function formatBookWikilinkDisplayTextForGUI(bookContent: string): string
 }
 
 /**
- * Format book wikilink display text for downloads (uses italics for PDF/EPUB)
+ * Format book wikilink display text for downloads (uses italics for EPUB)
  * This is used in downloaded documents where italics are appropriate
  */
 export function formatBookWikilinkDisplayText(bookContent: string): string {
