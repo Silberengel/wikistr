@@ -61,6 +61,48 @@ export function getParentCard(element: HTMLElement): HTMLElement | null {
  * Add unique tagged replaceable event to array
  * Prevents duplicates and maintains order
  */
+/**
+ * Validate d-tag according to NIP-54 rules:
+ * - Any non-letter character MUST be converted to a `-`
+ * - All letters MUST be converted to lowercase
+ * Returns true if d-tag is valid (matches its normalized form), false otherwise
+ * 
+ * A valid d-tag should only contain lowercase letters and hyphens
+ */
+export function isValidDTag(dTag: string): boolean {
+  if (!dTag || typeof dTag !== 'string') return false;
+  
+  // According to NIP-54, a valid d-tag should only contain lowercase letters and hyphens
+  // This matches the normalized form (non-letters -> '-', letters -> lowercase)
+  return /^[a-z-]+$/.test(dTag);
+}
+
+/**
+ * Validate event's d-tag and filter out corrupt events
+ * Returns true if event is valid, false if it should be suppressed
+ */
+export function isValidEvent(event: any): boolean {
+  if (!event || !event.tags) return true; // Non-replaceable events don't need d-tag validation
+  
+  // Only validate replaceable/addressable events that require d-tags
+  const requiresDTag = event.kind === 30818 || event.kind === 30817 || event.kind === 30041 || 
+                       event.kind === 30040 || event.kind === 30023 || 
+                       (event.kind >= 30000 && event.kind < 40000);
+  
+  if (requiresDTag) {
+    const dTag = event.tags?.find(([t]: any[]) => t === 'd')?.[1];
+    if (dTag) {
+      // Validate d-tag according to NIP-54 - should only contain lowercase letters and hyphens
+      if (!isValidDTag(dTag)) {
+        console.warn(`⚠️ Suppressing corrupt event ${event.id.slice(0, 8)}...: invalid d-tag "${dTag}" (does not match NIP-54 normalization rules - should only contain lowercase letters and hyphens)`);
+        return false;
+      }
+    }
+  }
+  
+  return true;
+}
+
 export function addUniqueTaggedReplaceable(events: any[], newEvent: any): boolean {
   if (!newEvent || !newEvent.id) return false;
   

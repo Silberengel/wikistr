@@ -22,6 +22,7 @@
   let results = $state<NostrEvent[]>([]);
   let tried = $state(false);
   let isLoading = $state(false);
+  let isOpeningArticle = $state(false);
 
   // Type guard to ensure we have a relay card
   if (card.type !== 'relay') {
@@ -87,6 +88,22 @@
   });
 
   function openArticle(result: NostrEvent, ev: MouseEvent) {
+    // Prevent multiple handlers from firing
+    ev.preventDefault();
+    ev.stopPropagation();
+    ev.stopImmediatePropagation();
+    
+    // Prevent rapid clicks from creating multiple cards
+    if (isOpeningArticle) {
+      return;
+    }
+    isOpeningArticle = true;
+    
+    // Reset flag after a short delay
+    setTimeout(() => {
+      isOpeningArticle = false;
+    }, 500);
+    
     // Create a clean, serializable copy of the event
     const cleanEvent = {
       id: result.id,
@@ -105,8 +122,8 @@
       actualEvent: cleanEvent
     };
     
-    if (ev.button === 1) {
-      // Middle-click: open in new card with duplicate checking
+    if (ev.button === 1 || ev.ctrlKey || ev.metaKey) {
+      // Middle-click or Ctrl/Cmd-click: open in new card with duplicate checking
       openOrCreateArticleCard(articleCardData);
     } else {
       // Left-click: replace current card

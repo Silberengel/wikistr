@@ -99,9 +99,6 @@
   async function buildFeedFromCache(): Promise<void> {
     const allCachedEvents = contentCache.getEvents('wiki');
     
-    // Valid d-tag pattern: only alphanumeric and hyphens (no spaces, underscores, or special symbols)
-    const validDTagPattern = /^[a-zA-Z0-9-]+$/;
-    
     // Deduplicate replaceable events by a-tag, keeping only the newest
     const deduplicated = new Map<string, Event>();
     
@@ -134,11 +131,6 @@
       const dTag = event.tags.find(([t]) => t === 'd')?.[1];
       if (event.kind !== 30040 && !dTag) {
         // Skip events without d-tags (except 30040)
-        continue;
-      }
-      
-      // Skip events with invalid d-tags (contains spaces, special symbols, etc.)
-      if (dTag && !validDTagPattern.test(dTag)) {
         continue;
       }
       

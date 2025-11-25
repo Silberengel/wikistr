@@ -3,6 +3,7 @@ import { loadRelayList } from '@nostr/gadgets/lists';
 import { DEFAULT_METADATA_RELAYS, DEFAULT_WRITE_RELAYS, DEFAULT_SEARCH_RELAYS } from '$lib/defaults';
 import { getThemeConfig } from '$lib/themes';
 import type { NostrEvent } from '@nostr/tools/pure';
+import { isValidEvent } from '$lib/utils';
 
 export type RelaySetType = 'wiki-read' | 'wiki-write' | 'social-read' | 'social-write' | 'metadata-read' | 'fallback-write' | 'inbox-read' | 'search';
 
@@ -824,6 +825,11 @@ class RelayService {
               if (subscriptionClosed) return;
               
               const typedEvent = event as T;
+              
+              // QC: Filter out corrupt events with invalid d-tags (NIP-54 validation)
+              if (!isValidEvent(typedEvent)) {
+                return; // Suppress corrupt event, don't add to results
+              }
               
               // Filter out user's own content if requested
               if (options.excludeUserContent && options.currentUserPubkey && 
