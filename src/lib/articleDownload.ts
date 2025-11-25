@@ -516,8 +516,13 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
   
   let content = event.content;
   
-  // For 30817 (Markdown) and 30023 (Long-form Markdown), convert to AsciiDoc format
-  if (event.kind === 30817 || event.kind === 30023) {
+  // Detect and convert Markdown to AsciiDoc format
+  // Check both by event kind and by content detection
+  const isMarkdownEvent = event.kind === 30817 || event.kind === 30023;
+  const hasMarkdownContent = isMarkdown(content);
+  
+  // Convert to AsciiDoc if it's a markdown event OR if content is detected as markdown
+  if (isMarkdownEvent || (hasMarkdownContent && !isAsciiDoc(content))) {
     // Markdown is mostly compatible with AsciiDoc, but ensure it's valid
     content = convertMarkdownToAsciiDoc(event.content);
   }
