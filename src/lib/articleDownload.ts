@@ -1400,8 +1400,86 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   if (source) {
     metadataFields.push({ label: 'Source', value: source });
   }
+  // Add "Original author:" field with display name, falling back to name, falling back to npub
   if (originalAuthorTag) {
-    metadataFields.push({ label: 'Original Author', value: originalAuthorTag });
+    try {
+      // Check cache first
+      const { contentCache } = await import('$lib/contentCache');
+      const cachedEvents = contentCache.getEvents('metadata');
+      const cachedUserEvent = cachedEvents.find(cached => cached.event.pubkey === originalAuthorTag && cached.event.kind === 0);
+      
+      let originalAuthorValue: string;
+      if (cachedUserEvent) {
+        try {
+          // Try to parse from tags first, then content
+          let content: any = {};
+          if (cachedUserEvent.event.tags && Array.isArray(cachedUserEvent.event.tags)) {
+            for (const tag of cachedUserEvent.event.tags) {
+              if (Array.isArray(tag) && tag.length >= 2) {
+                const key = tag[0].toLowerCase();
+                const value = Array.isArray(tag[1]) ? tag[1][0] : tag[1];
+                if (value && typeof value === 'string') {
+                  if (key === 'display_name' || key === 'displayname') content.display_name = value;
+                  else if (key === 'name') content.name = value;
+                }
+              }
+            }
+          }
+          // Fallback to content if tags didn't provide values
+          if (!content.display_name && !content.name) {
+            content = JSON.parse(cachedUserEvent.event.content);
+          }
+          originalAuthorValue = content.display_name || content.name || nip19.npubEncode(originalAuthorTag);
+        } catch (e) {
+          // If parsing fails, fallback to npub
+          originalAuthorValue = nip19.npubEncode(originalAuthorTag);
+        }
+      } else {
+        // If not in cache, fetch from relays
+        const result = await relayService.queryEvents(
+          'anonymous',
+          'metadata-read',
+          [{ kinds: [0], authors: [originalAuthorTag], limit: 1 }],
+          { excludeUserContent: false, currentUserPubkey: undefined }
+        );
+        
+        if (result.events.length > 0) {
+          const event = result.events[0];
+          try {
+            // Try to parse from tags first, then content
+            let content: any = {};
+            if (event.tags && Array.isArray(event.tags)) {
+              for (const tag of event.tags) {
+                if (Array.isArray(tag) && tag.length >= 2) {
+                  const key = tag[0].toLowerCase();
+                  const value = Array.isArray(tag[1]) ? tag[1][0] : tag[1];
+                  if (value && typeof value === 'string') {
+                    if (key === 'display_name' || key === 'displayname') content.display_name = value;
+                    else if (key === 'name') content.name = value;
+                  }
+                }
+              }
+            }
+            // Fallback to content if tags didn't provide values
+            if (!content.display_name && !content.name) {
+              content = JSON.parse(event.content);
+            }
+            originalAuthorValue = content.display_name || content.name || nip19.npubEncode(originalAuthorTag);
+          } catch (e) {
+            // If parsing fails, fallback to npub
+            originalAuthorValue = nip19.npubEncode(originalAuthorTag);
+          }
+        } else {
+          // No metadata found, use npub
+          originalAuthorValue = nip19.npubEncode(originalAuthorTag);
+        }
+      }
+      metadataFields.push({ label: 'Original author:', value: originalAuthorValue });
+    } catch (e) {
+      // If everything fails, fallback to npub
+      const npub = nip19.npubEncode(originalAuthorTag);
+      metadataFields.push({ label: 'Original author:', value: npub });
+    }
   }
   if (originalEventTag) {
     metadataFields.push({ label: 'Original Event', value: originalEventTag });
@@ -1412,6 +1490,86 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   }
   if (bookReference) {
     metadataFields.push({ label: 'Book Reference', value: bookReference });
+  }
+  
+  // Add "Issued by" field with display name, falling back to name, falling back to npub
+  try {
+    // Check cache first
+    const { contentCache } = await import('$lib/contentCache');
+    const cachedEvents = contentCache.getEvents('metadata');
+    const cachedUserEvent = cachedEvents.find(cached => cached.event.pubkey === indexEvent.pubkey && cached.event.kind === 0);
+    
+    let issuedByValue: string;
+    if (cachedUserEvent) {
+      try {
+        // Try to parse from tags first, then content
+        let content: any = {};
+        if (cachedUserEvent.event.tags && Array.isArray(cachedUserEvent.event.tags)) {
+          for (const tag of cachedUserEvent.event.tags) {
+            if (Array.isArray(tag) && tag.length >= 2) {
+              const key = tag[0].toLowerCase();
+              const value = Array.isArray(tag[1]) ? tag[1][0] : tag[1];
+              if (value && typeof value === 'string') {
+                if (key === 'display_name' || key === 'displayname') content.display_name = value;
+                else if (key === 'name') content.name = value;
+              }
+            }
+          }
+        }
+        // Fallback to content if tags didn't provide values
+        if (!content.display_name && !content.name) {
+          content = JSON.parse(cachedUserEvent.event.content);
+        }
+        issuedByValue = content.display_name || content.name || nip19.npubEncode(indexEvent.pubkey);
+      } catch (e) {
+        // If parsing fails, fallback to npub
+        issuedByValue = nip19.npubEncode(indexEvent.pubkey);
+      }
+    } else {
+      // If not in cache, fetch from relays
+      const result = await relayService.queryEvents(
+        'anonymous',
+        'metadata-read',
+        [{ kinds: [0], authors: [indexEvent.pubkey], limit: 1 }],
+        { excludeUserContent: false, currentUserPubkey: undefined }
+      );
+      
+      if (result.events.length > 0) {
+        const event = result.events[0];
+        try {
+          // Try to parse from tags first, then content
+          let content: any = {};
+          if (event.tags && Array.isArray(event.tags)) {
+            for (const tag of event.tags) {
+              if (Array.isArray(tag) && tag.length >= 2) {
+                const key = tag[0].toLowerCase();
+                const value = Array.isArray(tag[1]) ? tag[1][0] : tag[1];
+                if (value && typeof value === 'string') {
+                  if (key === 'display_name' || key === 'displayname') content.display_name = value;
+                  else if (key === 'name') content.name = value;
+                }
+              }
+            }
+          }
+          // Fallback to content if tags didn't provide values
+          if (!content.display_name && !content.name) {
+            content = JSON.parse(event.content);
+          }
+          issuedByValue = content.display_name || content.name || nip19.npubEncode(indexEvent.pubkey);
+        } catch (e) {
+          // If parsing fails, fallback to npub
+          issuedByValue = nip19.npubEncode(indexEvent.pubkey);
+        }
+      } else {
+        // No metadata found, use npub
+        issuedByValue = nip19.npubEncode(indexEvent.pubkey);
+      }
+    }
+    metadataFields.push({ label: 'Issued by:', value: issuedByValue });
+  } catch (e) {
+    // If everything fails, fallback to npub
+    const npub = nip19.npubEncode(indexEvent.pubkey);
+    metadataFields.push({ label: 'Issued by:', value: npub });
   }
 
   // Add metadata page only if there are fields to display
