@@ -1256,7 +1256,7 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   let doc = `= ${displayTitle}\n`;
   doc += `:author: ${author}\n`;
   doc += `:doctype: ${type}\n`;
-  doc += `:toc: macro\n`; // Use macro TOC so we can control placement (appears after cover)
+  doc += `:toc:\n`; // Use default TOC (automatically placed by Asciidoctor)
   doc += `:stem:\n`; // Enable STEM (math) support for LaTeX rendering
   doc += `:imagesdir: .\n`; // Set images directory to current (for relative image paths)
   
@@ -1305,45 +1305,45 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   
   doc += `:page-break-mode: auto\n`; // Reduce unnecessary page breaks
   
-  // Use standard Asciidoctor cover image attribute for PDF
-  // https://docs.asciidoctor.org/pdf-converter/latest/theme/covers/
+  // Use standard Asciidoctor cover image attributes
+  // https://docs.asciidoctor.org/pdf-converter/latest/title-page/
   if (image) {
-    doc += `:front-cover-image: ${image}\n`;
+    // Ensure image URL is absolute (required for EPUB/PDF to download and embed)
+    const imageUrl = image.startsWith('http://') || image.startsWith('https://') 
+      ? image 
+      : image;
+    
+    // For PDF: front cover image (appears before title page)
+    doc += `:front-cover-image: ${imageUrl}\n`;
+    // For PDF title page: use as logo image (centered, positioned nicely)
+    // The title page is automatically created when doctype: book is set
+    doc += `:title-logo-image: image:${imageUrl}[top=25%,align=center,pdfwidth=3in]\n`;
+    // For EPUB: specify cover image (EPUB3 requires this for proper cover display)
+    doc += `:epub-cover-image: ${imageUrl}\n`;
   }
   
   // Title page is automatically created by Asciidoctor when doctype: book is set
   // It will automatically display: doctitle, author, revnumber, revdate, revremark
-  // However, for HTML and EPUB, we need to create an explicit cover page with title and image
+  // TOC is automatically placed after the title page when :toc: is set
+  // For HTML and EPUB, we create a title page section that mimics the default title page
   
-  // Add cover page with title and cover image (for HTML and EPUB)
-  // This MUST be the first section after the document header to avoid being moved to preamble
-  // Use discrete section with cover-page class for clean, centered layout
-  doc += `\n[discrete]\n[.cover-page]\n== ${displayTitle}\n\n`;
+  // Add title page section (for HTML and EPUB to match PDF title page)
+  // Use discrete section so it doesn't appear in TOC
+  doc += `\n[discrete]\n[.title-page]\n== ${displayTitle}\n\n`;
   
-  // Add cover image if available
+  // Add cover image if available (for HTML/EPUB)
+  // The image must be in the content for EPUB to embed it properly
   if (image) {
-    // Ensure image URL is absolute (required for EPUB to work properly)
-    // The Asciidoctor server will automatically download remote images and embed them in the EPUB
-    // For absolute URLs (http:// or https://), the server downloads the image and includes it in EPUB assets
     const imageUrl = image.startsWith('http://') || image.startsWith('https://') 
       ? image 
-      : image; // Keep original URL - Asciidoctor server should handle it
-    
-    // For HTML: maxwidth=500px (max-width constraint, won't enlarge small images)
-    // For EPUB: scaledwidth=50% to fit on one page, prevent splitting
-    // The 'cover' role helps identify this as the cover image for EPUB metadata
-    // Using maxwidth instead of width ensures small images stay small
-    doc += `image::${imageUrl}[cover,maxwidth=500px,scaledwidth=50%,align=center]\n\n`;
+      : image;
+    // Use block image macro with role for EPUB embedding
+    // The Asciidoctor server will download and embed remote images in EPUB
+    doc += `image::${imageUrl}[cover,role=title-logo,align=center,maxwidth=500px]\n\n`;
   }
   
-  // Add author below image on cover page (centered, compact)
-  if (author) {
-    doc += `[.cover-author]\n${author}\n\n`;
-  }
-  
-  // Place TOC after the cover page
-  // The toc::[] macro must be on its own line with proper spacing
-  doc += `\ntoc::[]\n\n`;
+  // Author is already in document header, will appear on title page automatically
+  // TOC will be automatically inserted by Asciidoctor after the title page
   
   // Add metadata page (only show fields that have content)
   // IMPORTANT: This appears ONCE for the entire book, right after the document header
@@ -1474,11 +1474,11 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
           originalAuthorValue = nip19.npubEncode(originalAuthorTag);
         }
       }
-      metadataFields.push({ label: 'Original author:', value: originalAuthorValue });
+      metadataFields.push({ label: 'Original author', value: originalAuthorValue });
     } catch (e) {
       // If everything fails, fallback to npub
       const npub = nip19.npubEncode(originalAuthorTag);
-      metadataFields.push({ label: 'Original author:', value: npub });
+      metadataFields.push({ label: 'Original author', value: npub });
     }
   }
   if (originalEventTag) {
@@ -1565,11 +1565,11 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
         issuedByValue = nip19.npubEncode(indexEvent.pubkey);
       }
     }
-    metadataFields.push({ label: 'Issued by:', value: issuedByValue });
+    metadataFields.push({ label: 'Issued by', value: issuedByValue });
   } catch (e) {
     // If everything fails, fallback to npub
     const npub = nip19.npubEncode(indexEvent.pubkey);
-    metadataFields.push({ label: 'Issued by:', value: npub });
+    metadataFields.push({ label: 'Issued by', value: npub });
   }
 
   // Add metadata page only if there are fields to display

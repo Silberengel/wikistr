@@ -257,9 +257,9 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
     }
   );
   
-  // Also handle images in cover-page divs
+  // Also handle images in title-page divs
   blobText = blobText.replace(
-    /(<div[^>]*class="[^"]*cover-page[^"]*"[^>]*>[\s\S]*?<img[^>]*>)/gi,
+    /(<div[^>]*class="[^"]*title-page[^"]*"[^>]*>[\s\S]*?<img[^>]*>)/gi,
     (match) => {
       return match.replace(/(<img[^>]*>)/i, (imgTag) => {
         if (imgTag.includes('style=')) {
@@ -277,67 +277,61 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
     }
   );
   
-  // Add CSS styling for cover page to make it look clean and centered
+  // Add CSS styling for title page to match Asciidoctor's default title page
+  // https://docs.asciidoctor.org/pdf-converter/latest/title-page/
   // Insert styles in the <head> section or create a <style> tag if head exists
-  if (blobText.includes('</head>')) {
-    const coverPageStyles = `
+  const titlePageStyles = `
     <style>
-      .cover-page {
+      .title-page {
         text-align: center;
-        margin: 2em 0;
-        padding: 2em 0;
+        margin: 0;
+        padding: 6em 2em;
         page-break-after: always;
+        font-family: 'Crimson Text', 'Times New Roman', serif;
+        min-height: 85vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
       }
-      .cover-page h2 {
+      .title-page h2 {
         border: none !important;
-        padding-bottom: 0 !important;
-        margin-bottom: 1em !important;
+        padding: 0 !important;
+        margin: 0 0 2em 0 !important;
         font-size: 2.5em;
-        font-weight: bold;
+        font-weight: 700;
+        font-family: 'Crimson Text', 'Times New Roman', serif;
+        line-height: 1.3;
       }
-      .cover-page img {
-        margin: 1em auto;
+      .title-page img {
+        margin: 2em auto 3em auto;
         display: block;
+        max-width: 100%;
+        height: auto;
       }
-      .cover-author {
-        text-align: center;
-        font-size: 1.2em;
+      /* Style the document author info that appears on title page */
+      .title-page .author {
+        font-size: 1.3em;
         margin-top: 1em;
-        font-style: italic;
+        font-weight: 400;
+        font-family: 'Crimson Text', 'Times New Roman', serif;
+      }
+      /* Style revision info (version, date, etc.) */
+      .title-page .revnumber,
+      .title-page .revdate,
+      .title-page .revremark {
+        font-size: 1em;
+        margin-top: 0.5em;
+        font-weight: 400;
+        font-family: 'Crimson Text', 'Times New Roman', serif;
       }
     </style>
     `;
-    blobText = blobText.replace('</head>', coverPageStyles + '</head>');
+  if (blobText.includes('</head>')) {
+    blobText = blobText.replace('</head>', titlePageStyles + '</head>');
   } else if (blobText.includes('<html')) {
     // If no head tag, add styles right after html tag
-    const coverPageStyles = `
-    <style>
-      .cover-page {
-        text-align: center;
-        margin: 2em 0;
-        padding: 2em 0;
-        page-break-after: always;
-      }
-      .cover-page h2 {
-        border: none !important;
-        padding-bottom: 0 !important;
-        margin-bottom: 1em !important;
-        font-size: 2.5em;
-        font-weight: bold;
-      }
-      .cover-page img {
-        margin: 1em auto;
-        display: block;
-      }
-      .cover-author {
-        text-align: center;
-        font-size: 1.2em;
-        margin-top: 1em;
-        font-style: italic;
-      }
-    </style>
-    `;
-    blobText = blobText.replace('<html', coverPageStyles + '<html');
+    blobText = blobText.replace('<html', titlePageStyles + '<html');
   }
   
   // Return a new blob with the verified and processed content
