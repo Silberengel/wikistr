@@ -1256,8 +1256,9 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   let doc = `= ${displayTitle}\n`;
   doc += `:author: ${author}\n`;
   doc += `:doctype: ${type}\n`;
-  doc += `:toc: macro\n`; // Use macro TOC so we can control placement (appears after title)
+  doc += `:toc: macro\n`; // Use macro TOC so we can control placement (appears after cover)
   doc += `:stem:\n`; // Enable STEM (math) support for LaTeX rendering
+  doc += `:imagesdir: .\n`; // Set images directory to current (for relative image paths)
   
   // Use standard Asciidoctor revision attributes for title page
   // https://docs.asciidoctor.org/pdf-converter/latest/title-page/
@@ -1317,16 +1318,25 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   
   // Add cover page with title and cover image (for HTML and EPUB)
   // This appears at the very top, before everything else
-  doc += `\n[.cover-page]\n== ${displayTitle}\n\n`;
+  // Use a compact, single-page layout
+  doc += `\n[dedication]\n== ${displayTitle}\n\n`;
   
-  // Add cover image if available (centered, full width)
+  // Add cover image if available
   if (image) {
-    doc += `image::${image}[cover,width=100%,align=center]\n\n`;
+    // Ensure image URL is absolute (required for EPUB to work properly)
+    // Relative URLs may not resolve correctly in EPUB, causing placeholder issues
+    const imageUrl = image.startsWith('http://') || image.startsWith('https://') 
+      ? image 
+      : image; // Keep original URL - Asciidoctor server should handle it
+    
+    // For HTML: width=500px (post-processed to max-width: 500px in exportToHTML5)
+    // For EPUB: scaledwidth=60% to fit on one page, prevent splitting across pages
+    doc += `image::${imageUrl}[cover,width=500px,scaledwidth=60%,align=center]\n\n`;
   }
   
-  // Add author below title on cover page
+  // Add author below image on cover page (compact, minimal spacing)
   if (author) {
-    doc += `\n${author}\n\n`;
+    doc += `${author}\n`;
   }
   
   // Place TOC after the cover page

@@ -233,7 +233,47 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
     throw new Error('Server returned invalid HTML. Response preview: ' + blobText.substring(0, 200));
   }
   
-  // Return a new blob with the verified content
+  // Post-process HTML to limit cover image width to 500px max
+  // Find images with role="cover" or in cover-page sections and add max-width style
+  blobText = blobText.replace(
+    /(<img[^>]*class="[^"]*cover[^"]*"[^>]*>)/gi,
+    (match) => {
+      // Add or update style attribute to limit width
+      if (match.includes('style=')) {
+        return match.replace(/style="([^"]*)"/i, (_, existingStyle) => {
+          const hasMaxWidth = existingStyle.includes('max-width');
+          if (hasMaxWidth) {
+            return `style="${existingStyle}"`;
+          }
+          return `style="${existingStyle}; max-width: 500px;"`;
+        });
+      } else {
+        return match.replace(/>$/, ' style="max-width: 500px;">');
+      }
+    }
+  );
+  
+  // Also handle images in cover-page divs
+  blobText = blobText.replace(
+    /(<div[^>]*class="[^"]*cover-page[^"]*"[^>]*>[\s\S]*?<img[^>]*>)/gi,
+    (match) => {
+      return match.replace(/(<img[^>]*>)/i, (imgTag) => {
+        if (imgTag.includes('style=')) {
+          return imgTag.replace(/style="([^"]*)"/i, (_, existingStyle) => {
+            const hasMaxWidth = existingStyle.includes('max-width');
+            if (hasMaxWidth) {
+              return `style="${existingStyle}"`;
+            }
+            return `style="${existingStyle}; max-width: 500px;"`;
+          });
+        } else {
+          return imgTag.replace(/>$/, ' style="max-width: 500px;">');
+        }
+      });
+    }
+  );
+  
+  // Return a new blob with the verified and processed content
   // Create a Blob that supports .text() method in test environments
   const verifiedBlob = new Blob([blobText], { type: 'text/html; charset=utf-8' });
   
