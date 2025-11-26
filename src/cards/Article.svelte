@@ -62,6 +62,9 @@
   let isDownloading = $state(false);
   let isBookmarkedState = $state(false);
   let isBookmarking = $state(false);
+  let errorDialogOpen = $state(false);
+  let errorDialogMessage = $state('');
+  let errorCopied = $state(false);
 
   const articleCard = card as ArticleCard;
   const dTag = articleCard.data[0];
@@ -99,6 +102,26 @@
       event,
       relays
     }];
+  }
+
+  // Show error dialog with copy functionality
+  function showErrorDialog(message: string) {
+    errorDialogMessage = message;
+    errorDialogOpen = true;
+    errorCopied = false;
+  }
+
+  // Copy error message to clipboard
+  async function copyError() {
+    try {
+      await navigator.clipboard.writeText(errorDialogMessage);
+      errorCopied = true;
+      setTimeout(() => {
+        errorCopied = false;
+      }, 2000);
+    } catch (err) {
+      console.error('Failed to copy error message:', err);
+    }
   }
 
   // Profile popup state
@@ -866,7 +889,7 @@
                             await downloadAsHTML5(event);
                           } catch (error) {
                             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                            alert(`Failed to open HTML:\n\n${errorMessage}`);
+                            showErrorDialog(`Failed to open HTML:\n\n${errorMessage}`);
                           } finally {
                             isDownloading = false;
                           }
@@ -891,7 +914,7 @@
                           } catch (error) {
                             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
                             console.error('EPUB open failed:', error);
-                            alert(`Failed to open EPUB: ${errorMessage}`);
+                            showErrorDialog(`Failed to open EPUB:\n\n${errorMessage}`);
                           } finally {
                             isDownloading = false;
                           }
@@ -917,7 +940,7 @@
                             await downloadAsHTML5(event);
                           } catch (error) {
                             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                            alert(`Failed to open HTML:\n\n${errorMessage}`);
+                            showErrorDialog(`Failed to open HTML:\n\n${errorMessage}`);
                           } finally {
                             isDownloading = false;
                           }
@@ -942,7 +965,7 @@
                             } catch (error) {
                               const errorMessage = error instanceof Error ? error.message : 'Unknown error';
                               console.error('EPUB open failed:', error);
-                              alert(`Failed to open EPUB: ${errorMessage}`);
+                              showErrorDialog(`Failed to open EPUB:\n\n${errorMessage}`);
                             } finally {
                               isDownloading = false;
                             }
@@ -1126,6 +1149,75 @@
     onkeydown={(e) => e.key === 'Escape' && (showDownloadMenu = false)}
     aria-label="Close menu"
   ></div>
+{/if}
+
+<!-- Error Dialog -->
+{#if errorDialogOpen}
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center p-4"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="error-dialog-title"
+  >
+    <!-- Backdrop -->
+    <div
+      class="fixed inset-0 bg-black bg-opacity-50"
+      role="button"
+      tabindex="-1"
+      onclick={() => errorDialogOpen = false}
+      onkeydown={(e) => e.key === 'Escape' && (errorDialogOpen = false)}
+      aria-label="Close dialog"
+    ></div>
+    
+    <!-- Dialog -->
+    <div
+      class="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+      style="border: 1px solid var(--accent);"
+    >
+      <!-- Header -->
+      <div class="flex items-center justify-between p-4 border-b" style="border-color: var(--accent);">
+        <h2 id="error-dialog-title" class="text-lg font-semibold" style="color: var(--text-primary);">
+          Error
+        </h2>
+        <button
+          onclick={() => errorDialogOpen = false}
+          class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+          aria-label="Close"
+        >
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      
+      <!-- Content -->
+      <div class="flex-1 overflow-y-auto p-4">
+        <pre class="whitespace-pre-wrap font-mono text-sm" style="color: var(--text-primary);">{errorDialogMessage}</pre>
+      </div>
+      
+      <!-- Footer -->
+      <div class="flex items-center justify-end gap-2 p-4 border-t" style="border-color: var(--accent);">
+        <button
+          onclick={copyError}
+          class="px-4 py-2 rounded transition-colors hover:opacity-90"
+          style="color: var(--accent); border: 1px solid var(--accent); background-color: var(--bg-primary);"
+        >
+          {#if errorCopied}
+            ✓ Copied!
+          {:else}
+            Copy Error
+          {/if}
+        </button>
+        <button
+          onclick={() => errorDialogOpen = false}
+          class="px-4 py-2 rounded transition-colors hover:opacity-90"
+          style="background-color: var(--accent); color: white;"
+        >
+          OK
+        </button>
+      </div>
+    </div>
+  </div>
 {/if}
 
 <!-- Profile Popup -->
