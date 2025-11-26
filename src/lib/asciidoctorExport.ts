@@ -41,6 +41,62 @@ export interface ExportOptions {
 
 
 /**
+ * Get a user-friendly error message for HTML5 export failures
+ * Checks server health and provides specific guidance
+ */
+async function getHTML5ErrorMessage(error: unknown, url: string): Promise<string> {
+  const isNetworkError = error instanceof TypeError && error.message.includes('fetch');
+  const isConnectionError = error instanceof Error && (
+    error.message.includes('Failed to fetch') ||
+    error.message.includes('NetworkError') ||
+    error.message.includes('Network request failed')
+  );
+  
+  // Check if server is reachable
+  const serverHealthy = await checkServerHealth();
+  const serverUrl = ASCIIDOCTOR_SERVER_URL;
+  
+  if (isNetworkError || isConnectionError || !serverHealthy) {
+    // Server is not running or not reachable
+    let errorMsg = 'Failed to connect to AsciiDoctor server.\n\n';
+    errorMsg += `Server URL: ${serverUrl}\n`;
+    errorMsg += `Status: ${serverHealthy ? 'Reachable but error occurred' : 'Not reachable'}\n\n`;
+    
+    if (serverUrl.includes('localhost') || serverUrl.includes('127.0.0.1')) {
+      errorMsg += 'The AsciiDoctor server appears to be running on localhost (port 8091).\n';
+      errorMsg += 'Please check:\n';
+      errorMsg += '1. The server is running: `docker ps` or check the process\n';
+      errorMsg += '2. The server is accessible at http://localhost:8091\n';
+      errorMsg += '3. There are no firewall or network issues blocking the connection\n';
+    } else if (serverUrl.startsWith('/')) {
+      errorMsg += 'The AsciiDoctor server is configured to use a proxy path.\n';
+      errorMsg += 'Please check:\n';
+      errorMsg += '1. The server is running on port 8091\n';
+      errorMsg += '2. The Apache/web server proxy is configured correctly\n';
+      errorMsg += '3. The proxy path /asciidoctor/ is working\n';
+    } else {
+      errorMsg += `The server is configured at: ${serverUrl}\n`;
+      errorMsg += 'Please verify the server is running and accessible at this address.\n';
+    }
+    
+    return errorMsg;
+  } else {
+    // Server is reachable, so this is likely a content/syntax error
+    const originalError = error instanceof Error ? error.message : String(error);
+    let errorMsg = `HTML5 generation failed: ${originalError}\n\n`;
+    errorMsg += `Server URL: ${serverUrl}\n`;
+    errorMsg += 'The AsciiDoctor server is running, but encountered an error processing your content.\n\n';
+    errorMsg += 'This is likely due to:\n';
+    errorMsg += '1. AsciiDoc syntax errors in the content\n';
+    errorMsg += '2. Invalid or malformed AsciiDoc markup\n';
+    errorMsg += '3. Server-side processing error\n\n';
+    errorMsg += 'Please check the AsciiDoc syntax and try again.';
+    
+    return errorMsg;
+  }
+}
+
+/**
  * Convert AsciiDoc content to HTML5
  */
 export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
@@ -55,26 +111,44 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
   console.log('AsciiDoctor Export: Sending request to', url);
   console.log('AsciiDoctor Export: Content preview (first 200 chars):', options.content.substring(0, 200));
   
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      content: options.content, // AsciiDoc content
-      title: options.title,
-      author: options.author || '',
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        content: options.content, // AsciiDoc content
+        title: options.title,
+        author: options.author || '',
+      }),
+    });
+  } catch (error) {
+    // Network/connection error - check server health and provide helpful message
+    const errorMsg = await getHTML5ErrorMessage(error, url);
+    throw new Error(errorMsg);
+  }
 
   if (!response.ok) {
     // Try to read error message
     const contentType = response.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-      throw new Error(error.error || error.message || `Failed to generate HTML5: ${response.statusText}`);
+    let serverError: Error | null = null;
+    
+    try {
+      if (contentType.includes('application/json')) {
+        const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+        serverError = new Error(error.error || error.message || `Failed to generate HTML5: ${response.statusText}`);
+      } else {
+        serverError = new Error(`Failed to generate HTML5: ${response.status} ${response.statusText}`);
+      }
+    } catch {
+      serverError = new Error(`Failed to generate HTML5: ${response.status} ${response.statusText}`);
     }
-    throw new Error(`Failed to generate HTML5: ${response.status} ${response.statusText}`);
+    
+    // Get user-friendly error message
+    const errorMsg = await getHTML5ErrorMessage(serverError, url);
+    throw new Error(errorMsg);
   }
 
   // Verify we got an HTML response
@@ -84,7 +158,25 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
     const text = await response.text();
     // Check if it's the SvelteKit app shell (common error)
     if (text.includes('__sveltekit') || text.includes('sveltekit-preload-data')) {
-      throw new Error('Server returned SvelteKit app shell instead of HTML. Check AsciiDoctor server configuration and proxy settings.');
+      const serverHealthy = await checkServerHealth();
+      const serverUrl = ASCIIDOCTOR_SERVER_URL;
+      let errorMsg = 'Server returned SvelteKit app shell instead of HTML.\n\n';
+      errorMsg += `Server URL: ${serverUrl}\n`;
+      errorMsg += `Server health check: ${serverHealthy ? 'Reachable' : 'Not reachable'}\n\n`;
+      
+      if (!serverHealthy) {
+        errorMsg += 'The AsciiDoctor server is not reachable. ';
+        if (serverUrl.includes('localhost') || serverUrl.includes('127.0.0.1')) {
+          errorMsg += 'Please check if the server is running on port 8091.';
+        } else if (serverUrl.startsWith('/')) {
+          errorMsg += 'Please check if the proxy configuration is correct.';
+        }
+      } else {
+        errorMsg += 'The server is reachable, but the proxy may not be configured correctly. ';
+        errorMsg += 'The request is being handled by the SvelteKit app instead of the AsciiDoctor server.';
+      }
+      
+      throw new Error(errorMsg);
     }
     try {
       const error = JSON.parse(text);
@@ -108,7 +200,30 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
     console.error('AsciiDoctor Export: Received SvelteKit app shell instead of HTML');
     console.error('AsciiDoctor Export: URL was:', url);
     console.error('AsciiDoctor Export: Response preview:', blobText.substring(0, 500));
-    throw new Error('Server returned SvelteKit app shell instead of HTML. The AsciiDoctor server may not be running, or the proxy at /asciidoctor/ is not configured correctly. Check: 1) AsciiDoctor server is running on port 8091, 2) Apache proxy is configured: ProxyPass /asciidoctor/ http://127.0.0.1:8091/');
+    
+    const serverHealthy = await checkServerHealth();
+    const serverUrl = ASCIIDOCTOR_SERVER_URL;
+    let errorMsg = 'Server returned SvelteKit app shell instead of HTML.\n\n';
+    errorMsg += `Server URL: ${serverUrl}\n`;
+    errorMsg += `Server health check: ${serverHealthy ? 'Reachable' : 'Not reachable'}\n\n`;
+    
+    if (!serverHealthy) {
+      errorMsg += 'The AsciiDoctor server is not reachable. ';
+      if (serverUrl.includes('localhost') || serverUrl.includes('127.0.0.1')) {
+        errorMsg += 'Please check if the server is running on port 8091.';
+      } else if (serverUrl.startsWith('/')) {
+        errorMsg += 'Please check if the proxy configuration is correct.';
+      }
+    } else {
+      errorMsg += 'The server is reachable, but the proxy may not be configured correctly. ';
+      errorMsg += 'The request is being handled by the SvelteKit app instead of the AsciiDoctor server.';
+      if (serverUrl.startsWith('/')) {
+        errorMsg += '\n\nCheck your Apache/web server configuration:';
+        errorMsg += '\nProxyPass /asciidoctor/ http://127.0.0.1:8091/';
+      }
+    }
+    
+    throw new Error(errorMsg);
   }
   
   // Verify it's actually HTML from AsciiDoctor (should contain asciidoc classes or structure)

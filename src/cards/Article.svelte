@@ -865,7 +865,8 @@
                           try {
                             await downloadAsHTML5(event);
                           } catch (error) {
-                            alert('Failed to open HTML. Make sure the AsciiDoctor server is running.');
+                            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                            alert(`Failed to open HTML:\n\n${errorMessage}`);
                           } finally {
                             isDownloading = false;
                           }
@@ -915,7 +916,8 @@
                           try {
                             await downloadAsHTML5(event);
                           } catch (error) {
-                            alert('Failed to open HTML. Make sure the AsciiDoctor server is running.');
+                            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                            alert(`Failed to open HTML:\n\n${errorMessage}`);
                           } finally {
                             isDownloading = false;
                           }
