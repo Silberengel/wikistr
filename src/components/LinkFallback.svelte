@@ -21,13 +21,10 @@
   // Human-readable bookstr tag names
   const bookstrTagNames: Record<string, string> = {
     'C': 'Collection',
-    'c': 'Collection',
     'T': 'Title',
-    't': 'Title',
-    's': 'Series',
-    'S': 'Series',
-    'v': 'Volume',
-    'V': 'Volume'
+    'c': 'chapter',
+    's': 'section',
+    'v': 'version'
   };
 
   onMount(async () => {

@@ -1315,23 +1315,32 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   // It will automatically display: doctitle, author, revnumber, revdate, revremark
   // No need to manually create a cover page - Asciidoctor handles it
   
+  // Add explicit title as a visible section for HTML output (appears before TOC)
+  // In HTML, the title page may not be visible, so we add the title as a visible section heading
+  // This will render as H2 in HTML (since = is reserved for document title)
+  // It appears before the TOC and provides a visible title in the HTML output
+  doc += `\n== ${displayTitle}\n\n`;
+  
   // Add metadata page (only show fields that have content)
   // IMPORTANT: This appears ONCE for the entire book, right after the document header
   const metadataFields: Array<{ label: string; value: string }> = [];
   
+  // Add the document title from the 'title' tag (NKBIP-01)
+  if (title && title.trim()) {
+    metadataFields.push({ label: 'Title', value: title });
+  }
+  
   // Collect bookstr tags (only if they exist and have content)
+  // Note: 't' (lowercase) is NOT a bookstr tag - it's an NKBIP-01 topic tag, handled separately
   const bookstrTagNames: Record<string, string> = {
     'C': 'Collection',
-    'c': 'Collection',
-    'T': 'Title',
-    't': 'Title',
-    's': 'Series',
-    'S': 'Series',
-    'v': 'Volume',
-    'V': 'Volume'
+    'T': 'Book Title', // NKBIP-08 book title (different from document title)
+    'c': 'chapter',
+    's': 'section',
+    'v': 'version'
   };
 
-  const bookstrTagTypes = ['C', 'c', 'T', 't', 's', 'S', 'v', 'V'];
+  const bookstrTagTypes = ['C', 'T', 'c', 's', 'v'];
   for (const tagType of bookstrTagTypes) {
     const tagValues = indexEvent.tags
       .filter(([k]) => k === tagType)
@@ -1374,7 +1383,8 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     metadataFields.push({ label: 'Original Event', value: originalEventTag });
   }
   if (topicTags.length > 0) {
-    metadataFields.push({ label: 'Keywords', value: topicTags.join(', ') });
+    // Topics from 't' tags are genres/subjects, not keywords
+    metadataFields.push({ label: 'Genre', value: topicTags.join(', ') });
   }
   if (bookReference) {
     metadataFields.push({ label: 'Book Reference', value: bookReference });
