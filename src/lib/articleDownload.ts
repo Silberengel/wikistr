@@ -639,6 +639,79 @@ async function getEventContent(event: NostrEvent): Promise<{ content: string; ti
 }
 
 /**
+ * Extract line number from error message
+ * Looks for patterns like "found at line X" or "line X"
+ */
+function extractLineNumber(errorMessage: string): number | null {
+  const match = errorMessage.match(/found at line (\d+)|line (\d+)/i);
+  if (match) {
+    return parseInt(match[1] || match[2], 10);
+  }
+  return null;
+}
+
+/**
+ * Format error message with context lines
+ * Shows 10 lines above and below the problematic line, with highlighting
+ * Handles multiple errors separated by ';'
+ */
+function formatErrorWithContext(content: string, errorMessage: string): string {
+  const lines = content.split('\n');
+  
+  // Split errors if multiple are present (separated by ';')
+  const errorParts = errorMessage.split(';').map(e => e.trim()).filter(e => e.length > 0);
+  
+  if (errorParts.length === 0) {
+    return errorMessage;
+  }
+  
+  let formattedMessage = '';
+  const processedLineNumbers = new Set<number>();
+  
+  // Process each error
+  for (let errorIndex = 0; errorIndex < errorParts.length; errorIndex++) {
+    const errorPart = errorParts[errorIndex];
+    const lineNumber = extractLineNumber(errorPart);
+    
+    if (errorIndex > 0) {
+      formattedMessage += '\n\n';
+    }
+    
+    formattedMessage += errorPart;
+    
+    if (lineNumber && !processedLineNumbers.has(lineNumber)) {
+      processedLineNumbers.add(lineNumber);
+      const errorLineIndex = lineNumber - 1; // Convert to 0-based index
+      
+      // Calculate context range (10 lines above and below)
+      const startLine = Math.max(0, errorLineIndex - 10);
+      const endLine = Math.min(lines.length - 1, errorLineIndex + 10);
+      
+      // Build context display
+      formattedMessage += '\n\n--- Context (10 lines above and below) ---\n';
+      
+      for (let i = startLine; i <= endLine; i++) {
+        const lineNum = i + 1; // 1-based line number for display
+        const line = lines[i] || ''; // Handle undefined lines
+        const isErrorLine = i === errorLineIndex;
+        
+        // Highlight the error line
+        if (isErrorLine) {
+          formattedMessage += `>>> ${lineNum.toString().padStart(4, ' ')} | ${line}\n`;
+        } else {
+          formattedMessage += `    ${lineNum.toString().padStart(4, ' ')} | ${line}\n`;
+        }
+      }
+      
+      formattedMessage += '---\n';
+      formattedMessage += `(Line ${lineNumber} is marked with >>>)`;
+    }
+  }
+  
+  return formattedMessage;
+}
+
+/**
  * Helper: Validate AsciiDoc content and return validation messages
  */
 function validateAsciiDocContent(content: string, throwOnError: boolean = false): { errors?: string[]; warnings?: string[] } {
@@ -646,7 +719,10 @@ function validateAsciiDocContent(content: string, throwOnError: boolean = false)
   const validationMessages: { errors?: string[]; warnings?: string[] } = {};
   
   if (!validation.valid) {
-    const errorMsg = `Invalid AsciiDoc syntax: ${validation.error || 'Unknown error'}${validation.warnings ? '\nWarnings: ' + validation.warnings.join('; ') : ''}\n\nPlease fix the AsciiDoc syntax errors and try again.`;
+    // Format error with context
+    const formattedError = formatErrorWithContext(content, validation.error || 'Unknown error');
+    const errorMsg = `Invalid AsciiDoc syntax: ${formattedError}${validation.warnings ? '\nWarnings: ' + validation.warnings.join('; ') : ''}\n\nPlease fix the AsciiDoc syntax errors and try again.`;
+    
     if (validation.error) {
       validationMessages.errors = [validation.error];
     }
