@@ -1317,8 +1317,8 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   
   // Add cover page with title and cover image (for HTML and EPUB)
   // This MUST be the first section after the document header to avoid being moved to preamble
-  // Make it compact to fit on one page
-  doc += `\n== ${displayTitle}\n\n`;
+  // Use discrete section with cover-page class for clean, centered layout
+  doc += `\n[discrete]\n[.cover-page]\n== ${displayTitle}\n\n`;
   
   // Add cover image if available
   if (image) {
@@ -1336,9 +1336,9 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     doc += `image::${imageUrl}[cover,maxwidth=500px,scaledwidth=50%,align=center]\n\n`;
   }
   
-  // Add author below image on cover page (compact, single line)
+  // Add author below image on cover page (centered, compact)
   if (author) {
-    doc += `${author}\n\n`;
+    doc += `[.cover-author]\n${author}\n\n`;
   }
   
   // Place TOC after the cover page

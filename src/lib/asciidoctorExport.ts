@@ -277,6 +277,69 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
     }
   );
   
+  // Add CSS styling for cover page to make it look clean and centered
+  // Insert styles in the <head> section or create a <style> tag if head exists
+  if (blobText.includes('</head>')) {
+    const coverPageStyles = `
+    <style>
+      .cover-page {
+        text-align: center;
+        margin: 2em 0;
+        padding: 2em 0;
+        page-break-after: always;
+      }
+      .cover-page h2 {
+        border: none !important;
+        padding-bottom: 0 !important;
+        margin-bottom: 1em !important;
+        font-size: 2.5em;
+        font-weight: bold;
+      }
+      .cover-page img {
+        margin: 1em auto;
+        display: block;
+      }
+      .cover-author {
+        text-align: center;
+        font-size: 1.2em;
+        margin-top: 1em;
+        font-style: italic;
+      }
+    </style>
+    `;
+    blobText = blobText.replace('</head>', coverPageStyles + '</head>');
+  } else if (blobText.includes('<html')) {
+    // If no head tag, add styles right after html tag
+    const coverPageStyles = `
+    <style>
+      .cover-page {
+        text-align: center;
+        margin: 2em 0;
+        padding: 2em 0;
+        page-break-after: always;
+      }
+      .cover-page h2 {
+        border: none !important;
+        padding-bottom: 0 !important;
+        margin-bottom: 1em !important;
+        font-size: 2.5em;
+        font-weight: bold;
+      }
+      .cover-page img {
+        margin: 1em auto;
+        display: block;
+      }
+      .cover-author {
+        text-align: center;
+        font-size: 1.2em;
+        margin-top: 1em;
+        font-style: italic;
+      }
+    </style>
+    `;
+    blobText = blobText.replace('<html', coverPageStyles + '<html');
+  }
+  
   // Return a new blob with the verified and processed content
   // Create a Blob that supports .text() method in test environments
   const verifiedBlob = new Blob([blobText], { type: 'text/html; charset=utf-8' });
