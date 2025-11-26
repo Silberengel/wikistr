@@ -1313,13 +1313,23 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   
   // Title page is automatically created by Asciidoctor when doctype: book is set
   // It will automatically display: doctitle, author, revnumber, revdate, revremark
-  // No need to manually create a cover page - Asciidoctor handles it
+  // However, for HTML and EPUB, we need to create an explicit cover page with title and image
   
-  // Add explicit title at the very top (appears before TOC)
-  // This ensures the title is visible in HTML output before the table of contents
-  doc += `\n== ${displayTitle}\n\n`;
+  // Add cover page with title and cover image (for HTML and EPUB)
+  // This appears at the very top, before everything else
+  doc += `\n[.cover-page]\n== ${displayTitle}\n\n`;
   
-  // Place TOC manually after the title
+  // Add cover image if available (centered, full width)
+  if (image) {
+    doc += `image::${image}[cover,width=100%,align=center]\n\n`;
+  }
+  
+  // Add author below title on cover page
+  if (author) {
+    doc += `\n${author}\n\n`;
+  }
+  
+  // Place TOC after the cover page
   doc += `toc::[]\n\n`;
   
   // Add metadata page (only show fields that have content)
