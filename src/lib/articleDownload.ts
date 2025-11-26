@@ -1305,9 +1305,8 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   
   doc += `:page-break-mode: auto\n`; // Reduce unnecessary page breaks
   
-  // Use standard Asciidoctor cover image attribute
+  // Use standard Asciidoctor cover image attribute for PDF
   // https://docs.asciidoctor.org/pdf-converter/latest/theme/covers/
-  // This creates a separate front cover page before the title page
   if (image) {
     doc += `:front-cover-image: ${image}\n`;
   }
@@ -1317,30 +1316,34 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   // However, for HTML and EPUB, we need to create an explicit cover page with title and image
   
   // Add cover page with title and cover image (for HTML and EPUB)
-  // This appears at the very top, before everything else
-  // Use a compact, single-page layout
-  doc += `\n[dedication]\n== ${displayTitle}\n\n`;
+  // This MUST be the first section after the document header to avoid being moved to preamble
+  // Make it compact to fit on one page
+  doc += `\n== ${displayTitle}\n\n`;
   
   // Add cover image if available
   if (image) {
     // Ensure image URL is absolute (required for EPUB to work properly)
-    // Relative URLs may not resolve correctly in EPUB, causing placeholder issues
+    // The Asciidoctor server will automatically download remote images and embed them in the EPUB
+    // For absolute URLs (http:// or https://), the server downloads the image and includes it in EPUB assets
     const imageUrl = image.startsWith('http://') || image.startsWith('https://') 
       ? image 
       : image; // Keep original URL - Asciidoctor server should handle it
     
-    // For HTML: width=500px (post-processed to max-width: 500px in exportToHTML5)
-    // For EPUB: scaledwidth=60% to fit on one page, prevent splitting across pages
-    doc += `image::${imageUrl}[cover,width=500px,scaledwidth=60%,align=center]\n\n`;
+    // For HTML: maxwidth=500px (max-width constraint, won't enlarge small images)
+    // For EPUB: scaledwidth=50% to fit on one page, prevent splitting
+    // The 'cover' role helps identify this as the cover image for EPUB metadata
+    // Using maxwidth instead of width ensures small images stay small
+    doc += `image::${imageUrl}[cover,maxwidth=500px,scaledwidth=50%,align=center]\n\n`;
   }
   
-  // Add author below image on cover page (compact, minimal spacing)
+  // Add author below image on cover page (compact, single line)
   if (author) {
-    doc += `${author}\n`;
+    doc += `${author}\n\n`;
   }
   
   // Place TOC after the cover page
-  doc += `toc::[]\n\n`;
+  // The toc::[] macro must be on its own line with proper spacing
+  doc += `\ntoc::[]\n\n`;
   
   // Add metadata page (only show fields that have content)
   // IMPORTANT: This appears ONCE for the entire book, right after the document header

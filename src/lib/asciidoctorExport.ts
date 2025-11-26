@@ -193,7 +193,7 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
   }
   
   // Verify the blob content is actually HTML from AsciiDoctor, not the SvelteKit app
-  const blobText = await blob.text();
+  let blobText = await blob.text();
   
   // Check if it's the SvelteKit app shell (common error when proxy fails)
   if (blobText.includes('__sveltekit') || blobText.includes('sveltekit-preload-data') || blobText.includes('_app/immutable')) {
@@ -233,19 +233,23 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
     throw new Error('Server returned invalid HTML. Response preview: ' + blobText.substring(0, 200));
   }
   
-  // Post-process HTML to limit cover image width to 500px max
+  // Post-process HTML to limit cover image width to 500px max (max-width, not fixed width)
   // Find images with role="cover" or in cover-page sections and add max-width style
+  // This ensures small images stay small, and large images are constrained to 500px
   blobText = blobText.replace(
     /(<img[^>]*class="[^"]*cover[^"]*"[^>]*>)/gi,
     (match) => {
-      // Add or update style attribute to limit width
+      // Add or update style attribute to limit width (max-width, not width)
       if (match.includes('style=')) {
         return match.replace(/style="([^"]*)"/i, (_, existingStyle) => {
-          const hasMaxWidth = existingStyle.includes('max-width');
+          // Remove any existing width constraint and add max-width
+          const cleanedStyle = existingStyle.replace(/width:\s*\d+px;?/gi, '').replace(/max-width:\s*\d+px;?/gi, '');
+          const hasMaxWidth = cleanedStyle.includes('max-width');
           if (hasMaxWidth) {
             return `style="${existingStyle}"`;
           }
-          return `style="${existingStyle}; max-width: 500px;"`;
+          // Add max-width (not width) so small images stay small
+          return `style="${cleanedStyle.trim()}; max-width: 500px;"`.replace(/;\s*;/g, ';');
         });
       } else {
         return match.replace(/>$/, ' style="max-width: 500px;">');
