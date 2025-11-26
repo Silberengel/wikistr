@@ -1256,7 +1256,7 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   let doc = `= ${displayTitle}\n`;
   doc += `:author: ${author}\n`;
   doc += `:doctype: ${type}\n`;
-  doc += `:toc:\n`; // Enable table of contents
+  doc += `:toc: macro\n`; // Use macro TOC so we can control placement (appears after title)
   doc += `:stem:\n`; // Enable STEM (math) support for LaTeX rendering
   
   // Use standard Asciidoctor revision attributes for title page
@@ -1315,11 +1315,12 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   // It will automatically display: doctitle, author, revnumber, revdate, revremark
   // No need to manually create a cover page - Asciidoctor handles it
   
-  // Add explicit title as a visible section for HTML output (appears before TOC)
-  // In HTML, the title page may not be visible, so we add the title as a visible section heading
-  // This will render as H2 in HTML (since = is reserved for document title)
-  // It appears before the TOC and provides a visible title in the HTML output
+  // Add explicit title at the very top (appears before TOC)
+  // This ensures the title is visible in HTML output before the table of contents
   doc += `\n== ${displayTitle}\n\n`;
+  
+  // Place TOC manually after the title
+  doc += `toc::[]\n\n`;
   
   // Add metadata page (only show fields that have content)
   // IMPORTANT: This appears ONCE for the entire book, right after the document header
