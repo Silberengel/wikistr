@@ -1383,12 +1383,12 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   // Add metadata page only if there are fields to display
   if (metadataFields.length > 0) {
     // CRITICAL: Block attribute must be directly followed by heading with NO blank line
-    // Remove all trailing whitespace/newlines from doc, then add exactly one newline
-    // This ensures we have a clean separation from previous content
-    doc = doc.replace(/\s+$/, '') + '\n';
-    // Add attribute and heading on consecutive lines with NO blank line between them
-    // Format: [.book-metadata] on one line, == Book Metadata on the very next line
-    doc += '[.book-metadata]\n== Book Metadata\n\n';
+    // Remove all trailing whitespace/newlines from doc completely
+    doc = doc.replace(/\s+$/, '');
+    // Add exactly one newline to separate from previous content, then attribute and heading on consecutive lines
+    // Format: \n[.book-metadata]\n== Book Metadata\n\n
+    // This ensures [.book-metadata] and == Book Metadata are on consecutive lines with no blank line between
+    doc += '\n[.book-metadata]\n== Book Metadata\n\n';
     for (const field of metadataFields) {
       if (field.value && field.value.trim()) {
         doc += `*${field.label}:* ${field.value}\n\n`;

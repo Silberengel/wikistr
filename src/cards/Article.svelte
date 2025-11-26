@@ -1193,7 +1193,7 @@
       
       <!-- Content -->
       <div class="flex-1 overflow-y-auto p-4" style="background-color: var(--bg-primary);">
-        <pre class="whitespace-pre-wrap font-mono text-sm" style="color: var(--text-primary);">{errorDialogMessage}</pre>
+        <pre class="whitespace-pre-wrap font-mono text-sm p-4 rounded" style="background-color: #2d2d2d; color: #ffffff;">{errorDialogMessage}</pre>
       </div>
       
       <!-- Footer -->
