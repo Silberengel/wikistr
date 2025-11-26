@@ -413,6 +413,42 @@ export function getTitleFromEvent(
 }
 
 /**
+ * Fix attribute block spacing - remove blank lines between attribute blocks and headings
+ * Handles [.book-metadata], [abstract], [.class], etc.
+ * This must run AFTER all other processing to catch any spacing issues introduced
+ */
+export function fixAttributeBlockSpacing(content: string): string {
+  if (!content || content.trim().length === 0) {
+    return content;
+  }
+  
+  const lines = content.split('\n');
+  const fixed: string[] = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    
+    // Check if this is a blank line that should be skipped
+    // (blank line between attribute block and heading)
+    if (trimmed === '' && i > 0 && i < lines.length - 1) {
+      const prevLine = lines[i - 1]?.trim();
+      const nextLine = lines[i + 1]?.trim();
+      
+      // If previous line is an attribute block and next line is a heading, skip this blank line
+      if (prevLine && prevLine.match(/^\[([^\]]+)\]$/) && nextLine && nextLine.match(/^=+\s+/)) {
+        continue; // Skip this blank line
+      }
+    }
+    
+    // Add all other lines normally
+    fixed.push(line);
+  }
+  
+  return fixed.join('\n');
+}
+
+/**
  * Fix preamble content - move content between doc header and first section to Preamble section
  */
 export function fixPreambleContent(content: string, isAsciiDoc: boolean = true): string {
@@ -1530,6 +1566,10 @@ export function processContentQuality(
   // 7. Fix preamble content (move content before first section to Preamble)
   processed = fixPreambleContent(processed, isAsciiDoc);
   
+  // 8. Fix attribute block spacing (remove blank lines between [attribute] and headings)
+  // This must run AFTER all other processing to catch any spacing issues introduced
+  processed = fixAttributeBlockSpacing(processed);
+  
   return processed;
 }
 
@@ -1548,10 +1588,12 @@ export function validateAsciiDoc(content: string): { valid: boolean; error?: str
   const lines = content.split('\n');
   
   // Check for attribute block spacing issue: [attribute]\n\n== Header should be [attribute]\n== Header
-  // This applies to [abstract], [discrete], [partintro], [appendix], etc.
+  // This applies to [abstract], [discrete], [partintro], [appendix], [.book-metadata], [.class], etc.
+  // Specifically checks for [.class] style attribute blocks like [.book-metadata], [.cover-page], etc.
   for (let i = 0; i < lines.length - 1; i++) {
     const line = lines[i].trim();
     // Match any attribute block: [word] or [.class] or [#id] or [role.attribute]
+    // This includes [.book-metadata], [abstract], [discrete], [.cover-page], etc.
     if (line.match(/^\[([^\]]+)\]$/)) {
       const nextLine = lines[i + 1]?.trim();
       const afterNext = lines[i + 2]?.trim();

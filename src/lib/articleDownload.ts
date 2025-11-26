@@ -1385,19 +1385,17 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   // Only add for the top-level 30040 event, not for nested branches
   if (metadataFields.length > 0 && isTopLevel) {
     // CRITICAL: Block attribute must be directly followed by heading with NO blank line
-    // Remove ALL trailing whitespace/newlines from doc by splitting into lines and removing empty trailing lines
-    const lines = doc.split('\n');
-    // Remove empty lines from the end
-    while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
-      lines.pop();
-    }
-    doc = lines.join('\n');
+    // Remove ALL trailing whitespace/newlines from doc completely
+    doc = doc.replace(/\s+$/, '');
     // Add exactly one newline to separate from header attributes, then attribute and heading on CONSECUTIVE lines
     // Format: \n[.book-metadata]\n== Book Metadata\n\n
-    // The \n before [.book-metadata] separates it from previous content
-    // The \n after [.book-metadata] goes to the next line for the heading
-    // NO blank line between attribute and heading!
-    doc += '\n[.book-metadata]\n== Book Metadata\n\n';
+    // IMPORTANT: The \n after [.book-metadata] must go DIRECTLY to the heading line with NO blank line
+    // Build the string explicitly to ensure no extra whitespace
+    doc += '\n';
+    doc += '[.book-metadata]';
+    doc += '\n';
+    doc += '== Book Metadata';
+    doc += '\n\n';
     for (const field of metadataFields) {
       if (field.value && field.value.trim()) {
         doc += `*${field.label}:* ${field.value}\n\n`;
