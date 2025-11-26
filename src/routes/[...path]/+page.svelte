@@ -192,8 +192,8 @@
       ditem.startsWith('ws://')
     ) {
       return { id: next(), type: 'relay', data: normalizeURL(ditem) } as RelayCard;
-    } else if (pathPart.match(/^[\w-]+\*[a-f0-9]{64}$/)) {
-      return { id: next(), type: 'article', data: pathPart.split('*') } as ArticleCard;
+    } else if (ditem.match(/^[^*]+\*[a-f0-9]{64}$/)) {
+      return { id: next(), type: 'article', data: ditem.split('*') } as ArticleCard;
     } else if (pathPart.match(/^[a-f0-9]{64}$/i)) {
       // 64-character hex string - could be event ID or pubkey
       // Create a find card that will handle the lookup
