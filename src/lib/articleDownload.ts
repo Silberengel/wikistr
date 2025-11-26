@@ -1250,6 +1250,7 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   const originalEventTag = indexEvent.tags.find(([k]) => k === 'E')?.[1];
 
   // Build the document with metadata (AsciiDoc header attributes)
+  // Following Asciidoctor PDF standard format: https://docs.asciidoctor.org/pdf-converter/latest/title-page/
   const displayTitle = title || 'Untitled';
   let doc = `= ${displayTitle}\n`;
   doc += `:author: ${author}\n`;
@@ -1257,12 +1258,20 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   doc += `:toc:\n`; // Enable table of contents
   doc += `:stem:\n`; // Enable STEM (math) support for LaTeX rendering
   
+  // Use standard Asciidoctor revision attributes for title page
+  // https://docs.asciidoctor.org/pdf-converter/latest/title-page/
   if (version || versionTag) {
-    doc += `:version: ${version || versionTag}\n`;
+    doc += `:revnumber: ${version || versionTag}\n`;
   }
   if (publishedOn) {
-    doc += `:pubdate: ${publishedOn}\n`;
+    doc += `:revdate: ${publishedOn}\n`;
   }
+  if (publishedBy) {
+    // Use revremark for publisher or other revision notes
+    doc += `:revremark: Published by ${publishedBy}\n`;
+  }
+  
+  // Additional metadata attributes
   if (publishedBy) {
     doc += `:publisher: ${publishedBy}\n`;
   }
@@ -1294,74 +1303,17 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   
   doc += `:page-break-mode: auto\n`; // Reduce unnecessary page breaks
   
+  // Use standard Asciidoctor cover image attribute
+  // https://docs.asciidoctor.org/pdf-converter/latest/theme/covers/
+  // This creates a separate front cover page before the title page
   if (image) {
-    // Set as cover image for title page
     doc += `:front-cover-image: ${image}\n`;
   }
   
-  doc += `\n`;
-
-  // Create cover page with title, author, version, and image
-  // Use a dedicated cover page section with proper formatting for e-books
-  // CRITICAL: Block attribute must be directly followed by heading with NO blank line
-  doc = doc.trimEnd() + '\n';
-  doc += `[dedication]\n== \n\n`; // Empty title for cover page
-  doc += `[.cover-page]\n`;
+  // Title page is automatically created by Asciidoctor when doctype: book is set
+  // It will automatically display: doctitle, author, revnumber, revdate, revremark
+  // No need to manually create a cover page - Asciidoctor handles it
   
-  // Add cover image if available (centered, full width)
-  if (image) {
-    doc += `\n[.cover-image]\n`;
-    doc += `image::${image}[Cover Image,role="cover",width=100%]\n\n`;
-  }
-  
-  // Add title (centered, large, bold)
-  doc += `[.cover-title]\n`;
-  doc += `*${displayTitle}*\n\n`;
-  
-  // Add author information
-  const authors: string[] = [];
-  
-  // Get author from 'author' tag (original author)
-  const authorTag = indexEvent.tags.find(([k]) => k === 'author')?.[1];
-  if (authorTag && authorTag.trim()) {
-    authors.push(authorTag);
-  }
-  
-  // Add pubkey author (the event publisher) if different from author tag
-  // Only show if we have a proper author name, not just a truncated pubkey
-  if (author && author !== indexEvent.pubkey.slice(0, 8) + '...' && author !== authorTag) {
-    // Try to get npub for pubkey author
-    try {
-      const { nip19 } = await import('@nostr/tools');
-      const npub = nip19.npubEncode(indexEvent.pubkey);
-      authors.push(npub);
-    } catch {
-      // If npub encoding fails, use the author name we have
-      authors.push(author);
-    }
-  } else if (!authorTag && indexEvent.pubkey) {
-    // Fallback: show npub if no author tag available
-    try {
-      const { nip19 } = await import('@nostr/tools');
-      const npub = nip19.npubEncode(indexEvent.pubkey);
-      authors.push(npub);
-    } catch {
-      authors.push(indexEvent.pubkey.slice(0, 16) + '...');
-    }
-  }
-  
-  if (authors.length > 0) {
-    doc += `[.cover-author]\n`;
-    doc += `${authors.join(' & ')}\n\n`;
-  }
-  
-  // Add version if available
-  if (version || versionTag) {
-    doc += `[.cover-version]\n`;
-    doc += `${version || versionTag}\n\n`;
-  }
-  
-  // Add a single blank line to separate cover page from metadata section
   doc += `\n`;
 
   // Add metadata page (only show fields that have content)
