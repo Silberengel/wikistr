@@ -1152,8 +1152,9 @@ function adjustHeadingLevels(content: string, sectionLevel: number): string {
 /**
  * Combine book events into a single AsciiDoc document
  * Uses metadata from NKBIP-01 and NKBIP-08
+ * @param isTopLevel - If true, add book-metadata section. Only true for the root 30040 event.
  */
-export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: NostrEvent[]): Promise<string> {
+export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: NostrEvent[], isTopLevel: boolean = true): Promise<string> {
   // Extract metadata from NKBIP-01 (Publication Index - kind 30040)
   const title = indexEvent.tags.find(([k]) => k === 'title')?.[1] || 
                 indexEvent.tags.find(([k]) => k === 'T')?.[1] ||
@@ -1314,9 +1315,8 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   // It will automatically display: doctitle, author, revnumber, revdate, revremark
   // No need to manually create a cover page - Asciidoctor handles it
   
-  doc += `\n`;
-
   // Add metadata page (only show fields that have content)
+  // IMPORTANT: This appears ONCE for the entire book, right after the document header
   const metadataFields: Array<{ label: string; value: string }> = [];
   
   // Collect bookstr tags (only if they exist and have content)
@@ -1381,13 +1381,22 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   }
 
   // Add metadata page only if there are fields to display
-  if (metadataFields.length > 0) {
+  // IMPORTANT: This section should appear ONLY ONCE for the entire book, before any content
+  // Only add for the top-level 30040 event, not for nested branches
+  if (metadataFields.length > 0 && isTopLevel) {
     // CRITICAL: Block attribute must be directly followed by heading with NO blank line
-    // Remove all trailing whitespace/newlines from doc completely
-    doc = doc.replace(/\s+$/, '');
-    // Add exactly one newline to separate from previous content, then attribute and heading on consecutive lines
+    // Remove ALL trailing whitespace/newlines from doc by splitting into lines and removing empty trailing lines
+    const lines = doc.split('\n');
+    // Remove empty lines from the end
+    while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+      lines.pop();
+    }
+    doc = lines.join('\n');
+    // Add exactly one newline to separate from header attributes, then attribute and heading on CONSECUTIVE lines
     // Format: \n[.book-metadata]\n== Book Metadata\n\n
-    // This ensures [.book-metadata] and == Book Metadata are on consecutive lines with no blank line between
+    // The \n before [.book-metadata] separates it from previous content
+    // The \n after [.book-metadata] goes to the next line for the heading
+    // NO blank line between attribute and heading!
     doc += '\n[.book-metadata]\n== Book Metadata\n\n';
     for (const field of metadataFields) {
       if (field.value && field.value.trim()) {
