@@ -259,10 +259,13 @@ post '/convert/epub' do
       if image_urls.any?
         puts "[EPUB] Found #{image_urls.length} image reference(s) in content:"
         
-        # Create images directory in temp location
-        images_dir = File.join(File.dirname(temp_adoc.path), 'images')
+        # Create images directory in temp location (use absolute path)
+        temp_dir = File.dirname(temp_adoc.path)
+        images_dir = File.join(temp_dir, 'images')
         FileUtils.mkdir_p(images_dir)
-        epub_attributes['imagesdir'] = images_dir
+        # Use absolute path for imagesdir to avoid path resolution issues
+        epub_attributes['imagesdir'] = File.expand_path(images_dir)
+        puts "[EPUB] Images directory set to: #{epub_attributes['imagesdir']}"
         
         image_urls.each_with_index do |url, idx|
           puts "[EPUB]   Image #{idx + 1}: #{url}"
@@ -311,7 +314,16 @@ post '/convert/epub' do
           downloaded_images.each do |remote_url, local_filename|
             # Replace both image:: and image: macros
             content = content.gsub(/image::?#{Regexp.escape(remote_url)}/, "image::#{local_filename}")
-            puts "[EPUB]   Replaced: #{remote_url} -> #{local_filename}"
+            puts "[EPUB]   Replaced image macro: #{remote_url} -> #{local_filename}"
+            
+            # Also replace in epub-cover-image attribute
+            content = content.gsub(/^:epub-cover-image:\s*#{Regexp.escape(remote_url)}$/i, ":epub-cover-image: #{local_filename}")
+            
+            # Also replace in front-cover-image attribute
+            content = content.gsub(/^:front-cover-image:\s*#{Regexp.escape(remote_url)}$/i, ":front-cover-image: #{local_filename}")
+            
+            # Also replace in title-logo-image attribute (if it contains the URL)
+            content = content.gsub(/^:title-logo-image:\s*image:#{Regexp.escape(remote_url)}/i, ":title-logo-image: image:#{local_filename}")
           end
           
           # Write updated content back to temp file
