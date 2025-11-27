@@ -1684,7 +1684,7 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     // Add cover image at the top of metadata section
     // PDF handles cover image via :front-cover-image: attribute on its own title page
     // HTML, AsciiDoc, EPUB, and LaTeX need it in the metadata section
-    if ((exportFormat === 'html' || exportFormat === 'asciidoc' || exportFormat === 'epub' || exportFormat === 'latex') && image) {
+    if ((exportFormat === 'html' || exportFormat === 'asciidoc' || exportFormat === 'latex') && image) {
       // Ensure image URL is absolute (required for HTML/EPUB/LaTeX to display)
       const imageUrl = image.startsWith('http://') || image.startsWith('https://') 
         ? image 
