@@ -252,18 +252,71 @@ post '/convert/epub' do
         stylesheet_attempted = true
       end
       
-      # Scan content for images before conversion
+      # Scan content for images before conversion and download remote images
       image_urls = content.scan(/image::?([^\s\[\]]+)/i).flatten
+      downloaded_images = {}  # Map remote URLs to local filenames
+      
       if image_urls.any?
         puts "[EPUB] Found #{image_urls.length} image reference(s) in content:"
+        
+        # Create images directory in temp location
+        images_dir = File.join(File.dirname(temp_adoc.path), 'images')
+        FileUtils.mkdir_p(images_dir)
+        epub_attributes['imagesdir'] = images_dir
+        
         image_urls.each_with_index do |url, idx|
           puts "[EPUB]   Image #{idx + 1}: #{url}"
-          # Check if it's a remote URL
+          # Check if it's a remote URL and download it
           if url.match?(/^https?:\/\//)
-            puts "[EPUB]     -> Remote URL detected, allow-uri-read should enable download"
+            puts "[EPUB]     -> Remote URL detected, downloading..."
+            begin
+              require 'open-uri'
+              require 'uri'
+              
+              # Extract filename from URL
+              uri = URI.parse(url)
+              filename = File.basename(uri.path)
+              # If no filename, generate one based on URL hash
+              if filename.empty? || !filename.match?(/\.(jpg|jpeg|png|gif|svg|webp)$/i)
+                # Try to determine extension from Content-Type or default to jpg
+                filename = "image_#{url.hash.abs}.jpg"
+              end
+              
+              local_path = File.join(images_dir, filename)
+              
+              # Download the image
+              puts "[EPUB]     -> Downloading to: #{local_path}"
+              URI.open(url, 'rb') do |remote_file|
+                File.open(local_path, 'wb') do |local_file|
+                  local_file.write(remote_file.read)
+                end
+              end
+              
+              puts "[EPUB]     -> Successfully downloaded (#{File.size(local_path)} bytes)"
+              
+              # Store mapping for content replacement
+              downloaded_images[url] = filename
+            rescue => download_error
+              puts "[EPUB]     -> WARNING: Failed to download image: #{download_error.message}"
+              puts "[EPUB]     -> Will rely on allow-uri-read for EPUB converter"
+            end
           else
             puts "[EPUB]     -> Local path"
           end
+        end
+        
+        # Replace remote URLs in content with local filenames
+        if downloaded_images.any?
+          puts "[EPUB] Replacing remote image URLs with local paths in content"
+          downloaded_images.each do |remote_url, local_filename|
+            # Replace both image:: and image: macros
+            content = content.gsub(/image::?#{Regexp.escape(remote_url)}/, "image::#{local_filename}")
+            puts "[EPUB]   Replaced: #{remote_url} -> #{local_filename}"
+          end
+          
+          # Write updated content back to temp file
+          File.write(temp_adoc.path, content)
+          puts "[EPUB] Updated AsciiDoc file with local image paths"
         end
       else
         puts "[EPUB] No image references found in content"
