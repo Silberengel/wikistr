@@ -279,7 +279,7 @@ async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, pro
     doc += `\n`;
     doc += `[.poster-image,float=left,width=40%]\n`;
     doc += `image::${image}[]\n\n`;
-  } else if (image) {
+  } else {
     // Other themes: set as cover image for title page
     doc += `:front-cover-image: ${image}\n`;
   }
@@ -1326,40 +1326,12 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   // Title page is automatically created by Asciidoctor when doctype: book is set
   // It will automatically display: doctitle, author, revnumber, revdate, revremark
   // TOC is automatically placed after the title page when :toc: is set
-  // For HTML and EPUB, we create a title page section that mimics the default title page
+  // 
+  // IMPORTANT: All content sections (metadata, abstract, book content) must come AFTER
+  // the automatic title page and TOC. They will be added below.
   
-  // Add title page section (for HTML and EPUB to match PDF title page)
-  // CRITICAL: This must be the FIRST section after document header to prevent Preamble creation
-  // Use discrete section so it doesn't appear in TOC
-  // For EPUB, the image must be in the content (not just attributes) to be embedded
-  // Ensure no content appears between header attributes and this section
-  doc = doc.trimEnd(); // Remove any trailing whitespace
-  doc += `\n\n[discrete]\n[.title-page]\n== ${displayTitle}\n\n`;
-  
-  // Add cover image if available (for HTML/EPUB)
-  // The image must be in the content for EPUB to embed it properly
-  // For EPUB, the Asciidoctor server will download and embed remote images
-  if (image) {
-    const imageUrl = image.startsWith('http://') || image.startsWith('https://') 
-      ? image 
-      : image;
-    // Use block image macro - EPUB converter will download and embed remote images
-    // The 'cover' role helps identify this as the cover image
-    // Remove any whitespace and ensure URL is properly formatted
-    const cleanImageUrl = imageUrl.trim();
-    // For EPUB: image must be in content, server will download and embed it
-    // Use explicit width and ensure the image is properly referenced
-    // The allow-uri-read attribute enables remote image downloading
-    // EPUB3 requires images to be in the content stream to be embedded
-    // Don't specify format - let Asciidoctor detect it from the URL/file extension
-    doc += `image::${cleanImageUrl}[cover,align=center,width=400px]\n\n`;
-  }
-  
-  // Author is already in document header, will appear on title page automatically
-  // TOC will be automatically inserted by Asciidoctor after the title page
-  
-  // Add metadata page (only show fields that have content)
-  // IMPORTANT: This appears ONCE for the entire book, right after the document header
+  // Build metadata fields array (will be added as a section after TOC)
+  // IMPORTANT: This appears ONCE for the entire book, after TOC but before content
   const metadataFields: Array<{ label: string; value: string }> = [];
   
   // Add the document title from the 'title' tag (NKBIP-01)
@@ -1592,22 +1564,12 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     metadataFields.push({ label: 'Abstract', value: summary });
   }
 
-  // Add metadata page only if there are fields to display
-  // IMPORTANT: This section should appear ONLY ONCE for the entire book, before any content
-  // Only add for the top-level 30040 event, not for nested branches
+  // Add metadata section AFTER TOC but BEFORE content sections
+  // This ensures proper structure: Title Page -> TOC -> Metadata -> Content
   if (metadataFields.length > 0 && isTopLevel) {
-    // CRITICAL: Block attribute must be directly followed by heading with NO blank line
-    // Remove ALL trailing whitespace/newlines from doc completely
-    doc = doc.replace(/\s+$/, '');
-    // Add exactly one newline to separate from header attributes, then attribute and heading on CONSECUTIVE lines
-    // Format: \n[.book-metadata]\n== Book Metadata\n\n
-    // IMPORTANT: The \n after [.book-metadata] must go DIRECTLY to the heading line with NO blank line
-    // Build the string explicitly to ensure no extra whitespace
     doc += '\n';
-    doc += '[.book-metadata]';
-    doc += '\n';
-    doc += '== Book Metadata';
-    doc += '\n\n';
+    doc += '[.book-metadata]\n';
+    doc += '== Book Metadata\n\n';
     for (const field of metadataFields) {
       if (field.value && field.value.trim()) {
         // For Abstract field, format it as a paragraph instead of inline
@@ -1618,7 +1580,7 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
         }
       }
     }
-    doc += `\n`;
+    doc += '\n';
   }
 
   // Add each content event as a section
@@ -1631,7 +1593,13 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     const eventVersionTag = event.tags.find(([k]) => k === 'v')?.[1];
     
     // Determine heading level from event structure
-    const headingLevel = getHeadingLevel(event);
+    // For book exports, top-level content sections should be at level 2 (same as metadata)
+    // to ensure they're siblings, not nested under metadata
+    // getHeadingLevel returns 3+ for content events, so we reduce by 1 to make them level 2
+    let headingLevel = getHeadingLevel(event);
+    // Reduce level by 1 so top-level content sections are level 2 (siblings of metadata)
+    // This ensures proper book structure: metadata (level 2) and content (level 2) are siblings
+    headingLevel = Math.max(2, headingLevel - 1);
     const headingMarkup = '='.repeat(headingLevel);
     
     // Create section header
