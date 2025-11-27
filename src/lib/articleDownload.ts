@@ -1254,8 +1254,9 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   // Following Asciidoctor PDF standard format: https://docs.asciidoctor.org/pdf-converter/latest/title-page/
   // For HTML/EPUB, we also need to explicitly enable title page
   const displayTitle = title || 'Untitled';
+  // Format: = Title\n:attributes...
+  // Author will be added to metadata section, not title page
   let doc = `= ${displayTitle}\n`;
-  doc += `:author: ${author}\n`;
   doc += `:doctype: ${type}\n`;
   // Explicitly enable title page for HTML/EPUB (PDF enables it automatically with doctype: book)
   // According to docs: title page is enabled if doctype is book OR title-page attribute is set
@@ -1343,6 +1344,11 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   // Add the document title from the 'title' tag (NKBIP-01)
   if (title && title.trim()) {
     metadataFields.push({ label: 'Title', value: title });
+  }
+  
+  // Add author to metadata section
+  if (author && author.trim()) {
+    metadataFields.push({ label: 'Author', value: author });
   }
   
   // Collect bookstr tags (only if they exist and have content)
@@ -1579,18 +1585,20 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     doc += '== \n\n'; // Empty section title (will be hidden by CSS)
     
     // Add cover image if available
+    // For EPUB, the image must be in content (not just attributes) to be embedded
     if (image) {
       const imageUrl = image.startsWith('http://') || image.startsWith('https://') 
         ? image 
         : image;
       const cleanImageUrl = imageUrl.trim();
+      // Use block image macro - EPUB converter will download and embed remote images
+      // The 'cover' role helps identify this as the cover image
       doc += `image::${cleanImageUrl}[cover,align=center,width=500px]\n\n`;
     }
     
-    // Add title and author as paragraphs (centered by CSS)
-    doc += `${displayTitle}\n\n`;
-    doc += `by ${author}\n\n`;
-    doc += '\n';
+    // Add title and author in a single paragraph to reduce spacing
+    // Use AsciiDoc line continuation (+) to keep them in same paragraph
+    doc += `${displayTitle}\n+\nby ${author}\n\n`;
   }
 
   // Add metadata section AFTER cover page but BEFORE content sections

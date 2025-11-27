@@ -225,10 +225,24 @@ post '/convert/epub' do
         'author' => author,
         'doctype' => 'book',
         'imagesdir' => '.',
-        'allow-uri-read' => '',
+        'allow-uri-read' => '',  # Enable remote image downloading
         'toc' => '',  # Enable table of contents
         'stem' => ''  # Enable LaTeX math support
       }
+      
+      # Check for HTTP proxy environment variables and log them
+      if ENV['HTTP_PROXY'] || ENV['http_proxy']
+        proxy = ENV['HTTP_PROXY'] || ENV['http_proxy']
+        puts "[EPUB] HTTP_PROXY environment variable set: #{proxy}"
+      end
+      if ENV['HTTPS_PROXY'] || ENV['https_proxy']
+        proxy = ENV['HTTPS_PROXY'] || ENV['https_proxy']
+        puts "[EPUB] HTTPS_PROXY environment variable set: #{proxy}"
+      end
+      if ENV['NO_PROXY'] || ENV['no_proxy']
+        no_proxy = ENV['NO_PROXY'] || ENV['no_proxy']
+        puts "[EPUB] NO_PROXY environment variable set: #{no_proxy}"
+      end
       
       # Add stylesheet if available
       stylesheet_attempted = false
@@ -238,21 +252,101 @@ post '/convert/epub' do
         stylesheet_attempted = true
       end
       
+      # Scan content for images before conversion
+      image_urls = content.scan(/image::?([^\s\[\]]+)/i).flatten
+      if image_urls.any?
+        puts "[EPUB] Found #{image_urls.length} image reference(s) in content:"
+        image_urls.each_with_index do |url, idx|
+          puts "[EPUB]   Image #{idx + 1}: #{url}"
+          # Check if it's a remote URL
+          if url.match?(/^https?:\/\//)
+            puts "[EPUB]     -> Remote URL detected, allow-uri-read should enable download"
+          else
+            puts "[EPUB]     -> Local path"
+          end
+        end
+      else
+        puts "[EPUB] No image references found in content"
+      end
+      
+      # Check for epub-cover-image attribute
+      if content.match(/^:epub-cover-image:\s*(.+)$/i)
+        cover_image = $1.strip
+        puts "[EPUB] EPUB cover image attribute found: #{cover_image}"
+      end
+      
       # Convert to EPUB using convert_file with to_file
       # This is the recommended approach for EPUB3
       puts "[EPUB] Starting conversion: #{temp_adoc.path} -> #{epub_file}"
       puts "[EPUB] Attributes: #{epub_attributes.inspect}"
+      puts "[EPUB] allow-uri-read is #{epub_attributes['allow-uri-read'] ? 'ENABLED' : 'DISABLED'}"
+      
+      # Create a treeprocessor extension to log image processing
+      image_processor = Class.new(Asciidoctor::Extensions::Treeprocessor) do
+        def process(document)
+          images = document.find_by(context: :image)
+          if images.any?
+            puts "[EPUB] Found #{images.length} image node(s) in document tree:"
+            images.each_with_index do |image, idx|
+              image_target = image.attr('target') || image.target
+              puts "[EPUB]   Image node #{idx + 1}: target=#{image_target}, alt=#{image.attr('alt')}, role=#{image.attr('role')}"
+              if image_target.match?(/^https?:\/\//)
+                puts "[EPUB]     -> Remote URL detected"
+              end
+            end
+          else
+            puts "[EPUB] No image nodes found in document tree"
+          end
+          nil
+        end
+      end
       
       conversion_succeeded = false
       begin
+        # Create extension registry with image logging
+        extension_registry = Asciidoctor::Extensions.create do
+          treeprocessor image_processor
+        end
+        
         result = Asciidoctor.convert_file(
           temp_adoc.path,
           backend: 'epub3',
           safe: 'unsafe',
           to_file: epub_file,
-          attributes: epub_attributes
+          attributes: epub_attributes,
+          extension_registry: extension_registry
         )
         puts "[EPUB] Conversion completed, result: #{result.inspect}"
+        
+        # Check if EPUB file was created and its size
+        if File.exist?(epub_file)
+          epub_size = File.size(epub_file)
+          puts "[EPUB] EPUB file created: #{epub_file}, size: #{epub_size} bytes"
+          
+          # Try to inspect EPUB contents for images (EPUB is a ZIP file)
+          begin
+            require 'zip'
+            image_files = []
+            Zip::File.open(epub_file) do |zip_file|
+              zip_file.each do |entry|
+                if entry.name.match?(/\.(jpg|jpeg|png|gif|svg|webp)$/i)
+                  image_files << entry.name
+                  puts "[EPUB] Found image in EPUB: #{entry.name} (#{entry.size} bytes)"
+                end
+              end
+            end
+            if image_files.empty?
+              puts "[EPUB] WARNING: No image files found in EPUB archive"
+            else
+              puts "[EPUB] Total images embedded in EPUB: #{image_files.length}"
+            end
+          rescue => zip_error
+            puts "[EPUB] Could not inspect EPUB contents: #{zip_error.message}"
+          end
+        else
+          puts "[EPUB] ERROR: EPUB file was not created at #{epub_file}"
+        end
+        
         conversion_succeeded = true
       rescue => e
         puts "[EPUB] Conversion error: #{e.class.name}: #{e.message}"

@@ -301,15 +301,15 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
         display: none !important;
       }
       .cover-page img {
-        margin: 0 auto 3em auto;
+        margin: 0 auto 0.5em auto;
         display: block;
         max-width: 500px;
         width: 100%;
         height: auto;
       }
-      /* Style title and author paragraphs */
+      /* Style title and author paragraphs - reduce spacing */
       .cover-page p {
-        margin: 1.5em 0 0 0;
+        margin: 0.5em 0 0 0;
         font-size: 1.5em;
         font-weight: 400;
         font-family: 'Crimson Text', 'Times New Roman', serif;
@@ -323,7 +323,14 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
         text-transform: uppercase;
         letter-spacing: 0.1em;
         color: #333;
-        margin-bottom: 0.5em;
+        margin-top: 0.3em;
+        margin-bottom: 0.2em;
+      }
+      /* Style the "by author" line (second paragraph or line break) */
+      .cover-page p:nth-of-type(2),
+      .cover-page br + p {
+        margin-top: 0.2em;
+        font-size: 1.5em;
       }
       
       /* Book metadata section - classic title/copyright page style */
