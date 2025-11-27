@@ -302,11 +302,19 @@ post '/convert/epub' do
       end
       
       # Scan content for images before conversion and download remote images
+      # First, scan for image macros (image:: and image:)
       image_urls = content.scan(/image::?([^\s\[\]]+)/i).flatten
+      
+      # Also scan for cover image attributes (:front-cover-image: and :epub-cover-image:)
+      cover_image_attrs = content.scan(/^:(?:front-cover-image|epub-cover-image):\s*(.+)$/i).flatten
+      cover_image_urls = cover_image_attrs.map { |attr| attr.strip }.reject(&:empty?)
+      
+      # Combine all image URLs (remove duplicates)
+      all_image_urls = (image_urls + cover_image_urls).uniq
       downloaded_images = {}  # Map remote URLs to local filenames
       
-      if image_urls.any?
-        puts "[EPUB] Found #{image_urls.length} image reference(s) in content:"
+      if all_image_urls.any?
+        puts "[EPUB] Found #{all_image_urls.length} image reference(s) in content (#{image_urls.length} from macros, #{cover_image_urls.length} from cover attributes):"
         
         # Create images directory in temp location (use absolute path)
         temp_dir = File.dirname(temp_adoc.path)
@@ -316,7 +324,7 @@ post '/convert/epub' do
         epub_attributes['imagesdir'] = File.expand_path(images_dir)
         puts "[EPUB] Images directory set to: #{epub_attributes['imagesdir']}"
         
-        image_urls.each_with_index do |url, idx|
+        all_image_urls.each_with_index do |url, idx|
           puts "[EPUB]   Image #{idx + 1}: #{url}"
           # Check if it's a remote URL and download it
           if url.match?(/^https?:\/\//)
@@ -912,6 +920,7 @@ post '/convert/pdf' do
     end
   rescue JSON::ParserError => e
     status 400
+    content_type :json
     { error: 'Invalid JSON', message: e.message }.to_json
   rescue => e
     puts "[PDF] Unexpected error: #{e.class.name}: #{e.message}"
@@ -934,6 +943,7 @@ post '/convert/pdf' do
     end
     
     status 500
+    content_type :json
     error_details.to_json
   end
 end
@@ -975,13 +985,16 @@ post '/convert/latex' do
       puts "[LaTeX] Attributes: #{latex_attributes.inspect}"
       
       # Convert to LaTeX
+      # Use 'latexbook' backend for book doctype, 'latex' for article
+      latex_backend = latex_attributes['doctype'] == 'book' ? 'latexbook' : 'latex'
       latex_content = Asciidoctor.convert content,
-        backend: 'latex',
+        backend: latex_backend,
         safe: 'unsafe',
         attributes: latex_attributes
       
       if latex_content.nil? || latex_content.empty?
         status 500
+        content_type :json
         return { error: 'Generated LaTeX file is empty' }.to_json
       end
       
@@ -997,6 +1010,7 @@ post '/convert/latex' do
     end
   rescue JSON::ParserError => e
     status 400
+    content_type :json
     { error: 'Invalid JSON', message: e.message }.to_json
   rescue => e
     puts "[LaTeX] Unexpected error: #{e.class.name}: #{e.message}"
@@ -1019,6 +1033,7 @@ post '/convert/latex' do
     end
     
     status 500
+    content_type :json
     error_details.to_json
   end
 end
