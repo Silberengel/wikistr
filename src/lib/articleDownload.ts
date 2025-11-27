@@ -794,28 +794,20 @@ export async function combineBookEvents(
   
   doc = doc.trimEnd() + '\n\n';
   
-  // Add book metadata section for top-level 30040 events only
+  // Add book metadata section for top-level 30040 events
   if (isTopLevel && indexEvent.kind === 30040) {
     const metadataFields: Array<{ label: string; value: string }> = [];
     
-    // Don't add Title field - it's already the document title
+    // Add Title field to metadata section
+    if (title) metadataFields.push({ label: 'Title', value: title });
     if (author) metadataFields.push({ label: 'Author', value: author });
     if (version) metadataFields.push({ label: 'Version', value: version });
     if (source) metadataFields.push({ label: 'Source', value: source });
     if (topicTags.length > 0) metadataFields.push({ label: 'Topics', value: topicTags.join(', ') });
     
     if (metadataFields.length > 0) {
-      // Add blank lines to ensure proper separation from title page
-      // For PDF, AsciiDoctor automatically creates a title page, and content after it
-      // will naturally start on a new page. The metadata section should appear
-      // after the title page and TOC.
-      // For HTML, this will appear as a styled metadata section
-      doc += '\n\n';
-      doc += '[.book-metadata]\n';
-      // Use the title as the section heading - this creates a proper metadata page
-      // For PDF, this will appear after the automatic title page and TOC
-      // For HTML, this will appear as a styled metadata section
-      doc += `== ${displayTitle}\n\n`;
+      doc += '\n';
+      doc += `[.book-metadata]\n== ${displayTitle}\n\n`;
       
       // Add cover image for HTML/AsciiDoc exports (in metadata section)
       // For PDF/EPUB, the cover image is handled via :front-cover-image: attribute
@@ -833,7 +825,7 @@ export async function combineBookEvents(
     }
   }
   
-  // Add each content event as a section
+  // Add each content event as a section (chapters)
   for (const event of contentEvents) {
     const sectionTitle = event.tags.find(([k]) => k === 'title')?.[1];
     if (sectionTitle) {
