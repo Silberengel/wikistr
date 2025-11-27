@@ -4,6 +4,7 @@ require 'puma'
 require 'rack'
 require 'asciidoctor'
 require 'asciidoctor-epub3'
+require 'asciidoctor-pdf'  # For PDF conversion
 require 'asciidoctor-diagram'  # For PlantUML, Graphviz, BPMN, Mermaid, TikZ, etc.
 require 'json'
 require 'tempfile'
