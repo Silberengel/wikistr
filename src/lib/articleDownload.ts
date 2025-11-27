@@ -340,9 +340,17 @@ async function buildAsciiDocWithMetadata(
   
   if (version) {
     doc += `:version: ${version}\n`;
+    // For EPUB/PDF, also set revnumber (title page expects revision info)
+    if (exportFormat === 'pdf' || exportFormat === 'epub') {
+      doc += `:revnumber: ${version}\n`;
+    }
   }
   if (publishedOn) {
     doc += `:pubdate: ${publishedOn}\n`;
+    // For EPUB/PDF, also set revdate (title page expects revision info)
+    if (exportFormat === 'pdf' || exportFormat === 'epub') {
+      doc += `:revdate: ${publishedOn}\n`;
+    }
   }
   if (source) {
     doc += `:source: ${source}\n`;
@@ -427,7 +435,12 @@ async function buildAsciiDocWithMetadata(
       
       // Add metadata section if we have any fields
       if (metadataFields.length > 0) {
-        doc += '\n';
+        // Add page break before article metadata for EPUB/PDF to prevent it from bleeding into title page
+        if (exportFormat === 'pdf' || exportFormat === 'epub') {
+          doc += '\n<<<\n\n';
+        } else {
+          doc += '\n';
+        }
         doc += '[.article-metadata]\n';
         doc += `== ${displayTitle}\n\n`;
         
@@ -516,8 +529,20 @@ export async function prepareAsciiDocContent(
           doc += `:pdf-style: default\n`;
         }
         
-        if (version) doc += `:version: ${version}\n`;
-        if (publishedOn) doc += `:pubdate: ${publishedOn}\n`;
+        if (version) {
+          doc += `:version: ${version}\n`;
+          // For EPUB/PDF, also set revnumber (title page expects revision info)
+          if (exportFormat === 'pdf' || exportFormat === 'epub') {
+            doc += `:revnumber: ${version}\n`;
+          }
+        }
+        if (publishedOn) {
+          doc += `:pubdate: ${publishedOn}\n`;
+          // For EPUB/PDF, also set revdate (title page expects revision info)
+          if (exportFormat === 'pdf' || exportFormat === 'epub') {
+            doc += `:revdate: ${publishedOn}\n`;
+          }
+        }
         if (source) doc += `:source: ${source}\n`;
         if (topicTags.length > 0) doc += `:keywords: ${topicTags.join(', ')}\n`;
         if (summary && description) doc += `:summary: ${summary}\n`;
@@ -584,7 +609,12 @@ export async function prepareAsciiDocContent(
             }
             
             if (metadataFields.length > 0) {
-              doc += '\n';
+              // Add page break before article metadata for EPUB/PDF to prevent it from bleeding into title page
+              if (exportFormat === 'pdf' || exportFormat === 'epub') {
+                doc += '\n<<<\n\n';
+              } else {
+                doc += '\n';
+              }
               doc += '[.article-metadata]\n';
               doc += `== ${displayTitle}\n\n`;
               
