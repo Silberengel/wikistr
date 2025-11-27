@@ -313,9 +313,19 @@ post '/convert/epub' do
         if downloaded_images.any?
           puts "[EPUB] Replacing remote image URLs with local paths in content"
           downloaded_images.each do |remote_url, local_filename|
-            # Replace both image:: and image: macros
-            content = content.gsub(/image::?#{Regexp.escape(remote_url)}/, "image::#{local_filename}")
-            puts "[EPUB]   Replaced image macro: #{remote_url} -> #{local_filename}"
+            # Replace both image:: and image: macros, preserving any attributes
+            # Match: image::URL or image:URL followed by optional [attributes]
+            # We need to capture the attributes if present
+            old_content = content.dup
+            # Pattern: image:: or image: followed by the URL, optionally followed by [attributes]
+            content = content.gsub(/image::?#{Regexp.escape(remote_url)}(\[[^\]]*\])?/i) do |match|
+              # Extract attributes if present
+              attributes = $1 || ''
+              "image::#{local_filename}#{attributes}"
+            end
+            if content != old_content
+              puts "[EPUB]   Replaced image macro: #{remote_url} -> #{local_filename}"
+            end
             
             # Also replace in epub-cover-image attribute (use relative path from docdir)
             # Since imagesdir is set to images_dir and docdir is the parent, use relative path

@@ -1329,8 +1329,8 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     // For PDF title page: use as logo image (centered, positioned nicely)
     // The title page is automatically created when doctype: book is set
     doc += `:title-logo-image: image:${imageUrl}[top=25%,align=center,pdfwidth=3in]\n`;
-    // For EPUB: specify cover image (EPUB3 requires this for proper cover display)
-    doc += `:epub-cover-image: ${imageUrl}\n`;
+    // Note: We don't set :epub-cover-image: here because we want the image to appear
+    // only on the custom cover page, not as the EPUB cover metadata
   }
   
   // Title page is automatically created by Asciidoctor when doctype: book is set
