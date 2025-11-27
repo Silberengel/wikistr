@@ -274,18 +274,12 @@ async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, pro
     doc += `:summary: ${summary}\n`;
   }
   
-  // Add cover image for PDF/EPUB exports
-  if (image) {
-    // For PDF and EPUB: use front-cover-image attribute
-    if (exportFormat === 'pdf' || exportFormat === 'epub' || !exportFormat) {
-      doc += `:front-cover-image: ${image}\n`;
-    } else {
-      // For HTML/AsciiDoc: display image prominently with text wrapping
-      doc += `\n`;
-      doc += `[.poster-image,float=left,width=40%]\n`;
-      doc += `image::${image}[]\n\n`;
-    }
+  // Add cover image for PDF/EPUB exports (via attribute, not in content)
+  // Keep cover image for EPUB and PDF, but don't add it to HTML/AsciiDoc content
+  if (image && (exportFormat === 'pdf' || exportFormat === 'epub' || !exportFormat)) {
+    doc += `:front-cover-image: ${image}\n`;
   }
+  // Note: We don't add the image to HTML/AsciiDoc content here - only in article metadata if needed
   
   // CRITICAL: Must have a blank line after all attributes before content begins
   // Ensure there's exactly one blank line (two newlines total: one to end attributes, one blank line)
@@ -370,8 +364,9 @@ async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, pro
       doc += '[.article-metadata]\n';
       doc += `== ${title}\n\n`; // Use title as section heading for classic title page look
       
-      // Add cover image at the top of metadata section (for HTML/AsciiDoc)
-      if ((exportFormat === 'html' || exportFormat === 'asciidoc') && image) {
+      // Add cover image at the top of metadata section (for HTML/AsciiDoc only)
+      // EPUB/PDF use :front-cover-image: attribute instead
+      if ((exportFormat === 'html' || exportFormat === 'asciidoc' || !exportFormat) && image) {
         const imageUrl = image.startsWith('http://') || image.startsWith('https://') 
           ? image 
           : image;
@@ -658,7 +653,8 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
         if (source) doc += `:source: ${source}\n`;
         if (topicTags.length > 0) doc += `:keywords: ${topicTags.join(', ')}\n`;
         if (summary && description) doc += `:summary: ${summary}\n`;
-        if (image) {
+        // Add cover image for PDF/EPUB exports (via attribute, not in content)
+        if (image && (exportFormat === 'pdf' || exportFormat === 'epub' || !exportFormat)) {
           doc += `:front-cover-image: ${image}\n`;
         }
         
@@ -746,8 +742,9 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
             doc += '[.article-metadata]\n';
             doc += `== ${title}\n\n`; // Use title as section heading for classic title page look
             
-            // Add cover image at the top of metadata section (for HTML/AsciiDoc)
-            if ((exportFormat === 'html' || exportFormat === 'asciidoc') && image) {
+            // Add cover image at the top of metadata section (for HTML/AsciiDoc only)
+            // EPUB/PDF use :front-cover-image: attribute instead
+            if ((exportFormat === 'html' || exportFormat === 'asciidoc' || !exportFormat) && image) {
               const imageUrl = image.startsWith('http://') || image.startsWith('https://') 
                 ? image 
                 : image;
