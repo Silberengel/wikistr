@@ -274,14 +274,17 @@ async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, pro
     doc += `:summary: ${summary}\n`;
   }
   
-  // For poster theme, display image prominently with text wrapping
+  // Add cover image for PDF/EPUB exports
   if (image) {
-    doc += `\n`;
-    doc += `[.poster-image,float=left,width=40%]\n`;
-    doc += `image::${image}[]\n\n`;
-  } else {
-    // Other themes: set as cover image for title page
-    doc += `:front-cover-image: ${image}\n`;
+    // For PDF and EPUB: use front-cover-image attribute
+    if (exportFormat === 'pdf' || exportFormat === 'epub' || !exportFormat) {
+      doc += `:front-cover-image: ${image}\n`;
+    } else {
+      // For HTML/AsciiDoc: display image prominently with text wrapping
+      doc += `\n`;
+      doc += `[.poster-image,float=left,width=40%]\n`;
+      doc += `image::${image}[]\n\n`;
+    }
   }
   
   // CRITICAL: Must have a blank line after all attributes before content begins
@@ -598,7 +601,7 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
     
     // No existing title, build with metadata
     const eventImage = event.tags.find(([k]) => k === 'image')?.[1];
-    let doc = await buildAsciiDocWithMetadata(event, content, eventImage);
+    let doc = await buildAsciiDocWithMetadata(event, content, eventImage, exportFormat);
     
     // Process wikilinks and nostr addresses in the content
     doc = processWikilinks(doc, true); // true = asciidoc
@@ -639,7 +642,7 @@ async function getEventContent(event: NostrEvent, exportFormat?: 'html' | 'epub'
     return { content: combined, title, author };
   } else {
     // For regular events, prepare AsciiDoc content
-    const content = await prepareAsciiDocContent(event, true);
+    const content = await prepareAsciiDocContent(event, true, exportFormat);
     const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
     const author = await getAuthorName(event);
     return { content, title, author };
