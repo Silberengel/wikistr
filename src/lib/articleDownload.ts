@@ -1579,33 +1579,9 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     metadataFields.push({ label: 'Abstract', value: summary });
   }
 
-  // Add custom cover page AFTER TOC but BEFORE metadata section
-  // Structure: Title Page (automatic) -> TOC -> Cover Page -> Metadata -> Content
-  if (isTopLevel) {
-    doc += '\n';
-    doc += '[discrete]\n';
-    doc += '[.cover-page]\n';
-    doc += '== \n\n'; // Empty section title (will be hidden by CSS)
-    
-    // Add cover image if available
-    // For EPUB, the image must be in content (not just attributes) to be embedded
-    if (image) {
-      const imageUrl = image.startsWith('http://') || image.startsWith('https://') 
-        ? image 
-        : image;
-      const cleanImageUrl = imageUrl.trim();
-      // Use block image macro - EPUB converter will download and embed remote images
-      // The 'cover' role helps identify this as the cover image
-      doc += `image::${cleanImageUrl}[cover,align=center,width=500px]\n\n`;
-    }
-    
-    // Add title and author on separate lines
-    doc += `${displayTitle}\n\n`;
-    doc += `by ${author}\n\n`;
-  }
 
-  // Add metadata section AFTER cover page but BEFORE content sections
-  // This ensures proper structure: Title Page -> TOC -> Cover Page -> Metadata -> Content
+  // Add metadata section AFTER TOC but BEFORE content sections
+  // This ensures proper structure: Title Page -> TOC -> Metadata -> Content
   if (metadataFields.length > 0 && isTopLevel) {
     doc += '\n';
     doc += '[.book-metadata]\n';
