@@ -1254,9 +1254,12 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   // Following Asciidoctor PDF standard format: https://docs.asciidoctor.org/pdf-converter/latest/title-page/
   // For HTML/EPUB, we also need to explicitly enable title page
   const displayTitle = title || 'Untitled';
-  // Format: = Title\n:attributes...
-  // Author will be added to metadata section, not title page
+  // Format: = Title\nby Author Name\n:attributes...
+  // The author line after the title makes it appear on the automatic title page
   let doc = `= ${displayTitle}\n`;
+  if (author && author.trim()) {
+    doc += `by ${author}\n`; // Author on second line appears on title page with "by " prefix
+  }
   doc += `:doctype: ${type}\n`;
   // Explicitly enable title page for HTML/EPUB (PDF enables it automatically with doctype: book)
   // According to docs: title page is enabled if doctype is book OR title-page attribute is set
