@@ -851,6 +851,118 @@ post '/convert/pdf' do
         'stem' => ''  # Enable LaTeX math support
       }
       
+      # Scan content for images before conversion and download remote images
+      # First, scan for image macros (image:: and image:)
+      image_urls = content.scan(/image::?([^\s\[\]]+)/i).flatten
+      
+      # Also scan for cover image attributes (:front-cover-image: and :epub-cover-image:)
+      cover_image_attrs = content.scan(/^:(?:front-cover-image|epub-cover-image):\s*(.+)$/i).flatten
+      cover_image_urls = cover_image_attrs.map { |attr| attr.strip }.reject(&:empty?)
+      
+      # Combine all image URLs (remove duplicates)
+      all_image_urls = (image_urls + cover_image_urls).uniq
+      downloaded_images = {}  # Map remote URLs to local filenames
+      
+      if all_image_urls.any?
+        puts "[PDF] Found #{all_image_urls.length} image reference(s) in content (#{image_urls.length} from macros, #{cover_image_urls.length} from cover attributes):"
+        
+        # Create images directory in temp location (use absolute path)
+        temp_dir = File.dirname(temp_adoc.path)
+        images_dir = File.join(temp_dir, 'images')
+        FileUtils.mkdir_p(images_dir)
+        # Use absolute path for imagesdir to avoid path resolution issues
+        pdf_attributes['imagesdir'] = File.expand_path(images_dir)
+        puts "[PDF] Images directory set to: #{pdf_attributes['imagesdir']}"
+        
+        all_image_urls.each_with_index do |url, idx|
+          puts "[PDF]   Image #{idx + 1}: #{url}"
+          # Check if it's a remote URL and download it
+          if url.match?(/^https?:\/\//)
+            puts "[PDF]     -> Remote URL detected, downloading..."
+            begin
+              require 'open-uri'
+              require 'uri'
+              
+              # Extract filename from URL
+              uri = URI.parse(url)
+              filename = File.basename(uri.path)
+              # If no filename, generate one based on URL hash
+              if filename.empty? || !filename.match?(/\.(jpg|jpeg|png|gif|svg|webp)$/i)
+                # Try to determine extension from Content-Type or default to jpg
+                filename = "image_#{url.hash.abs}.jpg"
+              end
+              
+              local_path = File.join(images_dir, filename)
+              
+              # Download the image
+              puts "[PDF]     -> Downloading to: #{local_path}"
+              URI.open(url, 'rb') do |remote_file|
+                File.open(local_path, 'wb') do |local_file|
+                  local_file.write(remote_file.read)
+                end
+              end
+              
+              puts "[PDF]     -> Successfully downloaded (#{File.size(local_path)} bytes)"
+              
+              # Store mapping for content replacement
+              downloaded_images[url] = filename
+            rescue => download_error
+              puts "[PDF]     -> WARNING: Failed to download image: #{download_error.message}"
+              puts "[PDF]     -> Will rely on allow-uri-read for PDF converter"
+            end
+          else
+            puts "[PDF]     -> Local path"
+          end
+        end
+        
+        # Replace remote URLs in content with local filenames
+        if downloaded_images.any?
+          puts "[PDF] Replacing remote image URLs with local paths in content"
+          downloaded_images.each do |remote_url, local_filename|
+            # Replace both image:: and image: macros, preserving any attributes
+            old_content = content.dup
+            content = content.gsub(/image::?#{Regexp.escape(remote_url)}(\[[^\]]*\])?/i) do |match|
+              attributes = $1 || ''
+              "image::#{local_filename}#{attributes}"
+            end
+            if content != old_content
+              puts "[PDF]   Replaced image macro: #{remote_url} -> #{local_filename}"
+            end
+            
+            # Also replace in front-cover-image attribute (use relative path from docdir)
+            docdir = File.dirname(temp_adoc.path)
+            relative_image_path = Pathname.new(File.join(images_dir, local_filename)).relative_path_from(Pathname.new(docdir)).to_s
+            old_content = content.dup
+            content = content.gsub(/^:front-cover-image:\s*#{Regexp.escape(remote_url)}\s*$/i, ":front-cover-image: #{relative_image_path}")
+            if content != old_content
+              puts "[PDF]   Replaced front-cover-image attribute: #{remote_url} -> #{relative_image_path}"
+            end
+            
+            # Also replace in epub-cover-image attribute if present
+            old_content = content.dup
+            content = content.gsub(/^:epub-cover-image:\s*#{Regexp.escape(remote_url)}\s*$/i, ":epub-cover-image: #{relative_image_path}")
+            if content != old_content
+              puts "[PDF]   Replaced epub-cover-image attribute: #{remote_url} -> #{relative_image_path}"
+            end
+            
+            # Also replace in title-logo-image attribute (if it contains the URL)
+            old_content = content.dup
+            content = content.gsub(/^:title-logo-image:.*#{Regexp.escape(remote_url)}/i) do |match|
+              match.gsub(remote_url, local_filename)
+            end
+            if content != old_content
+              puts "[PDF]   Replaced title-logo-image attribute: #{remote_url} -> #{local_filename}"
+            end
+          end
+          
+          # Write updated content back to temp file
+          File.write(temp_adoc.path, content)
+          puts "[PDF] Updated AsciiDoc file with local image paths"
+        end
+      else
+        puts "[PDF] No image references found in content"
+      end
+      
       puts "[PDF] Starting conversion: #{temp_adoc.path} -> #{temp_pdf.path}"
       puts "[PDF] Attributes: #{pdf_attributes.inspect}"
       puts "[PDF] Content size: #{content.bytesize} bytes"
