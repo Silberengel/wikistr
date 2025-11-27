@@ -341,9 +341,10 @@ post '/convert/epub' do
         temp_dir = File.dirname(temp_adoc.path)
         images_dir = File.join(temp_dir, 'images')
         FileUtils.mkdir_p(images_dir)
-        # Use absolute path for imagesdir to avoid path resolution issues
-        epub_attributes['imagesdir'] = File.expand_path(images_dir)
-        puts "[EPUB] Images directory set to: #{epub_attributes['imagesdir']}"
+        # Use relative path for imagesdir (relative to document directory)
+        # Asciidoctor resolves imagesdir relative to the document's directory
+        epub_attributes['imagesdir'] = 'images'
+        puts "[EPUB] Images directory set to: #{epub_attributes['imagesdir']} (absolute: #{File.expand_path(images_dir)})"
         
         all_image_urls.each_with_index do |url, idx|
           puts "[EPUB]   Image #{idx + 1}: #{url}"
@@ -958,9 +959,10 @@ post '/convert/pdf' do
         temp_dir = File.dirname(temp_adoc.path)
         images_dir = File.join(temp_dir, 'images')
         FileUtils.mkdir_p(images_dir)
-        # Use absolute path for imagesdir to avoid path resolution issues
-        pdf_attributes['imagesdir'] = File.expand_path(images_dir)
-        puts "[PDF] Images directory set to: #{pdf_attributes['imagesdir']}"
+        # Use relative path for imagesdir (relative to document directory)
+        # Asciidoctor resolves imagesdir relative to the document's directory
+        pdf_attributes['imagesdir'] = 'images'
+        puts "[PDF] Images directory set to: #{pdf_attributes['imagesdir']} (absolute: #{File.expand_path(images_dir)})"
         
         all_image_urls.each_with_index do |url, idx|
           puts "[PDF]   Image #{idx + 1}: #{url}"
