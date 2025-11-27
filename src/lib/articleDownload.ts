@@ -1328,18 +1328,24 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   // For HTML and EPUB, we create a title page section that mimics the default title page
   
   // Add title page section (for HTML and EPUB to match PDF title page)
+  // IMPORTANT: This must come immediately after document header to avoid being moved to Preamble
   // Use discrete section so it doesn't appear in TOC
+  // For EPUB, the image must be in the content (not just attributes) to be embedded
   doc += `\n[discrete]\n[.title-page]\n== ${displayTitle}\n\n`;
   
   // Add cover image if available (for HTML/EPUB)
   // The image must be in the content for EPUB to embed it properly
+  // For EPUB, the Asciidoctor server will download and embed remote images
   if (image) {
     const imageUrl = image.startsWith('http://') || image.startsWith('https://') 
       ? image 
       : image;
-    // Use block image macro with role for EPUB embedding
-    // The Asciidoctor server will download and embed remote images in EPUB
-    doc += `image::${imageUrl}[cover,role=title-logo,align=center,maxwidth=500px]\n\n`;
+    // Use block image macro - EPUB converter will download and embed remote images
+    // The 'cover' role helps identify this as the cover image
+    // Remove any whitespace and ensure URL is properly formatted
+    const cleanImageUrl = imageUrl.trim();
+    // For EPUB: image must be in content, server will download and embed it
+    doc += `image::${cleanImageUrl}[cover,align=center]\n\n`;
   }
   
   // Author is already in document header, will appear on title page automatically
