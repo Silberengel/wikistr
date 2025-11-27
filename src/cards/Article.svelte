@@ -24,6 +24,7 @@
     downloadAsEPUB,
     downloadAsHTML5,
     downloadAsAsciiDoc,
+    downloadAsMarkdown,
     downloadBookAsAsciiDoc,
     downloadBookAsEPUB,
     downloadBookOverview
@@ -1029,6 +1030,32 @@
                             AsciiDoc
                           {/if}
                         </button>
+                        {#if event && (event.kind === 30817 || event.kind === 30023)}
+                          <button
+                            onclick={async () => {
+                              if (!event) return;
+                              showDownloadMenu = false;
+                              isDownloading = true;
+                              try {
+                                await downloadAsMarkdown(event);
+                              } catch (error) {
+                                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                                showErrorDialog(`Failed to download Markdown:\n\n${errorMessage}`);
+                              } finally {
+                                isDownloading = false;
+                              }
+                            }}
+                            disabled={isDownloading}
+                            class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                            style="color: var(--text-primary);"
+                          >
+                            {#if isDownloading}
+                              Downloading Markdown...
+                            {:else}
+                              Markdown
+                            {/if}
+                          </button>
+                        {/if}
                     {/if}
                   </div>
                 </div>
