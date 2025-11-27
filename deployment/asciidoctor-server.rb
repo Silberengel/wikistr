@@ -246,8 +246,11 @@ end
 # Convert to EPUB
 post '/convert/epub' do
   begin
+    puts "[EPUB] Request received at #{Time.now}"
     request.body.rewind
+    puts "[EPUB] Reading request body..."
     body_content = request.body.read
+    puts "[EPUB] Request body read, size: #{body_content.bytesize} bytes"
     log_request_size(body_content, 'EPUB')
     data = JSON.parse(body_content)
     content = data['content'] || data['asciidoc']

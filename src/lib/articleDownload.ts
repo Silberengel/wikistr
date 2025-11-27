@@ -321,6 +321,7 @@ async function buildAsciiDocWithMetadata(
   exportFormat?: 'html' | 'epub' | 'asciidoc' | 'pdf'
 ): Promise<string> {
   const title = getTitleFromEventTags(event);
+  const displayTitle = title || 'Untitled';
   const author = await getAuthorName(event);
   const description = event.tags.find(([k]) => k === 'description')?.[1];
   const summary = event.tags.find(([k]) => k === 'summary')?.[1];
@@ -331,7 +332,7 @@ async function buildAsciiDocWithMetadata(
   const topicTags = event.tags.filter(([k]) => k === 't').map(([, v]) => v);
   
   // Build AsciiDoc document with metadata
-  let doc = `= ${title}\n`;
+  let doc = `= ${displayTitle}\n`;
   doc += `:author: ${author}\n`;
   doc += `:toc:\n`;
   doc += `:stem:\n`;
@@ -383,6 +384,9 @@ async function buildAsciiDocWithMetadata(
     if (isArticleKind) {
       const metadataFields: Array<{ label: string; value: string }> = [];
       
+      // Add Title field to metadata section
+      if (displayTitle) metadataFields.push({ label: 'Title', value: displayTitle });
+      
       // Add pubkey (as npub)
       if (event.pubkey) {
         const npub = nip19.npubEncode(event.pubkey);
@@ -425,7 +429,7 @@ async function buildAsciiDocWithMetadata(
       if (metadataFields.length > 0) {
         doc += '\n';
         doc += '[.article-metadata]\n';
-        doc += `== ${title}\n\n`;
+        doc += `== ${displayTitle}\n\n`;
         
         // Add cover image at the top of metadata section (for HTML/AsciiDoc only)
         if ((exportFormat === 'html' || exportFormat === 'asciidoc' || !exportFormat) && image) {
@@ -488,6 +492,7 @@ export async function prepareAsciiDocContent(
         const restContent = lines.slice(titleLineIndex + 1).join('\n');
         
         const title = existingTitle || getTitleFromEventTags(event);
+        const displayTitle = title || 'Untitled';
         const author = await getAuthorName(event);
         const description = event.tags.find(([k]) => k === 'description')?.[1];
         const summary = event.tags.find(([k]) => k === 'summary')?.[1];
@@ -497,7 +502,7 @@ export async function prepareAsciiDocContent(
         const publishedOn = event.tags.find(([k]) => k === 'published_on')?.[1];
         const topicTags = event.tags.filter(([k]) => k === 't').map(([, v]) => v);
         
-        let doc = `= ${title}\n`;
+        let doc = `= ${displayTitle}\n`;
         doc += `:author: ${author}\n`;
         doc += `:toc:\n`;
         doc += `:stem:\n`;
@@ -542,6 +547,9 @@ export async function prepareAsciiDocContent(
           if (isArticleKind) {
             const metadataFields: Array<{ label: string; value: string }> = [];
             
+            // Add Title field to metadata section
+            if (displayTitle) metadataFields.push({ label: 'Title', value: displayTitle });
+            
             if (event.pubkey) {
               const npub = nip19.npubEncode(event.pubkey);
               metadataFields.push({ label: 'Author Pubkey', value: npub });
@@ -578,7 +586,7 @@ export async function prepareAsciiDocContent(
             if (metadataFields.length > 0) {
               doc += '\n';
               doc += '[.article-metadata]\n';
-              doc += `== ${title}\n\n`;
+              doc += `== ${displayTitle}\n\n`;
               
               if ((exportFormat === 'html' || exportFormat === 'asciidoc' || !exportFormat) && image) {
                 doc += `image::${image}[Cover Image]\n\n`;
