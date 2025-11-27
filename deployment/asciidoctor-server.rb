@@ -336,14 +336,6 @@ post '/convert/epub' do
       if all_image_urls.any?
         puts "[EPUB] Found #{all_image_urls.length} image reference(s) in content (#{image_urls.length} from macros, #{cover_image_urls.length} from cover attributes):"
         puts "[EPUB] Debug: All image URLs: #{all_image_urls.inspect}"
-      else
-        # Debug: Check if there are any image macros in content that weren't detected
-        image_macro_count = content.scan(/image::?/i).length
-        if image_macro_count > 0
-          puts "[EPUB] WARNING: Found #{image_macro_count} image macro(s) in content but extracted 0 URLs"
-          puts "[EPUB] Debug: Sample of content with images: #{content.scan(/image::?[^\n]{0,100}/i).first(3).inspect}"
-        end
-      end
         
         # Create images directory in temp location (use absolute path)
         temp_dir = File.dirname(temp_adoc.path)
@@ -445,7 +437,14 @@ post '/convert/epub' do
           puts "[EPUB] Updated AsciiDoc file with local image paths"
         end
       else
-        puts "[EPUB] No image references found in content"
+        # Debug: Check if there are any image macros in content that weren't detected
+        image_macro_count = content.scan(/image::?/i).length
+        if image_macro_count > 0
+          puts "[EPUB] WARNING: Found #{image_macro_count} image macro(s) in content but extracted 0 URLs"
+          puts "[EPUB] Debug: Sample of content with images: #{content.scan(/image::?[^\n]{0,100}/i).first(3).inspect}"
+        else
+          puts "[EPUB] No image references found in content"
+        end
       end
       
       # Check for epub-cover-image attribute
@@ -954,14 +953,6 @@ post '/convert/pdf' do
       if all_image_urls.any?
         puts "[PDF] Found #{all_image_urls.length} image reference(s) in content (#{image_urls.length} from macros, #{cover_image_urls.length} from cover attributes):"
         puts "[PDF] Debug: All image URLs: #{all_image_urls.inspect}"
-      else
-        # Debug: Check if there are any image macros in content that weren't detected
-        image_macro_count = content.scan(/image::?/i).length
-        if image_macro_count > 0
-          puts "[PDF] WARNING: Found #{image_macro_count} image macro(s) in content but extracted 0 URLs"
-          puts "[PDF] Debug: Sample of content with images: #{content.scan(/image::?[^\n]{0,100}/i).first(3).inspect}"
-        end
-      end
         
         # Create images directory in temp location (use absolute path)
         temp_dir = File.dirname(temp_adoc.path)
@@ -1057,7 +1048,14 @@ post '/convert/pdf' do
           puts "[PDF] Updated AsciiDoc file with local image paths"
         end
       else
-        puts "[PDF] No image references found in content"
+        # Debug: Check if there are any image macros in content that weren't detected
+        image_macro_count = content.scan(/image::?/i).length
+        if image_macro_count > 0
+          puts "[PDF] WARNING: Found #{image_macro_count} image macro(s) in content but extracted 0 URLs"
+          puts "[PDF] Debug: Sample of content with images: #{content.scan(/image::?[^\n]{0,100}/i).first(3).inspect}"
+        else
+          puts "[PDF] No image references found in content"
+        end
       end
       
       puts "[PDF] Starting conversion: #{temp_adoc.path} -> #{temp_pdf.path}"
