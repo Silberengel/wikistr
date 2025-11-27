@@ -454,6 +454,12 @@ export function fixAttributeBlockSpacing(content: string): string {
 export function fixPreambleContent(content: string, isAsciiDoc: boolean = true): string {
   if (!content || content.trim().length === 0) return content;
   
+  // Skip preamble fix for book documents - Asciidoctor handles title pages automatically
+  // Check if document has :doctype: book attribute (with or without trailing whitespace)
+  if (isAsciiDoc && /^:doctype:\s+book\s*$/m.test(content)) {
+    return content;
+  }
+  
   const lines = content.split('\n');
   const fixed: string[] = [];
   
