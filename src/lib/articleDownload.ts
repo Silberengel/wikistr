@@ -1252,10 +1252,16 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
 
   // Build the document with metadata (AsciiDoc header attributes)
   // Following Asciidoctor PDF standard format: https://docs.asciidoctor.org/pdf-converter/latest/title-page/
+  // For HTML/EPUB, we also need to explicitly enable title page
   const displayTitle = title || 'Untitled';
   let doc = `= ${displayTitle}\n`;
   doc += `:author: ${author}\n`;
   doc += `:doctype: ${type}\n`;
+  // Explicitly enable title page for HTML/EPUB (PDF enables it automatically with doctype: book)
+  // According to docs: title page is enabled if doctype is book OR title-page attribute is set
+  if (type === 'book') {
+    doc += `:title-page:\n`; // Explicitly enable title page for HTML/EPUB
+  }
   doc += `:toc:\n`; // Use default TOC (automatically placed by Asciidoctor)
   doc += `:stem:\n`; // Enable STEM (math) support for LaTeX rendering
   doc += `:imagesdir: .\n`; // Set images directory to current (for relative image paths)
