@@ -66,7 +66,9 @@ get '/healthz' do
     status: 'ok',
     endpoints: {
       epub: '/convert/epub',
-      html5: '/convert/html5'
+      html5: '/convert/html5',
+      pdf: '/convert/pdf',
+      latex: '/convert/latex'
     },
     port: settings.port
   }.to_json
@@ -147,6 +149,50 @@ get '/api' do
           latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks',
           diagrams: 'Diagram generation is supported via asciidoctor-diagram extension. Supported formats: PlantUML, Graphviz, Mermaid, BPMN (via PlantUML)'
         }
+      },
+      convert_pdf: {
+        method: 'POST',
+        path: '/asciidoctor/convert/pdf',
+        description: 'Convert AsciiDoc content to PDF with automatic table of contents and LaTeX math support',
+        request: {
+          type: 'application/json',
+          body: {
+            content: 'string (required) - AsciiDoc content. Supports LaTeX math via stem:[] for inline and [stem] blocks for display math',
+            title: 'string (required) - Document title',
+            author: 'string (optional) - Document author'
+          }
+        },
+        response: {
+          type: 'application/pdf',
+          disposition: 'attachment'
+        },
+        features: {
+          table_of_contents: 'Automatic table of contents is generated when :toc: attribute is set (enabled by default)',
+          latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks',
+          diagrams: 'Diagram generation is supported via asciidoctor-diagram extension. Supported formats: PlantUML, Graphviz, Mermaid, BPMN (via PlantUML)'
+        }
+      },
+      convert_latex: {
+        method: 'POST',
+        path: '/asciidoctor/convert/latex',
+        description: 'Convert AsciiDoc content to LaTeX with automatic table of contents and LaTeX math support',
+        request: {
+          type: 'application/json',
+          body: {
+            content: 'string (required) - AsciiDoc content. Supports LaTeX math via stem:[] for inline and [stem] blocks for display math',
+            title: 'string (required) - Document title',
+            author: 'string (optional) - Document author'
+          }
+        },
+        response: {
+          type: 'text/plain',
+          disposition: 'attachment'
+        },
+        features: {
+          table_of_contents: 'Automatic table of contents is generated when :toc: attribute is set (enabled by default)',
+          latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks',
+          diagrams: 'Diagram generation is supported via asciidoctor-diagram extension. Supported formats: PlantUML, Graphviz, Mermaid, BPMN (via PlantUML)'
+        }
       }
     },
     cors: {
@@ -163,7 +209,9 @@ get '/api' do
     },
     examples: {
       curl_epub: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/epub -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\"}' --output document.epub",
-      curl_html5: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/html5 -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\"}' --output document.html"
+      curl_html5: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/html5 -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\"}' --output document.html",
+      curl_pdf: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/pdf -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\"}' --output document.pdf",
+      curl_latex: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/latex -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\"}' --output document.tex"
     }
   }.to_json
 end
@@ -748,6 +796,233 @@ post '/convert/html5' do
   end
 end
 
+# Convert to PDF
+post '/convert/pdf' do
+  begin
+    request.body.rewind
+    body_content = request.body.read
+    log_request_size(body_content, 'PDF')
+    data = JSON.parse(body_content)
+    content = data['content'] || data['asciidoc']
+    title = data['title'] || 'Document'
+    author = data['author'] || ''
+    
+    unless content
+      status 400
+      return { error: 'Missing content or asciidoc field' }.to_json
+    end
+    
+    # Create temporary file for AsciiDoc content
+    temp_adoc = Tempfile.new(['document', '.adoc'])
+    temp_adoc.write(content)
+    temp_adoc.close
+    
+    # Create temporary file for PDF output
+    temp_pdf = Tempfile.new(['document', '.pdf'])
+    temp_pdf.close
+    
+    begin
+      # Build PDF attributes
+      pdf_attributes = {
+        'title' => title,
+        'author' => author,
+        'doctype' => 'book',
+        'imagesdir' => '.',
+        'allow-uri-read' => '',  # Enable remote image downloading
+        'toc' => '',  # Enable table of contents
+        'stem' => ''  # Enable LaTeX math support
+      }
+      
+      puts "[PDF] Starting conversion: #{temp_adoc.path} -> #{temp_pdf.path}"
+      puts "[PDF] Attributes: #{pdf_attributes.inspect}"
+      
+      # Convert to PDF using convert_file with to_file
+      result = Asciidoctor.convert_file(
+        temp_adoc.path,
+        backend: 'pdf',
+        safe: 'unsafe',
+        to_file: temp_pdf.path,
+        attributes: pdf_attributes
+      )
+      puts "[PDF] Conversion completed, result: #{result.inspect}"
+      
+      # Check if PDF file was created
+      unless File.exist?(temp_pdf.path)
+        puts "[PDF] Error: PDF file was not created at #{temp_pdf.path}"
+        status 500
+        return { 
+          error: 'PDF file was not created', 
+          debug: "Expected file: #{temp_pdf.path}",
+          hint: 'The conversion completed but no PDF file was generated. Check server logs for details.'
+        }.to_json
+      end
+      
+      # Check file size
+      file_size = File.size(temp_pdf.path)
+      puts "[PDF] File created: #{temp_pdf.path}, size: #{file_size} bytes"
+      
+      if file_size == 0
+        status 500
+        return { error: 'Generated PDF file is empty' }.to_json
+      end
+      
+      # Basic validation: Check for PDF magic bytes (%PDF)
+      begin
+        File.open(temp_pdf.path, 'rb') do |f|
+          magic = f.read(4)
+          unless magic == "%PDF"
+            puts "[PDF] Error: Invalid PDF magic bytes: #{magic.unpack('H*').first}"
+            status 500
+            return { 
+              error: 'Generated file is not a valid PDF', 
+              magic: magic.unpack('H*').first,
+              hint: 'The file was created but does not appear to be a valid PDF file.'
+            }.to_json
+          end
+        end
+      rescue => e
+        puts "[PDF] Error validating PDF structure: #{e.message}"
+        status 500
+        return { 
+          error: 'Failed to validate PDF file', 
+          message: e.message 
+        }.to_json
+      end
+      
+      # Read PDF content as binary
+      pdf_content = File.binread(temp_pdf.path)
+      
+      if pdf_content.nil? || pdf_content.empty?
+        status 500
+        return { error: 'Generated PDF file is empty after reading' }.to_json
+      end
+      
+      puts "[PDF] Successfully generated PDF: #{pdf_content.bytesize} bytes"
+      
+      # Set headers and return binary content
+      content_type 'application/pdf'
+      headers 'Content-Disposition' => "attachment; filename=\"#{title.gsub(/[^a-z0-9]/i, '_')}.pdf\""
+      headers 'Content-Length' => pdf_content.bytesize.to_s
+      
+      pdf_content
+    ensure
+      # Cleanup
+      temp_adoc.unlink if temp_adoc
+      temp_pdf.unlink if temp_pdf
+    end
+  rescue JSON::ParserError => e
+    status 400
+    { error: 'Invalid JSON', message: e.message }.to_json
+  rescue => e
+    puts "[PDF] Unexpected error: #{e.class.name}: #{e.message}"
+    puts "[PDF] Backtrace: #{e.backtrace.first(10).join("\n")}"
+    
+    error_details = {
+      error: 'PDF conversion failed',
+      message: e.message,
+      class: e.class.name
+    }
+    
+    # Add helpful hints
+    if e.message.include?('syntax') || e.message.include?('parse') || e.message.include?('invalid') || e.message.include?('AsciiDoc')
+      error_details[:hint] = 'This appears to be an AsciiDoc syntax error. Common issues include: unclosed blocks (----), invalid attribute syntax, malformed headings, or incorrect attribute block spacing.'
+    end
+    
+    # Include backtrace for debugging (first few lines only)
+    if e.backtrace && e.backtrace.length > 0
+      error_details[:backtrace] = e.backtrace.first(5)
+    end
+    
+    status 500
+    error_details.to_json
+  end
+end
+
+# Convert to LaTeX
+post '/convert/latex' do
+  begin
+    request.body.rewind
+    body_content = request.body.read
+    log_request_size(body_content, 'LaTeX')
+    data = JSON.parse(body_content)
+    content = data['content'] || data['asciidoc']
+    title = data['title'] || 'Document'
+    author = data['author'] || ''
+    
+    unless content
+      status 400
+      return { error: 'Missing content or asciidoc field' }.to_json
+    end
+    
+    # Create temporary file for AsciiDoc content
+    temp_adoc = Tempfile.new(['document', '.adoc'])
+    temp_adoc.write(content)
+    temp_adoc.close
+    
+    begin
+      # Build LaTeX attributes
+      latex_attributes = {
+        'title' => title,
+        'author' => author,
+        'doctype' => 'book',
+        'imagesdir' => '.',
+        'allow-uri-read' => '',  # Enable remote image downloading
+        'toc' => '',  # Enable table of contents
+        'stem' => ''  # Enable LaTeX math support
+      }
+      
+      puts "[LaTeX] Starting conversion: #{temp_adoc.path}"
+      puts "[LaTeX] Attributes: #{latex_attributes.inspect}"
+      
+      # Convert to LaTeX
+      latex_content = Asciidoctor.convert content,
+        backend: 'latex',
+        safe: 'unsafe',
+        attributes: latex_attributes
+      
+      if latex_content.nil? || latex_content.empty?
+        status 500
+        return { error: 'Generated LaTeX file is empty' }.to_json
+      end
+      
+      puts "[LaTeX] Successfully generated LaTeX: #{latex_content.bytesize} bytes"
+      
+      # Set headers
+      content_type 'text/plain; charset=utf-8'
+      headers 'Content-Disposition' => "attachment; filename=\"#{title.gsub(/[^a-z0-9]/i, '_')}.tex\""
+      
+      latex_content
+    ensure
+      temp_adoc.unlink
+    end
+  rescue JSON::ParserError => e
+    status 400
+    { error: 'Invalid JSON', message: e.message }.to_json
+  rescue => e
+    puts "[LaTeX] Unexpected error: #{e.class.name}: #{e.message}"
+    puts "[LaTeX] Backtrace: #{e.backtrace.first(10).join("\n")}"
+    
+    error_details = {
+      error: 'LaTeX conversion failed',
+      message: e.message,
+      class: e.class.name
+    }
+    
+    # Add helpful hints
+    if e.message.include?('syntax') || e.message.include?('parse') || e.message.include?('invalid') || e.message.include?('AsciiDoc')
+      error_details[:hint] = 'This appears to be an AsciiDoc syntax error. Common issues include: unclosed blocks (----), invalid attribute syntax, malformed headings, or incorrect attribute block spacing.'
+    end
+    
+    # Include backtrace for debugging (first few lines only)
+    if e.backtrace && e.backtrace.length > 0
+      error_details[:backtrace] = e.backtrace.first(5)
+    end
+    
+    status 500
+    error_details.to_json
+  end
+end
+
 # Root endpoint
 get '/' do
   content_type :json
@@ -759,6 +1034,8 @@ get '/' do
     endpoints: {
       epub: '/convert/epub',
       html5: '/convert/html5',
+      pdf: '/convert/pdf',
+      latex: '/convert/latex',
       health: '/healthz',
       api_docs: '/api'
     }
