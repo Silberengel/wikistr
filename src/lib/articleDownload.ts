@@ -564,12 +564,13 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
         if (source) doc += `:source: ${source}\n`;
         if (topicTags.length > 0) doc += `:keywords: ${topicTags.join(', ')}\n`;
         if (summary && description) doc += `:summary: ${summary}\n`;
-        
-        doc += `\n`;
         if (image) {
           doc += `:front-cover-image: ${image}\n`;
         }
+        
+        // CRITICAL: Must have a blank line after all attributes before content begins
         doc += `\n`;
+        
         // Only add abstract section if description or summary actually exists and is not empty
         if (description && description.trim()) {
           // CRITICAL: Block attribute must be directly followed by heading with NO blank line
