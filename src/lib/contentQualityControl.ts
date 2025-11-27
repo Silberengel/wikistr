@@ -480,14 +480,16 @@ export function fixPreambleContent(content: string, isAsciiDoc: boolean = true):
     }
     
     // Find first section header (level 2 or higher)
-    // Skip title-page and book-metadata sections (they should not trigger Preamble creation)
+    // Skip title-page, book-metadata, and article-metadata sections (they should not trigger Preamble creation)
     if (docHeaderIndex >= 0 && firstSectionIndex === -1) {
       if (isAsciiDoc && /^==+\s+/.test(trimmed)) {
-        // Check if this is a title-page or book-metadata section (look for attributes on previous lines)
+        // Check if this is a special metadata section (look for attributes on previous lines)
         let isSpecialSection = false;
         for (let j = Math.max(0, i - 3); j < i; j++) {
           if (lines[j].includes('.title-page') || lines[j].includes('title-page') ||
-              lines[j].includes('.book-metadata') || lines[j].includes('book-metadata')) {
+              lines[j].includes('.book-metadata') || lines[j].includes('book-metadata') ||
+              lines[j].includes('.article-metadata') || lines[j].includes('article-metadata') ||
+              lines[j].includes('[abstract]')) {
             isSpecialSection = true;
             break;
           }
@@ -526,10 +528,16 @@ export function fixPreambleContent(content: string, isAsciiDoc: boolean = true):
       continue;
     }
     
-    // Check if it's a block attribute (like [.book-metadata] or [.title-page])
+    // Check if it's a block attribute (like [.book-metadata], [.article-metadata], [.title-page], or [abstract])
     if (isAsciiDoc && /^\[[^\]]+\]$/.test(trimmed)) {
       // This is a block attribute, the next line should be a section header
       // Skip it - it's not preamble content
+      continue;
+    }
+    
+    // Check if it's an abstract section heading
+    if (isAsciiDoc && /^==\s+Abstract\s*$/.test(trimmed)) {
+      // Skip abstract section - it's not preamble content
       continue;
     }
     

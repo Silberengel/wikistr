@@ -308,10 +308,8 @@ async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, pro
     if (isArticleKind) {
     const metadataFields: Array<{ label: string; value: string }> = [];
     
-    // Add title
-    if (title && title.trim()) {
-      metadataFields.push({ label: 'Title', value: title });
-    }
+    // Note: Title is not added here - it's the section heading
+    // Note: Abstract is not added here - it appears in the [abstract] section above
     
     // Add pubkey (as npub)
     if (event.pubkey) {
@@ -322,13 +320,6 @@ async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, pro
     // Add author
     if (author && author.trim()) {
       metadataFields.push({ label: 'Author', value: author });
-    }
-    
-    // Add summary/abstract (if not already shown in abstract section)
-    if (summary && summary.trim() && !description) {
-      metadataFields.push({ label: 'Abstract', value: summary });
-    } else if (description && description.trim() && !summary) {
-      metadataFields.push({ label: 'Abstract', value: description });
     }
     
     // Add topics
@@ -685,10 +676,8 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
           if (isArticleKind) {
           const metadataFields: Array<{ label: string; value: string }> = [];
           
-          // Add title
-          if (title && title.trim()) {
-            metadataFields.push({ label: 'Title', value: title });
-          }
+          // Note: Title is not added here - it's the section heading
+          // Note: Abstract is not added here - it appears in the [abstract] section above
           
           // Add pubkey (as npub)
           if (event.pubkey) {
@@ -700,13 +689,6 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
           // Add author
           if (author && author.trim()) {
             metadataFields.push({ label: 'Author', value: author });
-          }
-          
-          // Add summary/abstract (if not already shown in abstract section)
-          if (summary && summary.trim() && !description) {
-            metadataFields.push({ label: 'Abstract', value: summary });
-          } else if (description && description.trim() && !summary) {
-            metadataFields.push({ label: 'Abstract', value: description });
           }
           
           // Add topics
