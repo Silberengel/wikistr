@@ -316,7 +316,13 @@ post '/convert/epub' do
       
       # Scan content for images before conversion and download remote images
       # First, scan for image macros (image:: and image:)
+      # Pattern matches: image::url or image:url, optionally followed by [attributes]
       image_urls = content.scan(/image::?([^\s\[\]]+)/i).flatten
+      
+      # Also scan for inline image macros with attributes: image::url[alt] or image:url[alt]
+      # This catches cases where URLs might have been missed
+      inline_images = content.scan(/image::?([^\[]+)\[/i).flatten.map { |url| url.strip }
+      image_urls = (image_urls + inline_images).uniq
       
       # Also scan for cover image attributes (:front-cover-image: and :epub-cover-image:)
       cover_image_attrs = content.scan(/^:(?:front-cover-image|epub-cover-image):\s*(.+)$/i).flatten
@@ -326,8 +332,18 @@ post '/convert/epub' do
       all_image_urls = (image_urls + cover_image_urls).uniq
       downloaded_images = {}  # Map remote URLs to local filenames
       
+      # Debug: Log all found image URLs
       if all_image_urls.any?
         puts "[EPUB] Found #{all_image_urls.length} image reference(s) in content (#{image_urls.length} from macros, #{cover_image_urls.length} from cover attributes):"
+        puts "[EPUB] Debug: All image URLs: #{all_image_urls.inspect}"
+      else
+        # Debug: Check if there are any image macros in content that weren't detected
+        image_macro_count = content.scan(/image::?/i).length
+        if image_macro_count > 0
+          puts "[EPUB] WARNING: Found #{image_macro_count} image macro(s) in content but extracted 0 URLs"
+          puts "[EPUB] Debug: Sample of content with images: #{content.scan(/image::?[^\n]{0,100}/i).first(3).inspect}"
+        end
+      end
         
         # Create images directory in temp location (use absolute path)
         temp_dir = File.dirname(temp_adoc.path)
@@ -918,7 +934,13 @@ post '/convert/pdf' do
       
       # Scan content for images before conversion and download remote images
       # First, scan for image macros (image:: and image:)
+      # Pattern matches: image::url or image:url, optionally followed by [attributes]
       image_urls = content.scan(/image::?([^\s\[\]]+)/i).flatten
+      
+      # Also scan for inline image macros with attributes: image::url[alt] or image:url[alt]
+      # This catches cases where URLs might have been missed
+      inline_images = content.scan(/image::?([^\[]+)\[/i).flatten.map { |url| url.strip }
+      image_urls = (image_urls + inline_images).uniq
       
       # Also scan for cover image attributes (:front-cover-image: and :epub-cover-image:)
       cover_image_attrs = content.scan(/^:(?:front-cover-image|epub-cover-image):\s*(.+)$/i).flatten
@@ -928,8 +950,18 @@ post '/convert/pdf' do
       all_image_urls = (image_urls + cover_image_urls).uniq
       downloaded_images = {}  # Map remote URLs to local filenames
       
+      # Debug: Log all found image URLs
       if all_image_urls.any?
         puts "[PDF] Found #{all_image_urls.length} image reference(s) in content (#{image_urls.length} from macros, #{cover_image_urls.length} from cover attributes):"
+        puts "[PDF] Debug: All image URLs: #{all_image_urls.inspect}"
+      else
+        # Debug: Check if there are any image macros in content that weren't detected
+        image_macro_count = content.scan(/image::?/i).length
+        if image_macro_count > 0
+          puts "[PDF] WARNING: Found #{image_macro_count} image macro(s) in content but extracted 0 URLs"
+          puts "[PDF] Debug: Sample of content with images: #{content.scan(/image::?[^\n]{0,100}/i).first(3).inspect}"
+        end
+      end
         
         # Create images directory in temp location (use absolute path)
         temp_dir = File.dirname(temp_adoc.path)
