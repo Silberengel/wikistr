@@ -1570,12 +1570,35 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     metadataFields.push({ label: 'Abstract', value: summary });
   }
 
-  // Add metadata section AFTER TOC but BEFORE content sections
-  // This ensures proper structure: Title Page -> TOC -> Metadata -> Content
+  // Add custom cover page AFTER TOC but BEFORE metadata section
+  // Structure: Title Page (automatic) -> TOC -> Cover Page -> Metadata -> Content
+  if (isTopLevel) {
+    doc += '\n';
+    doc += '[discrete]\n';
+    doc += '[.cover-page]\n';
+    doc += '== \n\n'; // Empty section title (will be hidden by CSS)
+    
+    // Add cover image if available
+    if (image) {
+      const imageUrl = image.startsWith('http://') || image.startsWith('https://') 
+        ? image 
+        : image;
+      const cleanImageUrl = imageUrl.trim();
+      doc += `image::${cleanImageUrl}[cover,align=center,width=500px]\n\n`;
+    }
+    
+    // Add title and author as paragraphs (centered by CSS)
+    doc += `${displayTitle}\n\n`;
+    doc += `by ${author}\n\n`;
+    doc += '\n';
+  }
+
+  // Add metadata section AFTER cover page but BEFORE content sections
+  // This ensures proper structure: Title Page -> TOC -> Cover Page -> Metadata -> Content
   if (metadataFields.length > 0 && isTopLevel) {
     doc += '\n';
     doc += '[.book-metadata]\n';
-    doc += '== Book Metadata\n\n';
+    doc += `== ${displayTitle}\n\n`; // Use title as section heading for classic title page look
     for (const field of metadataFields) {
       if (field.value && field.value.trim()) {
         // For Abstract field, format it as a paragraph instead of inline

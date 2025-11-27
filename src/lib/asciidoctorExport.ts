@@ -277,11 +277,101 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
     }
   );
   
-  // Add CSS styling for title page to match Asciidoctor's default title page
-  // https://docs.asciidoctor.org/pdf-converter/latest/title-page/
-  // Insert styles in the <head> section or create a <style> tag if head exists
+  // Add CSS styling for cover page and book metadata section
+  // Cover page: image, title, and "by author" line
+  // Book metadata: classic title/copyright page style with large title
   const titlePageStyles = `
     <style>
+      /* Cover page styling - appears after TOC */
+      .cover-page {
+        text-align: center;
+        margin: 4em 0;
+        padding: 4em 2em;
+        page-break-after: always;
+        font-family: 'Crimson Text', 'Times New Roman', serif;
+        min-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+      }
+      /* Hide section heading if present */
+      .cover-page h2,
+      .cover-page .sect2 > h2 {
+        display: none !important;
+      }
+      .cover-page img {
+        margin: 0 auto 3em auto;
+        display: block;
+        max-width: 500px;
+        width: 100%;
+        height: auto;
+      }
+      /* Style title and author paragraphs */
+      .cover-page p {
+        margin: 1.5em 0 0 0;
+        font-size: 1.5em;
+        font-weight: 400;
+        font-family: 'Crimson Text', 'Times New Roman', serif;
+        color: #555;
+      }
+      /* Make first paragraph (title) larger and uppercase */
+      .cover-page p:first-of-type {
+        font-size: 3em;
+        font-weight: 700;
+        line-height: 1.2;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #333;
+        margin-bottom: 0.5em;
+      }
+      
+      /* Book metadata section - classic title/copyright page style */
+      .book-metadata {
+        text-align: center;
+        margin: 4em 0;
+        padding: 4em 2em;
+        page-break-after: always;
+        font-family: 'Crimson Text', 'Times New Roman', serif;
+        min-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+      }
+      .book-metadata h2 {
+        border: none !important;
+        padding: 0 !important;
+        margin: 0 0 1em 0 !important;
+        font-size: 3.5em;
+        font-weight: 700;
+        font-family: 'Crimson Text', 'Times New Roman', serif;
+        line-height: 1.2;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #000;
+      }
+      .book-metadata p {
+        margin: 0.8em 0;
+        font-size: 1em;
+        font-weight: 400;
+        font-family: 'Crimson Text', 'Times New Roman', serif;
+        color: #333;
+        line-height: 1.6;
+      }
+      .book-metadata strong {
+        font-weight: 600;
+        color: #000;
+      }
+      .book-metadata img {
+        margin: 2em auto;
+        display: block;
+        max-width: 500px;
+        width: 100%;
+        height: auto;
+      }
+      
+      /* Title page styling (for automatic Asciidoctor title page if it appears) */
       .title-page {
         text-align: center;
         margin: 0;
@@ -309,14 +399,12 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
         max-width: 100%;
         height: auto;
       }
-      /* Style the document author info that appears on title page */
       .title-page .author {
         font-size: 1.3em;
         margin-top: 1em;
         font-weight: 400;
         font-family: 'Crimson Text', 'Times New Roman', serif;
       }
-      /* Style revision info (version, date, etc.) */
       .title-page .revnumber,
       .title-page .revdate,
       .title-page .revremark {
