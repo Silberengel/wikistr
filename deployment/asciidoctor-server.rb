@@ -8,6 +8,7 @@ require 'asciidoctor-diagram'  # For PlantUML, Graphviz, BPMN, Mermaid, TikZ, et
 require 'json'
 require 'tempfile'
 require 'fileutils'
+require 'pathname'
 require 'zip'
 require 'yaml'
 
@@ -316,19 +317,22 @@ post '/convert/epub' do
             content = content.gsub(/image::?#{Regexp.escape(remote_url)}/, "image::#{local_filename}")
             puts "[EPUB]   Replaced image macro: #{remote_url} -> #{local_filename}"
             
-            # Also replace in epub-cover-image attribute (use full path for attributes)
+            # Also replace in epub-cover-image attribute (use relative path from docdir)
+            # Since imagesdir is set to images_dir and docdir is the parent, use relative path
             old_content = content.dup
-            full_image_path = File.join(images_dir, local_filename)
-            content = content.gsub(/^:epub-cover-image:\s*#{Regexp.escape(remote_url)}\s*$/i, ":epub-cover-image: #{full_image_path}")
+            # Get relative path from docdir (which is File.dirname(temp_adoc.path)) to images_dir
+            docdir = File.dirname(temp_adoc.path)
+            relative_image_path = Pathname.new(File.join(images_dir, local_filename)).relative_path_from(Pathname.new(docdir)).to_s
+            content = content.gsub(/^:epub-cover-image:\s*#{Regexp.escape(remote_url)}\s*$/i, ":epub-cover-image: #{relative_image_path}")
             if content != old_content
-              puts "[EPUB]   Replaced epub-cover-image attribute: #{remote_url} -> #{full_image_path}"
+              puts "[EPUB]   Replaced epub-cover-image attribute: #{remote_url} -> #{relative_image_path}"
             end
             
-            # Also replace in front-cover-image attribute (use full path for attributes)
+            # Also replace in front-cover-image attribute (use relative path from docdir)
             old_content = content.dup
-            content = content.gsub(/^:front-cover-image:\s*#{Regexp.escape(remote_url)}\s*$/i, ":front-cover-image: #{full_image_path}")
+            content = content.gsub(/^:front-cover-image:\s*#{Regexp.escape(remote_url)}\s*$/i, ":front-cover-image: #{relative_image_path}")
             if content != old_content
-              puts "[EPUB]   Replaced front-cover-image attribute: #{remote_url} -> #{full_image_path}"
+              puts "[EPUB]   Replaced front-cover-image attribute: #{remote_url} -> #{relative_image_path}"
             end
             
             # Also replace in title-logo-image attribute (if it contains the URL)
