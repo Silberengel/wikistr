@@ -1380,9 +1380,8 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     // PDF automatically creates a title page with the cover image when :front-cover-image: is set
     if (exportFormat === 'pdf' || !exportFormat) {
       doc += `:front-cover-image: ${imageUrl}\n`;
-      // For PDF title page: use as logo image (centered, positioned nicely)
-      // The title page is automatically created when doctype: book is set
-      doc += `:title-logo-image: image:${imageUrl}[top=25%,align=center,pdfwidth=3in]\n`;
+      // Note: We don't set :title-logo-image: to avoid showing the image on both cover and title pages
+      // The :front-cover-image: will appear on the cover page, and the title page will be text-only
     }
     // For EPUB: also set front-cover-image for the cover page
     // EPUB will use this for the cover page, and the image in the metadata section provides additional display

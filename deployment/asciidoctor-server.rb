@@ -1036,21 +1036,83 @@ post '/convert/pdf' do
       
       # Convert to PDF using convert_file with to_file
       # Wrap in timeout to prevent stuck conversions
+      # Note: asciidoctor-pdf can hang after creating the file, so we also check if file exists
       begin
-        result = Timeout.timeout(CONVERSION_TIMEOUT) do
-          puts "[PDF] Calling Asciidoctor.convert_file..."
-          conversion_result = Asciidoctor.convert_file(
-            temp_adoc.path,
-            backend: 'pdf',
-            safe: 'unsafe',
-            to_file: temp_pdf.path,
-            attributes: pdf_attributes
-          )
-          puts "[PDF] Asciidoctor.convert_file returned: #{conversion_result.inspect}"
-          conversion_result
+        result = nil
+        file_created = false
+        
+        # Start conversion in a thread so we can monitor file creation
+        conversion_thread = Thread.new do
+          begin
+            puts "[PDF] Calling Asciidoctor.convert_file..."
+            result = Asciidoctor.convert_file(
+              temp_adoc.path,
+              backend: 'pdf',
+              safe: 'unsafe',
+              to_file: temp_pdf.path,
+              attributes: pdf_attributes
+            )
+            puts "[PDF] Asciidoctor.convert_file returned: #{result.inspect}"
+            file_created = true
+          rescue => e
+            puts "[PDF] Error in conversion thread: #{e.class.name}: #{e.message}"
+            raise e
+          end
         end
+        
+        # Monitor for file creation and completion
+        max_wait = CONVERSION_TIMEOUT
+        check_interval = 2  # Check every 2 seconds
+        waited = 0
+        last_size = 0
+        stable_count = 0
+        
+        while waited < max_wait && !file_created
+          sleep(check_interval)
+          waited += check_interval
+          
+          if File.exist?(temp_pdf.path)
+            current_size = File.size(temp_pdf.path)
+            if current_size > 0
+              if current_size == last_size
+                stable_count += 1
+                # File size is stable for 3 checks (6 seconds) - conversion likely done
+                if stable_count >= 3
+                  puts "[PDF] PDF file exists and size is stable (#{current_size} bytes), conversion appears complete"
+                  file_created = true
+                  break
+                end
+              else
+                stable_count = 0
+                last_size = current_size
+                puts "[PDF] PDF file growing: #{current_size} bytes (waited #{waited}s)"
+              end
+            end
+          end
+          
+          # Check if thread completed
+          if !conversion_thread.alive?
+            file_created = true
+            break
+          end
+        end
+        
+        # If we timed out waiting, kill the thread and check if file exists
+        if waited >= max_wait && !file_created
+          puts "[PDF] Timeout reached (#{max_wait}s), checking if PDF was created..."
+          conversion_thread.kill if conversion_thread.alive?
+          if File.exist?(temp_pdf.path) && File.size(temp_pdf.path) > 0
+            puts "[PDF] PDF file exists despite timeout, proceeding with file"
+            file_created = true
+          else
+            elapsed_time = Time.now - start_time
+            puts "[PDF] Conversion timed out after #{elapsed_time.round(2)} seconds and no file created"
+            raise Timeout::Error, "PDF conversion timed out after #{CONVERSION_TIMEOUT} seconds"
+          end
+        end
+        
         elapsed_time = Time.now - start_time
-        puts "[PDF] Conversion completed in #{elapsed_time.round(2)} seconds, result: #{result.inspect}"
+        puts "[PDF] Conversion completed in #{elapsed_time.round(2)} seconds"
       rescue Timeout::Error => timeout_error
         elapsed_time = Time.now - start_time
         puts "[PDF] Conversion timed out after #{elapsed_time.round(2)} seconds"
