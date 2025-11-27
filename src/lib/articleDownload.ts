@@ -866,7 +866,7 @@ export async function downloadAsPDF(event: NostrEvent, filename?: string): Promi
  * Get LaTeX blob (for viewing)
  */
 export async function getLaTeXBlob(event: NostrEvent): Promise<{ blob: Blob; filename: string }> {
-  let { content, title, author } = await getEventContent(event, 'html');
+  let { content, title, author } = await getEventContent(event, 'latex');
   
   if (!content || content.trim().length === 0) {
     throw new Error('Failed to prepare content');
