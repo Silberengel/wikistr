@@ -1599,9 +1599,10 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
       doc += `image::${cleanImageUrl}[cover,align=center,width=500px]\n\n`;
     }
     
-    // Add title and author in a single paragraph to reduce spacing
-    // Use AsciiDoc line continuation (+) to keep them in same paragraph
-    doc += `${displayTitle}\n+\nby ${author}\n\n`;
+    // Add title and author as separate paragraphs to maintain spacing
+    doc += `${displayTitle}`;
+    doc += `by ${author}`;
+    doc += '\n\n';
   }
 
   // Add metadata section AFTER cover page but BEFORE content sections
