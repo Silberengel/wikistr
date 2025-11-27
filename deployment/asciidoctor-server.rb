@@ -1036,17 +1036,26 @@ post '/convert/pdf' do
       
       # Convert to PDF using convert_file with to_file
       # Wrap in timeout to prevent stuck conversions
-      result = Timeout.timeout(CONVERSION_TIMEOUT) do
-        Asciidoctor.convert_file(
-          temp_adoc.path,
-          backend: 'pdf',
-          safe: 'unsafe',
-          to_file: temp_pdf.path,
-          attributes: pdf_attributes
-        )
+      begin
+        result = Timeout.timeout(CONVERSION_TIMEOUT) do
+          puts "[PDF] Calling Asciidoctor.convert_file..."
+          conversion_result = Asciidoctor.convert_file(
+            temp_adoc.path,
+            backend: 'pdf',
+            safe: 'unsafe',
+            to_file: temp_pdf.path,
+            attributes: pdf_attributes
+          )
+          puts "[PDF] Asciidoctor.convert_file returned: #{conversion_result.inspect}"
+          conversion_result
+        end
+        elapsed_time = Time.now - start_time
+        puts "[PDF] Conversion completed in #{elapsed_time.round(2)} seconds, result: #{result.inspect}"
+      rescue Timeout::Error => timeout_error
+        elapsed_time = Time.now - start_time
+        puts "[PDF] Conversion timed out after #{elapsed_time.round(2)} seconds"
+        raise timeout_error
       end
-      elapsed_time = Time.now - start_time
-      puts "[PDF] Conversion completed in #{elapsed_time.round(2)} seconds, result: #{result.inspect}"
       
       # Check if PDF file was created
       unless File.exist?(temp_pdf.path)
@@ -1100,7 +1109,9 @@ post '/convert/pdf' do
       end
       
       # Read PDF content as binary
+      puts "[PDF] Reading PDF file from disk..."
       pdf_content = File.binread(temp_pdf.path)
+      puts "[PDF] Successfully read #{pdf_content.bytesize} bytes from disk"
       
       if pdf_content.nil? || pdf_content.empty?
         status 500
