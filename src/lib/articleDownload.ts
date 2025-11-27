@@ -6,7 +6,7 @@
 import type { NostrEvent } from '@nostr/tools/pure';
 import { nip19 } from '@nostr/tools';
 import { relayService } from '$lib/relayService';
-import { exportToEPUB, exportToHTML5, downloadBlob } from './asciidoctorExport';
+import { exportToEPUB, exportToHTML5, exportToPDF, exportToLaTeX, downloadBlob } from './asciidoctorExport';
 import {
   processContentQuality,
   processContentQualityAsync,
@@ -816,6 +816,74 @@ export async function getHTML5Blob(event: NostrEvent): Promise<{ blob: Blob; fil
  */
 export async function downloadAsHTML5(event: NostrEvent, filename?: string): Promise<void> {
   const { blob, filename: defaultFilename } = await getHTML5Blob(event);
+  const name = filename || defaultFilename;
+  downloadBlob(blob, name);
+}
+
+/**
+ * Get PDF blob (for viewing)
+ */
+export async function getPDFBlob(event: NostrEvent): Promise<{ blob: Blob; filename: string }> {
+  let { content, title, author } = await getEventContent(event, 'html');
+  
+  if (!content || content.trim().length === 0) {
+    throw new Error('Failed to prepare content');
+  }
+  
+  // Apply full QC processing to fix empty headings, missing heading levels, and other issues
+  content = await processContentQualityAsync(content, event, true);
+  
+  validateAsciiDocContent(content, true);
+  
+  const blob = await exportToPDF({ content, title, author });
+  
+  if (!blob || blob.size === 0) {
+    throw new Error('Server returned empty PDF file');
+  }
+  
+  const filename = generateFilename(title, 'pdf');
+  return { blob, filename };
+}
+
+/**
+ * Download PDF
+ */
+export async function downloadAsPDF(event: NostrEvent, filename?: string): Promise<void> {
+  const { blob, filename: defaultFilename } = await getPDFBlob(event);
+  const name = filename || defaultFilename;
+  downloadBlob(blob, name);
+}
+
+/**
+ * Get LaTeX blob (for viewing)
+ */
+export async function getLaTeXBlob(event: NostrEvent): Promise<{ blob: Blob; filename: string }> {
+  let { content, title, author } = await getEventContent(event, 'html');
+  
+  if (!content || content.trim().length === 0) {
+    throw new Error('Failed to prepare content');
+  }
+  
+  // Apply full QC processing to fix empty headings, missing heading levels, and other issues
+  content = await processContentQualityAsync(content, event, true);
+  
+  validateAsciiDocContent(content, true);
+  
+  const blob = await exportToLaTeX({ content, title, author });
+  
+  if (!blob || blob.size === 0) {
+    throw new Error('Server returned empty LaTeX file');
+  }
+  
+  const filename = generateFilename(title, 'tex');
+  return { blob, filename };
+}
+
+/**
+ * Download LaTeX
+ */
+export async function downloadAsLaTeX(event: NostrEvent, filename?: string): Promise<void> {
+  const { blob, filename: defaultFilename } = await getLaTeXBlob(event);
   const name = filename || defaultFilename;
   downloadBlob(blob, name);
 }

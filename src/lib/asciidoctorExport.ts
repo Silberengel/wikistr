@@ -609,6 +609,222 @@ export async function openInViewer(
 
 
 /**
+ * Convert AsciiDoc content to PDF
+ */
+export async function exportToPDF(options: ExportOptions): Promise<Blob> {
+  const baseUrl = ASCIIDOCTOR_SERVER_URL.endsWith('/') ? ASCIIDOCTOR_SERVER_URL : `${ASCIIDOCTOR_SERVER_URL}/`;
+  const url = `${baseUrl}convert/pdf`;
+  
+  // Verify we have AsciiDoc content
+  if (!options.content || options.content.trim().length === 0) {
+    throw new Error('Cannot export to PDF: AsciiDoc content is empty');
+  }
+  
+  console.log('[PDF Export] Sending request to:', url);
+  console.log('[PDF Export] Content length:', options.content.length);
+  console.log('[PDF Export] Title:', options.title);
+  
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        content: options.content,
+        title: options.title,
+        author: options.author || '',
+      }),
+    });
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : 'Network error';
+    console.error('[PDF Export] Network error:', errorMessage);
+    throw new Error(`Failed to connect to PDF conversion server: ${errorMessage}. Make sure the AsciiDoctor server is running.`);
+  }
+
+  if (!response.ok) {
+    let errorMessage = `PDF conversion failed: ${response.status} ${response.statusText}`;
+    let errorDetails: any = null;
+    
+    try {
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        errorDetails = await response.json();
+        errorMessage = errorDetails.error || errorDetails.message || errorMessage;
+        if (errorDetails.hint) {
+          errorMessage += `\n\nHint: ${errorDetails.hint}`;
+        }
+        if (errorDetails.line) {
+          errorMessage += `\n\nError detected at line ${errorDetails.line}`;
+        }
+      } else {
+        const text = await response.text();
+        if (text) {
+          try {
+            errorDetails = JSON.parse(text);
+            errorMessage = errorDetails.error || errorDetails.message || errorMessage;
+            if (errorDetails.hint) {
+              errorMessage += `\n\nHint: ${errorDetails.hint}`;
+            }
+          } catch {
+            const preview = text.length > 200 ? text.substring(0, 200) + '...' : text;
+            errorMessage = `${errorMessage}\n\nServer response: ${preview}`;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[PDF Export] Failed to read error response:', err);
+    }
+    
+    console.error('[PDF Export] Conversion failed:', {
+      status: response.status,
+      statusText: response.statusText,
+      url,
+      errorMessage,
+      errorDetails
+    });
+    
+    throw new Error(errorMessage);
+  }
+
+  // Verify we got a PDF response
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/pdf')) {
+    const text = await response.text();
+    if (text.includes('__sveltekit') || text.includes('sveltekit-preload-data')) {
+      throw new Error('Server returned SvelteKit app shell instead of PDF. Check AsciiDoctor server is running at /asciidoctor/ and proxy is configured correctly.');
+    }
+    if (text.trim().startsWith('{')) {
+      try {
+        const error = JSON.parse(text);
+        throw new Error(error.error || error.message || 'Server returned error instead of PDF');
+      } catch {
+        // Not valid JSON, continue with generic error
+      }
+    }
+    throw new Error(`Server returned unexpected content type: ${contentType}. Response preview: ${text.substring(0, 200)}`);
+  }
+
+  const blob = await response.blob();
+  
+  if (!blob || blob.size === 0) {
+    throw new Error('Server returned empty PDF file');
+  }
+  
+  console.log('[PDF Export] Successfully generated PDF file');
+  return blob;
+}
+
+/**
+ * Convert AsciiDoc content to LaTeX
+ */
+export async function exportToLaTeX(options: ExportOptions): Promise<Blob> {
+  const baseUrl = ASCIIDOCTOR_SERVER_URL.endsWith('/') ? ASCIIDOCTOR_SERVER_URL : `${ASCIIDOCTOR_SERVER_URL}/`;
+  const url = `${baseUrl}convert/latex`;
+  
+  // Verify we have AsciiDoc content
+  if (!options.content || options.content.trim().length === 0) {
+    throw new Error('Cannot export to LaTeX: AsciiDoc content is empty');
+  }
+  
+  console.log('[LaTeX Export] Sending request to:', url);
+  console.log('[LaTeX Export] Content length:', options.content.length);
+  console.log('[LaTeX Export] Title:', options.title);
+  
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        content: options.content,
+        title: options.title,
+        author: options.author || '',
+      }),
+    });
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : 'Network error';
+    console.error('[LaTeX Export] Network error:', errorMessage);
+    throw new Error(`Failed to connect to LaTeX conversion server: ${errorMessage}. Make sure the AsciiDoctor server is running.`);
+  }
+
+  if (!response.ok) {
+    let errorMessage = `LaTeX conversion failed: ${response.status} ${response.statusText}`;
+    let errorDetails: any = null;
+    
+    try {
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        errorDetails = await response.json();
+        errorMessage = errorDetails.error || errorDetails.message || errorMessage;
+        if (errorDetails.hint) {
+          errorMessage += `\n\nHint: ${errorDetails.hint}`;
+        }
+        if (errorDetails.line) {
+          errorMessage += `\n\nError detected at line ${errorDetails.line}`;
+        }
+      } else {
+        const text = await response.text();
+        if (text) {
+          try {
+            errorDetails = JSON.parse(text);
+            errorMessage = errorDetails.error || errorDetails.message || errorMessage;
+            if (errorDetails.hint) {
+              errorMessage += `\n\nHint: ${errorDetails.hint}`;
+            }
+          } catch {
+            const preview = text.length > 200 ? text.substring(0, 200) + '...' : text;
+            errorMessage = `${errorMessage}\n\nServer response: ${preview}`;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[LaTeX Export] Failed to read error response:', err);
+    }
+    
+    console.error('[LaTeX Export] Conversion failed:', {
+      status: response.status,
+      statusText: response.statusText,
+      url,
+      errorMessage,
+      errorDetails
+    });
+    
+    throw new Error(errorMessage);
+  }
+
+  // Verify we got a LaTeX/text response
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('text/plain') && !contentType.includes('application/x-latex') && !contentType.includes('text/x-latex')) {
+    const text = await response.text();
+    if (text.includes('__sveltekit') || text.includes('sveltekit-preload-data')) {
+      throw new Error('Server returned SvelteKit app shell instead of LaTeX. Check AsciiDoctor server is running at /asciidoctor/ and proxy is configured correctly.');
+    }
+    if (text.trim().startsWith('{')) {
+      try {
+        const error = JSON.parse(text);
+        throw new Error(error.error || error.message || 'Server returned error instead of LaTeX');
+      } catch {
+        // Not valid JSON, continue with generic error
+      }
+    }
+    throw new Error(`Server returned unexpected content type: ${contentType}. Response preview: ${text.substring(0, 200)}`);
+  }
+
+  const blob = await response.blob();
+  
+  if (!blob || blob.size === 0) {
+    throw new Error('Server returned empty LaTeX file');
+  }
+  
+  console.log('[LaTeX Export] Successfully generated LaTeX file');
+  return blob;
+}
+
+/**
  * Check if the AsciiDoctor server is available
  */
 export async function checkServerHealth(): Promise<boolean> {
