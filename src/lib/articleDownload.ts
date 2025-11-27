@@ -284,17 +284,17 @@ async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, pro
     doc += `:front-cover-image: ${image}\n`;
   }
   
-  doc += `\n`;
+  // CRITICAL: Must have a blank line after all attributes before content begins
+  // Ensure there's exactly one blank line (two newlines total: one to end attributes, one blank line)
+  doc = doc.trimEnd() + '\n\n';
   
   // Add description as abstract if available (only if not empty)
   if (description && description.trim()) {
     // CRITICAL: Block attribute must be directly followed by heading with NO blank line
-    doc = doc.trimEnd() + '\n';
     doc += `[abstract]\n== Abstract\n\n`;
     doc += `${description}\n\n`;
   } else if (summary && summary.trim()) {
     // CRITICAL: Block attribute must be directly followed by heading with NO blank line
-    doc = doc.trimEnd() + '\n';
     doc += `[abstract]\n== Abstract\n\n`;
     doc += `${summary}\n\n`;
   }
@@ -569,17 +569,16 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
         }
         
         // CRITICAL: Must have a blank line after all attributes before content begins
-        doc += `\n`;
+        // Ensure there's exactly one blank line (two newlines total: one to end attributes, one blank line)
+        doc = doc.trimEnd() + '\n\n';
         
         // Only add abstract section if description or summary actually exists and is not empty
         if (description && description.trim()) {
           // CRITICAL: Block attribute must be directly followed by heading with NO blank line
-          doc = doc.trimEnd() + '\n';
           doc += `[abstract]\n== Abstract\n\n`;
           doc += `${description}\n\n`;
         } else if (summary && summary.trim()) {
           // CRITICAL: Block attribute must be directly followed by heading with NO blank line
-          doc = doc.trimEnd() + '\n';
           doc += `[abstract]\n== Abstract\n\n`;
           doc += `${summary}\n\n`;
         }
