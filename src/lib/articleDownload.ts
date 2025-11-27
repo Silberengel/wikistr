@@ -1600,7 +1600,7 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     }
     
     // Add title and author on separate lines
-    doc += `${displayTitle}\n`;
+    doc += `${displayTitle}\n\n`;
     doc += `by ${author}\n\n`;
   }
 
