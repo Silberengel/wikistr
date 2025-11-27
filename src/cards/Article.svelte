@@ -1081,7 +1081,7 @@
                             {/if}
                           </button>
                         {/if}
-                        {#if event && (event.kind === 30818 || event.kind === 30040 || event.kind === 30041)}
+                        {#if event && (event.kind === 30818 || event.kind === 30040 || event.kind === 30041 || event.kind === 30023 || event.kind === 30817)}
                           <button
                             onclick={async () => {
                               if (!event) return;
