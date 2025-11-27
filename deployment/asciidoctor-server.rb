@@ -853,6 +853,8 @@ post '/convert/pdf' do
       
       puts "[PDF] Starting conversion: #{temp_adoc.path} -> #{temp_pdf.path}"
       puts "[PDF] Attributes: #{pdf_attributes.inspect}"
+      puts "[PDF] Content size: #{content.bytesize} bytes"
+      start_time = Time.now
       
       # Convert to PDF using convert_file with to_file
       result = Asciidoctor.convert_file(
@@ -862,7 +864,8 @@ post '/convert/pdf' do
         to_file: temp_pdf.path,
         attributes: pdf_attributes
       )
-      puts "[PDF] Conversion completed, result: #{result.inspect}"
+      elapsed_time = Time.now - start_time
+      puts "[PDF] Conversion completed in #{elapsed_time.round(2)} seconds, result: #{result.inspect}"
       
       # Check if PDF file was created
       unless File.exist?(temp_pdf.path)
@@ -926,12 +929,15 @@ post '/convert/pdf' do
       end
       
       puts "[PDF] Successfully generated PDF: #{pdf_content.bytesize} bytes"
+      puts "[PDF] Sending PDF response to client..."
       
       # Set headers and return binary content
       content_type 'application/pdf'
       headers 'Content-Disposition' => "attachment; filename=\"#{title.gsub(/[^a-z0-9]/i, '_')}.pdf\""
       headers 'Content-Length' => pdf_content.bytesize.to_s
+      set_cors_headers  # Ensure CORS headers are set for successful responses too
       
+      puts "[PDF] Headers set, returning PDF content..."
       pdf_content
     ensure
       # Cleanup
