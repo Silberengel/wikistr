@@ -1674,6 +1674,22 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   }
 
 
+  // Add cover page section for EPUB (before TOC/metadata)
+  // EPUB needs an explicit cover page section with the cover image
+  if (exportFormat === 'epub' && image && isTopLevel) {
+    const imageUrl = image.startsWith('http://') || image.startsWith('https://') 
+      ? image 
+      : image;
+    doc += '\n';
+    doc += '[.cover-page]\n';
+    doc += `== ${displayTitle}\n\n`;
+    doc += `image::${imageUrl}[Cover Image]\n\n`;
+    if (author && author.trim()) {
+      doc += `${author}\n\n`;
+    }
+    doc += '\n';
+  }
+  
   // Add metadata section AFTER TOC but BEFORE content sections
   // This ensures proper structure: Title Page -> TOC -> Metadata -> Content
   if (metadataFields.length > 0 && isTopLevel) {
@@ -1683,9 +1699,10 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     
     // Add cover image at the top of metadata section
     // PDF handles cover image via :front-cover-image: attribute on its own title page
-    // HTML, AsciiDoc, EPUB, and LaTeX need it in the metadata section
+    // HTML, AsciiDoc, and LaTeX need it in the metadata section
+    // EPUB has its own cover page section (added above), so we don't add it here
     if ((exportFormat === 'html' || exportFormat === 'asciidoc' || exportFormat === 'latex') && image) {
-      // Ensure image URL is absolute (required for HTML/EPUB/LaTeX to display)
+      // Ensure image URL is absolute (required for HTML/LaTeX to display)
       const imageUrl = image.startsWith('http://') || image.startsWith('https://') 
         ? image 
         : image;
