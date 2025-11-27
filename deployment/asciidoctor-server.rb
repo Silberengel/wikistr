@@ -57,9 +57,8 @@ options '*' do
   ''
 end
 
-# Error handler to ensure CORS headers are always set, even on exceptions
-error do
-  # Set CORS headers even on errors
+# Helper function to set CORS headers
+def set_cors_headers
   origin = request.env['HTTP_ORIGIN']
   allowed_origins = (ENV['ASCIIDOCTOR_ALLOW_ORIGIN'] || '*').split(',').map(&:strip).reject(&:empty?)
   
@@ -74,6 +73,11 @@ error do
   headers 'Access-Control-Allow-Methods' => 'POST, GET, OPTIONS'
   headers 'Access-Control-Allow-Headers' => 'Content-Type, Origin, Accept'
   headers 'Access-Control-Max-Age' => '86400'
+end
+
+# Error handler to ensure CORS headers are always set, even on exceptions
+error do
+  set_cors_headers
   
   # Return error response
   content_type :json
@@ -820,6 +824,8 @@ post '/convert/pdf' do
     
     unless content
       status 400
+      content_type :json
+      set_cors_headers
       return { error: 'Missing content or asciidoc field' }.to_json
     end
     
@@ -861,6 +867,8 @@ post '/convert/pdf' do
       unless File.exist?(temp_pdf.path)
         puts "[PDF] Error: PDF file was not created at #{temp_pdf.path}"
         status 500
+        content_type :json
+        set_cors_headers
         return { 
           error: 'PDF file was not created', 
           debug: "Expected file: #{temp_pdf.path}",
@@ -874,6 +882,8 @@ post '/convert/pdf' do
       
       if file_size == 0
         status 500
+        content_type :json
+        set_cors_headers
         return { error: 'Generated PDF file is empty' }.to_json
       end
       
@@ -884,6 +894,8 @@ post '/convert/pdf' do
           unless magic == "%PDF"
             puts "[PDF] Error: Invalid PDF magic bytes: #{magic.unpack('H*').first}"
             status 500
+            content_type :json
+            set_cors_headers
             return { 
               error: 'Generated file is not a valid PDF', 
               magic: magic.unpack('H*').first,
@@ -894,6 +906,8 @@ post '/convert/pdf' do
       rescue => e
         puts "[PDF] Error validating PDF structure: #{e.message}"
         status 500
+        content_type :json
+        set_cors_headers
         return { 
           error: 'Failed to validate PDF file', 
           message: e.message 
@@ -905,6 +919,8 @@ post '/convert/pdf' do
       
       if pdf_content.nil? || pdf_content.empty?
         status 500
+        content_type :json
+        set_cors_headers
         return { error: 'Generated PDF file is empty after reading' }.to_json
       end
       
@@ -924,6 +940,7 @@ post '/convert/pdf' do
   rescue JSON::ParserError => e
     status 400
     content_type :json
+    set_cors_headers
     { error: 'Invalid JSON', message: e.message }.to_json
   rescue => e
     puts "[PDF] Unexpected error: #{e.class.name}: #{e.message}"
@@ -947,6 +964,7 @@ post '/convert/pdf' do
     
     status 500
     content_type :json
+    set_cors_headers
     error_details.to_json
   end
 end
