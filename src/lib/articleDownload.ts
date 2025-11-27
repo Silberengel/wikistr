@@ -238,7 +238,7 @@ async function getAuthorName(event: NostrEvent): Promise<string> {
 /**
  * Build AsciiDoc document with metadata header
  */
-async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, providedImage?: string): Promise<string> {
+async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, providedImage?: string, exportFormat?: 'html' | 'epub' | 'asciidoc' | 'pdf' | 'latex'): Promise<string> {
   const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
   const author = await getAuthorName(event);
   const description = event.tags.find(([k]) => k === 'description')?.[1];
@@ -494,7 +494,7 @@ function convertAsciiDocToMarkdown(asciidoc: string): string {
 /**
  * Prepare content for AsciiDoc conversion (with metadata)
  */
-export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata: boolean = true): Promise<string> {
+export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata: boolean = true, exportFormat?: 'html' | 'epub' | 'asciidoc' | 'pdf' | 'latex'): Promise<string> {
   if (!event.content || event.content.trim().length === 0) {
     const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
     if (includeMetadata) {
@@ -550,6 +550,14 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
         doc += `:stem:\n`; // Enable STEM (math) support for LaTeX rendering
         doc += `:page-break-mode: auto\n`; // Reduce unnecessary page breaks
         doc += `:pdf-page-break-mode: auto\n`; // Allow content to flow naturally
+        
+        // Add PDF-specific attributes
+        if (exportFormat === 'pdf') {
+          doc += `:media: prepress\n`; // Use prepress media type for high-quality PDF output
+          doc += `:pdf-page-size: A4\n`; // Standard A4 page size
+          doc += `:pdf-page-margin: [54, 72, 54, 72]\n`; // Margins: top, right, bottom, left (in points)
+          doc += `:pdf-style: default\n`; // Use default PDF style
+        }
         
         if (version) doc += `:version: ${version}\n`;
         if (publishedOn) doc += `:pubdate: ${publishedOn}\n`;
@@ -609,7 +617,7 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
 /**
  * Helper: Get book content (for 30040 events) or single event content
  */
-async function getEventContent(event: NostrEvent, exportFormat?: 'html' | 'epub' | 'asciidoc'): Promise<{ content: string; title: string; author: string }> {
+async function getEventContent(event: NostrEvent, exportFormat?: 'html' | 'epub' | 'asciidoc' | 'pdf' | 'latex'): Promise<{ content: string; title: string; author: string }> {
   if (event.kind === 30040) {
     // For books, fetch all branches and leaves
     const contentEvents = await fetchBookContentEvents(event);
@@ -824,7 +832,7 @@ export async function downloadAsHTML5(event: NostrEvent, filename?: string): Pro
  * Get PDF blob (for viewing)
  */
 export async function getPDFBlob(event: NostrEvent): Promise<{ blob: Blob; filename: string }> {
-  let { content, title, author } = await getEventContent(event, 'html');
+  let { content, title, author } = await getEventContent(event, 'pdf');
   
   if (!content || content.trim().length === 0) {
     throw new Error('Failed to prepare content');
@@ -1221,9 +1229,9 @@ function adjustHeadingLevels(content: string, sectionLevel: number): string {
  * Combine book events into a single AsciiDoc document
  * Uses metadata from NKBIP-01 and NKBIP-08
  * @param isTopLevel - If true, add book-metadata section. Only true for the root 30040 event.
- * @param exportFormat - Export format ('html', 'epub', or 'asciidoc'). Used to conditionally add cover image to metadata section.
+ * @param exportFormat - Export format ('html', 'epub', 'asciidoc', 'pdf', or 'latex'). Used to conditionally add cover image to metadata section and PDF-specific attributes.
  */
-export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: NostrEvent[], isTopLevel: boolean = true, exportFormat?: 'html' | 'epub' | 'asciidoc'): Promise<string> {
+export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: NostrEvent[], isTopLevel: boolean = true, exportFormat?: 'html' | 'epub' | 'asciidoc' | 'pdf' | 'latex'): Promise<string> {
   // Extract metadata from NKBIP-01 (Publication Index - kind 30040)
   const title = indexEvent.tags.find(([k]) => k === 'title')?.[1] || 
                 indexEvent.tags.find(([k]) => k === 'T')?.[1] ||
@@ -1340,6 +1348,14 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   doc += `:imagesdir: .\n`; // Set images directory to current (for relative image paths)
   doc += `:allow-uri-read:\n`; // Enable remote image downloading for EPUB/PDF
   
+  // Add PDF-specific attributes
+  if (exportFormat === 'pdf') {
+    doc += `:media: prepress\n`; // Use prepress media type for high-quality PDF output
+    doc += `:pdf-page-size: A4\n`; // Standard A4 page size
+    doc += `:pdf-page-margin: [54, 72, 54, 72]\n`; // Margins: top, right, bottom, left (in points)
+    doc += `:pdf-style: default\n`; // Use default PDF style
+  }
+  
   // Use standard Asciidoctor revision attributes for title page
   // https://docs.asciidoctor.org/pdf-converter/latest/title-page/
   if (version || versionTag) {
@@ -1394,12 +1410,16 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
       : image;
     
     // For PDF: front cover image (appears before title page)
-    doc += `:front-cover-image: ${imageUrl}\n`;
-    // For PDF title page: use as logo image (centered, positioned nicely)
-    // The title page is automatically created when doctype: book is set
-    doc += `:title-logo-image: image:${imageUrl}[top=25%,align=center,pdfwidth=3in]\n`;
+    // PDF automatically creates a title page with the cover image when :front-cover-image: is set
+    if (exportFormat === 'pdf' || !exportFormat) {
+      doc += `:front-cover-image: ${imageUrl}\n`;
+      // For PDF title page: use as logo image (centered, positioned nicely)
+      // The title page is automatically created when doctype: book is set
+      doc += `:title-logo-image: image:${imageUrl}[top=25%,align=center,pdfwidth=3in]\n`;
+    }
     // Note: We don't set :epub-cover-image: here because we want the image to appear
     // only on the custom cover page, not as the EPUB cover metadata
+    // For LaTeX, the image will be added to the book metadata section (handled above)
   }
   
   // Title page is automatically created by Asciidoctor when doctype: book is set
@@ -1656,9 +1676,11 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     doc += '[.book-metadata]\n';
     doc += `== ${displayTitle}\n\n`; // Use title as section heading for classic title page look
     
-    // Add cover image at the top of metadata section, only for HTML and AsciiDoc exports
-    if ((exportFormat === 'html' || exportFormat === 'asciidoc') && image) {
-      // Ensure image URL is absolute (required for HTML to display)
+    // Add cover image at the top of metadata section
+    // PDF handles cover image via :front-cover-image: attribute on its own title page
+    // HTML and AsciiDoc need it in the metadata section, LaTeX also needs it there
+    if ((exportFormat === 'html' || exportFormat === 'asciidoc' || exportFormat === 'latex') && image) {
+      // Ensure image URL is absolute (required for HTML/LaTeX to display)
       const imageUrl = image.startsWith('http://') || image.startsWith('https://') 
         ? image 
         : image;
