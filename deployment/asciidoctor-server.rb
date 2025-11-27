@@ -57,6 +57,33 @@ options '*' do
   ''
 end
 
+# Error handler to ensure CORS headers are always set, even on exceptions
+error do
+  # Set CORS headers even on errors
+  origin = request.env['HTTP_ORIGIN']
+  allowed_origins = (ENV['ASCIIDOCTOR_ALLOW_ORIGIN'] || '*').split(',').map(&:strip).reject(&:empty?)
+  
+  cors_origin = '*'
+  if allowed_origins.include?('*')
+    cors_origin = '*'
+  elsif origin && allowed_origins.any? { |pattern| origin.match?(/#{pattern.gsub('*', '.*')}/) }
+    cors_origin = origin
+  end
+  
+  headers 'Access-Control-Allow-Origin' => cors_origin
+  headers 'Access-Control-Allow-Methods' => 'POST, GET, OPTIONS'
+  headers 'Access-Control-Allow-Headers' => 'Content-Type, Origin, Accept'
+  headers 'Access-Control-Max-Age' => '86400'
+  
+  # Return error response
+  content_type :json
+  {
+    error: 'Server error',
+    message: env['sinatra.error'].message,
+    class: env['sinatra.error'].class.name
+  }.to_json
+end
+
 
 # Health check
 get '/healthz' do
@@ -67,8 +94,7 @@ get '/healthz' do
     endpoints: {
       epub: '/convert/epub',
       html5: '/convert/html5',
-      pdf: '/convert/pdf',
-      latex: '/convert/latex'
+      pdf: '/convert/pdf'
     },
     port: settings.port
   }.to_json
@@ -172,28 +198,6 @@ get '/api' do
           diagrams: 'Diagram generation is supported via asciidoctor-diagram extension. Supported formats: PlantUML, Graphviz, Mermaid, BPMN (via PlantUML)'
         }
       },
-      convert_latex: {
-        method: 'POST',
-        path: '/asciidoctor/convert/latex',
-        description: 'Convert AsciiDoc content to LaTeX with automatic table of contents and LaTeX math support',
-        request: {
-          type: 'application/json',
-          body: {
-            content: 'string (required) - AsciiDoc content. Supports LaTeX math via stem:[] for inline and [stem] blocks for display math',
-            title: 'string (required) - Document title',
-            author: 'string (optional) - Document author'
-          }
-        },
-        response: {
-          type: 'text/plain',
-          disposition: 'attachment'
-        },
-        features: {
-          table_of_contents: 'Automatic table of contents is generated when :toc: attribute is set (enabled by default)',
-          latex_math: 'LaTeX math expressions are supported via AsciiDoc stem blocks',
-          diagrams: 'Diagram generation is supported via asciidoctor-diagram extension. Supported formats: PlantUML, Graphviz, Mermaid, BPMN (via PlantUML)'
-        }
-      }
     },
     cors: {
       enabled: true,
@@ -211,7 +215,6 @@ get '/api' do
       curl_epub: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/epub -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\"}' --output document.epub",
       curl_html5: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/html5 -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\"}' --output document.html",
       curl_pdf: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/pdf -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\"}' --output document.pdf",
-      curl_latex: "curl -X POST #{request.scheme}://#{request.host_with_port}/asciidoctor/convert/latex -H 'Content-Type: application/json' -d '{\"content\":\"= Test\\n\\nHello world\",\"title\":\"Test Document\",\"author\":\"Test Author\"}' --output document.tex"
     }
   }.to_json
 end
@@ -948,96 +951,6 @@ post '/convert/pdf' do
   end
 end
 
-# Convert to LaTeX
-post '/convert/latex' do
-  begin
-    request.body.rewind
-    body_content = request.body.read
-    log_request_size(body_content, 'LaTeX')
-    data = JSON.parse(body_content)
-    content = data['content'] || data['asciidoc']
-    title = data['title'] || 'Document'
-    author = data['author'] || ''
-    
-    unless content
-      status 400
-      return { error: 'Missing content or asciidoc field' }.to_json
-    end
-    
-    # Create temporary file for AsciiDoc content
-    temp_adoc = Tempfile.new(['document', '.adoc'])
-    temp_adoc.write(content)
-    temp_adoc.close
-    
-    begin
-      # Build LaTeX attributes
-      latex_attributes = {
-        'title' => title,
-        'author' => author,
-        'doctype' => 'book',
-        'imagesdir' => '.',
-        'allow-uri-read' => '',  # Enable remote image downloading
-        'toc' => '',  # Enable table of contents
-        'stem' => ''  # Enable LaTeX math support
-      }
-      
-      puts "[LaTeX] Starting conversion: #{temp_adoc.path}"
-      puts "[LaTeX] Attributes: #{latex_attributes.inspect}"
-      
-      # Convert to LaTeX
-      # Use 'latexbook' backend for book doctype, 'latex' for article
-      latex_backend = latex_attributes['doctype'] == 'book' ? 'latexbook' : 'latex'
-      latex_content = Asciidoctor.convert content,
-        backend: latex_backend,
-        safe: 'unsafe',
-        attributes: latex_attributes
-      
-      if latex_content.nil? || latex_content.empty?
-        status 500
-        content_type :json
-        return { error: 'Generated LaTeX file is empty' }.to_json
-      end
-      
-      puts "[LaTeX] Successfully generated LaTeX: #{latex_content.bytesize} bytes"
-      
-      # Set headers
-      content_type 'text/plain; charset=utf-8'
-      headers 'Content-Disposition' => "attachment; filename=\"#{title.gsub(/[^a-z0-9]/i, '_')}.tex\""
-      
-      latex_content
-    ensure
-      temp_adoc.unlink
-    end
-  rescue JSON::ParserError => e
-    status 400
-    content_type :json
-    { error: 'Invalid JSON', message: e.message }.to_json
-  rescue => e
-    puts "[LaTeX] Unexpected error: #{e.class.name}: #{e.message}"
-    puts "[LaTeX] Backtrace: #{e.backtrace.first(10).join("\n")}"
-    
-    error_details = {
-      error: 'LaTeX conversion failed',
-      message: e.message,
-      class: e.class.name
-    }
-    
-    # Add helpful hints
-    if e.message.include?('syntax') || e.message.include?('parse') || e.message.include?('invalid') || e.message.include?('AsciiDoc')
-      error_details[:hint] = 'This appears to be an AsciiDoc syntax error. Common issues include: unclosed blocks (----), invalid attribute syntax, malformed headings, or incorrect attribute block spacing.'
-    end
-    
-    # Include backtrace for debugging (first few lines only)
-    if e.backtrace && e.backtrace.length > 0
-      error_details[:backtrace] = e.backtrace.first(5)
-    end
-    
-    status 500
-    content_type :json
-    error_details.to_json
-  end
-end
-
 # Root endpoint
 get '/' do
   content_type :json
@@ -1050,7 +963,6 @@ get '/' do
       epub: '/convert/epub',
       html5: '/convert/html5',
       pdf: '/convert/pdf',
-      latex: '/convert/latex',
       health: '/healthz',
       api_docs: '/api'
     }

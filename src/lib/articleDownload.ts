@@ -6,7 +6,7 @@
 import type { NostrEvent } from '@nostr/tools/pure';
 import { nip19 } from '@nostr/tools';
 import { relayService } from '$lib/relayService';
-import { exportToEPUB, exportToHTML5, exportToPDF, exportToLaTeX, downloadBlob } from './asciidoctorExport';
+import { exportToEPUB, exportToHTML5, exportToPDF, downloadBlob } from './asciidoctorExport';
 import {
   processContentQuality,
   processContentQualityAsync,
@@ -238,7 +238,7 @@ async function getAuthorName(event: NostrEvent): Promise<string> {
 /**
  * Build AsciiDoc document with metadata header
  */
-async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, providedImage?: string, exportFormat?: 'html' | 'epub' | 'asciidoc' | 'pdf' | 'latex'): Promise<string> {
+async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, providedImage?: string, exportFormat?: 'html' | 'epub' | 'asciidoc' | 'pdf'): Promise<string> {
   const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
   const author = await getAuthorName(event);
   const description = event.tags.find(([k]) => k === 'description')?.[1];
@@ -494,7 +494,7 @@ function convertAsciiDocToMarkdown(asciidoc: string): string {
 /**
  * Prepare content for AsciiDoc conversion (with metadata)
  */
-export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata: boolean = true, exportFormat?: 'html' | 'epub' | 'asciidoc' | 'pdf' | 'latex'): Promise<string> {
+export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata: boolean = true, exportFormat?: 'html' | 'epub' | 'asciidoc' | 'pdf'): Promise<string> {
   if (!event.content || event.content.trim().length === 0) {
     const title = event.tags.find(([k]) => k === 'title')?.[1] || event.id.slice(0, 8);
     if (includeMetadata) {
@@ -617,7 +617,7 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
 /**
  * Helper: Get book content (for 30040 events) or single event content
  */
-async function getEventContent(event: NostrEvent, exportFormat?: 'html' | 'epub' | 'asciidoc' | 'pdf' | 'latex'): Promise<{ content: string; title: string; author: string }> {
+async function getEventContent(event: NostrEvent, exportFormat?: 'html' | 'epub' | 'asciidoc' | 'pdf'): Promise<{ content: string; title: string; author: string }> {
   if (event.kind === 30040) {
     // For books, fetch all branches and leaves
     const contentEvents = await fetchBookContentEvents(event);
@@ -862,39 +862,6 @@ export async function downloadAsPDF(event: NostrEvent, filename?: string): Promi
   downloadBlob(blob, name);
 }
 
-/**
- * Get LaTeX blob (for viewing)
- */
-export async function getLaTeXBlob(event: NostrEvent): Promise<{ blob: Blob; filename: string }> {
-  let { content, title, author } = await getEventContent(event, 'latex');
-  
-  if (!content || content.trim().length === 0) {
-    throw new Error('Failed to prepare content');
-  }
-  
-  // Apply full QC processing to fix empty headings, missing heading levels, and other issues
-  content = await processContentQualityAsync(content, event, true);
-  
-  validateAsciiDocContent(content, true);
-  
-  const blob = await exportToLaTeX({ content, title, author });
-  
-  if (!blob || blob.size === 0) {
-    throw new Error('Server returned empty LaTeX file');
-  }
-  
-  const filename = generateFilename(title, 'tex');
-  return { blob, filename };
-}
-
-/**
- * Download LaTeX
- */
-export async function downloadAsLaTeX(event: NostrEvent, filename?: string): Promise<void> {
-  const { blob, filename: defaultFilename } = await getLaTeXBlob(event);
-  const name = filename || defaultFilename;
-  downloadBlob(blob, name);
-}
 
 
 
@@ -1229,9 +1196,9 @@ function adjustHeadingLevels(content: string, sectionLevel: number): string {
  * Combine book events into a single AsciiDoc document
  * Uses metadata from NKBIP-01 and NKBIP-08
  * @param isTopLevel - If true, add book-metadata section. Only true for the root 30040 event.
- * @param exportFormat - Export format ('html', 'epub', 'asciidoc', 'pdf', or 'latex'). Used to conditionally add cover image to metadata section and PDF-specific attributes.
+ * @param exportFormat - Export format ('html', 'epub', 'asciidoc', or 'pdf'). Used to conditionally add cover image to metadata section and PDF-specific attributes.
  */
-export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: NostrEvent[], isTopLevel: boolean = true, exportFormat?: 'html' | 'epub' | 'asciidoc' | 'pdf' | 'latex'): Promise<string> {
+export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: NostrEvent[], isTopLevel: boolean = true, exportFormat?: 'html' | 'epub' | 'asciidoc' | 'pdf'): Promise<string> {
   // Extract metadata from NKBIP-01 (Publication Index - kind 30040)
   const title = indexEvent.tags.find(([k]) => k === 'title')?.[1] || 
                 indexEvent.tags.find(([k]) => k === 'T')?.[1] ||
@@ -1424,7 +1391,6 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     }
     // Note: We don't set :epub-cover-image: here because we want the image to appear
     // on the custom cover page (via :front-cover-image: and metadata section), not as the EPUB cover metadata
-    // For LaTeX, the image will be added to the book metadata section (handled above)
   }
   
   // Title page is automatically created by Asciidoctor when doctype: book is set
@@ -1688,9 +1654,9 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     
     // Add cover image at the top of metadata section
     // PDF handles cover image via :front-cover-image: attribute on its own title page
-    // HTML, AsciiDoc, and LaTeX need it in the metadata section
+    // HTML and AsciiDoc need it in the metadata section
     // EPUB has its own cover page section (added above), so we don't add it here
-    if ((exportFormat === 'html' || exportFormat === 'asciidoc' || exportFormat === 'latex') && image) {
+    if ((exportFormat === 'html' || exportFormat === 'asciidoc') && image) {
       // Ensure image URL is absolute (required for HTML/LaTeX to display)
       const imageUrl = image.startsWith('http://') || image.startsWith('https://') 
         ? image 
