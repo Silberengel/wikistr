@@ -1259,6 +1259,7 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   doc += `:toc:\n`; // Use default TOC (automatically placed by Asciidoctor)
   doc += `:stem:\n`; // Enable STEM (math) support for LaTeX rendering
   doc += `:imagesdir: .\n`; // Set images directory to current (for relative image paths)
+  doc += `:allow-uri-read:\n`; // Enable remote image downloading for EPUB/PDF
   
   // Use standard Asciidoctor revision attributes for title page
   // https://docs.asciidoctor.org/pdf-converter/latest/title-page/
@@ -1328,10 +1329,12 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   // For HTML and EPUB, we create a title page section that mimics the default title page
   
   // Add title page section (for HTML and EPUB to match PDF title page)
-  // IMPORTANT: This must come immediately after document header to avoid being moved to Preamble
+  // CRITICAL: This must be the FIRST section after document header to prevent Preamble creation
   // Use discrete section so it doesn't appear in TOC
   // For EPUB, the image must be in the content (not just attributes) to be embedded
-  doc += `\n[discrete]\n[.title-page]\n== ${displayTitle}\n\n`;
+  // Ensure no content appears between header attributes and this section
+  doc = doc.trimEnd(); // Remove any trailing whitespace
+  doc += `\n\n[discrete]\n[.title-page]\n== ${displayTitle}\n\n`;
   
   // Add cover image if available (for HTML/EPUB)
   // The image must be in the content for EPUB to embed it properly
@@ -1345,7 +1348,11 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     // Remove any whitespace and ensure URL is properly formatted
     const cleanImageUrl = imageUrl.trim();
     // For EPUB: image must be in content, server will download and embed it
-    doc += `image::${cleanImageUrl}[cover,align=center]\n\n`;
+    // Use explicit width and ensure the image is properly referenced
+    // The allow-uri-read attribute enables remote image downloading
+    // EPUB3 requires images to be in the content stream to be embedded
+    // Don't specify format - let Asciidoctor detect it from the URL/file extension
+    doc += `image::${cleanImageUrl}[cover,align=center,width=400px]\n\n`;
   }
   
   // Author is already in document header, will appear on title page automatically
@@ -1578,6 +1585,13 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     metadataFields.push({ label: 'Issued by', value: npub });
   }
 
+  // Add abstract/description to metadata fields if available
+  if (description && description.trim()) {
+    metadataFields.push({ label: 'Abstract', value: description });
+  } else if (summary && summary.trim()) {
+    metadataFields.push({ label: 'Abstract', value: summary });
+  }
+
   // Add metadata page only if there are fields to display
   // IMPORTANT: This section should appear ONLY ONCE for the entire book, before any content
   // Only add for the top-level 30040 event, not for nested branches
@@ -1596,23 +1610,15 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     doc += '\n\n';
     for (const field of metadataFields) {
       if (field.value && field.value.trim()) {
-        doc += `*${field.label}:* ${field.value}\n\n`;
+        // For Abstract field, format it as a paragraph instead of inline
+        if (field.label === 'Abstract') {
+          doc += `*${field.label}:*\n\n${field.value}\n\n`;
+        } else {
+          doc += `*${field.label}:* ${field.value}\n\n`;
+        }
       }
     }
     doc += `\n`;
-  }
-
-  // Add abstract/description after metadata page
-  if (description && description.trim()) {
-    // CRITICAL: Block attribute must be directly followed by heading with NO blank line
-    doc = doc.trimEnd() + '\n';
-    doc += `[abstract]\n== Abstract\n\n`;
-    doc += `${description}\n\n`;
-  } else if (summary && summary.trim()) {
-    // CRITICAL: Block attribute must be directly followed by heading with NO blank line
-    doc = doc.trimEnd() + '\n';
-    doc += `[abstract]\n== Abstract\n\n`;
-    doc += `${summary}\n\n`;
   }
 
   // Add each content event as a section

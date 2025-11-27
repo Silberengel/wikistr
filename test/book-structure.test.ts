@@ -110,7 +110,7 @@ describe('Book Structure (HTML/EPUB)', () => {
     // Verify cover image is present with correct attributes
     const coverImageLine = lines.find(line => line.includes('image::') && line.includes('cover'));
     expect(coverImageLine).toBeDefined();
-    expect(coverImageLine).toContain('width=500px');
+    expect(coverImageLine).toContain('width=400px');
     expect(coverImageLine).toContain('scaledwidth=50%');
     expect(coverImageLine).toContain('https://example.com/cover.jpg');
 
@@ -161,14 +161,14 @@ describe('Book Structure (HTML/EPUB)', () => {
     }
   });
 
-  it('should include cover image with max 500px width constraint for HTML', async () => {
+  it('should include cover image with max 400px width constraint for HTML', async () => {
     const bookEvent = createMockBookEvent('Test Book', 'Test Author', 'https://example.com/cover.jpg');
     const contentEvents: NostrEvent[] = [];
 
     const asciidoc = await combineBookEvents(bookEvent, contentEvents, true);
 
-    // Verify cover image has maxwidth=500px (max-width constraint, won't enlarge small images)
-    expect(asciidoc).toContain('image::https://example.com/cover.jpg[cover,maxwidth=500px');
+    // Verify cover image has maxwidth=400px (max-width constraint, won't enlarge small images)
+    expect(asciidoc).toContain('image::https://example.com/cover.jpg[cover,maxwidth=400px');
     expect(asciidoc).toContain('scaledwidth=50%'); // For EPUB to fit on one page
   });
 
@@ -259,7 +259,7 @@ describe('Book Structure (HTML/EPUB)', () => {
     expect(asciidoc).toContain(`image::${imageUrl}[cover`);
     
     // Verify image has proper attributes for EPUB
-    expect(asciidoc).toContain('maxwidth=500px'); // Max width, not fixed width
+    expect(asciidoc).toContain('maxwidth=400px'); // Max width, not fixed width
     expect(asciidoc).toContain('scaledwidth=50%');
     expect(asciidoc).toContain('align=center');
     

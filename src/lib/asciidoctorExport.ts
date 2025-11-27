@@ -233,9 +233,9 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
     throw new Error('Server returned invalid HTML. Response preview: ' + blobText.substring(0, 200));
   }
   
-  // Post-process HTML to limit cover image width to 500px max (max-width, not fixed width)
+  // Post-process HTML to limit cover image width to 400px max (max-width, not fixed width)
   // Find images with role="cover" or in cover-page sections and add max-width style
-  // This ensures small images stay small, and large images are constrained to 500px
+  // This ensures small images stay small, and large images are constrained to 400px
   blobText = blobText.replace(
     /(<img[^>]*class="[^"]*cover[^"]*"[^>]*>)/gi,
     (match) => {
@@ -249,10 +249,10 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
             return `style="${existingStyle}"`;
           }
           // Add max-width (not width) so small images stay small
-          return `style="${cleanedStyle.trim()}; max-width: 500px;"`.replace(/;\s*;/g, ';');
+          return `style="${cleanedStyle.trim()}; max-width: 400px;"`.replace(/;\s*;/g, ';');
         });
       } else {
-        return match.replace(/>$/, ' style="max-width: 500px;">');
+        return match.replace(/>$/, ' style="max-width: 400px;">');
       }
     }
   );
@@ -268,10 +268,10 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
             if (hasMaxWidth) {
               return `style="${existingStyle}"`;
             }
-            return `style="${existingStyle}; max-width: 500px;"`;
+            return `style="${existingStyle}; max-width: 400px;"`;
           });
         } else {
-          return imgTag.replace(/>$/, ' style="max-width: 500px;">');
+          return imgTag.replace(/>$/, ' style="max-width: 400px;">');
         }
       });
     }

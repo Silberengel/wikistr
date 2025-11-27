@@ -474,10 +474,22 @@ export function fixPreambleContent(content: string, isAsciiDoc: boolean = true):
     }
     
     // Find first section header (level 2 or higher)
+    // Skip title-page sections (they should not trigger Preamble creation)
     if (docHeaderIndex >= 0 && firstSectionIndex === -1) {
       if (isAsciiDoc && /^==+\s+/.test(trimmed)) {
-        firstSectionIndex = i;
-        break;
+        // Check if this is a title-page section (look for .title-page attribute on previous lines)
+        let isTitlePage = false;
+        for (let j = Math.max(0, i - 3); j < i; j++) {
+          if (lines[j].includes('.title-page') || lines[j].includes('title-page')) {
+            isTitlePage = true;
+            break;
+          }
+        }
+        // If it's a title page, continue looking for the next section
+        if (!isTitlePage) {
+          firstSectionIndex = i;
+          break;
+        }
       } else if (!isAsciiDoc && /^##+\s+/.test(trimmed)) {
         firstSectionIndex = i;
         break;
