@@ -254,7 +254,7 @@
               tried = true;
               return;
             } else {
-              // Not an article/book kind - try as pubkey
+              // Not an document kind - try as pubkey
               console.log('⚠️ Not an article kind, trying as pubkey');
               const pubkeyResult = await relayService.queryEvents(
                 $account?.pubkey || 'anonymous',

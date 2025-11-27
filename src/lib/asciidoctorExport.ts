@@ -195,6 +195,21 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
   // Verify the blob content is actually HTML from AsciiDoctor, not the SvelteKit app
   let blobText = await blob.text();
   
+  // Post-process HTML to convert wikilink: protocol links to proper HTML links
+  // AsciiDoctor doesn't recognize wikilink: protocol, so we convert them after conversion
+  blobText = blobText.replace(/<a[^>]*href=["']wikilink:([^"']+)["'][^>]*>([^<]*)<\/a>/gi, (match, href, text) => {
+    // Convert wikilink: protocol to a clickable link
+    // For now, we'll use javascript:void(0) with onclick, or we could use a data attribute
+    const cleanHref = href.replace(/^wikilink:/, '');
+    return `<a href="javascript:void(0)" onclick="window.location.href='#wikilink:${cleanHref}'" class="wikilink" data-wikilink="${cleanHref}">${text}</a>`;
+  });
+  
+  // Also handle cases where AsciiDoctor didn't convert them to links (plain text)
+  blobText = blobText.replace(/link:wikilink:([^\[]+)\[([^\]]+)\]/g, (match, href, text) => {
+    const cleanHref = href.replace(/^wikilink:/, '');
+    return `<a href="javascript:void(0)" onclick="window.location.href='#wikilink:${cleanHref}'" class="wikilink" data-wikilink="${cleanHref}">${text}</a>`;
+  });
+  
   // Check if it's the SvelteKit app shell (common error when proxy fails)
   if (blobText.includes('__sveltekit') || blobText.includes('sveltekit-preload-data') || blobText.includes('_app/immutable')) {
     console.error('AsciiDoctor Export: Received SvelteKit app shell instead of HTML');
@@ -232,6 +247,22 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
     console.error('AsciiDoctor Export: Response preview:', blobText.substring(0, 500));
     throw new Error('Server returned invalid HTML. Response preview: ' + blobText.substring(0, 200));
   }
+  
+  // Post-process HTML to convert wikilink: protocol links to proper HTML links
+  // AsciiDoctor doesn't recognize wikilink: protocol, so we convert them after conversion
+  // Handle both link:wikilink:...[...] format (not converted by AsciiDoctor) and <a href="wikilink:..."> format
+  blobText = blobText.replace(/link:wikilink:([^\[]+)\[([^\]]+)\]/g, (match, href, text) => {
+    // Escape HTML in text
+    const escapedText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const cleanHref = href.replace(/^wikilink:/, '').replace(/&/g, '&amp;');
+    return `<a href="javascript:void(0)" onclick="window.location.href='#wikilink:${cleanHref}'" class="wikilink" data-wikilink="${cleanHref}">${escapedText}</a>`;
+  });
+  
+  // Also handle cases where AsciiDoctor converted them to <a> tags but with wikilink: protocol
+  blobText = blobText.replace(/<a[^>]*href=["']wikilink:([^"']+)["'][^>]*>([^<]*)<\/a>/gi, (match, href, text) => {
+    const cleanHref = href.replace(/^wikilink:/, '').replace(/&/g, '&amp;');
+    return `<a href="javascript:void(0)" onclick="window.location.href='#wikilink:${cleanHref}'" class="wikilink" data-wikilink="${cleanHref}">${text}</a>`;
+  });
   
   // Post-process HTML to limit cover image width to 400px max (max-width, not fixed width)
   // Find images with role="cover" or in cover-page sections and add max-width style
