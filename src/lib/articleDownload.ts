@@ -609,11 +609,11 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
 /**
  * Helper: Get book content (for 30040 events) or single event content
  */
-async function getEventContent(event: NostrEvent): Promise<{ content: string; title: string; author: string }> {
+async function getEventContent(event: NostrEvent, exportFormat?: 'html' | 'epub' | 'asciidoc'): Promise<{ content: string; title: string; author: string }> {
   if (event.kind === 30040) {
     // For books, fetch all branches and leaves
     const contentEvents = await fetchBookContentEvents(event);
-    const combined = await combineBookEvents(event, contentEvents);
+    const combined = await combineBookEvents(event, contentEvents, true, exportFormat);
     
     if (!combined || combined.trim().length === 0) {
       throw new Error('Book content is empty');
@@ -757,7 +757,7 @@ function generateFilename(title: string, extension: string): string {
  * Get EPUB blob (for viewing)
  */
 export async function getEPUBBlob(event: NostrEvent): Promise<{ blob: Blob; filename: string }> {
-  let { content, title, author } = await getEventContent(event);
+  let { content, title, author } = await getEventContent(event, 'epub');
   
   // Apply full QC processing to fix empty headings, missing heading levels, and other issues
   content = await processContentQualityAsync(content, event, true);
@@ -790,7 +790,7 @@ export async function downloadAsEPUB(event: NostrEvent, filename?: string): Prom
  * Get HTML5 blob (for viewing)
  */
 export async function getHTML5Blob(event: NostrEvent): Promise<{ blob: Blob; filename: string }> {
-  let { content, title, author } = await getEventContent(event);
+  let { content, title, author } = await getEventContent(event, 'html');
   
   if (!content || content.trim().length === 0) {
     throw new Error('Failed to prepare content');
@@ -1153,8 +1153,9 @@ function adjustHeadingLevels(content: string, sectionLevel: number): string {
  * Combine book events into a single AsciiDoc document
  * Uses metadata from NKBIP-01 and NKBIP-08
  * @param isTopLevel - If true, add book-metadata section. Only true for the root 30040 event.
+ * @param exportFormat - Export format ('html', 'epub', or 'asciidoc'). Used to conditionally add cover image to metadata section.
  */
-export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: NostrEvent[], isTopLevel: boolean = true): Promise<string> {
+export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: NostrEvent[], isTopLevel: boolean = true, exportFormat?: 'html' | 'epub' | 'asciidoc'): Promise<string> {
   // Extract metadata from NKBIP-01 (Publication Index - kind 30040)
   const title = indexEvent.tags.find(([k]) => k === 'title')?.[1] || 
                 indexEvent.tags.find(([k]) => k === 'T')?.[1] ||
@@ -1586,6 +1587,17 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     doc += '\n';
     doc += '[.book-metadata]\n';
     doc += `== ${displayTitle}\n\n`; // Use title as section heading for classic title page look
+    
+    // Add cover image at the top of metadata section, only for HTML and AsciiDoc exports
+    if ((exportFormat === 'html' || exportFormat === 'asciidoc') && image) {
+      // Ensure image URL is absolute (required for HTML to display)
+      const imageUrl = image.startsWith('http://') || image.startsWith('https://') 
+        ? image 
+        : image;
+      // Add image (CSS will handle max-width: 500px styling for HTML)
+      doc += `image::${imageUrl}[Cover Image]\n\n`;
+    }
+    
     for (const field of metadataFields) {
       if (field.value && field.value.trim()) {
         // For Abstract field, format it as a paragraph instead of inline
@@ -1663,7 +1675,7 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
  */
 export async function downloadBookAsAsciiDoc(indexEvent: NostrEvent, filename?: string): Promise<void> {
   const contentEvents = await fetchBookContentEvents(indexEvent);
-  const combined = await combineBookEvents(indexEvent, contentEvents);
+  const combined = await combineBookEvents(indexEvent, contentEvents, true, 'asciidoc');
   const title = indexEvent.tags.find(([k]) => k === 'title')?.[1] || 
                 indexEvent.tags.find(([k]) => k === 'T')?.[1] ||
                 indexEvent.id.slice(0, 8);

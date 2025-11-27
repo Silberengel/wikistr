@@ -23,6 +23,7 @@
   import {
     downloadAsEPUB,
     downloadAsHTML5,
+    downloadAsAsciiDoc,
     downloadBookAsAsciiDoc,
     downloadBookAsEPUB,
     downloadBookOverview
@@ -876,10 +877,10 @@
                 >
                   <div class="py-1">
                     <div class="px-4 py-2 text-xs font-semibold" style="color: var(--text-secondary);">
-                      Open:
+                      Download:
                     </div>
                     {#if event && event.kind === 30040}
-                      <!-- Book (30040) - HTML, EPUB -->
+                      <!-- Book (30040) - HTML, EPUB, AsciiDoc -->
                       <button
                         onclick={async () => {
                           if (!event) return;
@@ -889,7 +890,7 @@
                             await downloadAsHTML5(event);
                           } catch (error) {
                             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                            showErrorDialog(`Failed to open HTML:\n\n${errorMessage}`);
+                            showErrorDialog(`Failed to download HTML:\n\n${errorMessage}`);
                           } finally {
                             isDownloading = false;
                           }
@@ -899,7 +900,7 @@
                         style="color: var(--text-primary);"
                       >
                         {#if isDownloading}
-                          Opening HTML...
+                          Downloading HTML...
                         {:else}
                           HTML
                         {/if}
@@ -913,8 +914,8 @@
                             await downloadAsEPUB(event);
                           } catch (error) {
                             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                            console.error('EPUB open failed:', error);
-                            showErrorDialog(`Failed to open EPUB:\n\n${errorMessage}`);
+                            console.error('EPUB download failed:', error);
+                            showErrorDialog(`Failed to download EPUB:\n\n${errorMessage}`);
                           } finally {
                             isDownloading = false;
                           }
@@ -924,13 +925,37 @@
                         style="color: var(--text-primary);"
                       >
                         {#if isDownloading}
-                          Opening EPUB...
+                          Downloading EPUB...
                         {:else}
                           EPUB
                         {/if}
                       </button>
+                      <button
+                        onclick={async () => {
+                          if (!event) return;
+                          showDownloadMenu = false;
+                          isDownloading = true;
+                          try {
+                            await downloadBookAsAsciiDoc(event);
+                          } catch (error) {
+                            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                            showErrorDialog(`Failed to download AsciiDoc:\n\n${errorMessage}`);
+                          } finally {
+                            isDownloading = false;
+                          }
+                        }}
+                        disabled={isDownloading}
+                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                        style="color: var(--text-primary);"
+                      >
+                        {#if isDownloading}
+                          Downloading AsciiDoc...
+                        {:else}
+                          AsciiDoc
+                        {/if}
+                      </button>
                     {:else if event}
-                      <!-- All events: HTML, EPUB -->
+                      <!-- All events: HTML, EPUB, AsciiDoc -->
                       <button
                         onclick={async () => {
                           if (!event) return;
@@ -940,7 +965,7 @@
                             await downloadAsHTML5(event);
                           } catch (error) {
                             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                            showErrorDialog(`Failed to open HTML:\n\n${errorMessage}`);
+                            showErrorDialog(`Failed to download HTML:\n\n${errorMessage}`);
                           } finally {
                             isDownloading = false;
                           }
@@ -950,7 +975,7 @@
                         style="color: var(--text-primary);"
                       >
                         {#if isDownloading}
-                          Opening HTML...
+                          Downloading HTML...
                         {:else}
                           HTML
                         {/if}
@@ -964,8 +989,8 @@
                               await downloadAsEPUB(event);
                             } catch (error) {
                               const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                              console.error('EPUB open failed:', error);
-                              showErrorDialog(`Failed to open EPUB:\n\n${errorMessage}`);
+                              console.error('EPUB download failed:', error);
+                              showErrorDialog(`Failed to download EPUB:\n\n${errorMessage}`);
                             } finally {
                               isDownloading = false;
                             }
@@ -975,9 +1000,33 @@
                           style="color: var(--text-primary);"
                         >
                           {#if isDownloading}
-                            Opening EPUB...
+                            Downloading EPUB...
                           {:else}
                             EPUB
+                          {/if}
+                        </button>
+                        <button
+                          onclick={async () => {
+                            if (!event) return;
+                            showDownloadMenu = false;
+                            isDownloading = true;
+                            try {
+                              await downloadAsAsciiDoc(event);
+                            } catch (error) {
+                              const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                              showErrorDialog(`Failed to download AsciiDoc:\n\n${errorMessage}`);
+                            } finally {
+                              isDownloading = false;
+                            }
+                          }}
+                          disabled={isDownloading}
+                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                          style="color: var(--text-primary);"
+                        >
+                          {#if isDownloading}
+                            Downloading AsciiDoc...
+                          {:else}
+                            AsciiDoc
                           {/if}
                         </button>
                     {/if}

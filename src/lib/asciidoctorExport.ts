@@ -374,7 +374,6 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
         margin: 2em auto;
         display: block;
         max-width: 500px;
-        width: 100%;
         height: auto;
       }
       
