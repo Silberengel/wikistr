@@ -511,11 +511,12 @@ export function fixPreambleContent(content: string, isAsciiDoc: boolean = true):
     return content;
   }
   
-  // Check if there's content between doc header/attributes and first section
-  let hasPreambleContent = false;
+  // Find where metadata sections end - we need to look for content AFTER article-metadata/book-metadata
+  // First, find where attributes end
   let attributeEndIndex = docHeaderIndex;
+  let metadataSectionEndIndex = -1;
   
-  // Find where attributes end
+  // Find where attributes end and where metadata sections end
   for (let i = docHeaderIndex + 1; i < firstSectionIndex; i++) {
     const trimmed = lines[i].trim();
     
@@ -531,17 +532,58 @@ export function fixPreambleContent(content: string, isAsciiDoc: boolean = true):
     // Check if it's a block attribute (like [.book-metadata], [.article-metadata], [.title-page], or [abstract])
     if (isAsciiDoc && /^\[[^\]]+\]$/.test(trimmed)) {
       // This is a block attribute, the next line should be a section header
-      // Skip it - it's not preamble content
+      // Find where this metadata section ends (look for the next section or end of content)
+      let sectionStart = i + 1;
+      // Skip the section header
+      if (sectionStart < lines.length && /^==+\s+/.test(lines[sectionStart].trim())) {
+        sectionStart++;
+      }
+      // Find where this section ends (next section header or end of document)
+      for (let j = sectionStart; j < lines.length; j++) {
+        const lineTrimmed = lines[j].trim();
+        // If we hit another section header, the previous section ended
+        if (/^==+\s+/.test(lineTrimmed)) {
+          metadataSectionEndIndex = j - 1;
+          break;
+        }
+      }
+      // If we didn't find another section, the metadata section goes to firstSectionIndex
+      if (metadataSectionEndIndex === -1) {
+        metadataSectionEndIndex = firstSectionIndex - 1;
+      }
       continue;
     }
     
     // Check if it's an abstract section heading
     if (isAsciiDoc && /^==\s+Abstract\s*$/.test(trimmed)) {
-      // Skip abstract section - it's not preamble content
+      // Find where abstract section ends
+      for (let j = i + 1; j < lines.length; j++) {
+        const lineTrimmed = lines[j].trim();
+        if (/^==+\s+/.test(lineTrimmed)) {
+          metadataSectionEndIndex = j - 1;
+          break;
+        }
+      }
+      if (metadataSectionEndIndex === -1) {
+        metadataSectionEndIndex = firstSectionIndex - 1;
+      }
       continue;
     }
+  }
+  
+  // If we found a metadata section, look for content AFTER it
+  // Otherwise, look for content between attributes and first section
+  let contentStartIndex = metadataSectionEndIndex >= 0 ? metadataSectionEndIndex + 1 : attributeEndIndex + 1;
+  let hasPreambleContent = false;
+  
+  // Check if there's content between the end of metadata sections and first real section
+  for (let i = contentStartIndex; i < firstSectionIndex; i++) {
+    const trimmed = lines[i].trim();
     
-    // Not an attribute or block attribute, so it's preamble content
+    // Skip empty lines
+    if (trimmed.length === 0) continue;
+    
+    // Not an attribute or section header, so it's preamble content
     hasPreambleContent = true;
     break;
   }
@@ -552,8 +594,9 @@ export function fixPreambleContent(content: string, isAsciiDoc: boolean = true):
   }
   
   // Build fixed content
-  // Copy everything up to and including attributes
-  for (let i = 0; i <= attributeEndIndex; i++) {
+  // Copy everything up to and including the end of metadata sections (or attributes if no metadata)
+  const copyEndIndex = metadataSectionEndIndex >= 0 ? metadataSectionEndIndex : attributeEndIndex;
+  for (let i = 0; i <= copyEndIndex; i++) {
     fixed.push(lines[i]);
   }
   
@@ -567,8 +610,8 @@ export function fixPreambleContent(content: string, isAsciiDoc: boolean = true):
   fixed.push(preambleHeader);
   fixed.push('');
   
-  // Copy preamble content
-  for (let i = attributeEndIndex + 1; i < firstSectionIndex; i++) {
+  // Copy preamble content (from after metadata sections to first real section)
+  for (let i = contentStartIndex; i < firstSectionIndex; i++) {
     const trimmed = lines[i].trim();
     // Skip empty lines at the start
     if (fixed.length === 0 || fixed[fixed.length - 1].trim().length > 0 || trimmed.length > 0) {
