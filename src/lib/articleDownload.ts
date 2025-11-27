@@ -1417,8 +1417,13 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
       // The title page is automatically created when doctype: book is set
       doc += `:title-logo-image: image:${imageUrl}[top=25%,align=center,pdfwidth=3in]\n`;
     }
+    // For EPUB: also set front-cover-image for the cover page
+    // EPUB will use this for the cover page, and the image in the metadata section provides additional display
+    if (exportFormat === 'epub') {
+      doc += `:front-cover-image: ${imageUrl}\n`;
+    }
     // Note: We don't set :epub-cover-image: here because we want the image to appear
-    // only on the custom cover page, not as the EPUB cover metadata
+    // on the custom cover page (via :front-cover-image: and metadata section), not as the EPUB cover metadata
     // For LaTeX, the image will be added to the book metadata section (handled above)
   }
   
@@ -1678,9 +1683,9 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
     
     // Add cover image at the top of metadata section
     // PDF handles cover image via :front-cover-image: attribute on its own title page
-    // HTML and AsciiDoc need it in the metadata section, LaTeX also needs it there
-    if ((exportFormat === 'html' || exportFormat === 'asciidoc' || exportFormat === 'latex') && image) {
-      // Ensure image URL is absolute (required for HTML/LaTeX to display)
+    // HTML, AsciiDoc, EPUB, and LaTeX need it in the metadata section
+    if ((exportFormat === 'html' || exportFormat === 'asciidoc' || exportFormat === 'epub' || exportFormat === 'latex') && image) {
+      // Ensure image URL is absolute (required for HTML/EPUB/LaTeX to display)
       const imageUrl = image.startsWith('http://') || image.startsWith('https://') 
         ? image 
         : image;
