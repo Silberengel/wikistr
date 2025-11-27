@@ -377,6 +377,50 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
         height: auto;
       }
       
+      /* Article metadata section - classic title/copyright page style */
+      .article-metadata {
+        text-align: center;
+        margin: 4em 0;
+        padding: 4em 2em;
+        page-break-after: always;
+        font-family: 'Crimson Text', 'Times New Roman', serif;
+        min-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+      }
+      .article-metadata h2 {
+        border: none !important;
+        padding: 0 !important;
+        margin: 0 0 1em 0 !important;
+        font-size: 3.5em;
+        font-weight: 700;
+        font-family: 'Crimson Text', 'Times New Roman', serif;
+        line-height: 1.2;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #000;
+      }
+      .article-metadata p {
+        margin: 0.8em 0;
+        font-size: 1em;
+        font-weight: 400;
+        font-family: 'Crimson Text', 'Times New Roman', serif;
+        color: #333;
+        line-height: 1.6;
+      }
+      .article-metadata strong {
+        font-weight: 600;
+        color: #000;
+      }
+      .article-metadata img {
+        margin: 2em auto;
+        display: block;
+        max-width: 500px;
+        height: auto;
+      }
+      
       /* Title page styling (for automatic Asciidoctor title page if it appears) */
       .title-page {
         text-align: center;

@@ -302,6 +302,97 @@ async function buildAsciiDocWithMetadata(event: NostrEvent, content: string, pro
     doc += `${summary}\n\n`;
   }
   
+  // Add article metadata section for article kinds (30023, 30041, 30817, 30818)
+  // IMPORTANT: Always check for 30040 first and skip article-metadata if it's a book
+  // 30040 events use book-metadata in combineBookEvents, not article-metadata
+  if (event.kind === 30040) {
+    // Skip article-metadata for 30040 - they get book-metadata instead
+  } else {
+    // Check if this is an article kind that should get article-metadata
+    // 30041 gets article-metadata when standalone, but not when part of a book (handled by combineBookEvents)
+    const isArticleKind = event.kind === 30023 || event.kind === 30041 || event.kind === 30817 || event.kind === 30818;
+    if (isArticleKind) {
+    const metadataFields: Array<{ label: string; value: string }> = [];
+    
+    // Add title
+    if (title && title.trim()) {
+      metadataFields.push({ label: 'Title', value: title });
+    }
+    
+    // Add pubkey (as npub)
+    if (event.pubkey) {
+      const npub = nip19.npubEncode(event.pubkey);
+      metadataFields.push({ label: 'Author Pubkey', value: npub });
+    }
+    
+    // Add author
+    if (author && author.trim()) {
+      metadataFields.push({ label: 'Author', value: author });
+    }
+    
+    // Add summary/abstract (if not already shown in abstract section)
+    if (summary && summary.trim() && !description) {
+      metadataFields.push({ label: 'Abstract', value: summary });
+    } else if (description && description.trim() && !summary) {
+      metadataFields.push({ label: 'Abstract', value: description });
+    }
+    
+    // Add topics
+    if (topicTags.length > 0) {
+      metadataFields.push({ label: 'Topics', value: topicTags.join(', ') });
+    }
+    
+    // Add published_at (from published_at tag, or published_on tag as fallback)
+    const publishedAt = event.tags.find(([k]) => k === 'published_at')?.[1] || 
+                        event.tags.find(([k]) => k === 'published_on')?.[1];
+    if (publishedAt) {
+      try {
+        const publishedDate = new Date(parseInt(publishedAt) * 1000);
+        metadataFields.push({ label: 'Published', value: publishedDate.toLocaleDateString() });
+      } catch (e) {
+        metadataFields.push({ label: 'Published', value: publishedAt });
+      }
+    }
+    
+    // Add created_at (from event.created_at)
+    if (event.created_at) {
+      try {
+        const createdDate = new Date(event.created_at * 1000);
+        metadataFields.push({ label: 'Created', value: createdDate.toLocaleDateString() });
+      } catch (e) {
+        // Ignore if date parsing fails
+      }
+    }
+    
+    // Add metadata section if we have any fields
+    if (metadataFields.length > 0) {
+      doc += '\n';
+      doc += '[.article-metadata]\n';
+      doc += `== ${title}\n\n`; // Use title as section heading for classic title page look
+      
+      // Add cover image at the top of metadata section (for HTML/AsciiDoc)
+      if ((exportFormat === 'html' || exportFormat === 'asciidoc') && image) {
+        const imageUrl = image.startsWith('http://') || image.startsWith('https://') 
+          ? image 
+          : image;
+        doc += `image::${imageUrl}[Cover Image]\n\n`;
+      }
+      
+      for (const field of metadataFields) {
+        if (field.value && field.value.trim()) {
+          // For Abstract field, format it as a paragraph instead of inline
+          if (field.label === 'Abstract') {
+            doc += `*${field.label}:*\n\n${field.value}\n\n`;
+          } else {
+            doc += `*${field.label}:* ${field.value}\n\n`;
+          }
+        }
+      }
+      doc += '\n';
+    }
+    }
+  }
+  
   // Add content
   doc += content;
   
@@ -584,6 +675,98 @@ export async function prepareAsciiDocContent(event: NostrEvent, includeMetadata:
           // CRITICAL: Block attribute must be directly followed by heading with NO blank line
           doc += `[abstract]\n== Abstract\n\n`;
           doc += `${summary}\n\n`;
+        }
+        
+        // Add article metadata section for article kinds (30023, 30041, 30817, 30818)
+        // IMPORTANT: Always check for 30040 first and skip article-metadata if it's a book
+        // 30040 events use book-metadata in combineBookEvents, not article-metadata
+        if (event.kind === 30040) {
+          // Skip article-metadata for 30040 - they get book-metadata instead
+        } else {
+          // Check if this is an article kind that should get article-metadata
+          // 30041 gets article-metadata when standalone, but NOT when part of a book (handled by combineBookEvents)
+          const isArticleKind = event.kind === 30023 || event.kind === 30041 || event.kind === 30817 || event.kind === 30818;
+          if (isArticleKind) {
+          const metadataFields: Array<{ label: string; value: string }> = [];
+          
+          // Add title
+          if (title && title.trim()) {
+            metadataFields.push({ label: 'Title', value: title });
+          }
+          
+          // Add pubkey (as npub)
+          if (event.pubkey) {
+            const { nip19 } = await import('@nostr/tools');
+            const npub = nip19.npubEncode(event.pubkey);
+            metadataFields.push({ label: 'Author Pubkey', value: npub });
+          }
+          
+          // Add author
+          if (author && author.trim()) {
+            metadataFields.push({ label: 'Author', value: author });
+          }
+          
+          // Add summary/abstract (if not already shown in abstract section)
+          if (summary && summary.trim() && !description) {
+            metadataFields.push({ label: 'Abstract', value: summary });
+          } else if (description && description.trim() && !summary) {
+            metadataFields.push({ label: 'Abstract', value: description });
+          }
+          
+          // Add topics
+          if (topicTags.length > 0) {
+            metadataFields.push({ label: 'Topics', value: topicTags.join(', ') });
+          }
+          
+          // Add published_at (from published_at tag, or published_on tag as fallback)
+          const publishedAt = event.tags.find(([k]) => k === 'published_at')?.[1] || 
+                              event.tags.find(([k]) => k === 'published_on')?.[1];
+          if (publishedAt) {
+            try {
+              const publishedDate = new Date(parseInt(publishedAt) * 1000);
+              metadataFields.push({ label: 'Published', value: publishedDate.toLocaleDateString() });
+            } catch (e) {
+              metadataFields.push({ label: 'Published', value: publishedAt });
+            }
+          }
+          
+          // Add created_at (from event.created_at)
+          if (event.created_at) {
+            try {
+              const createdDate = new Date(event.created_at * 1000);
+              metadataFields.push({ label: 'Created', value: createdDate.toLocaleDateString() });
+            } catch (e) {
+              // Ignore if date parsing fails
+            }
+          }
+          
+          // Add metadata section if we have any fields
+          if (metadataFields.length > 0) {
+            doc += '\n';
+            doc += '[.article-metadata]\n';
+            doc += `== ${title}\n\n`; // Use title as section heading for classic title page look
+            
+            // Add cover image at the top of metadata section (for HTML/AsciiDoc)
+            if ((exportFormat === 'html' || exportFormat === 'asciidoc') && image) {
+              const imageUrl = image.startsWith('http://') || image.startsWith('https://') 
+                ? image 
+                : image;
+              doc += `image::${imageUrl}[Cover Image]\n\n`;
+            }
+            
+            for (const field of metadataFields) {
+              if (field.value && field.value.trim()) {
+                // For Abstract field, format it as a paragraph instead of inline
+                if (field.label === 'Abstract') {
+                  doc += `*${field.label}:*\n\n${field.value}\n\n`;
+                } else {
+                  doc += `*${field.label}:* ${field.value}\n\n`;
+                }
+              }
+            }
+            doc += '\n';
+          }
+          }
         }
         
         // Add the rest of the content after metadata
@@ -1649,7 +1832,8 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   
   // Add metadata section AFTER TOC but BEFORE content sections
   // This ensures proper structure: Title Page -> TOC -> Metadata -> Content
-  if (metadataFields.length > 0 && isTopLevel) {
+  // Only add book-metadata for 30040 events (books)
+  if (metadataFields.length > 0 && isTopLevel && indexEvent.kind === 30040) {
     doc += '\n';
     doc += '[.book-metadata]\n';
     doc += `== ${displayTitle}\n\n`; // Use title as section heading for classic title page look
@@ -1681,6 +1865,8 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   }
 
   // Add each content event as a section
+  // NOTE: 30041 events processed here are part of a book and should NOT get article-metadata
+  // They are added as content sections only. Standalone 30041 events go through buildAsciiDocWithMetadata.
   for (const event of contentEvents) {
     // Extract metadata from event tags (NKBIP-08 format for 30041)
     const sectionTitle = event.tags.find(([k]) => k === 'title')?.[1];
