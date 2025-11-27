@@ -12,12 +12,17 @@ require 'fileutils'
 require 'pathname'
 require 'zip'
 require 'yaml'
+require 'timeout'
 
 # Set port and bind - use environment variable or default to 8091
 set :port, ENV.fetch('ASCIIDOCTOR_PORT', 8091).to_i
 set :bind, '0.0.0.0'  # Bind to all interfaces so it can be accessed from Docker network
 set :server, 'puma'
 set :protection, false  # Disable CSRF protection for API (not needed for REST API)
+
+# Conversion timeout in seconds (default: 10 minutes for large books)
+# Can be overridden with ASCIIDOCTOR_CONVERSION_TIMEOUT environment variable
+CONVERSION_TIMEOUT = ENV.fetch('ASCIIDOCTOR_CONVERSION_TIMEOUT', 600).to_i  # 10 minutes default
 
 # Increase request body size limit to support large documents (e.g., full Bible ~4MB)
 # Default Rack limit is 1MB, we increase to 50MB to handle very large books
@@ -438,6 +443,7 @@ post '/convert/epub' do
       puts "[EPUB] Starting conversion: #{temp_adoc.path} -> #{epub_file}"
       puts "[EPUB] Attributes: #{epub_attributes.inspect}"
       puts "[EPUB] allow-uri-read is #{epub_attributes['allow-uri-read'] ? 'ENABLED' : 'DISABLED'}"
+      puts "[EPUB] Conversion timeout: #{CONVERSION_TIMEOUT} seconds"
       
       # Create a treeprocessor extension to log image processing
       image_processor = Class.new(Asciidoctor::Extensions::Treeprocessor) do
@@ -466,14 +472,17 @@ post '/convert/epub' do
           treeprocessor image_processor
         end
         
-        result = Asciidoctor.convert_file(
-          temp_adoc.path,
-          backend: 'epub3',
-          safe: 'unsafe',
-          to_file: epub_file,
-          attributes: epub_attributes,
-          extension_registry: extension_registry
-        )
+        # Wrap conversion in timeout to prevent stuck conversions
+        result = Timeout.timeout(CONVERSION_TIMEOUT) do
+          Asciidoctor.convert_file(
+            temp_adoc.path,
+            backend: 'epub3',
+            safe: 'unsafe',
+            to_file: epub_file,
+            attributes: epub_attributes,
+            extension_registry: extension_registry
+          )
+        end
         puts "[EPUB] Conversion completed, result: #{result.inspect}"
         
         # Check if EPUB file was created and its size
@@ -506,6 +515,17 @@ post '/convert/epub' do
         end
         
         conversion_succeeded = true
+      rescue Timeout::Error => e
+        puts "[EPUB] Conversion timed out after #{CONVERSION_TIMEOUT} seconds"
+        error_details = {
+          error: 'EPUB conversion timed out',
+          message: "Conversion exceeded the maximum time limit of #{CONVERSION_TIMEOUT} seconds",
+          hint: 'The document may be too large or complex. Try breaking it into smaller sections, or increase ASCIIDOCTOR_CONVERSION_TIMEOUT environment variable.'
+        }
+        status 504  # Gateway Timeout
+        content_type :json
+        set_cors_headers
+        return error_details.to_json
       rescue => e
         puts "[EPUB] Conversion error: #{e.class.name}: #{e.message}"
         puts "[EPUB] Backtrace: #{e.backtrace.first(5).join("\n")}"
@@ -519,15 +539,28 @@ post '/convert/epub' do
           retry_attributes.delete('stylesheet')
           
           begin
-            result = Asciidoctor.convert_file(
-              temp_adoc.path,
-              backend: 'epub3',
-              safe: 'unsafe',
-              to_file: epub_file,
-              attributes: retry_attributes
-            )
+            result = Timeout.timeout(CONVERSION_TIMEOUT) do
+              Asciidoctor.convert_file(
+                temp_adoc.path,
+                backend: 'epub3',
+                safe: 'unsafe',
+                to_file: epub_file,
+                attributes: retry_attributes
+              )
+            end
             puts "[EPUB] Conversion completed without stylesheet, result: #{result.inspect}"
             conversion_succeeded = true
+          rescue Timeout::Error => retry_error
+            puts "[EPUB] Retry conversion timed out after #{CONVERSION_TIMEOUT} seconds"
+            error_details = {
+              error: 'EPUB conversion timed out',
+              message: "Conversion exceeded the maximum time limit of #{CONVERSION_TIMEOUT} seconds",
+              hint: 'The document may be too large or complex. Try breaking it into smaller sections, or increase ASCIIDOCTOR_CONVERSION_TIMEOUT environment variable.'
+            }
+            status 504  # Gateway Timeout
+            content_type :json
+            set_cors_headers
+            return error_details.to_json
           rescue => retry_error
             puts "[EPUB] Retry also failed: #{retry_error.class.name}: #{retry_error.message}"
             # Fall through to error handling below
@@ -626,7 +659,20 @@ post '/convert/epub' do
     end
   rescue JSON::ParserError => e
     status 400
+    content_type :json
+    set_cors_headers
     { error: 'Invalid JSON', message: e.message }.to_json
+  rescue Timeout::Error => e
+    puts "[EPUB] Conversion timed out after #{CONVERSION_TIMEOUT} seconds"
+    error_details = {
+      error: 'EPUB conversion timed out',
+      message: "Conversion exceeded the maximum time limit of #{CONVERSION_TIMEOUT} seconds",
+      hint: 'The document may be too large or complex. Try breaking it into smaller sections, or increase ASCIIDOCTOR_CONVERSION_TIMEOUT environment variable.'
+    }
+    status 504  # Gateway Timeout
+    content_type :json
+    set_cors_headers
+    error_details.to_json
   rescue => e
     puts "[EPUB] Unexpected error: #{e.class.name}: #{e.message}"
     puts "[EPUB] Backtrace: #{e.backtrace.first(10).join("\n")}"
@@ -648,6 +694,8 @@ post '/convert/epub' do
     end
     
     status 500
+    content_type :json
+    set_cors_headers
     error_details.to_json
   end
 end
@@ -674,23 +722,26 @@ post '/convert/html5' do
     temp_adoc.close
     
     begin
+      puts "[HTML5] Conversion timeout: #{CONVERSION_TIMEOUT} seconds"
       # Convert to HTML5 with standalone document
-      html_content = Asciidoctor.convert content,
-        backend: 'html5',
-        safe: 'unsafe',
-        attributes: {
-          'title' => title,
-          'author' => author,
-          'doctype' => 'article',
-          'imagesdir' => '.',
-          'allow-uri-read' => '',
-          'stylesheet' => 'default',
-          'linkcss' => '',
-          'copycss' => '',
-          'standalone' => '',
-          'noheader' => '',
-          'nofooter' => ''
-        }
+      html_content = Timeout.timeout(CONVERSION_TIMEOUT) do
+        Asciidoctor.convert content,
+          backend: 'html5',
+          safe: 'unsafe',
+          attributes: {
+            'title' => title,
+            'author' => author,
+            'doctype' => 'article',
+            'imagesdir' => '.',
+            'allow-uri-read' => '',
+            'stylesheet' => 'default',
+            'linkcss' => '',
+            'copycss' => '',
+            'standalone' => '',
+            'noheader' => '',
+            'nofooter' => ''
+          }
+      end
       
       # Ensure we have a complete HTML document
       unless html_content.include?('<!doctype') || html_content.include?('<!DOCTYPE')
@@ -805,9 +856,23 @@ post '/convert/html5' do
     end
   rescue JSON::ParserError => e
     status 400
+    content_type :json
+    set_cors_headers
     { error: 'Invalid JSON', message: e.message }.to_json
+  rescue Timeout::Error => e
+    puts "[HTML5] Conversion timed out after #{CONVERSION_TIMEOUT} seconds"
+    status 504  # Gateway Timeout
+    content_type :json
+    set_cors_headers
+    {
+      error: 'HTML5 conversion timed out',
+      message: "Conversion exceeded the maximum time limit of #{CONVERSION_TIMEOUT} seconds",
+      hint: 'The document may be too large or complex. Try breaking it into smaller sections, or increase ASCIIDOCTOR_CONVERSION_TIMEOUT environment variable.'
+    }.to_json
   rescue => e
     status 500
+    content_type :json
+    set_cors_headers
     { error: 'Conversion failed', message: e.message }.to_json
   end
 end
@@ -966,16 +1031,20 @@ post '/convert/pdf' do
       puts "[PDF] Starting conversion: #{temp_adoc.path} -> #{temp_pdf.path}"
       puts "[PDF] Attributes: #{pdf_attributes.inspect}"
       puts "[PDF] Content size: #{content.bytesize} bytes"
+      puts "[PDF] Conversion timeout: #{CONVERSION_TIMEOUT} seconds"
       start_time = Time.now
       
       # Convert to PDF using convert_file with to_file
-      result = Asciidoctor.convert_file(
-        temp_adoc.path,
-        backend: 'pdf',
-        safe: 'unsafe',
-        to_file: temp_pdf.path,
-        attributes: pdf_attributes
-      )
+      # Wrap in timeout to prevent stuck conversions
+      result = Timeout.timeout(CONVERSION_TIMEOUT) do
+        Asciidoctor.convert_file(
+          temp_adoc.path,
+          backend: 'pdf',
+          safe: 'unsafe',
+          to_file: temp_pdf.path,
+          attributes: pdf_attributes
+        )
+      end
       elapsed_time = Time.now - start_time
       puts "[PDF] Conversion completed in #{elapsed_time.round(2)} seconds, result: #{result.inspect}"
       
@@ -1061,6 +1130,17 @@ post '/convert/pdf' do
     content_type :json
     set_cors_headers
     { error: 'Invalid JSON', message: e.message }.to_json
+  rescue Timeout::Error => e
+    puts "[PDF] Conversion timed out after #{CONVERSION_TIMEOUT} seconds"
+    error_details = {
+      error: 'PDF conversion timed out',
+      message: "Conversion exceeded the maximum time limit of #{CONVERSION_TIMEOUT} seconds",
+      hint: 'The document may be too large or complex. Try breaking it into smaller sections, or increase ASCIIDOCTOR_CONVERSION_TIMEOUT environment variable.'
+    }
+    status 504  # Gateway Timeout
+    content_type :json
+    set_cors_headers
+    error_details.to_json
   rescue => e
     puts "[PDF] Unexpected error: #{e.class.name}: #{e.message}"
     puts "[PDF] Backtrace: #{e.backtrace.first(10).join("\n")}"
