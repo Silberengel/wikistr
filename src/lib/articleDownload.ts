@@ -1258,7 +1258,7 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
   // The author line after the title makes it appear on the automatic title page
   let doc = `= ${displayTitle}\n`;
   if (author && author.trim()) {
-    doc += `by ${author}\n`; // Author on second line appears on title page with "by " prefix
+    doc += `${author}\n`; // Author on second line appears on title page
   }
   doc += `:doctype: ${type}\n`;
   // Explicitly enable title page for HTML/EPUB (PDF enables it automatically with doctype: book)
@@ -1599,10 +1599,9 @@ export async function combineBookEvents(indexEvent: NostrEvent, contentEvents: N
       doc += `image::${cleanImageUrl}[cover,align=center,width=500px]\n\n`;
     }
     
-    // Add title and author as separate paragraphs to maintain spacing
-    doc += `${displayTitle}`;
-    doc += `by ${author}`;
-    doc += '\n\n';
+    // Add title and author on separate lines
+    doc += `${displayTitle}\n`;
+    doc += `by ${author}\n\n`;
   }
 
   // Add metadata section AFTER cover page but BEFORE content sections
