@@ -316,14 +316,29 @@ post '/convert/epub' do
             content = content.gsub(/image::?#{Regexp.escape(remote_url)}/, "image::#{local_filename}")
             puts "[EPUB]   Replaced image macro: #{remote_url} -> #{local_filename}"
             
-            # Also replace in epub-cover-image attribute
-            content = content.gsub(/^:epub-cover-image:\s*#{Regexp.escape(remote_url)}$/i, ":epub-cover-image: #{local_filename}")
+            # Also replace in epub-cover-image attribute (use full path for attributes)
+            old_content = content.dup
+            full_image_path = File.join(images_dir, local_filename)
+            content = content.gsub(/^:epub-cover-image:\s*#{Regexp.escape(remote_url)}\s*$/i, ":epub-cover-image: #{full_image_path}")
+            if content != old_content
+              puts "[EPUB]   Replaced epub-cover-image attribute: #{remote_url} -> #{full_image_path}"
+            end
             
-            # Also replace in front-cover-image attribute
-            content = content.gsub(/^:front-cover-image:\s*#{Regexp.escape(remote_url)}$/i, ":front-cover-image: #{local_filename}")
+            # Also replace in front-cover-image attribute (use full path for attributes)
+            old_content = content.dup
+            content = content.gsub(/^:front-cover-image:\s*#{Regexp.escape(remote_url)}\s*$/i, ":front-cover-image: #{full_image_path}")
+            if content != old_content
+              puts "[EPUB]   Replaced front-cover-image attribute: #{remote_url} -> #{full_image_path}"
+            end
             
             # Also replace in title-logo-image attribute (if it contains the URL)
-            content = content.gsub(/^:title-logo-image:\s*image:#{Regexp.escape(remote_url)}/i, ":title-logo-image: image:#{local_filename}")
+            old_content = content.dup
+            content = content.gsub(/^:title-logo-image:.*#{Regexp.escape(remote_url)}/i) do |match|
+              match.gsub(remote_url, local_filename)
+            end
+            if content != old_content
+              puts "[EPUB]   Replaced title-logo-image attribute: #{remote_url} -> #{local_filename}"
+            end
           end
           
           # Write updated content back to temp file
