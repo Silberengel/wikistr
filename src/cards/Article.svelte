@@ -913,7 +913,7 @@
                           showDownloadMenu = false;
                           isDownloading = true;
                           try {
-                            await downloadAsEPUB(event);
+                            await downloadBookAsEPUB(event);
                           } catch (error) {
                             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
                             console.error('EPUB download failed:', error);

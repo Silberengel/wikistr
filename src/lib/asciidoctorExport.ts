@@ -658,14 +658,29 @@ export async function exportToEPUB(options: ExportOptions): Promise<Blob> {
  * Download a blob as a file
  */
 export function downloadBlob(blob: Blob, filename: string): void {
+  if (!blob || blob.size === 0) {
+    console.error('[Download] Attempted to download empty blob');
+    throw new Error('Cannot download empty file');
+  }
+  
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
+  a.style.display = 'none';
   document.body.appendChild(a);
+  
+  // Trigger download
   a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  
+  // Clean up after a short delay to ensure download starts
+  // Some browsers need the URL to remain valid briefly
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 100);
+  
+  console.log('[Download] Triggered download:', filename, 'Size:', blob.size, 'bytes');
 }
 
 /**
