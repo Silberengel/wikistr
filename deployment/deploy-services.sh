@@ -84,7 +84,6 @@ if [ "$USE_VOLUMES" = true ]; then
       --name og-proxy \
       -p 127.0.0.1:8090:8090 \
       -v "${REPO_PATH}/deployment/proxy-server.js:/app/deployment/proxy-server.js:ro" \
-      -w /app/deployment \
       -e PROXY_PORT=8090 \
       -e PROXY_ALLOW_ORIGIN="https://*.imwald.eu" \
       -e PROXY_TIMEOUT_MS=30000 \
@@ -97,7 +96,6 @@ else
     docker run -d \
       --name og-proxy \
       -p 127.0.0.1:8090:8090 \
-      -w /app/deployment \
       -e PROXY_PORT=8090 \
       -e PROXY_ALLOW_ORIGIN="https://*.imwald.eu" \
       -e PROXY_TIMEOUT_MS=30000 \

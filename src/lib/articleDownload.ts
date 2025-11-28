@@ -789,11 +789,19 @@ export async function combineBookEvents(
   if (!author) {
     author = await getAuthorName(indexEvent);
   }
+  // If still no author, use the pubkey as npub
+  if (!author || !author.trim()) {
+    author = nip19.npubEncode(indexEvent.pubkey);
+  }
   
   const image = indexEvent.tags.find(([k]) => k === 'image')?.[1];
   const version = indexEvent.tags.find(([k]) => k === 'version')?.[1];
   const source = indexEvent.tags.find(([k]) => k === 'source')?.[1];
-  const publishedOn = indexEvent.tags.find(([k]) => k === 'published_on')?.[1];
+  let publishedOn = indexEvent.tags.find(([k]) => k === 'published_on')?.[1];
+  // If no published_on tag, use created_at timestamp converted to ISO date
+  if (!publishedOn && indexEvent.created_at) {
+    publishedOn = new Date(indexEvent.created_at * 1000).toISOString().split('T')[0];
+  }
   const topicTags = indexEvent.tags.filter(([k]) => k === 't').map(([, v]) => v);
   
   const displayTitle = title || 'Untitled';
@@ -805,16 +813,23 @@ export async function combineBookEvents(
   doc += `:toc:\n`; // Enable table of contents for books
   doc += `:stem:\n`; // Enable STEM (math) support
   
+  // Set author attribute for AsciiDoctor PDF title page (only if available)
+  // Note: Missing :author: is okay, but :revnumber: and :revdate: are critical for layout
+  if (author && author.trim()) {
+    doc += `:author: ${author}\n`;
+  }
+  
   // For books, use revnumber and revdate for title page (title page expects revision info)
+  // Always set these to ensure consistent title page layout - missing values cause layout issues
   // Also keep version and pubdate for backward compatibility
-  if (version) {
-    doc += `:version: ${version}\n`;
-    doc += `:revnumber: ${version}\n`; // Title page uses revnumber
-  }
-  if (publishedOn) {
-    doc += `:pubdate: ${publishedOn}\n`;
-    doc += `:revdate: ${publishedOn}\n`; // Title page uses revdate
-  }
+  const versionValue = version || '1.0';
+  doc += `:version: ${versionValue}\n`;
+  doc += `:revnumber: ${versionValue}\n`; // Title page uses revnumber (required for layout)
+  
+  // Use publishedOn if available, otherwise use current date to ensure layout consistency
+  const revdateValue = publishedOn || new Date().toISOString().split('T')[0];
+  doc += `:pubdate: ${revdateValue}\n`;
+  doc += `:revdate: ${revdateValue}\n`; // Title page uses revdate (required for layout)
   if (source) doc += `:source: ${source}\n`;
   if (topicTags.length > 0) doc += `:keywords: ${topicTags.join(', ')}\n`;
   
@@ -833,6 +848,7 @@ export async function combineBookEvents(
     if (author) metadataFields.push({ label: 'Author', value: author });
     if (version) metadataFields.push({ label: 'Version', value: version });
     if (source) metadataFields.push({ label: 'Source', value: source });
+    if (publishedOn) metadataFields.push({ label: 'Published On', value: publishedOn });
     if (topicTags.length > 0) metadataFields.push({ label: 'Topics', value: topicTags.join(', ') });
     
     if (metadataFields.length > 0) {
@@ -1057,6 +1073,10 @@ export async function downloadBookAsEPUB(indexEvent: NostrEvent, filename?: stri
   let author = indexEvent.tags.find(([k]) => k === 'author')?.[1];
   if (!author) {
     author = await getAuthorName(indexEvent);
+  }
+  // If still no author, use the pubkey as npub
+  if (!author || !author.trim()) {
+    author = nip19.npubEncode(indexEvent.pubkey);
   }
   
   const blob = await exportToEPUB({ content: combined, title, author });
