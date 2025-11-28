@@ -20,7 +20,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-VERSION="v4.2"
+VERSION="v5.0.0"
 
 # All available services
 ALL_SERVICES=("wikistr" "biblestr" "quranstr" "torahstr" "og-proxy" "asciidoctor")
@@ -122,13 +122,52 @@ done
 # Build only the specified services
 if [ ${#SERVICES_TO_BUILD[@]} -eq ${#ALL_SERVICES[@]} ]; then
     # Building all services
-    docker-compose -f docker-compose.yml build ${NO_CACHE_FLAG}
+    echo -e "${BLUE}Building all services: ${ALL_SERVICES[*]}${NC}"
+    if ! docker-compose -f docker-compose.yml build ${NO_CACHE_FLAG}; then
+        echo -e "${RED}❌ Build failed!${NC}"
+        exit 1
+    fi
 else
     # Building subset of services
-    docker-compose -f docker-compose.yml build ${NO_CACHE_FLAG} "${SERVICES_TO_BUILD[@]}"
+    echo -e "${BLUE}Building services: ${SERVICES_TO_BUILD[*]}${NC}"
+    if ! docker-compose -f docker-compose.yml build ${NO_CACHE_FLAG} "${SERVICES_TO_BUILD[@]}"; then
+        echo -e "${RED}❌ Build failed!${NC}"
+        exit 1
+    fi
 fi
 
 echo -e "${GREEN}✅ Build complete!${NC}"
+
+# Verify which images were actually built
+echo -e "${BLUE}🔍 Verifying built images...${NC}"
+BUILT_IMAGES=()
+for service in "${SERVICES_TO_BUILD[@]}"; do
+    if [[ " ${THEME_SERVICES[@]} " =~ " ${service} " ]]; then
+        VERSION_TAG="silberengel/wikistr:${VERSION}-${service}"
+        if docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "^${VERSION_TAG}$"; then
+            echo -e "  ${GREEN}✓${NC} ${VERSION_TAG} built successfully"
+            BUILT_IMAGES+=("${service}")
+        else
+            echo -e "  ${RED}✗${NC} ${VERSION_TAG} was not built!"
+        fi
+    elif [[ " ${LATEST_ONLY_SERVICES[@]} " =~ " ${service} " ]]; then
+        LATEST_TAG="silberengel/wikistr:latest-${service}"
+        if docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "^${LATEST_TAG}$"; then
+            echo -e "  ${GREEN}✓${NC} ${LATEST_TAG} built successfully"
+            BUILT_IMAGES+=("${service}")
+        else
+            echo -e "  ${RED}✗${NC} ${LATEST_TAG} was not built!"
+        fi
+    fi
+done
+
+if [ ${#BUILT_IMAGES[@]} -eq 0 ]; then
+    echo -e "${RED}❌ No images were built! Check the build output above for errors.${NC}"
+    exit 1
+elif [ ${#BUILT_IMAGES[@]} -lt ${#SERVICES_TO_BUILD[@]} ]; then
+    echo -e "${YELLOW}⚠️  Warning: Only ${#BUILT_IMAGES[@]} of ${#SERVICES_TO_BUILD[@]} requested services were built.${NC}"
+fi
+echo
 echo
 
 # Tag images with version and latest
@@ -155,29 +194,44 @@ echo
 
 # Clean up old images after building (remove old version tags that are no longer needed)
 echo -e "${BLUE}🧹 Final cleanup of old images...${NC}"
-for service in "${SERVICES_TO_BUILD[@]}"; do
-    if [[ " ${THEME_SERVICES[@]} " =~ " ${service} " ]]; then
-        # Find old version tags (not current version, not latest)
-        OLD_TAGS=$(docker images --format "{{.Repository}}:{{.Tag}}" silberengel/wikistr | grep "${service}" | grep -v "${VERSION}-${service}" | grep -v "latest-${service}" | grep -E "v[0-9]+\.[0-9]+" || true)
-        if [ -n "$OLD_TAGS" ]; then
-            echo "$OLD_TAGS" | while read -r tag; do
-                if [ -n "$tag" ]; then
-                    echo -e "  Removing old tag: ${tag}"
-                    docker rmi "$tag" 2>/dev/null || true
-                fi
-            done
-        fi
+CLEANED_ANY=false
+
+# Get all theme services and clean up old versions (excluding current version and latest)
+for service in "${THEME_SERVICES[@]}"; do
+    # Get all version tags for this service
+    ALL_TAGS=$(docker images --format "{{.Repository}}:{{.Tag}}" silberengel/wikistr 2>/dev/null | \
+        grep "^silberengel/wikistr:" | \
+        grep -E "v[0-9]+\.[0-9]+-${service}$" || true)
+    
+    if [ -n "$ALL_TAGS" ]; then
+        while IFS= read -r tag; do
+            # Skip if it's the current version or latest tag
+            if [ "$tag" = "silberengel/wikistr:${VERSION}-${service}" ] || \
+               [ "$tag" = "silberengel/wikistr:latest-${service}" ]; then
+                continue
+            fi
+            
+            # This is an old version tag, remove it
+            echo -e "  Removing old tag: ${tag}"
+            docker rmi "$tag" 2>/dev/null || true
+            CLEANED_ANY=true
+        done <<< "$ALL_TAGS"
     fi
 done
 
 # Remove any remaining dangling images
-DANGLING_IMAGES=$(docker images -f "dangling=true" -q --filter "reference=silberengel/wikistr")
+DANGLING_IMAGES=$(docker images -f "dangling=true" -q --filter "reference=silberengel/wikistr" 2>/dev/null || true)
 if [ -n "$DANGLING_IMAGES" ]; then
     echo -e "  Removing remaining dangling images..."
-    docker rmi $DANGLING_IMAGES 2>/dev/null || true
+    echo "$DANGLING_IMAGES" | xargs -r docker rmi 2>/dev/null || true
+    CLEANED_ANY=true
 fi
 
-echo -e "${GREEN}✅ Cleanup complete!${NC}"
+if [ "$CLEANED_ANY" = true ]; then
+    echo -e "${GREEN}✅ Cleanup complete!${NC}"
+else
+    echo -e "${BLUE}ℹ️  No old images to clean up${NC}"
+fi
 echo
 
 # Ask if user wants to push to Docker Hub
@@ -186,26 +240,60 @@ echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo -e "${BLUE}📤 Pushing images to Docker Hub...${NC}"
     
+    PUSHED_COUNT=0
+    SKIPPED_COUNT=0
+    
     for service in "${SERVICES_TO_BUILD[@]}"; do
         if [[ " ${THEME_SERVICES[@]} " =~ " ${service} " ]]; then
             VERSION_TAG="silberengel/wikistr:${VERSION}-${service}"
             LATEST_TAG="silberengel/wikistr:latest-${service}"
             
-            echo -e "  Pushing ${service}..."
-            docker push "${VERSION_TAG}"
-            docker push "${LATEST_TAG}"
-            echo -e "  ${GREEN}✓${NC} ${service} pushed"
+            # Check if images exist before pushing
+            if docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "^${VERSION_TAG}$"; then
+                echo -e "  Pushing ${service}..."
+                docker push "${VERSION_TAG}" || {
+                    echo -e "    ${RED}✗${NC} Failed to push ${VERSION_TAG}"
+                    SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+                    continue
+                }
+                docker push "${LATEST_TAG}" || {
+                    echo -e "    ${RED}✗${NC} Failed to push ${LATEST_TAG}"
+                    SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+                    continue
+                }
+                echo -e "  ${GREEN}✓${NC} ${service} pushed"
+                PUSHED_COUNT=$((PUSHED_COUNT + 1))
+            else
+                echo -e "  ${YELLOW}⚠${NC} ${service} image not found (${VERSION_TAG}), skipping push"
+                SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+            fi
         elif [[ " ${LATEST_ONLY_SERVICES[@]} " =~ " ${service} " ]]; then
             LATEST_TAG="silberengel/wikistr:latest-${service}"
             
-            echo -e "  Pushing ${service}..."
-            docker push "${LATEST_TAG}"
-            echo -e "  ${GREEN}✓${NC} ${service} pushed"
+            # Check if image exists before pushing
+            if docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "^${LATEST_TAG}$"; then
+                echo -e "  Pushing ${service}..."
+                docker push "${LATEST_TAG}" || {
+                    echo -e "    ${RED}✗${NC} Failed to push ${LATEST_TAG}"
+                    SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+                    continue
+                }
+                echo -e "  ${GREEN}✓${NC} ${service} pushed"
+                PUSHED_COUNT=$((PUSHED_COUNT + 1))
+            else
+                echo -e "  ${YELLOW}⚠${NC} ${service} image not found (${LATEST_TAG}), skipping push"
+                SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+            fi
         fi
     done
     
     echo
-    echo -e "${GREEN}✅ All images pushed to Docker Hub!${NC}"
+    if [ $PUSHED_COUNT -gt 0 ]; then
+        echo -e "${GREEN}✅ Pushed ${PUSHED_COUNT} service(s) to Docker Hub!${NC}"
+    fi
+    if [ $SKIPPED_COUNT -gt 0 ]; then
+        echo -e "${YELLOW}⚠️  Skipped ${SKIPPED_COUNT} service(s) (not built or push failed)${NC}"
+    fi
 else
     echo -e "${YELLOW}⏭️  Skipping Docker Hub push${NC}"
 fi

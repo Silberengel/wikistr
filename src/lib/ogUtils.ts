@@ -38,9 +38,9 @@ export async function fetchOGMetadata(url: string): Promise<OGMetadata | null> {
   try {
     const proxied = buildProxyUrl(url);
     
-    // Add timeout to prevent hanging when proxy is down
+    // Add timeout to prevent hanging when proxy is down (35 seconds - proxy has 30s, add buffer for network latency)
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 35000); // 35 second timeout
     
     const response = await fetch(proxied, {
       headers: {
