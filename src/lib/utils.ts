@@ -104,7 +104,6 @@ export function isValidEvent(event: any): boolean {
     if (dTag) {
       // Validate d-tag - allows Unicode letters, numbers, and hyphens; blocks spaces and punctuation
       if (!isValidDTag(dTag)) {
-        console.warn(`⚠️ Suppressing corrupt event ${event.id.slice(0, 8)}...: invalid d-tag "${dTag}" (contains spaces or invalid punctuation)`);
         return false;
       }
     }

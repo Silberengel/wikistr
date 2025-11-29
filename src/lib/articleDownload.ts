@@ -914,17 +914,26 @@ function validateAsciiDocContent(content: string, isAsciiDoc: boolean): void {
 /**
  * Get EPUB blob (for viewing)
  */
-export async function getEPUBBlob(event: NostrEvent, abortSignal?: AbortSignal): Promise<{ blob: Blob; filename: string }> {
+export async function getEPUBBlob(
+  event: NostrEvent, 
+  abortSignal?: AbortSignal,
+  onProgress?: (progress: number, status: string) => void
+): Promise<{ blob: Blob; filename: string }> {
   if (abortSignal?.aborted) throw new Error('Download cancelled');
+  onProgress?.(5, 'Fetching content...');
   let { content, title, author } = await getEventContent(event, 'epub');
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
+  onProgress?.(20, 'Processing content quality...');
   // Apply quality control AFTER all conversions and metadata additions
   content = await processContentQualityAsync(content, event, true, getUserHandle);
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
+  onProgress?.(30, 'Validating content...');
   validateAsciiDocContent(content, true);
   
+  if (abortSignal?.aborted) throw new Error('Download cancelled');
+  onProgress?.(40, 'Generating EPUB file...');
   const blob = await exportToEPUB({ content, title, author }, abortSignal);
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
@@ -946,11 +955,10 @@ export async function downloadAsEPUB(
   abortSignal?: AbortSignal
 ): Promise<void> {
   if (abortSignal?.aborted) throw new Error('Download cancelled');
-  onProgress?.(10, 'Preparing content...');
-  const { blob, filename: defaultFilename } = await getEPUBBlob(event, abortSignal);
+  const { blob, filename: defaultFilename } = await getEPUBBlob(event, abortSignal, onProgress);
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
-  onProgress?.(90, 'Preparing download...');
+  onProgress?.(95, 'Preparing download...');
   const name = filename || defaultFilename;
   downloadBlob(blob, name);
   
@@ -1008,17 +1016,26 @@ export async function downloadAsHTML5(
 /**
  * Get PDF blob (for viewing)
  */
-export async function getPDFBlob(event: NostrEvent, abortSignal?: AbortSignal): Promise<{ blob: Blob; filename: string }> {
+export async function getPDFBlob(
+  event: NostrEvent, 
+  abortSignal?: AbortSignal,
+  onProgress?: (progress: number, status: string) => void
+): Promise<{ blob: Blob; filename: string }> {
   if (abortSignal?.aborted) throw new Error('Download cancelled');
+  onProgress?.(5, 'Fetching content...');
   let { content, title, author } = await getEventContent(event, 'pdf');
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
+  onProgress?.(20, 'Processing content quality...');
   // Apply quality control AFTER all conversions and metadata additions
   content = await processContentQualityAsync(content, event, true, getUserHandle);
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
+  onProgress?.(30, 'Validating content...');
   validateAsciiDocContent(content, true);
   
+  if (abortSignal?.aborted) throw new Error('Download cancelled');
+  onProgress?.(40, 'Generating PDF file...');
   const blob = await exportToPDF({ content, title, author }, abortSignal);
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
@@ -1040,11 +1057,10 @@ export async function downloadAsPDF(
   abortSignal?: AbortSignal
 ): Promise<void> {
   if (abortSignal?.aborted) throw new Error('Download cancelled');
-  onProgress?.(10, 'Preparing content...');
-  const { blob, filename: defaultFilename } = await getPDFBlob(event, abortSignal);
+  const { blob, filename: defaultFilename } = await getPDFBlob(event, abortSignal, onProgress);
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
-  onProgress?.(90, 'Preparing download...');
+  onProgress?.(95, 'Preparing download...');
   const name = filename || defaultFilename;
   downloadBlob(blob, name);
   
@@ -1163,11 +1179,12 @@ export async function downloadBookAsEPUB(
   let combined = await combineBookEvents(indexEvent, contentEvents, true, 'epub');
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
-  onProgress?.(50, 'Processing content...');
+  onProgress?.(50, 'Processing content quality...');
   // Apply quality control AFTER all conversions and metadata additions
   combined = await processContentQualityAsync(combined, indexEvent, true, getUserHandle);
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
+  onProgress?.(55, 'Validating content...');
   validateAsciiDocContent(combined, true);
   
   const title = indexEvent.tags.find(([k]) => k === 'title')?.[1] || 
@@ -1183,11 +1200,11 @@ export async function downloadBookAsEPUB(
   }
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
-  onProgress?.(70, 'Generating EPUB...');
+  onProgress?.(60, 'Generating EPUB file...');
   const blob = await exportToEPUB({ content: combined, title, author }, abortSignal);
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
-  onProgress?.(90, 'Preparing download...');
+  onProgress?.(95, 'Preparing download...');
   const name = filename || generateFilename(title, 'epub');
   downloadBlob(blob, name);
   
