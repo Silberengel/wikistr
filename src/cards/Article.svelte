@@ -242,10 +242,26 @@
   // Helper function to retry download
   function retryDownload() {
     if (currentDownloadFn && currentDownloadEvent) {
+      // Stop any existing log capture
+      stopLogCapture();
+      
       // Abort any existing download
       if (downloadAbortController) {
         downloadAbortController.abort();
+        downloadAbortController = null;
       }
+      
+      // Reset all state to beginning
+      downloadProgress = 0;
+      downloadStatus = 'Preparing...';
+      downloadState = 'downloading';
+      downloadError = '';
+      downloadLogs = [];
+      isDownloading = false; // Will be set to true by startDownload
+      
+      // Ensure modal is visible
+      showDownloadModal = true;
+      
       // Start fresh download
       startDownload(currentDownloadFn, currentDownloadEvent);
     } else {
