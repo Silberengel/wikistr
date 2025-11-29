@@ -934,7 +934,7 @@ export async function getEPUBBlob(
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(40, 'Generating EPUB file...');
-  const blob = await exportToEPUB({ content, title, author }, abortSignal);
+  const blob = await exportToEPUB({ content, title, author }, abortSignal, onProgress);
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   if (!blob || blob.size === 0) {
@@ -960,7 +960,7 @@ export async function downloadAsEPUB(
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(95, 'Preparing download...');
   const name = filename || defaultFilename;
-  downloadBlob(blob, name);
+  await downloadBlob(blob, name);
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(100, 'Download started!');
@@ -1007,7 +1007,7 @@ export async function downloadAsHTML5(
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(90, 'Preparing download...');
   const name = filename || defaultFilename;
-  downloadBlob(blob, name);
+  await downloadBlob(blob, name);
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(100, 'Download started!');
@@ -1062,7 +1062,7 @@ export async function downloadAsPDF(
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(95, 'Preparing download...');
   const name = filename || defaultFilename;
-  downloadBlob(blob, name);
+  await downloadBlob(blob, name);
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(100, 'Download started!');
@@ -1090,7 +1090,7 @@ export async function downloadAsAsciiDoc(
   onProgress?.(90, 'Preparing download...');
   const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.adoc`;
   const blob = new Blob([content], { type: 'text/asciidoc' });
-  downloadBlob(blob, name);
+  await downloadBlob(blob, name);
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(100, 'Download started!');
@@ -1126,7 +1126,7 @@ export async function downloadAsMarkdown(
   onProgress?.(90, 'Preparing download...');
   const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.md`;
   const blob = new Blob([content], { type: 'text/markdown' });
-  downloadBlob(blob, name);
+  await downloadBlob(blob, name);
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(100, 'Download started!');
@@ -1156,7 +1156,7 @@ export async function downloadBookAsAsciiDoc(
                 indexEvent.id.slice(0, 8);
   const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.adoc`;
   const blob = new Blob([combined], { type: 'text/asciidoc' });
-  downloadBlob(blob, name);
+  await downloadBlob(blob, name);
   
   onProgress?.(100, 'Download started!');
 }
@@ -1201,12 +1201,12 @@ export async function downloadBookAsEPUB(
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(60, 'Generating EPUB file...');
-  const blob = await exportToEPUB({ content: combined, title, author }, abortSignal);
+  const blob = await exportToEPUB({ content: combined, title, author }, abortSignal, onProgress);
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(95, 'Preparing download...');
   const name = filename || generateFilename(title, 'epub');
-  downloadBlob(blob, name);
+  await downloadBlob(blob, name);
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(100, 'Download started!');
@@ -1228,6 +1228,6 @@ export async function downloadBookOverview(indexEvent: NostrEvent, filename?: st
   // Simple YAML export of book structure
   const yaml = `title: ${title}\nkind: ${indexEvent.kind}\nid: ${indexEvent.id}\n`;
   const blob = new Blob([yaml], { type: 'text/yaml' });
-  downloadBlob(blob, name);
+  await downloadBlob(blob, name);
 }
 

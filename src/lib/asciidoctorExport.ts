@@ -525,7 +525,11 @@ export async function exportToHTML5(options: ExportOptions, abortSignal?: AbortS
 /**
  * Convert AsciiDoc content to EPUB
  */
-export async function exportToEPUB(options: ExportOptions, abortSignal?: AbortSignal): Promise<Blob> {
+export async function exportToEPUB(
+  options: ExportOptions, 
+  abortSignal?: AbortSignal,
+  onProgress?: (progress: number, status: string) => void
+): Promise<Blob> {
   // Normalize baseUrl - remove trailing slash, then add it back to ensure clean URL construction
   const normalizedBase = ASCIIDOCTOR_SERVER_URL.replace(/\/+$/, '');
   const baseUrl = `${normalizedBase}/`;
@@ -535,6 +539,7 @@ export async function exportToEPUB(options: ExportOptions, abortSignal?: AbortSi
   console.log('[EPUB Export] Content length:', options.content.length);
   console.log('[EPUB Export] Title:', options.title);
   
+  onProgress?.(45, 'Sending request to server...');
   let response: Response;
   try {
     response = await fetch(url, {
@@ -557,6 +562,8 @@ export async function exportToEPUB(options: ExportOptions, abortSignal?: AbortSi
     console.error('[EPUB Export] Network error:', errorMessage);
     throw new Error(`Failed to connect to EPUB conversion server: ${errorMessage}. Make sure the AsciiDoctor server is running.`);
   }
+  
+  onProgress?.(60, 'Waiting for server response...');
 
   if (!response.ok) {
     // Try to read error message from response body
@@ -633,6 +640,7 @@ export async function exportToEPUB(options: ExportOptions, abortSignal?: AbortSi
     throw new Error(`Server returned unexpected content type: ${contentType}. Response preview: ${text.substring(0, 200)}`);
   }
 
+  onProgress?.(75, 'Receiving EPUB file from server...');
   // For large files, optimize the download process
   // Read as blob (binary) - this is necessary for validation
   const blob = await response.blob();
@@ -642,6 +650,7 @@ export async function exportToEPUB(options: ExportOptions, abortSignal?: AbortSi
   }
   
   console.log('[EPUB Export] Received blob:', blob.size, 'bytes');
+  onProgress?.(85, 'Validating EPUB file...');
   
   // Verify it's actually a ZIP file (EPUB is a ZIP archive)
   // Check ZIP magic bytes (first 4 bytes should be "PK\x03\x04")
@@ -663,6 +672,7 @@ export async function exportToEPUB(options: ExportOptions, abortSignal?: AbortSi
     }
   }
   
+  onProgress?.(95, 'EPUB file ready');
   console.log('[EPUB Export] Successfully generated EPUB file, ready for download');
   return blob;
 }
@@ -670,8 +680,9 @@ export async function exportToEPUB(options: ExportOptions, abortSignal?: AbortSi
 /**
  * Download a blob as a file
  * Optimized for large files by using requestIdleCallback when available
+ * Includes timeout fallback to retry download if it doesn't start
  */
-export function downloadBlob(blob: Blob, filename: string): void {
+export async function downloadBlob(blob: Blob, filename: string): Promise<void> {
   if (!blob || blob.size === 0) {
     console.error('[Download] Attempted to download empty blob');
     throw new Error('Cannot download empty file');
@@ -679,12 +690,10 @@ export function downloadBlob(blob: Blob, filename: string): void {
   
   console.log('[Download] Starting download:', filename, 'Size:', blob.size, 'bytes');
   
-  // For large files, use a more efficient approach
-  const isLargeFile = blob.size > 10 * 1024 * 1024; // > 10MB
+  let downloadTriggered = false;
   
-  if (isLargeFile) {
-    // Use requestIdleCallback if available to avoid blocking the UI
-    const triggerDownload = () => {
+  const triggerDownload = (attempt: number = 1): void => {
+    try {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -692,45 +701,79 @@ export function downloadBlob(blob: Blob, filename: string): void {
       a.style.display = 'none';
       document.body.appendChild(a);
       
-      // Trigger download immediately
+      // Trigger download
       a.click();
+      downloadTriggered = true;
       
-      // Clean up after a longer delay for large files
-      // This ensures the download has time to start
+      console.log(`[Download] Download triggered (attempt ${attempt}):`, filename);
+      
+      // Clean up after a delay
       setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        console.log('[Download] Download triggered for large file:', filename);
-      }, 500);
-    };
-    
-    // Use requestIdleCallback if available, otherwise trigger immediately
+        try {
+          if (document.body.contains(a)) {
+            document.body.removeChild(a);
+          }
+          URL.revokeObjectURL(url);
+        } catch (e) {
+          console.warn('[Download] Error during cleanup:', e);
+        }
+      }, attempt === 1 ? 100 : 500);
+    } catch (error) {
+      console.error(`[Download] Error triggering download (attempt ${attempt}):`, error);
+      downloadTriggered = false;
+    }
+  };
+  
+  // For large files, use a more efficient approach
+  const isLargeFile = blob.size > 10 * 1024 * 1024; // > 10MB
+  
+  if (isLargeFile) {
+    // Use requestIdleCallback if available to avoid blocking the UI
     if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-      (window as any).requestIdleCallback(triggerDownload, { timeout: 1000 });
+      (window as any).requestIdleCallback(() => triggerDownload(1), { timeout: 1000 });
     } else {
       // Fallback: use setTimeout with minimal delay
-      setTimeout(triggerDownload, 0);
+      setTimeout(() => triggerDownload(1), 0);
     }
   } else {
-    // For smaller files, use standard approach
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.style.display = 'none';
-    document.body.appendChild(a);
+    // For smaller files, trigger immediately
+    triggerDownload(1);
+  }
+  
+  // Set up timeout fallback: if download doesn't start within 15 seconds, retry
+  return new Promise<void>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      if (!downloadTriggered) {
+        console.warn('[Download] Download did not start within 15 seconds, retrying...');
+        // Retry with a more aggressive approach
+        triggerDownload(2);
+        
+        // Give it another 5 seconds, then resolve anyway (download may have started)
+        setTimeout(() => {
+          console.log('[Download] Download retry completed');
+          resolve();
+        }, 5000);
+      } else {
+        resolve();
+      }
+    }, 15000);
     
-    // Trigger download
-    a.click();
-    
-    // Clean up after a short delay to ensure download starts
-    setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+    // Check if download was triggered quickly
+    const checkInterval = setInterval(() => {
+      if (downloadTriggered) {
+        clearTimeout(timeoutId);
+        clearInterval(checkInterval);
+        resolve();
+      }
     }, 100);
     
-    console.log('[Download] Download triggered:', filename);
-  }
+    // Also resolve after a reasonable time even if we can't detect it
+    setTimeout(() => {
+      clearTimeout(timeoutId);
+      clearInterval(checkInterval);
+      resolve();
+    }, 20000);
+  });
 }
 
 /**
@@ -744,7 +787,7 @@ export async function openInViewer(
   validationMessages?: { errors?: string[]; warnings?: string[] }
 ): Promise<void> {
   // All files are downloaded instead of viewed (viewer removed)
-  downloadBlob(blob, filename);
+  await downloadBlob(blob, filename);
 }
 
 
