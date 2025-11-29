@@ -241,30 +241,39 @@
     try {
       // Check cache first
       const { contentCache } = await import('$lib/contentCache');
-      const cachedEvents = contentCache.getEvents('metadata');
+      const cachedEvents = contentCache.getEvents('profile');
       const cachedUserEvent = cachedEvents.find(cached => cached.event.pubkey === pubkey && cached.event.kind === 0);
       
       let result: any;
       if (cachedUserEvent) {
         result = { events: [cachedUserEvent.event], relays: cachedUserEvent.relays };
       } else {
-        // Fetch user metadata using relayService
-        result = await relayService.queryEvents(
-          'anonymous',
-          'metadata-read',
-          [{ kinds: [0], authors: [pubkey], limit: 1 }],
-          {
-            excludeUserContent: false,
-            currentUserPubkey: undefined
-          }
+        // Check cache first
+        const cachedProfile = contentCache.getEvents('profile').find(c => 
+          c.event.pubkey === pubkey && c.event.kind === 0
         );
         
-        // Store in cache for future use
-        if (result.events.length > 0) {
-          await contentCache.storeEvents('metadata', result.events.map((event: any) => ({
-            event,
-            relays: result.relays
-          })));
+        if (cachedProfile) {
+          result = { events: [cachedProfile.event], relays: cachedProfile.relays };
+        } else {
+          // Fetch user metadata using relayService
+          result = await relayService.queryEvents(
+            'anonymous',
+            'metadata-read',
+            [{ kinds: [0], authors: [pubkey], limit: 1 }],
+            {
+              excludeUserContent: false,
+              currentUserPubkey: undefined
+            }
+          );
+          
+          // Store in cache for future use
+          if (result.events.length > 0) {
+            await contentCache.storeEvents('profile', result.events.map((event: any) => ({
+              event,
+              relays: result.relays
+            })));
+          }
         }
       }
 
@@ -329,19 +338,43 @@
       
       if (!eventId) return;
       
-      // Fetch the event by ID using relayService
+      // Fetch the event by ID using relayService - check cache first
       try {
-        const result = await relayService.queryEvents(
-          'anonymous',
-          'wiki-read',
-          [{ ids: [eventId], limit: 1 }],
-          {
-            excludeUserContent: false,
-            currentUserPubkey: undefined
+        const allCached = [
+          ...contentCache.getEvents('publications'),
+          ...contentCache.getEvents('longform'),
+          ...contentCache.getEvents('wikis')
+        ];
+        let fetchedEvent = allCached.find(c => c.event.id === eventId)?.event || null;
+        
+        let result: any;
+        if (fetchedEvent) {
+          result = { events: [fetchedEvent], relays: allCached.find(c => c.event.id === eventId)!.relays };
+        } else {
+          result = await relayService.queryEvents(
+            'anonymous',
+            'wiki-read',
+            [{ ids: [eventId], limit: 1 }],
+            {
+              excludeUserContent: false,
+              currentUserPubkey: undefined
+            }
+          );
+          
+          // Store in cache
+          if (result.events.length > 0) {
+            for (const event of result.events) {
+              const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                               event.kind === 30023 ? 'longform' :
+                               (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+              if (cacheType) {
+                await contentCache.storeEvents(cacheType, [{ event, relays: result.relays }]);
+              }
+            }
           }
-        );
-
-        const fetchedEvent = result.events.find(evt => evt.id === eventId) || null;
+          
+          fetchedEvent = result.events.find(evt => evt.id === eventId) || null;
+        }
         
         if (fetchedEvent) {
         // Create an ArticleCard for the fetched event
@@ -1264,9 +1297,11 @@
       
       let referencedEvent: NostrEvent | null = null;
       
-      // Try to get from cache first
+      // Try to get from cache first - check all relevant caches
       if (eventId) {
-        const cached = contentCache.getEvent('wiki', eventId);
+        const cached = contentCache.getEvent('publications', eventId) ||
+                      contentCache.getEvent('longform', eventId) ||
+                      contentCache.getEvent('wikis', eventId);
         if (cached) {
           referencedEvent = cached.event;
         }
@@ -1280,7 +1315,11 @@
           const kind = parseInt(kindStr, 10);
           
           // Try cache first by a-tag
-          const cachedEvents = contentCache.getEvents('wiki');
+          const cachedEvents = [
+            ...contentCache.getEvents('publications'),
+            ...contentCache.getEvents('longform'),
+            ...contentCache.getEvents('wikis')
+          ];
           const cached = cachedEvents.find(c => {
             if (c.event.kind !== kind || c.event.pubkey !== pubkey) return false;
             const eventDTag = c.event.tags.find(t => t[0] === 'd')?.[1];
@@ -1310,11 +1349,16 @@
             
             if (result.events.length > 0) {
               referencedEvent = result.events[0];
-              // Cache it
-              await contentCache.storeEvents('wiki', [{
-                event: referencedEvent,
-                relays: result.relays
-              }]);
+              // Cache it in appropriate cache based on kind
+              const cacheType = referencedEvent.kind === 30040 || referencedEvent.kind === 30041 ? 'publications' :
+                               referencedEvent.kind === 30023 ? 'longform' :
+                               (referencedEvent.kind === 30817 || referencedEvent.kind === 30818) ? 'wikis' : null;
+              if (cacheType) {
+                await contentCache.storeEvents(cacheType, [{
+                  event: referencedEvent,
+                  relays: result.relays
+                }]);
+              }
             }
           }
         } catch (error) {
@@ -1418,7 +1462,9 @@
       let referencedEvent: NostrEvent | null = null;
       
       if (eventId) {
-        const cached = contentCache.getEvent('wiki', eventId);
+        const cached = contentCache.getEvent('publications', eventId) ||
+                      contentCache.getEvent('longform', eventId) ||
+                      contentCache.getEvent('wikis', eventId);
         if (cached) {
           referencedEvent = cached.event;
         }
@@ -1429,7 +1475,11 @@
           const [kindStr, pubkey, dtag] = aTagValue.split(':');
           const kind = parseInt(kindStr, 10);
           
-          const cachedEvents = contentCache.getEvents('wiki');
+          const cachedEvents = [
+            ...contentCache.getEvents('publications'),
+            ...contentCache.getEvents('longform'),
+            ...contentCache.getEvents('wikis')
+          ];
           const cached = cachedEvents.find(c => {
             if (c.event.kind !== kind || c.event.pubkey !== pubkey) return false;
             const eventDTag = c.event.tags.find(t => t[0] === 'd')?.[1];
@@ -1458,10 +1508,16 @@
             
             if (result.events.length > 0) {
               referencedEvent = result.events[0];
-              await contentCache.storeEvents('wiki', [{
-                event: referencedEvent,
-                relays: result.relays
-              }]);
+              // Cache it in appropriate cache based on kind
+              const cacheType = referencedEvent.kind === 30040 || referencedEvent.kind === 30041 ? 'publications' :
+                               referencedEvent.kind === 30023 ? 'longform' :
+                               (referencedEvent.kind === 30817 || referencedEvent.kind === 30818) ? 'wikis' : null;
+              if (cacheType) {
+                await contentCache.storeEvents(cacheType, [{
+                  event: referencedEvent,
+                  relays: result.relays
+                }]);
+              }
             }
           }
         } catch (error) {
@@ -1931,9 +1987,26 @@
             // For naddr, fetch the event first to check its actual kind
             const { data } = decoded;
             
-            // Fetch the event to determine its real kind
-            const eventPromise = new Promise<NostrEvent | null>((resolve) => {
+            // Fetch the event to determine its real kind - check cache first
+            const eventPromise = new Promise<NostrEvent | null>(async (resolve) => {
               let eventData: NostrEvent | null = null;
+              const allCached = [
+                ...contentCache.getEvents('publications'),
+                ...contentCache.getEvents('longform'),
+                ...contentCache.getEvents('wikis')
+              ];
+              const { getTagOr } = await import('$lib/utils');
+              const cached = allCached.find(c => 
+                c.event.kind === data.kind &&
+                c.event.pubkey === data.pubkey &&
+                getTagOr(c.event, 'd') === data.identifier
+              );
+              
+              if (cached) {
+                resolve(cached.event);
+                return;
+              }
+              
               relayService.queryEvents(
                 'anonymous',
                 'wiki-read',
@@ -1947,7 +2020,19 @@
                   excludeUserContent: false,
                   currentUserPubkey: undefined
                 }
-              ).then(result => {
+              ).then(async result => {
+                // Store in cache
+                if (result.events.length > 0) {
+                  for (const event of result.events) {
+                    const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                                     event.kind === 30023 ? 'longform' :
+                                     (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+                    if (cacheType) {
+                      await contentCache.storeEvents(cacheType, [{ event, relays: result.relays }]);
+                    }
+                  }
+                }
+                
                 const event = result.events.find(evt => 
                   evt.pubkey === data.pubkey && 
                   evt.tags.some(([tag, value]) => tag === 'd' && value === data.identifier) &&
@@ -2016,9 +2101,26 @@
           if (decoded && decoded.type === 'naddr') {
             const { data } = decoded;
             
-            // Fetch the event to determine its real kind
-            const eventPromise = new Promise<NostrEvent | null>((resolve) => {
+            // Fetch the event to determine its real kind - check cache first
+            const eventPromise = new Promise<NostrEvent | null>(async (resolve) => {
               let eventData: NostrEvent | null = null;
+              const allCached = [
+                ...contentCache.getEvents('publications'),
+                ...contentCache.getEvents('longform'),
+                ...contentCache.getEvents('wikis')
+              ];
+              const { getTagOr } = await import('$lib/utils');
+              const cached = allCached.find(c => 
+                c.event.kind === data.kind &&
+                c.event.pubkey === data.pubkey &&
+                getTagOr(c.event, 'd') === data.identifier
+              );
+              
+              if (cached) {
+                resolve(cached.event);
+                return;
+              }
+              
               relayService.queryEvents(
                 'anonymous',
                 'wiki-read',
@@ -2032,7 +2134,19 @@
                   excludeUserContent: false,
                   currentUserPubkey: undefined
                 }
-              ).then(result => {
+              ).then(async result => {
+                // Store in cache
+                if (result.events.length > 0) {
+                  for (const event of result.events) {
+                    const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                                     event.kind === 30023 ? 'longform' :
+                                     (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+                    if (cacheType) {
+                      await contentCache.storeEvents(cacheType, [{ event, relays: result.relays }]);
+                    }
+                  }
+                }
+                
                 const event = result.events.find(evt => 
                   evt.pubkey === data.pubkey && 
                   evt.tags.some(([tag, value]) => tag === 'd' && value === data.identifier) &&

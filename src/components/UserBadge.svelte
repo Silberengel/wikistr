@@ -39,7 +39,7 @@
       try {
         // Check IndexedDB cache first
         const { contentCache } = await import('$lib/contentCache');
-        const cachedEvents = await contentCache.getEvents('metadata');
+        const cachedEvents = await contentCache.getEvents('profile');
         const cachedUserEvent = cachedEvents.find(cached => cached.event.pubkey === pubkey && cached.event.kind === 0);
         
         if (cachedUserEvent) {
@@ -152,7 +152,7 @@
               event,
               relays: metadataResult.relays
             }];
-            await contentCache.storeEvents('metadata', eventsToStore);
+            await contentCache.storeEvents('profile', eventsToStore);
           } catch (e) {
             console.warn('UserBadge: Failed to parse user metadata:', e);
           }

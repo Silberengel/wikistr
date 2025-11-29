@@ -78,38 +78,66 @@
           const { decode } = await import('@nostr/tools/nip19');
           const decoded = decode(trimmedQuery);
           if (decoded.type === 'nevent' && decoded.data.id) {
-            // Query for the event by ID
-            const result = await relayService.queryEvents(
-              $account?.pubkey || 'anonymous',
-              'wiki-read',
-              [{ ids: [decoded.data.id] }],
-              { 
-                excludeUserContent: false, 
-                currentUserPubkey: $account?.pubkey,
-                customRelays: decoded.data.relays || []
+            // Check cache first
+            const { contentCache } = await import('$lib/contentCache');
+            const allCached = [
+              ...contentCache.getEvents('publications'),
+              ...contentCache.getEvents('longform'),
+              ...contentCache.getEvents('wikis')
+            ];
+            let foundEvent = allCached.find(c => c.event.id === decoded.data.id)?.event;
+            
+            let result: any;
+            if (foundEvent) {
+              result = { events: [foundEvent], relays: allCached.find(c => c.event.id === decoded.data.id)!.relays };
+            } else {
+              // Query for the event by ID
+              result = await relayService.queryEvents(
+                $account?.pubkey || 'anonymous',
+                'wiki-read',
+                [{ ids: [decoded.data.id] }],
+                { 
+                  excludeUserContent: false, 
+                  currentUserPubkey: $account?.pubkey,
+                  customRelays: decoded.data.relays || []
+                }
+              );
+              
+              // Store in cache
+              if (result.events.length > 0) {
+                for (const event of result.events) {
+                  const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                                   event.kind === 30023 ? 'longform' :
+                                   (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+                  if (cacheType) {
+                    await contentCache.storeEvents(cacheType, [{ event, relays: result.relays }]);
+                  }
+                }
               }
-            );
+            }
 
             if (result.events.length > 0) {
-              const foundEvent = result.events[0];
-              const articleKinds = [30023, 30817, 30041, 30040, 30818];
-              if (articleKinds.includes(foundEvent.kind)) {
-                // ALWAYS open as article card - never use book:: prefix for hex IDs
-                const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
-                openOrCreateArticleCard({
-                  type: 'article',
-                  data: [getTagOr(foundEvent, 'd') || '', foundEvent.pubkey],
-                  actualEvent: foundEvent,
-                  relayHints: result.relays
-                });
-                tried = true;
-                return;
-              } else {
-                // Not an article kind
-                console.warn('⚠️ Event found but is not an article kind:', foundEvent.kind);
-                tried = true;
-                results = [];
-                return;
+              foundEvent = result.events[0];
+              if (foundEvent) {
+                const articleKinds = [30023, 30817, 30041, 30040, 30818];
+                if (articleKinds.includes(foundEvent.kind)) {
+                  // ALWAYS open as article card - never use book:: prefix for hex IDs
+                  const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+                  openOrCreateArticleCard({
+                    type: 'article',
+                    data: [getTagOr(foundEvent, 'd') || '', foundEvent.pubkey],
+                    actualEvent: foundEvent,
+                    relayHints: result.relays
+                  });
+                  tried = true;
+                  return;
+                } else {
+                  // Not an article kind
+                  console.warn('⚠️ Event found but is not an article kind:', foundEvent.kind);
+                  tried = true;
+                  results = [];
+                  return;
+                }
               }
             } else {
               // Event not found
@@ -146,37 +174,76 @@
             if (decoded.data.kind && articleKinds.includes(decoded.data.kind)) {
               // Fetch the event using kind, pubkey, and identifier
               try {
-                const filters: any[] = [{
-                  kinds: [decoded.data.kind],
-                  authors: [decoded.data.pubkey],
-                  '#d': [decoded.data.identifier]
-                }];
+                // Check cache first
+                const { contentCache } = await import('$lib/contentCache');
+                const allCached = [
+                  ...contentCache.getEvents('publications'),
+                  ...contentCache.getEvents('longform'),
+                  ...contentCache.getEvents('wikis')
+                ];
+                let foundEvent = allCached.find(c => 
+                  c.event.kind === decoded.data.kind &&
+                  c.event.pubkey === decoded.data.pubkey &&
+                  getTagOr(c.event, 'd') === decoded.data.identifier
+                )?.event;
                 
-                const result = await relayService.queryEvents(
-                  $account?.pubkey || 'anonymous',
-                  'wiki-read',
-                  filters,
-                  { 
-                    excludeUserContent: false, 
-                    currentUserPubkey: $account?.pubkey,
-                    customRelays: decoded.data.relays || []
+                let result: any;
+                if (foundEvent) {
+                  result = { 
+                    events: [foundEvent], 
+                    relays: allCached.find(c => 
+                      c.event.kind === decoded.data.kind &&
+                      c.event.pubkey === decoded.data.pubkey &&
+                      getTagOr(c.event, 'd') === decoded.data.identifier
+                    )!.relays 
+                  };
+                } else {
+                  // Fetch the event using kind, pubkey, and identifier
+                  const filters: any[] = [{
+                    kinds: [decoded.data.kind],
+                    authors: [decoded.data.pubkey],
+                    '#d': [decoded.data.identifier]
+                  }];
+                  
+                  result = await relayService.queryEvents(
+                    $account?.pubkey || 'anonymous',
+                    'wiki-read',
+                    filters,
+                    { 
+                      excludeUserContent: false, 
+                      currentUserPubkey: $account?.pubkey,
+                      customRelays: decoded.data.relays || []
+                    }
+                  );
+                  
+                  // Store in cache
+                  if (result.events.length > 0) {
+                    for (const event of result.events) {
+                      const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                                       event.kind === 30023 ? 'longform' :
+                                       (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+                      if (cacheType) {
+                        await contentCache.storeEvents(cacheType, [{ event, relays: result.relays }]);
+                      }
+                    }
                   }
-                );
+                }
 
                 if (result.events.length > 0) {
-                  const foundEvent = result.events[0];
-                  
-                  // ALWAYS open as article card - never use book:: prefix for naddr
-                  const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
-                  const { getTagOr } = await import('$lib/utils');
-                  openOrCreateArticleCard({
-                    type: 'article',
-                    data: [getTagOr(foundEvent, 'd') || decoded.data.identifier || '', foundEvent.pubkey],
-                    actualEvent: foundEvent,
-                    relayHints: result.relays
-                  });
-                  tried = true;
-                  return;
+                  foundEvent = result.events[0];
+                  if (foundEvent) {
+                    // ALWAYS open as article card - never use book:: prefix for naddr
+                    const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+                    const { getTagOr } = await import('$lib/utils');
+                    openOrCreateArticleCard({
+                      type: 'article',
+                      data: [getTagOr(foundEvent, 'd') || decoded.data.identifier || '', foundEvent.pubkey],
+                      actualEvent: foundEvent,
+                      relayHints: result.relays
+                    });
+                    tried = true;
+                    return;
+                  }
                 } else {
                   // Event not found, but create article card from naddr data
                   console.log('⚠️ Event not found, creating article card from naddr data');
@@ -231,56 +298,123 @@
       (async () => {
         try {
           console.log('🔍 Searching for hex ID:', trimmedQuery);
-          // First try as event ID
-          const result = await relayService.queryEvents(
-            $account?.pubkey || 'anonymous',
-            'wiki-read',
-            [{ ids: [trimmedQuery] }],
-            { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
-          );
+          // Check cache first
+          const { contentCache } = await import('$lib/contentCache');
+          const allCached = [
+            ...contentCache.getEvents('publications'),
+            ...contentCache.getEvents('longform'),
+            ...contentCache.getEvents('wikis')
+          ];
+          let foundEvent = allCached.find(c => c.event.id === trimmedQuery)?.event;
+          
+          let result: any;
+          if (foundEvent) {
+            result = { events: [foundEvent], relays: allCached.find(c => c.event.id === trimmedQuery)!.relays };
+          } else {
+            // First try as event ID
+            result = await relayService.queryEvents(
+              $account?.pubkey || 'anonymous',
+              'wiki-read',
+              [{ ids: [trimmedQuery] }],
+              { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+            );
+            
+            // Store in cache
+            if (result.events.length > 0) {
+              for (const event of result.events) {
+                const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                                 event.kind === 30023 ? 'longform' :
+                                 (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+                if (cacheType) {
+                  await contentCache.storeEvents(cacheType, [{ event, relays: result.relays }]);
+                }
+              }
+            }
+          }
 
           if (result.events.length > 0) {
-            const foundEvent = result.events[0];
-            const articleKinds = [30023, 30817, 30041, 30040, 30818];
-            if (articleKinds.includes(foundEvent.kind)) {
-              // ALWAYS open as article card - user didn't type book:: prefix
-              const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
-              openOrCreateArticleCard({
-                type: 'article',
-                data: [getTagOr(foundEvent, 'd') || '', foundEvent.pubkey],
-                actualEvent: foundEvent,
-                relayHints: result.relays
-              });
-              tried = true;
-              return;
-            } else {
-              // Not an document kind - try as pubkey
-              console.log('⚠️ Not an article kind, trying as pubkey');
-              const pubkeyResult = await relayService.queryEvents(
-                $account?.pubkey || 'anonymous',
-                'wiki-read',
-                [{ kinds: wikiKinds, authors: [trimmedQuery], limit: 100 }],
-                { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
-              );
-              
-              if (pubkeyResult.events.length > 0) {
-                pubkeyResult.events.forEach(evt => {
-                  if (addUniqueTaggedReplaceable(results, evt)) {
-                    results = results; // Trigger reactivity
-                  }
+            foundEvent = result.events[0];
+            if (foundEvent) {
+              const articleKinds = [30023, 30817, 30041, 30040, 30818];
+              if (articleKinds.includes(foundEvent.kind)) {
+                // ALWAYS open as article card - user didn't type book:: prefix
+                const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
+                openOrCreateArticleCard({
+                  type: 'article',
+                  data: [getTagOr(foundEvent, 'd') || '', foundEvent.pubkey],
+                  actualEvent: foundEvent,
+                  relayHints: result.relays
                 });
                 tried = true;
                 return;
               } else {
-                console.warn('⚠️ No events found for hex string');
-                tried = true;
-                results = [];
-                return;
+                // Not an document kind - try as pubkey
+                console.log('⚠️ Not an article kind, trying as pubkey');
+                // Check cache first for this pubkey
+                const cachedByPubkey = allCached.filter(c => c.event.pubkey === trimmedQuery);
+                if (cachedByPubkey.length > 0) {
+                  cachedByPubkey.forEach(cached => {
+                    if (addUniqueTaggedReplaceable(results, cached.event)) {
+                      seenCache[cached.event.id] = cached.relays;
+                      results = results; // Trigger reactivity
+                    }
+                  });
+                  tried = true;
+                  return;
+                }
+                
+                const pubkeyResult = await relayService.queryEvents(
+                  $account?.pubkey || 'anonymous',
+                  'wiki-read',
+                  [{ kinds: wikiKinds, authors: [trimmedQuery], limit: 100 }],
+                  { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+                );
+                
+                // Store in cache
+                if (pubkeyResult.events.length > 0) {
+                  for (const event of pubkeyResult.events) {
+                    const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                                     event.kind === 30023 ? 'longform' :
+                                     (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+                    if (cacheType) {
+                      await contentCache.storeEvents(cacheType, [{ event, relays: pubkeyResult.relays }]);
+                    }
+                  }
+                }
+                
+                if (pubkeyResult.events.length > 0) {
+                  pubkeyResult.events.forEach(evt => {
+                    if (addUniqueTaggedReplaceable(results, evt)) {
+                      seenCache[evt.id] = pubkeyResult.relays;
+                      results = results; // Trigger reactivity
+                    }
+                  });
+                  tried = true;
+                  return;
+                } else {
+                  console.warn('⚠️ No events found for hex string');
+                  tried = true;
+                  results = [];
+                  return;
+                }
               }
             }
           } else {
             // Event not found - try as pubkey
             console.log('⚠️ Event not found, trying as pubkey');
+            // Check cache first for this pubkey
+            const cachedByPubkey = allCached.filter(c => c.event.pubkey === trimmedQuery);
+            if (cachedByPubkey.length > 0) {
+              cachedByPubkey.forEach(cached => {
+                if (addUniqueTaggedReplaceable(results, cached.event)) {
+                  seenCache[cached.event.id] = cached.relays;
+                  results = results; // Trigger reactivity
+                }
+              });
+              tried = true;
+              return;
+            }
+            
             const pubkeyResult = await relayService.queryEvents(
               $account?.pubkey || 'anonymous',
               'wiki-read',
@@ -288,9 +422,22 @@
               { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
             );
             
+            // Store in cache
+            if (pubkeyResult.events.length > 0) {
+              for (const event of pubkeyResult.events) {
+                const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                                 event.kind === 30023 ? 'longform' :
+                                 (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+                if (cacheType) {
+                  await contentCache.storeEvents(cacheType, [{ event, relays: pubkeyResult.relays }]);
+                }
+              }
+            }
+            
             if (pubkeyResult.events.length > 0) {
               pubkeyResult.events.forEach(evt => {
                 if (addUniqueTaggedReplaceable(results, evt)) {
+                  seenCache[evt.id] = pubkeyResult.relays;
                   results = results; // Trigger reactivity
                 }
               });
@@ -321,6 +468,25 @@
           const decoded = decode(trimmedQuery);
           if (decoded.type === 'npub') {
             const pubkey = decoded.data;
+            // Check cache first
+            const { contentCache } = await import('$lib/contentCache');
+            const allCached = [
+              ...contentCache.getEvents('publications'),
+              ...contentCache.getEvents('longform'),
+              ...contentCache.getEvents('wikis')
+            ];
+            const cachedByPubkey = allCached.filter(c => c.event.pubkey === pubkey);
+            
+            if (cachedByPubkey.length > 0) {
+              cachedByPubkey.forEach(cached => {
+                if (addUniqueTaggedReplaceable(results, cached.event)) {
+                  seenCache[cached.event.id] = cached.relays;
+                }
+              });
+              tried = true;
+              return;
+            }
+            
             // Search for all articles by this author
             const result = await relayService.queryEvents(
               $account?.pubkey || 'anonymous',
@@ -328,6 +494,18 @@
               [{ kinds: wikiKinds, authors: [pubkey], limit: 100 }],
               { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
             );
+            
+            // Store in cache
+            if (result.events.length > 0) {
+              for (const event of result.events) {
+                const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                                 event.kind === 30023 ? 'longform' :
+                                 (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+                if (cacheType) {
+                  await contentCache.storeEvents(cacheType, [{ event, relays: result.relays }]);
+                }
+              }
+            }
             
             if (result.events.length > 0) {
               result.events.forEach(evt => {
@@ -492,7 +670,11 @@
     try {
       // Check cache first for instant results
       const { contentCache } = await import('$lib/contentCache');
-      const cachedEvents = contentCache.getEvents('wiki');
+      const cachedEvents = [
+        ...contentCache.getEvents('publications'),
+        ...contentCache.getEvents('longform'),
+        ...contentCache.getEvents('wikis')
+      ];
       
       // Filter cached events by d-tag (exact match, preserving foreign letters)
       const cachedMatches = cachedEvents.filter(cached => {
@@ -569,9 +751,23 @@
         }, 3000); // 3 second timeout
       });
       
-      Promise.all(searchPromises).then(searchResults => {
+      Promise.all(searchPromises).then(async searchResults => {
         let foundAny = false;
-        searchResults.forEach(result => {
+        const { contentCache } = await import('$lib/contentCache');
+        
+        for (const result of searchResults) {
+          // Store events in cache
+          if (result.events.length > 0) {
+            for (const event of result.events) {
+              const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                               event.kind === 30023 ? 'longform' :
+                               (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+              if (cacheType) {
+                await contentCache.storeEvents(cacheType, [{ event, relays: result.relays }]);
+              }
+            }
+          }
+          
           result.events.forEach(evt => {
             foundAny = true;
             tried = true;
@@ -591,7 +787,7 @@
 
             if (addUniqueTaggedReplaceable(results, evt)) update();
           });
-        });
+        }
         
         if (!foundAny && !cachedMatches.length) {
           tried = true;

@@ -46,7 +46,11 @@
       }
       
       // Try to get from cache
-      const cachedEvents = contentCache.getEvents('wiki');
+      const cachedEvents = [
+        ...contentCache.getEvents('publications'),
+        ...contentCache.getEvents('longform'),
+        ...contentCache.getEvents('wikis')
+      ];
       const wikiKinds = [30818, 30817, 30040, 30041, 30023];
       const cached = cachedEvents.find(cached => 
         cached.event.pubkey === article.data[1] && 

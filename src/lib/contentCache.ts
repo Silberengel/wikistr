@@ -11,31 +11,26 @@ const store = idbkv.createStore('wikistr-cache', 'content-store');
 
 // Cache configuration
 const CACHE_KEYS = {
-  wiki: 'wikistr:cache:wiki',
+  publications: 'wikistr:cache:publications',  // 30040, 30041
+  longform: 'wikistr:cache:longform',        // 30023
+  wikis: 'wikistr:cache:wikis',             // 30817, 30818
   reactions: 'wikistr:cache:reactions', 
-  deletes: 'wikistr:cache:deletes',
-  kind1: 'wikistr:cache:kind1',
   kind1111: 'wikistr:cache:kind1111',
-  kind30041: 'wikistr:cache:kind30041',
   kind10002: 'wikistr:cache:kind10002',
   kind10432: 'wikistr:cache:kind10432',
-  metadata: 'wikistr:cache:metadata',
-  bookConfigs: 'wikistr:cache:bookconfigs',
-  cacheInfo: 'wikistr:cache:info'
+  profile: 'wikistr:cache:profile'  // Profile metadata (kind 0, 10133)
 } as const;
 
 // Cache expiration times (in milliseconds)
 const CACHE_EXPIRY = {
-  wiki: 5 * 60 * 1000,        // 5 minutes
+  publications: 10 * 60 * 1000,  // 10 minutes (30040, 30041)
+  longform: 5 * 60 * 1000,       // 5 minutes (30023)
+  wikis: 5 * 60 * 1000,          // 5 minutes (30817, 30818)
   reactions: 2 * 60 * 1000,   // 2 minutes  
-  deletes: 10 * 60 * 1000,    // 10 minutes
-  kind1: 5 * 60 * 1000,       // 5 minutes
   kind1111: 5 * 60 * 1000,    // 5 minutes
-  kind30041: 10 * 60 * 1000,  // 10 minutes
   kind10002: 60 * 60 * 1000,  // 1 hour (relay lists change infrequently)
   kind10432: 60 * 60 * 1000,  // 1 hour (cache relay lists change infrequently)
-  metadata: 30 * 60 * 1000,   // 30 minutes
-  bookConfigs: 60 * 60 * 1000 // 1 hour
+  profile: 30 * 60 * 1000    // 30 minutes (profile metadata: kind 0, 10133)
 } as const;
 
 interface CachedEvent {
@@ -44,37 +39,27 @@ interface CachedEvent {
   cachedAt: number;
 }
 
-interface CacheInfo {
-  lastUpdate: number;
-  totalEvents: number;
-  relayCount: number;
-}
-
 interface ContentCache {
-  wiki: Map<string, CachedEvent>;
+  publications: Map<string, CachedEvent>;   // 30040, 30041
+  longform: Map<string, CachedEvent>;       // 30023
+  wikis: Map<string, CachedEvent>;          // 30817, 30818
   reactions: Map<string, CachedEvent>;
-  deletes: Map<string, CachedEvent>;
-  kind1: Map<string, CachedEvent>;
   kind1111: Map<string, CachedEvent>;
-  kind30041: Map<string, CachedEvent>;
   kind10002: Map<string, CachedEvent>;
   kind10432: Map<string, CachedEvent>;
-  metadata: Map<string, CachedEvent>;
-  bookConfigs: Map<string, CachedEvent>;
+  profile: Map<string, CachedEvent>;  // Profile metadata (kind 0, 10133)
 }
 
 class ContentCacheManager {
   private cache: ContentCache = {
-    wiki: new Map(),
+    publications: new Map(),   // 30040, 30041
+    longform: new Map(),      // 30023
+    wikis: new Map(),         // 30817, 30818
     reactions: new Map(),
-    deletes: new Map(),
-    kind1: new Map(),
     kind1111: new Map(),
-    kind30041: new Map(),
     kind10002: new Map(),
     kind10432: new Map(),
-    metadata: new Map(),
-    bookConfigs: new Map()
+    profile: new Map()  // Profile metadata (kind 0, 10133)
   };
 
   private loaded = false;
@@ -88,40 +73,34 @@ class ContentCacheManager {
     try {
       // Load all content types in parallel
       const [
-        wikiData,
+        publicationsData,
+        longformData,
+        wikisData,
         reactionsData,
-        deletesData,
-        kind1Data,
         kind1111Data,
-        kind30041Data,
         kind10002Data,
         kind10432Data,
-        metadataData,
-        bookConfigsData
+        profileData
       ] = await Promise.all([
-        idbkv.get(CACHE_KEYS.wiki, store),
+        idbkv.get(CACHE_KEYS.publications, store),
+        idbkv.get(CACHE_KEYS.longform, store),
+        idbkv.get(CACHE_KEYS.wikis, store),
         idbkv.get(CACHE_KEYS.reactions, store),
-        idbkv.get(CACHE_KEYS.deletes, store),
-        idbkv.get(CACHE_KEYS.kind1, store),
         idbkv.get(CACHE_KEYS.kind1111, store),
-        idbkv.get(CACHE_KEYS.kind30041, store),
         idbkv.get(CACHE_KEYS.kind10002, store),
         idbkv.get(CACHE_KEYS.kind10432, store),
-        idbkv.get(CACHE_KEYS.metadata, store),
-        idbkv.get(CACHE_KEYS.bookConfigs, store)
+        idbkv.get(CACHE_KEYS.profile, store)
       ]);
 
       // Restore Maps from serialized data
-      this.cache.wiki = new Map(wikiData || []);
+      this.cache.publications = new Map(publicationsData || []);
+      this.cache.longform = new Map(longformData || []);
+      this.cache.wikis = new Map(wikisData || []);
       this.cache.reactions = new Map(reactionsData || []);
-      this.cache.deletes = new Map(deletesData || []);
-      this.cache.kind1 = new Map(kind1Data || []);
       this.cache.kind1111 = new Map(kind1111Data || []);
-      this.cache.kind30041 = new Map(kind30041Data || []);
       this.cache.kind10002 = new Map(kind10002Data || []);
       this.cache.kind10432 = new Map(kind10432Data || []);
-      this.cache.metadata = new Map(metadataData || []);
-      this.cache.bookConfigs = new Map(bookConfigsData || []);
+      this.cache.profile = new Map(profileData || []);
 
       this.loaded = true;
 
@@ -133,15 +112,24 @@ class ContentCacheManager {
 
   /**
    * Get cached events for a specific content type
+   * Events with d-tags (articles/publications) never expire and are always returned
    */
   getEvents(contentType: keyof ContentCache): CachedEvent[] {
     const cachedEvents = Array.from(this.cache[contentType].values());
     
-    // Filter out expired events
+    // Filter out expired events, but preserve events with d-tags (articles/publications)
     const now = Date.now();
     const expiry = CACHE_EXPIRY[contentType];
     
-    return cachedEvents.filter(cached => (now - cached.cachedAt) < expiry);
+    return cachedEvents.filter(cached => {
+      // Events with d-tags never expire
+      const dTag = cached.event.tags.find(([k]) => k === 'd')?.[1];
+      if (dTag) {
+        return true; // Always return events with d-tags
+      }
+      // For events without d-tags, check expiry
+      return (now - cached.cachedAt) < expiry;
+    });
   }
 
   /**
@@ -165,7 +153,7 @@ class ContentCacheManager {
 
   /**
    * Store events in cache
-   * For replaceable events (wiki, kind30041, etc.), deduplicate by a-tag (kind:pubkey:d-tag) and keep only the newest
+   * For replaceable events (publications, longform, wikis, etc.), deduplicate by a-tag (kind:pubkey:d-tag) and keep only the newest
    */
   async storeEvents(
     contentType: keyof ContentCache,
@@ -179,7 +167,7 @@ class ContentCacheManager {
       // - Replaceable (10000 <= n < 20000 || n == 0 || n == 3): use kind:pubkey
       // - Ephemeral (20000 <= n < 30000): use event.id (not expected to be stored, but we cache them)
       // - Addressable (30000 <= n < 40000): use kind:pubkey:d-tag
-      const isReplaceable = contentType === 'wiki' || contentType === 'kind30041' || contentType === 'kind1111' || contentType === 'kind10002' || contentType === 'kind10432' || contentType === 'metadata';
+      const isReplaceable = contentType === 'publications' || contentType === 'longform' || contentType === 'wikis' || contentType === 'kind1111' || contentType === 'kind10002' || contentType === 'kind10432' || contentType === 'profile';
       
       // Merge new events with existing cache, preventing duplicates
       events.forEach(({ event, relays }) => {
@@ -188,7 +176,7 @@ class ContentCacheManager {
         const kind = event.kind;
         
         // Determine event type based on NIP specification
-        const isRegular = (kind >= 1000 && kind < 10000) || (kind >= 4 && kind < 45) || kind === 1 || kind === 2;
+        const isRegular = (kind >= 1000 && kind < 10000) || (kind >= 4 && kind < 45) || kind === 2;
         const isReplaceableKind = (kind >= 10000 && kind < 20000) || kind === 0 || kind === 3;
         const isEphemeral = kind >= 20000 && kind < 30000;
         const isAddressable = kind >= 30000 && kind < 40000;
@@ -343,17 +331,14 @@ class ContentCacheManager {
       Object.values(this.cache).forEach(map => map.clear());
       
       await Promise.all([
-        idbkv.del(CACHE_KEYS.wiki, store),
+        idbkv.del(CACHE_KEYS.publications, store),
+        idbkv.del(CACHE_KEYS.longform, store),
+        idbkv.del(CACHE_KEYS.wikis, store),
         idbkv.del(CACHE_KEYS.reactions, store),
-        idbkv.del(CACHE_KEYS.deletes, store),
-        idbkv.del(CACHE_KEYS.kind1, store),
         idbkv.del(CACHE_KEYS.kind1111, store),
-        idbkv.del(CACHE_KEYS.kind30041, store),
         idbkv.del(CACHE_KEYS.kind10002, store),
         idbkv.del(CACHE_KEYS.kind10432, store),
-        idbkv.del(CACHE_KEYS.metadata, store),
-        idbkv.del(CACHE_KEYS.bookConfigs, store),
-        idbkv.del(CACHE_KEYS.cacheInfo, store)
+        idbkv.del(CACHE_KEYS.profile, store)
       ]);
 
       console.log('🗑️ Cleared all content caches');
@@ -381,21 +366,73 @@ class ContentCacheManager {
 
   /**
    * Clean up expired events
+   * Preserves bookmarked items and items with reading places (persistent cache)
    */
   async cleanup(): Promise<void> {
     try {
       const now = Date.now();
       let totalCleaned = 0;
 
+      // Import bookmarks module to check for bookmarked items
+      const { getBookmarks, getReadingPlaces } = await import('./bookmarks');
+      
+      // Get all bookmarked events and reading places
+      const bookmarks = await getBookmarks().catch(() => []);
+      const readingPlaces = await getReadingPlaces().catch(() => []);
+      
+      // Create sets for quick lookup
+      const bookmarkedATags = new Set(
+        bookmarks.map(event => {
+          const dTag = event.tags.find(([k]) => k === 'd')?.[1] || '';
+          return `${event.kind}:${event.pubkey}:${dTag}`;
+        })
+      );
+      const eventIdsWithReadingPlaces = new Set(readingPlaces.map(rp => rp.eventId));
+
       (Object.keys(this.cache) as Array<keyof ContentCache>).forEach(contentType => {
         const expiry = CACHE_EXPIRY[contentType];
         const originalSize = this.cache[contentType].size;
         
-        // Remove expired events
+        // Remove expired events, but preserve:
+        // 1. Events with d-tags (articles and publications - never expire)
+        // 2. Bookmarked items
+        // 3. Items with reading places
         for (const [id, cached] of this.cache[contentType].entries()) {
-          if ((now - cached.cachedAt) > expiry) {
+          const event = cached.event;
+          const age = now - cached.cachedAt;
+          
+          // Skip if within expiry time
+          if (age <= expiry) {
+            continue;
+          }
+          
+          // Check if event has a d-tag - these are articles/publications and should NEVER expire
+          const dTag = event.tags.find(([k]) => k === 'd')?.[1];
+          const hasDTag = !!dTag;
+          
+          // Check if this event is bookmarked
+          // For events with d-tags, use a-tag format (kind:pubkey:d-tag)
+          // For events without d-tags (like some 30040), use event ID
+          let isBookmarked = false;
+          if (dTag) {
+            const aTag = `${event.kind}:${event.pubkey}:${dTag}`;
+            isBookmarked = bookmarkedATags.has(aTag);
+          } else {
+            // For events without d-tags, check if any bookmarked event matches by ID
+            isBookmarked = bookmarks.some(b => b.id === event.id);
+          }
+          
+          // Check if this event has a reading place
+          const hasReadingPlace = eventIdsWithReadingPlaces.has(event.id);
+          
+          // Only remove if expired AND no d-tag AND not bookmarked AND no reading place
+          // Events with d-tags (articles/publications) are NEVER removed
+          if (!hasDTag && !isBookmarked && !hasReadingPlace) {
             this.cache[contentType].delete(id);
             totalCleaned++;
+          } else {
+            // Update cachedAt for preserved items to extend their lifetime
+            cached.cachedAt = now;
           }
         }
 
@@ -408,7 +445,7 @@ class ContentCacheManager {
       });
 
       if (totalCleaned > 0) {
-        console.log(`🧹 Total cleanup: ${totalCleaned} expired events removed`);
+        console.log(`🧹 Total cleanup: ${totalCleaned} expired events removed (bookmarked items preserved)`);
       }
 
     } catch (error) {
@@ -421,9 +458,8 @@ class ContentCacheManager {
 export const contentCache = new ContentCacheManager();
 
 // Initialize cache on import
-contentCache.initialize().catch(console.error);
-
-// DISABLED: Cleanup expired events to prevent doom loops
-// setInterval(() => {
-//   contentCache.cleanup().catch(console.error);
-// }, 5 * 60 * 1000);
+contentCache.initialize().then(() => {
+  // Clean up expired events after initialization
+  // This removes expired entries from IndexedDB on app startup
+  contentCache.cleanup().catch(console.error);
+}).catch(console.error);

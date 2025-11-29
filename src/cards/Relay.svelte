@@ -58,6 +58,19 @@
         }
       );
       
+      // Store events in appropriate caches based on kind (even for relay-specific views)
+      if (result.events.length > 0) {
+        const { contentCache } = await import('$lib/contentCache');
+        for (const event of result.events) {
+          const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                           event.kind === 30023 ? 'longform' :
+                           (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+          if (cacheType) {
+            await contentCache.storeEvents(cacheType, [{ event, relays: result.relays }]);
+          }
+        }
+      }
+
       // Process events and add to results
       for (const event of result.events) {
         // Filter out user's own content if requested

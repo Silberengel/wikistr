@@ -44,15 +44,14 @@
     isLoading = true;
     try {
       // Get all cached events from all content types
-      // Note: metadata contains kind 0, wiki contains 30817/30818/30023/30040, etc.
       const allCached = [
-        ...contentCache.getEvents('wiki'),
+        ...contentCache.getEvents('publications'), // 30040, 30041
+        ...contentCache.getEvents('longform'),     // 30023
+        ...contentCache.getEvents('wikis'),        // 30817, 30818
         ...contentCache.getEvents('kind1111'),
-        ...contentCache.getEvents('kind30041'),
         ...contentCache.getEvents('kind10002'),
         ...contentCache.getEvents('kind10432'),
-        ...contentCache.getEvents('metadata'),
-        ...contentCache.getEvents('bookConfigs')
+        ...contentCache.getEvents('profile')
       ];
       cachedEvents = allCached.map(cached => cached.event);
     } catch (error) {
@@ -67,13 +66,13 @@
     try {
       // Get all cached events first
       const allCached = [
-        ...contentCache.getEvents('wiki'),
+        ...contentCache.getEvents('publications'), // 30040, 30041
+        ...contentCache.getEvents('longform'),     // 30023
+        ...contentCache.getEvents('wikis'),        // 30817, 30818
         ...contentCache.getEvents('kind1111'),
-        ...contentCache.getEvents('kind30041'),
         ...contentCache.getEvents('kind10002'),
         ...contentCache.getEvents('kind10432'),
-        ...contentCache.getEvents('metadata'),
-        ...contentCache.getEvents('bookConfigs')
+        ...contentCache.getEvents('profile')
       ];
       let all = allCached.map(cached => cached.event);
       
@@ -126,10 +125,10 @@
     }
     try {
       // Find which content type this event belongs to and remove it
-      type ContentType = 'wiki' | 'kind1111' | 
-                         'kind30041' | 'kind10002' | 'kind10432' | 'metadata' | 'bookConfigs';
+      type ContentType = 'publications' | 'longform' | 'wikis' | 'kind1111' | 
+                         'kind10002' | 'kind10432' | 'profile';
       const contentTypes: ContentType[] = [
-        'wiki', 'kind1111', 'kind30041', 'kind10002', 'kind10432', 'metadata', 'bookConfigs'
+        'publications', 'longform', 'wikis', 'kind1111', 'kind10002', 'kind10432', 'profile'
       ];
       
       for (const contentType of contentTypes) {

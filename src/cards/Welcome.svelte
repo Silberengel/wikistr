@@ -97,7 +97,11 @@
    * Build feed from cache - show events based on active tab
    */
   async function buildFeedFromCache(): Promise<void> {
-    const allCachedEvents = contentCache.getEvents('wiki');
+    const allCachedEvents = [
+      ...contentCache.getEvents('publications'),
+      ...contentCache.getEvents('longform'),
+      ...contentCache.getEvents('wikis')
+    ];
     
     // Deduplicate replaceable events by a-tag, keeping only the newest
     const deduplicated = new Map<string, Event>();
@@ -184,12 +188,28 @@
         );
         
         if (myContentResult.events.length > 0) {
-          await contentCache.storeEvents('wiki', myContentResult.events.map(event => ({ event, relays: myContentResult.relays })));
+          // Store events in appropriate caches based on kind
+          for (const event of myContentResult.events) {
+            const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                             event.kind === 30023 ? 'longform' :
+                             (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+            if (cacheType) {
+              await contentCache.storeEvents(cacheType, [{ event, relays: myContentResult.relays }]);
+            }
+          }
         }
       }
       
       if (wikiResult.events.length > 0) {
-        await contentCache.storeEvents('wiki', wikiResult.events.map(event => ({ event, relays: wikiResult.relays })));
+        // Store events in appropriate caches based on kind
+        for (const event of wikiResult.events) {
+          const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                           event.kind === 30023 ? 'longform' :
+                           (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+          if (cacheType) {
+            await contentCache.storeEvents(cacheType, [{ event, relays: wikiResult.relays }]);
+          }
+        }
       }
       
       // Update reactions cache
@@ -202,30 +222,6 @@
       
       if (reactionsResult.events.length > 0) {
         await contentCache.storeEvents('reactions', reactionsResult.events.map(event => ({ event, relays: reactionsResult.relays })));
-      }
-      
-      // Update deletes cache
-      const deletesResult = await relayService.queryEvents(
-        userPubkey,
-        'wiki-read',
-        [{ kinds: [5], limit: 100 }],
-        { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
-      );
-      
-      if (deletesResult.events.length > 0) {
-        await contentCache.storeEvents('deletes', deletesResult.events.map(event => ({ event, relays: deletesResult.relays })));
-      }
-      
-      // Update kind1 cache
-      const kind1Result = await relayService.queryEvents(
-        userPubkey,
-        'wiki-read',
-        [{ kinds: [1], limit: 100 }],
-        { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
-      );
-      
-      if (kind1Result.events.length > 0) {
-        await contentCache.storeEvents('kind1', kind1Result.events.map(event => ({ event, relays: kind1Result.relays })));
       }
       
       // Update kind1111 cache
@@ -249,10 +245,10 @@
       );
       
       if (kind30041Result.events.length > 0) {
-        await contentCache.storeEvents('kind30041', kind30041Result.events.map(event => ({ event, relays: kind30041Result.relays })));
+        await contentCache.storeEvents('publications', kind30041Result.events.map(event => ({ event, relays: kind30041Result.relays })));
       }
       
-      // Update metadata cache
+      // Update profile cache
       const authors = [...new Set(wikiResult.events.map(event => event.pubkey))];
       if (authors.length > 0) {
         const metadataResult = await relayService.queryEvents(
@@ -263,7 +259,7 @@
         );
         
         if (metadataResult.events.length > 0) {
-          await contentCache.storeEvents('metadata', metadataResult.events.map(event => ({ event, relays: metadataResult.relays })));
+          await contentCache.storeEvents('profile', metadataResult.events.map(event => ({ event, relays: metadataResult.relays })));
         }
       }
       
@@ -295,7 +291,15 @@
       
       // Store wiki events in cache
       if (wikiResult.events.length > 0) {
-        await contentCache.storeEvents('wiki', wikiResult.events.map(event => ({ event, relays: wikiResult.relays })));
+        // Store events in appropriate caches based on kind
+        for (const event of wikiResult.events) {
+          const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                           event.kind === 30023 ? 'longform' :
+                           (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+          if (cacheType) {
+            await contentCache.storeEvents(cacheType, [{ event, relays: wikiResult.relays }]);
+          }
+        }
         
         // Rebuild feed with new data
         await buildFeedFromCache();
@@ -304,7 +308,7 @@
       // Check other caches for updates
       const cacheChecks = await Promise.all([
         contentCache.isCacheFresh('reactions'),
-        contentCache.isCacheFresh('metadata')
+        contentCache.isCacheFresh('profile')
       ]);
       
       const [reactionsFresh, metadataFresh] = cacheChecks;
@@ -312,7 +316,11 @@
       const queries = [];
       
       if (!reactionsFresh) {
-        const wikiEvents = contentCache.getEvents('wiki');
+        const wikiEvents = [
+          ...contentCache.getEvents('publications'),
+          ...contentCache.getEvents('longform'),
+          ...contentCache.getEvents('wikis')
+        ];
         const articleIds = wikiEvents.map(cached => cached.event.id);
         
         if (articleIds.length > 0) {
@@ -340,7 +348,11 @@
       }
       
       if (!metadataFresh) {
-        const wikiEvents = contentCache.getEvents('wiki');
+        const wikiEvents = [
+          ...contentCache.getEvents('publications'),
+          ...contentCache.getEvents('longform'),
+          ...contentCache.getEvents('wikis')
+        ];
         const authors = [...new Set(wikiEvents.map(cached => cached.event.pubkey))];
         
         if (authors.length > 0) {
@@ -375,7 +387,7 @@
       
       if (!metadataFresh) {
         storePromises.push(
-          contentCache.storeEvents('metadata', results[resultIndex].events.map(event => ({ event, relays: results[resultIndex].relays })))
+          contentCache.storeEvents('profile', results[resultIndex].events.map(event => ({ event, relays: results[resultIndex].relays })))
         );
         resultIndex++;
       }

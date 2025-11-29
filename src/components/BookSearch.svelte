@@ -85,12 +85,29 @@
           // Search for kind 30040 or 30041 events with this d-tag
           try {
             const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
-            const result = await relayService.queryEvents(
-              'anonymous',
-              'wiki-read',
-              [{ kinds: [30040, 30041], '#d': [identifier] }],
-              { excludeUserContent: false, currentUserPubkey: undefined }
+            const { contentCache } = await import('$lib/contentCache');
+            // Check cache first
+            const cached = contentCache.getEvents('publications').find(c => 
+              (c.event.kind === 30040 || c.event.kind === 30041) &&
+              c.event.tags.find(t => t[0] === 'd' && t[1] === identifier)
             );
+            
+            let result: any;
+            if (cached) {
+              result = { events: [cached.event], relays: cached.relays };
+            } else {
+              result = await relayService.queryEvents(
+                'anonymous',
+                'wiki-read',
+                [{ kinds: [30040, 30041], '#d': [identifier] }],
+                { excludeUserContent: false, currentUserPubkey: undefined }
+              );
+              
+              // Store in cache
+              if (result.events.length > 0) {
+                await contentCache.storeEvents('publications', result.events.map(event => ({ event, relays: result.relays })));
+              }
+            }
             
             if (result.events.length > 0) {
               const foundEvent = result.events[0];
@@ -158,12 +175,29 @@
         const identifier = query.replace(/^book::/, '').trim();
         try {
           const { openOrCreateArticleCard } = await import('$lib/articleLauncher');
-          const result = await relayService.queryEvents(
-            'anonymous',
-            'wiki-read',
-            [{ kinds: [30040, 30041], '#d': [identifier] }],
-            { excludeUserContent: false, currentUserPubkey: undefined }
+          const { contentCache } = await import('$lib/contentCache');
+          // Check cache first
+          const cached = contentCache.getEvents('publications').find(c => 
+            (c.event.kind === 30040 || c.event.kind === 30041) &&
+            c.event.tags.find(t => t[0] === 'd' && t[1] === identifier)
           );
+          
+          let result: any;
+          if (cached) {
+            result = { events: [cached.event], relays: cached.relays };
+          } else {
+            result = await relayService.queryEvents(
+              'anonymous',
+              'wiki-read',
+              [{ kinds: [30040, 30041], '#d': [identifier] }],
+              { excludeUserContent: false, currentUserPubkey: undefined }
+            );
+            
+            // Store in cache
+            if (result.events.length > 0) {
+              await contentCache.storeEvents('publications', result.events.map(event => ({ event, relays: result.relays })));
+            }
+          }
           
           if (result.events.length > 0) {
             const foundEvent = result.events[0];
@@ -376,7 +410,7 @@
         let result;
         
         // First, try to get book events from cache
-        const cachedBooks = await contentCache.getEvents('kind30041');
+        const cachedBooks = await contentCache.getEvents('publications');
         const filteredBooks = cachedBooks.filter(cached => 
           cached.event.tags.some(tag => tag[0] === 'type' && tag[1] === bookType)
         );
@@ -396,6 +430,11 @@
               currentUserPubkey: undefined
             }
           );
+          
+          // Store in cache
+          if (result.events.length > 0) {
+            await contentCache.storeEvents('publications', result.events.map(event => ({ event, relays: result.relays })));
+          }
         }
 
         tried = true;
@@ -415,7 +454,7 @@
       let searchResult;
       
       // First, try to get book events from cache using search
-      const cachedBooks = await contentCache.getEvents('kind30041');
+      const cachedBooks = await contentCache.getEvents('publications');
       const searchFilteredBooks = cachedBooks.filter(cached => 
         cached.event.content.toLowerCase().includes(query.toLowerCase()) ||
         cached.event.tags.some(tag => tag[1]?.toLowerCase().includes(query.toLowerCase()))
@@ -436,6 +475,11 @@
             currentUserPubkey: undefined
           }
         );
+        
+        // Store in cache
+        if (searchResult.events.length > 0) {
+          await contentCache.storeEvents('publications', searchResult.events.map(event => ({ event, relays: searchResult.relays })));
+        }
       }
 
       for (const evt of searchResult.events) {
@@ -499,6 +543,11 @@
           currentUserPubkey: undefined
         }
       );
+      
+      // Store in cache
+      if (fallbackResult.events.length > 0) {
+        await contentCache.storeEvents('publications', fallbackResult.events.map(event => ({ event, relays: fallbackResult.relays })));
+      }
 
       for (const evt of fallbackResult.events) {
         // Check if this event matches our book criteria (without version restriction)

@@ -73,6 +73,19 @@
   const dTag = articleCard.data[0];
   const pubkey = articleCard.data[1];
 
+  // Helper function to determine cache type based on event kind
+  function getCacheTypeForKind(kind: number): 'publications' | 'longform' | 'wikis' {
+    if (kind === 30040 || kind === 30041) {
+      return 'publications';
+    } else if (kind === 30023) {
+      return 'longform';
+    } else if (kind === 30817 || kind === 30818) {
+      return 'wikis';
+    }
+    // Default fallback (shouldn't happen for article cards)
+    return 'wikis';
+  }
+
   let author = $state<NostrUser>(bareNostrUser(pubkey));
 
   // Helper function to create fallback author object
@@ -276,13 +289,20 @@
       return;
     }
 
+    // Normalize d-tag for case-insensitive matching
+    const normalizedDTag = normalizeIdentifier(dTag);
+
     // INSTANT: Check cache synchronously first
     // Support all wiki kinds: 30818 (AsciiDoc), 30817 (Markdown), 30040 (Index), 30041 (Content), 30023 (Long-form)
     const wikiKinds = [30818, 30817, 30040, 30041, 30023];
-    const cachedEvents = contentCache.getEvents('wiki');
-    const cachedArticle = cachedEvents.find(cached => 
+    // Check all relevant caches: publications (30040/30041), longform (30023), wikis (30817/30818)
+    const cachedPublications = contentCache.getEvents('publications');
+    const cachedLongform = contentCache.getEvents('longform');
+    const cachedWikis = contentCache.getEvents('wikis');
+    const allCachedEvents = [...cachedPublications, ...cachedLongform, ...cachedWikis];
+    const cachedArticle = allCachedEvents.find(cached => 
       cached.event.pubkey === pubkey && 
-      getTagOr(cached.event, 'd') === dTag && 
+      (getTagOr(cached.event, 'd') === dTag || normalizeIdentifier(getTagOr(cached.event, 'd') || '') === normalizedDTag) && 
       wikiKinds.includes(cached.event.kind)
     );
     
@@ -295,13 +315,16 @@
       // Only hit relays if not in cache
       (async () => {
         try {
+          // Query with both exact d-tag and normalized version to handle case differences
+          // Note: Some relays may be case-sensitive, so we query with both
+          const dTagValues = dTag === normalizedDTag ? [dTag] : [dTag, normalizedDTag]; // Avoid duplicates
           const result = await relayService.queryEvents(
             $account?.pubkey || 'anonymous',
             'wiki-read',
             [
               {
                 authors: [pubkey],
-                '#d': [dTag],
+                '#d': dTagValues, // Query with both exact and normalized (if different)
                 kinds: wikiKinds
               }
             ],
@@ -311,18 +334,24 @@
             }
           );
 
-          // Find the most recent article (highest created_at)
+          // Find the most recent article (highest created_at) using normalized comparison
           const articleEvent = result.events
-            .filter(evt => evt.pubkey === pubkey && getTagOr(evt, 'd') === dTag && wikiKinds.includes(evt.kind))
+            .filter(evt => {
+              const evtDTag = getTagOr(evt, 'd') || '';
+              return evt.pubkey === pubkey && 
+                     (evtDTag === dTag || normalizeIdentifier(evtDTag) === normalizedDTag) && 
+                     wikiKinds.includes(evt.kind);
+            })
             .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
 
           if (articleEvent) {
             event = articleEvent;
             seenOn = result.relays;
             
-            // Store the article in cache for future use
+            // Store the article in the appropriate cache based on kind
             const eventsToStore = createEventsToStore(articleEvent, result.relays);
-            await contentCache.storeEvents('wiki', eventsToStore);
+            const cacheType = getCacheTypeForKind(articleEvent.kind);
+            await contentCache.storeEvents(cacheType, eventsToStore);
           }
           isLoading = false;
         } catch (error) {
@@ -336,7 +365,7 @@
   onMount(() => {
     // Load author data using relayService (only metadata-read relays)
     // INSTANT: Check cache first for author metadata
-    const cachedEvents = contentCache.getEvents('metadata');
+    const cachedEvents = contentCache.getEvents('profile');
     const cachedAuthorEvent = cachedEvents.find(cached => 
       cached.event.pubkey === pubkey && cached.event.kind === 0
     );
@@ -373,7 +402,7 @@
         const { relayService } = await import('$lib/relayService');
         // Check cache first
         const { contentCache } = await import('$lib/contentCache');
-        const cachedEvents = contentCache.getEvents('metadata');
+        const cachedEvents = contentCache.getEvents('profile');
         const cachedUserEvent = cachedEvents.find(cached => cached.event.pubkey === pubkey && cached.event.kind === 0);
         
         let result: any;
@@ -389,7 +418,7 @@
           
           // Store in cache for future use
           if (result.events.length > 0) {
-            await contentCache.storeEvents('metadata', result.events.map((event: any) => ({
+            await contentCache.storeEvents('profile', result.events.map((event: any) => ({
               event,
               relays: result.relays
             })));
@@ -422,7 +451,7 @@
             
             // Store the author metadata in cache for future use
             const eventsToStore = createEventsToStore(event, result.relays);
-            await contentCache.storeEvents('metadata', eventsToStore);
+            await contentCache.storeEvents('profile', eventsToStore);
           } catch (e) {
             console.warn('Article: Failed to parse author metadata:', e);
             author = createFallbackAuthor();
@@ -472,38 +501,49 @@
 
   function processReactions(reactions: NostrEvent[]) {
     // Group reactions by user and get the latest one from each user
+    // This ensures we only count one vote per pubkey (the newest)
     const userReactions = new Map<string, NostrEvent>();
     
     for (const reaction of reactions) {
+      if (!reaction.pubkey) continue; // Skip reactions without pubkey
+      
       const existing = userReactions.get(reaction.pubkey);
-      if (!existing || reaction.created_at > existing.created_at) {
+      const reactionTime = reaction.created_at || 0;
+      const existingTime = existing?.created_at || 0;
+      
+      // Keep only the newest reaction per pubkey
+      if (!existing || reactionTime > existingTime) {
         userReactions.set(reaction.pubkey, reaction);
       }
     }
     
-    // Count votes from latest reaction per user
+    // Count votes from latest reaction per user only
+    // Each user contributes at most one vote (their newest reaction)
     let likes = 0;
     let dislikes = 0;
     
     for (const reaction of userReactions.values()) {
-      if (reaction.content === '+') {
+      const content = reaction.content?.trim() || '';
+      if (content === '+') {
         likes++;
-      } else if (reaction.content === '-') {
+      } else if (content === '-') {
         dislikes++;
       }
+      // Note: Empty content or other values are ignored (not counted as votes)
     }
     
     // Update vote counts atomically
     voteCounts = { likes, dislikes };
     
-    // Find user's current reaction
+    // Find user's current reaction (their newest vote)
     const userPubkey = $account?.pubkey;
     if (userPubkey) {
       const userReactionEvent = userReactions.get(userPubkey);
       if (userReactionEvent) {
         userReaction = userReactionEvent;
-        likeStatus = userReactionEvent.content === '+' ? 'liked' : 
-                    userReactionEvent.content === '-' ? 'disliked' : 'none';
+        const content = userReactionEvent.content?.trim() || '';
+        likeStatus = content === '+' ? 'liked' : 
+                    content === '-' ? 'disliked' : 'none';
       } else {
         userReaction = null;
         likeStatus = 'none';
@@ -723,13 +763,66 @@
   {:else if event === null}
     <div class="px-4 py-5 border-2 border-stone rounded-lg mt-2 min-h-[48px]" style="background-color: var(--theme-bg);">
       <p class="mb-2">Can't find this article.</p>
-      <button
-        class="px-4 py-2 rounded"
-        style="background-color: var(--accent); color: white;"
-        onclick={() => createChild({ id: next(), type: 'editor', data: { title: dTag, summary: '', content: '' } } as any)}
-      >
-        Create this article!
-      </button>
+      <div class="flex gap-2">
+        <button
+          class="px-4 py-2 rounded"
+          style="background-color: var(--accent); color: white;"
+          onclick={() => createChild({ id: next(), type: 'editor', data: { title: dTag, summary: '', content: '' } } as any)}
+        >
+          Create this article!
+        </button>
+        <button
+          class="px-4 py-2 rounded border"
+          style="background-color: var(--bg-secondary); color: var(--text-primary); border-color: var(--border);"
+          onclick={async () => {
+            isLoading = true;
+            try {
+              const normalizedDTag = normalizeIdentifier(dTag);
+              const wikiKinds = [30818, 30817, 30040, 30041, 30023];
+              const dTagValues = dTag === normalizedDTag ? [dTag] : [dTag, normalizedDTag];
+              const result = await relayService.queryEvents(
+                $account?.pubkey || 'anonymous',
+                'wiki-read',
+                [
+                  {
+                    authors: [pubkey],
+                    '#d': dTagValues,
+                    kinds: wikiKinds
+                  }
+                ],
+                {
+                  excludeUserContent: false,
+                  currentUserPubkey: $account?.pubkey
+                }
+              );
+
+              const articleEvent = result.events
+                .filter(evt => {
+                  const evtDTag = getTagOr(evt, 'd') || '';
+                  return evt.pubkey === pubkey && 
+                         (evtDTag === dTag || normalizeIdentifier(evtDTag) === normalizedDTag) && 
+                         wikiKinds.includes(evt.kind);
+                })
+                .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
+
+              if (articleEvent) {
+                event = articleEvent;
+                seenOn = result.relays;
+                const eventsToStore = createEventsToStore(articleEvent, result.relays);
+                // Store in the appropriate cache based on kind
+                const cacheType = getCacheTypeForKind(articleEvent.kind);
+                await contentCache.storeEvents(cacheType, eventsToStore);
+              }
+            } catch (error) {
+              console.error('Failed to retry loading article:', error);
+            } finally {
+              isLoading = false;
+            }
+          }}
+        >
+          Retry more relays
+        </button>
+      </div>
     </div>
   {:else}
     <!-- Header Card: Image, Author, Summary (on its own line) -->

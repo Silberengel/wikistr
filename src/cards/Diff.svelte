@@ -53,7 +53,11 @@
   async function fetchArticleByDTag(dTag: string, pubkey?: string): Promise<any | null> {
     try {
       // First check cache
-      const cachedEvents = contentCache.getEvents('wiki');
+      const cachedEvents = [
+        ...contentCache.getEvents('publications'),
+        ...contentCache.getEvents('longform'),
+        ...contentCache.getEvents('wikis')
+      ];
       const cached = cachedEvents.find(cached => {
         const matchesDTag = getTagOr(cached.event, 'd') === dTag;
         const matchesKind = wikiKinds.includes(cached.event.kind);
@@ -97,11 +101,16 @@
         .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
       
       if (event) {
-        // Store in cache
-        await contentCache.storeEvents('wiki', [{
-          event,
-          relays: result.relays
-        }]);
+        // Store in appropriate cache based on kind
+        const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                         event.kind === 30023 ? 'longform' :
+                         (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+        if (cacheType) {
+          await contentCache.storeEvents(cacheType, [{
+            event,
+            relays: result.relays
+          }]);
+        }
         return event;
       }
       

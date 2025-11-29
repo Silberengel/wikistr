@@ -472,19 +472,51 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
       }
 
       try {
-        const indexResult = await relayService.queryEvents(
-          'anonymous',
-          'wiki-read',
-          [filters],
-          {
-            excludeUserContent: false,
-            currentUserPubkey: undefined
-          }
-        );
-
-        const indexEvent = indexResult.events.find(evt => evt.id);
+        // Check cache first
+        const { contentCache } = await import('$lib/contentCache');
+        const allCached = [
+          ...(await contentCache.getEvents('publications')),
+          ...(await contentCache.getEvents('longform')),
+          ...(await contentCache.getEvents('wikis'))
+        ];
+        let indexEvent = allCached.find(c => {
+          const event = c.event;
+          if (filters.kinds && !filters.kinds.includes(event.kind)) return false;
+          if (filters.authors && !filters.authors.includes(event.pubkey)) return false;
+          if (filters['#c'] && !event.tags.some(t => t[0] === 'c' && t[1] === filters['#c'][0])) return false;
+          return true;
+        })?.event;
+        
+        let indexResult: any;
         if (indexEvent) {
-          const order = extractIndexOrder(indexEvent as BookEvent);
+          indexResult = { events: [indexEvent], relays: allCached.find(c => c.event.id === indexEvent!.id)!.relays };
+        } else {
+          indexResult = await relayService.queryEvents(
+            'anonymous',
+            'wiki-read',
+            [filters],
+            {
+              excludeUserContent: false,
+              currentUserPubkey: undefined
+            }
+          );
+          
+          // Store in cache
+          if (indexResult.events.length > 0) {
+            for (const event of indexResult.events) {
+              const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                               event.kind === 30023 ? 'longform' :
+                               (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+              if (cacheType) {
+                await contentCache.storeEvents(cacheType, [{ event, relays: indexResult.relays }]);
+              }
+            }
+          }
+        }
+
+        const foundIndexEvent = indexResult.events.find(evt => evt.id);
+        if (foundIndexEvent) {
+          const order = extractIndexOrder(foundIndexEvent as BookEvent);
           if (order.length > 0) {
             newIndexOrders.set(scopeKey, order);
           }
@@ -762,7 +794,11 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
     // Check cache first before making relay queries
     try {
       const { contentCache } = await import('$lib/contentCache');
-      const cachedEvents = await contentCache.getEvents('wiki');
+      const cachedEvents = [
+        ...(await contentCache.getEvents('publications')),
+        ...(await contentCache.getEvents('longform')),
+        ...(await contentCache.getEvents('wikis'))
+      ];
       
       // Filter cached events for book events (kind 30040 and 30041)
       const bookCachedEvents = cachedEvents.filter(cached => 

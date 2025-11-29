@@ -54,16 +54,42 @@ import Settings from '$cards/Settings.svelte';
         const fetchAndOpenEvent = async (eventId: string, relayHints: string[] = []): Promise<boolean> => {
           try {
             console.log('🔍 Searching for event ID:', eventId);
-            const result = await relayService.queryEvents(
-              $account?.pubkey || 'anonymous',
-              'wiki-read',
-              [{ ids: [eventId] }],
-              { 
-                excludeUserContent: false, 
-                currentUserPubkey: $account?.pubkey,
-                customRelays: relayHints
+            // Check cache first
+            const { contentCache } = await import('$lib/contentCache');
+            const allCached = [
+              ...contentCache.getEvents('publications'),
+              ...contentCache.getEvents('longform'),
+              ...contentCache.getEvents('wikis')
+            ];
+            let foundEvent = allCached.find(c => c.event.id === eventId)?.event;
+            
+            let result: any;
+            if (foundEvent) {
+              result = { events: [foundEvent], relays: allCached.find(c => c.event.id === eventId)!.relays };
+            } else {
+              result = await relayService.queryEvents(
+                $account?.pubkey || 'anonymous',
+                'wiki-read',
+                [{ ids: [eventId] }],
+                { 
+                  excludeUserContent: false, 
+                  currentUserPubkey: $account?.pubkey,
+                  customRelays: relayHints
+                }
+              );
+              
+              // Store in cache
+              if (result.events.length > 0) {
+                for (const event of result.events) {
+                  const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                                   event.kind === 30023 ? 'longform' :
+                                   (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+                  if (cacheType) {
+                    await contentCache.storeEvents(cacheType, [{ event, relays: result.relays }]);
+                  }
+                }
               }
-            );
+            }
 
             if (result.events.length > 0) {
               const foundEvent = result.events[0];
@@ -125,16 +151,54 @@ import Settings from '$cards/Settings.svelte';
                     '#d': [decoded.data.identifier]
                   }];
                   
-                  const result = await relayService.queryEvents(
-                    $account?.pubkey || 'anonymous',
-                    'wiki-read',
-                    filters,
-                    { 
-                      excludeUserContent: false, 
-                      currentUserPubkey: $account?.pubkey,
-                      customRelays: decoded.data.relays || []
+                  // Check cache first
+                  const { contentCache } = await import('$lib/contentCache');
+                  const { getTagOr } = await import('$lib/utils');
+                  const allCached = [
+                    ...contentCache.getEvents('publications'),
+                    ...contentCache.getEvents('longform'),
+                    ...contentCache.getEvents('wikis')
+                  ];
+                  let foundEvent = allCached.find(c => 
+                    c.event.kind === decoded.data.kind &&
+                    c.event.pubkey === decoded.data.pubkey &&
+                    getTagOr(c.event, 'd') === decoded.data.identifier
+                  )?.event;
+                  
+                  let result: any;
+                  if (foundEvent) {
+                    result = { 
+                      events: [foundEvent], 
+                      relays: allCached.find(c => 
+                        c.event.kind === decoded.data.kind &&
+                        c.event.pubkey === decoded.data.pubkey &&
+                        getTagOr(c.event, 'd') === decoded.data.identifier
+                      )!.relays 
+                    };
+                  } else {
+                    result = await relayService.queryEvents(
+                      $account?.pubkey || 'anonymous',
+                      'wiki-read',
+                      filters,
+                      { 
+                        excludeUserContent: false, 
+                        currentUserPubkey: $account?.pubkey,
+                        customRelays: decoded.data.relays || []
+                      }
+                    );
+                    
+                    // Store in cache
+                    if (result.events.length > 0) {
+                      for (const event of result.events) {
+                        const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                                         event.kind === 30023 ? 'longform' :
+                                         (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+                        if (cacheType) {
+                          await contentCache.storeEvents(cacheType, [{ event, relays: result.relays }]);
+                        }
+                      }
                     }
-                  );
+                  }
 
                   if (result.events.length > 0) {
                     const foundEvent = result.events[0];

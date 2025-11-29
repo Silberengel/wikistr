@@ -223,7 +223,9 @@ import { highlightedArticleCardId } from '$lib/articleLauncher';
       case 'find':
         return card.data;
       case 'article':
-        return card.data.join('*');
+        // Encode the d-tag to handle special characters like æ, but keep * separator unencoded
+        // The pubkey is hex and doesn't need encoding, but encoding it is harmless
+        return encodeURIComponent(card.data[0]) + '*' + card.data[1];
       case 'relay':
         return encodeURIComponent(urlWithoutScheme(card.data));
       case 'user':

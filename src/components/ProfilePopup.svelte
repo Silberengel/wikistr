@@ -82,7 +82,7 @@
       
       // Check cache first before making relay queries
       const { contentCache } = await import('$lib/contentCache');
-      const cachedEvents = contentCache.getEvents('metadata');
+      const cachedEvents = contentCache.getEvents('profile');
       const cachedUserEvent = cachedEvents.find(cached => cached.event.pubkey === hexPubkey && cached.event.kind === 0);
       
       let result: any;
@@ -115,7 +115,7 @@
             event,
             relays: result.relays
           }));
-          await contentCache.storeEvents('metadata', eventsToStore);
+          await contentCache.storeEvents('profile', eventsToStore);
           console.log('ProfilePopup: Cached metadata for', hexPubkey.slice(0, 8) + '...');
         }
       }
@@ -216,7 +216,7 @@
                 event,
                 relays: paytoResult.relays
               }));
-              await contentCache.storeEvents('metadata', eventsToStore);
+              await contentCache.storeEvents('profile', eventsToStore);
               
               // Update profile with payto data if userData still exists and matches
               if (userData && userData.pubkey === hexPubkey) {

@@ -90,7 +90,11 @@
 
       // Check cache first before querying relays
       const { contentCache } = await import('$lib/contentCache');
-      const cachedEvents = contentCache.getEvents('wiki');
+      const cachedEvents = [
+        ...contentCache.getEvents('publications'),
+        ...contentCache.getEvents('longform'),
+        ...contentCache.getEvents('wikis')
+      ];
       let cachedEvent: NostrEvent | null = null;
       
       if (type === 'naddr' && author && kind && identifier) {
@@ -113,7 +117,7 @@
         // Load user data - check cache first
         try {
           const { contentCache } = await import('$lib/contentCache');
-          const cachedEvents = contentCache.getEvents('metadata');
+          const cachedEvents = contentCache.getEvents('profile');
           const cachedUserEvent = cachedEvents.find(cached => cached.event.pubkey === cachedEvent.pubkey && cached.event.kind === 0);
           
           let result: any;
@@ -130,7 +134,7 @@
             
             // Store in cache for future use
             if (result.events.length > 0) {
-              await contentCache.storeEvents('metadata', result.events.map((event: any) => ({
+              await contentCache.storeEvents('profile', result.events.map((event: any) => ({
                 event,
                 relays: result.relays
               })));
@@ -193,8 +197,26 @@
         if (type === 'naddr') {
           const decoded = nip19.decode(bech32);
           if (decoded.type === 'naddr') {
-            // For naddr, use authors, kinds, and d-tag filters
+            // For naddr, use authors, kinds, and d-tag filters - check cache first
             try {
+              const allCached = [
+                ...contentCache.getEvents('publications'),
+                ...contentCache.getEvents('longform'),
+                ...contentCache.getEvents('wikis')
+              ];
+              const { getTagOr } = await import('$lib/utils');
+              const cached = allCached.find(c => 
+                c.event.kind === decoded.data.kind &&
+                c.event.pubkey === decoded.data.pubkey &&
+                getTagOr(c.event, 'd') === decoded.data.identifier
+              );
+              
+              if (cached) {
+                eventData = cached.event;
+                resolve(eventData);
+                return;
+              }
+              
               const result = await relayService.queryEvents(
                 'anonymous',
                 'wiki-read',
@@ -210,6 +232,18 @@
                   customRelays: relayHints.length > 0 ? relayHints : undefined
                 }
               );
+              
+              // Store in cache
+              if (result.events.length > 0) {
+                for (const event of result.events) {
+                  const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                                   event.kind === 30023 ? 'longform' :
+                                   (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+                  if (cacheType) {
+                    await contentCache.storeEvents(cacheType, [{ event, relays: result.relays }]);
+                  }
+                }
+              }
 
               const evt = result.events.find(evt => 
                 evt.pubkey === decoded.data.pubkey && 
@@ -227,8 +261,21 @@
             }
           }
         } else {
-          // For nevent and note, use event ID
+          // For nevent and note, use event ID - check cache first
           try {
+            const allCached = [
+              ...contentCache.getEvents('publications'),
+              ...contentCache.getEvents('longform'),
+              ...contentCache.getEvents('wikis')
+            ];
+            const cached = allCached.find(c => c.event.id === eventId);
+            
+            if (cached) {
+              eventData = cached.event;
+              resolve(eventData);
+              return;
+            }
+            
             const result = await relayService.queryEvents(
               'anonymous',
               'wiki-read',
@@ -239,6 +286,18 @@
                 customRelays: relayHints.length > 0 ? relayHints : undefined
               }
             );
+            
+            // Store in cache
+            if (result.events.length > 0) {
+              for (const event of result.events) {
+                const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                                 event.kind === 30023 ? 'longform' :
+                                 (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+                if (cacheType) {
+                  await contentCache.storeEvents(cacheType, [{ event, relays: result.relays }]);
+                }
+              }
+            }
 
             const evt = result.events.find(evt => evt.id === eventId);
             if (evt) {
@@ -258,7 +317,7 @@
         // Load user data - check cache first
         try {
           const { contentCache } = await import('$lib/contentCache');
-          const cachedEvents = contentCache.getEvents('metadata');
+          const cachedEvents = contentCache.getEvents('profile');
           const cachedUserEvent = cachedEvents.find(cached => cached.event.pubkey === fetchedEvent.pubkey && cached.event.kind === 0);
           
           let result: any;
@@ -275,7 +334,7 @@
             
             // Store in cache for future use
             if (result.events.length > 0) {
-              await contentCache.storeEvents('metadata', result.events.map((event: any) => ({
+              await contentCache.storeEvents('profile', result.events.map((event: any) => ({
                 event,
                 relays: result.relays
               })));

@@ -54,13 +54,29 @@
             return;
           }
           
-          // Fetch profile metadata
-          const result = await relayService.queryEvents(
-            'anonymous',
-            'metadata-read',
-            [{ kinds: [0], authors: [pubkey], limit: 1 }],
-            { excludeUserContent: false, currentUserPubkey: undefined }
+          // Check cache first for profile metadata
+          const { contentCache } = await import('$lib/contentCache');
+          const cachedProfile = contentCache.getEvents('profile').find(c => 
+            c.event.pubkey === pubkey && c.event.kind === 0
           );
+          
+          let result: any;
+          if (cachedProfile) {
+            result = { events: [cachedProfile.event], relays: cachedProfile.relays };
+          } else {
+            // Fetch profile metadata
+            result = await relayService.queryEvents(
+              'anonymous',
+              'metadata-read',
+              [{ kinds: [0], authors: [pubkey], limit: 1 }],
+              { excludeUserContent: false, currentUserPubkey: undefined }
+            );
+            
+            // Store in cache
+            if (result.events.length > 0) {
+              await contentCache.storeEvents('profile', result.events.map(event => ({ event, relays: result.relays })));
+            }
+          }
           
           if (result.events.length > 0) {
             const profileEvent = result.events[0];
@@ -130,26 +146,61 @@
             return;
           }
           
-          // Fetch event
+          // Fetch event - check cache first
+          const allCached = [
+            ...contentCache.getEvents('publications'),
+            ...contentCache.getEvents('longform'),
+            ...contentCache.getEvents('wikis')
+          ];
+          
           if (eventId) {
-            const result = await relayService.queryEvents(
-              'anonymous',
-              'wiki-read',
-              [{ ids: [eventId], limit: 1 }],
-              { excludeUserContent: false, currentUserPubkey: undefined }
-            );
-            if (result.events.length > 0) {
-              event = result.events[0];
+            let foundEvent = allCached.find(c => c.event.id === eventId)?.event;
+            if (foundEvent) {
+              event = foundEvent;
+            } else {
+              const result = await relayService.queryEvents(
+                'anonymous',
+                'wiki-read',
+                [{ ids: [eventId], limit: 1 }],
+                { excludeUserContent: false, currentUserPubkey: undefined }
+              );
+              if (result.events.length > 0) {
+                event = result.events[0];
+                // Store in cache
+                const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                                 event.kind === 30023 ? 'longform' :
+                                 (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+                if (cacheType) {
+                  await contentCache.storeEvents(cacheType, [{ event, relays: result.relays }]);
+                }
+              }
             }
           } else if (kind && author && dTag) {
-            const result = await relayService.queryEvents(
-              'anonymous',
-              'wiki-read',
-              [{ kinds: [kind], authors: [author], '#d': [dTag], limit: 1 }],
-              { excludeUserContent: false, currentUserPubkey: undefined }
-            );
-            if (result.events.length > 0) {
-              event = result.events[0];
+            const { getTagOr } = await import('$lib/utils');
+            let foundEvent = allCached.find(c => 
+              c.event.kind === kind &&
+              c.event.pubkey === author &&
+              getTagOr(c.event, 'd') === dTag
+            )?.event;
+            if (foundEvent) {
+              event = foundEvent;
+            } else {
+              const result = await relayService.queryEvents(
+                'anonymous',
+                'wiki-read',
+                [{ kinds: [kind], authors: [author], '#d': [dTag], limit: 1 }],
+                { excludeUserContent: false, currentUserPubkey: undefined }
+              );
+              if (result.events.length > 0) {
+                event = result.events[0];
+                // Store in cache
+                const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                                 event.kind === 30023 ? 'longform' :
+                                 (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+                if (cacheType) {
+                  await contentCache.storeEvents(cacheType, [{ event, relays: result.relays }]);
+                }
+              }
             }
           }
         } catch (e) {
