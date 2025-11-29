@@ -62,34 +62,28 @@ export function getParentCard(element: HTMLElement): HTMLElement | null {
  * Prevents duplicates and maintains order
  */
 /**
- * Validate d-tag according to NIP-54 rules:
- * - Foreign letters (umlauts, accents, ß, etc.) are expressly allowed
- * - Blocks problematic patterns: URLs, slashes, asterisks, colons, underscores
+ * Validate d-tag - much less restrictive:
+ * - Allows Unicode letters (including Æ, ö, ß, etc.), numbers, and hyphens
+ * - Blocks spaces and punctuation (except hyphens)
+ * - Blocks URL patterns for safety
  * Returns true if d-tag is valid, false otherwise
  */
 export function isValidDTag(dTag: string): boolean {
   if (!dTag || typeof dTag !== 'string') return false;
   
-  // Block obvious URL patterns and problematic characters
-  const blockedPatterns = [
-    /https?:\/\//i,  // http:// or https://
-    /wss?:\/\//i,    // ws:// or wss://
-    /\//,            // Forward slashes
-    /\\/,            // Backslashes
-    /\*/,            // Asterisks
-    /:/,             // Colons (except as part of URLs which are already blocked)
-    /_/,             // Underscores
-  ];
-  
-  for (const pattern of blockedPatterns) {
-    if (pattern.test(dTag)) {
-      return false;
-    }
+  // Block URL patterns for safety
+  if (/https?:\/\//i.test(dTag) || /wss?:\/\//i.test(dTag)) {
+    return false;
   }
   
-  // Allow Unicode letters (umlauts, accents, ß, etc.) - they are expressly allowed
-  // Check that the d-tag contains only letters (including Unicode), numbers, and hyphens
-  // This regex allows Unicode letter characters (including à, é, ö, ß, etc.)
+  // Block spaces
+  if (/\s/.test(dTag)) {
+    return false;
+  }
+  
+  // Allow Unicode letters (including Æ, ö, ß, etc.), numbers, and hyphens
+  // Block all other punctuation except hyphens
+  // This regex allows: Unicode letters (\p{L}), numbers (\p{N}), and hyphens (-)
   return /^[\p{L}\p{N}-]+$/u.test(dTag);
 }
 
@@ -108,9 +102,9 @@ export function isValidEvent(event: any): boolean {
   if (requiresDTag) {
     const dTag = event.tags?.find(([t]: any[]) => t === 'd')?.[1];
     if (dTag) {
-      // Validate d-tag according to NIP-54 - should only contain lowercase letters, numbers, and hyphens
+      // Validate d-tag - allows Unicode letters, numbers, and hyphens; blocks spaces and punctuation
       if (!isValidDTag(dTag)) {
-        console.warn(`⚠️ Suppressing corrupt event ${event.id.slice(0, 8)}...: invalid d-tag "${dTag}" (does not match NIP-54 normalization rules - should only contain lowercase letters, numbers, and hyphens)`);
+        console.warn(`⚠️ Suppressing corrupt event ${event.id.slice(0, 8)}...: invalid d-tag "${dTag}" (contains spaces or invalid punctuation)`);
         return false;
       }
     }
