@@ -99,8 +99,25 @@ function convertMarkdownToAsciiDoc(content: string): string {
   converted = processed.join('\n');
   
   // Convert images: ![alt](url) -> image::url[alt]
+  // Handle both regular and reference-style images
   converted = converted.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, url) => {
-    return `image::${url}[${alt || ''}]`;
+    // Preserve the URL as-is, but ensure it's properly formatted
+    const cleanUrl = url.trim();
+    return `image::${cleanUrl}[${alt || ''}]`;
+  });
+  
+  // Also handle reference-style images: ![alt][ref] -> convert to image::url[alt] if we can find the ref
+  // This is a simple implementation - full reference resolution would require more parsing
+  converted = converted.replace(/!\[([^\]]*)\]\[([^\]]+)\]/g, (match, alt, ref) => {
+    // Try to find the reference definition [ref]: url
+    const refPattern = new RegExp(`^\\[${ref}\\]:\\s*(.+)$`, 'm');
+    const refMatch = converted.match(refPattern);
+    if (refMatch && refMatch[1]) {
+      const url = refMatch[1].trim();
+      return `image::${url}[${alt || ''}]`;
+    }
+    // If reference not found, keep the original (will be handled by AsciiDoctor)
+    return match;
   });
   
   // Convert links: [text](url) -> link:url[text]
@@ -337,6 +354,11 @@ async function buildAsciiDocWithMetadata(
   doc += `:toc:\n`;
   doc += `:stem:\n`;
   doc += `:page-break-mode: auto\n`;
+  
+  // Add CSS styling for images in EPUB/HTML exports
+  if (exportFormat === 'epub' || exportFormat === 'html') {
+    doc += `:stylesheet: epub-classic.css\n`; // Reference custom stylesheet if available
+  }
   
   if (version) {
     doc += `:version: ${version}\n`;
@@ -813,6 +835,13 @@ export async function combineBookEvents(
   doc += `:toc:\n`; // Enable table of contents for books
   doc += `:stem:\n`; // Enable STEM (math) support
   
+  // Add CSS styling for images in EPUB/HTML exports
+  if (exportFormat === 'epub' || exportFormat === 'html') {
+    doc += `:stylesheet: epub-classic.css\n`; // Reference custom stylesheet if available
+    // Add inline styles for image handling via AsciiDoc attributes
+    doc += `[role="image-styles"]\n++++\n<style>\nimg { max-width: 100%; height: auto; display: block; margin: 1em auto; }\n.imageblock { text-align: center; margin: 1.5em 0; }\n.imageblock img { display: block; margin: 0 auto; max-width: 100%; height: auto; }\n.content img, .sect1 img, .sect2 img, .sect3 img { max-width: 100%; height: auto; }\n</style>\n++++\n\n`;
+  }
+  
   // Set author attribute for AsciiDoctor PDF title page (only if available)
   // Note: Missing :author: is okay, but :revnumber: and :revdate: are critical for layout
   if (author && author.trim()) {
@@ -1114,11 +1143,21 @@ export async function downloadAsMarkdown(
   onProgress?.(60, 'Processing content...');
   // Convert AsciiDoc to Markdown if needed
   if (isAsciiDoc(content)) {
-    // Simple conversion - just change headers
+    // Convert headers: = Title -> # Title, == Section -> ## Section, etc.
     content = content.replace(/^(=+)\s+(.+)$/gm, (match, equals, text) => {
       const level = equals.length;
       const hashes = '#'.repeat(level);
       return `${hashes} ${text}`;
+    });
+    
+    // Convert images: image::url[alt] -> ![alt](url)
+    content = content.replace(/image::([^\[]+)\[([^\]]*)\]/g, (match, url, alt) => {
+      return `![${alt || ''}](${url})`;
+    });
+    
+    // Convert inline images: image:url[alt] -> ![alt](url)
+    content = content.replace(/image:([^\[]+)\[([^\]]*)\]/g, (match, url, alt) => {
+      return `![${alt || ''}](${url})`;
     });
   }
   

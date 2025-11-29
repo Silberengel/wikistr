@@ -316,6 +316,13 @@
           return;
         }
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error('[Download] Error occurred:', error);
+        console.error('[Download] Error message:', errorMessage);
+        
+        // Log error to captured logs as well
+        const errorLog = `[ERROR] ${errorMessage}`;
+        downloadLogs = [...downloadLogs, errorLog];
+        
         downloadError = errorMessage;
         downloadStatus = `Error: ${errorMessage}`;
         downloadState = 'error';

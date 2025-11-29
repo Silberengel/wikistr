@@ -312,11 +312,126 @@ export async function exportToHTML5(options: ExportOptions, abortSignal?: AbortS
     }
   );
   
+  // Ensure all images in content have proper attributes and styling
+  // This handles images that aren't cover images or in title pages
+  blobText = blobText.replace(
+    /<img([^>]*?)>/gi,
+    (match, attributes) => {
+      // Skip if this is a cover or title-page image (already processed)
+      if (attributes.includes('class="') && (attributes.includes('cover') || attributes.includes('title-page'))) {
+        return match;
+      }
+      
+      // Ensure src attribute exists and is valid
+      if (!attributes.includes('src=')) {
+        return match; // Skip images without src
+      }
+      
+      // Add loading="lazy" for performance if not present
+      if (!attributes.includes('loading=')) {
+        attributes += ' loading="lazy"';
+      }
+      
+      // Ensure alt attribute exists for accessibility (even if empty)
+      if (!attributes.includes('alt=')) {
+        attributes += ' alt=""';
+      }
+      
+      // Add responsive styling if not already present
+      if (!attributes.includes('style=')) {
+        attributes += ' style="max-width: 100%; height: auto;"';
+      } else if (!attributes.includes('max-width')) {
+        // Add max-width to existing style
+        attributes = attributes.replace(/style="([^"]*)"/i, (_match: string, existingStyle: string) => {
+          return `style="${existingStyle}; max-width: 100%; height: auto;"`.replace(/;\s*;/g, ';');
+        });
+      }
+      
+      return `<img${attributes}>`;
+    }
+  );
+  
   // Add CSS styling for cover page and book metadata section
   // Cover page: image, title, and "by author" line
   // Book metadata: classic title/copyright page style with large title
   const titlePageStyles = `
     <style>
+      /* General image styling - ensure all images are properly sized and displayed */
+      img {
+        max-width: 100%;
+        height: auto;
+        display: block;
+        margin: 1em auto;
+        border: none;
+        box-shadow: none;
+      }
+      
+      /* Inline images in paragraphs should stay inline */
+      p img,
+      .paragraph img {
+        display: inline-block;
+        margin: 0.25em 0.5em;
+        vertical-align: middle;
+        max-width: 100%;
+      }
+      
+      /* Block images - AsciiDoctor image blocks */
+      .imageblock {
+        text-align: center;
+        margin: 1.5em 0;
+        page-break-inside: avoid;
+      }
+      .imageblock img {
+        display: block;
+        margin: 0 auto;
+        max-width: 100%;
+        height: auto;
+      }
+      .imageblock .title {
+        font-style: italic;
+        margin-top: 0.5em;
+        font-size: 0.9em;
+        color: #666;
+      }
+      
+      /* Ensure images don't overflow containers in all sections */
+      .content img,
+      .sect1 img,
+      .sect2 img,
+      .sect3 img,
+      .sect4 img,
+      .sect5 img,
+      article img,
+      section img {
+        max-width: 100%;
+        height: auto;
+      }
+      
+      /* Images in lists */
+      li img {
+        max-width: 100%;
+        height: auto;
+        margin: 0.5em 0;
+      }
+      
+      /* Images in tables */
+      table img {
+        max-width: 100%;
+        height: auto;
+        margin: 0.25em;
+      }
+      
+      /* Responsive images for mobile */
+      @media (max-width: 600px) {
+        img {
+          max-width: 100%;
+          height: auto;
+        }
+        .imageblock {
+          margin: 1em 0;
+        }
+      }
+      
       /* Cover page styling - appears after TOC */
       .cover-page {
         text-align: center;
@@ -541,22 +656,64 @@ export async function exportToEPUB(
   
   onProgress?.(45, 'Sending request to server...');
   let response: Response;
+  
+  // Create a timeout controller (5 minutes for large EPUBs)
+  const timeoutMs = 5 * 60 * 1000; // 5 minutes
+  const timeoutController = new AbortController();
+  let timeoutId: NodeJS.Timeout | null = null;
+  
+  // Set up timeout
+  timeoutId = setTimeout(() => {
+    console.error('[EPUB Export] Request timeout after', timeoutMs, 'ms - aborting fetch');
+    timeoutController.abort();
+  }, timeoutMs);
+  
+  // Combine abort signals: if user cancels OR timeout occurs, abort the fetch
+  const combinedController = new AbortController();
+  if (abortSignal) {
+    abortSignal.addEventListener('abort', () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      combinedController.abort();
+    });
+  }
+  timeoutController.signal.addEventListener('abort', () => {
+    combinedController.abort();
+  });
+  
   try {
-    response = await fetch(url, {
+    console.log('[EPUB Export] Starting fetch request...');
+    const fetchPromise = fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-      content: options.content,
-      title: options.title,
-      author: options.author || '',
-    }),
-      signal: abortSignal,
+        content: options.content,
+        title: options.title,
+        author: options.author || '',
+      }),
+      signal: combinedController.signal,
     });
+    
+    response = await fetchPromise;
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+    console.log('[EPUB Export] Fetch completed, status:', response.status, response.statusText);
   } catch (err) {
-    if (err instanceof Error && err.name === 'AbortError') {
-      throw new Error('Download cancelled');
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+    if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) {
+      if (timeoutController.signal.aborted) {
+        throw new Error('EPUB generation timed out after 5 minutes. The server took too long to respond. Please try again or check server logs.');
+      }
+      if (abortSignal?.aborted) {
+        throw new Error('Download cancelled');
+      }
+      throw new Error('Request was aborted');
     }
     const errorMessage = err instanceof Error ? err.message : 'Network error';
     console.error('[EPUB Export] Network error:', errorMessage);
@@ -564,16 +721,23 @@ export async function exportToEPUB(
   }
   
   onProgress?.(60, 'Waiting for server response...');
+  console.log('[EPUB Export] Response received, checking status...');
 
   if (!response.ok) {
+    console.error('[EPUB Export] Server returned error status:', response.status, response.statusText);
+    
     // Try to read error message from response body
     let errorMessage = `EPUB conversion failed: ${response.status} ${response.statusText}`;
     let errorDetails: any = null;
     
     try {
       const contentType = response.headers.get('content-type') || '';
+      console.log('[EPUB Export] Error response content-type:', contentType);
+      
       if (contentType.includes('application/json')) {
         errorDetails = await response.json();
+        console.error('[EPUB Export] Server error (JSON):', errorDetails);
+        
         errorMessage = errorDetails.error || errorDetails.message || errorMessage;
         
         // Add hint if available
@@ -585,21 +749,33 @@ export async function exportToEPUB(
         if (errorDetails.line) {
           errorMessage += `\n\nError detected at line ${errorDetails.line}`;
         }
+        
+        // Add stack trace if available (for debugging)
+        if (errorDetails.stack) {
+          console.error('[EPUB Export] Server error stack:', errorDetails.stack);
+        }
       } else {
         // Try to read as text even if not JSON
         const text = await response.text();
+        console.log('[EPUB Export] Error response text (first 500 chars):', text.substring(0, 500));
+        
         if (text) {
           // Try to parse as JSON in case content-type is wrong
           try {
             errorDetails = JSON.parse(text);
+            console.error('[EPUB Export] Server error (parsed as JSON):', errorDetails);
+            
             errorMessage = errorDetails.error || errorDetails.message || errorMessage;
             if (errorDetails.hint) {
               errorMessage += `\n\nHint: ${errorDetails.hint}`;
             }
+            if (errorDetails.line) {
+              errorMessage += `\n\nError detected at line ${errorDetails.line}`;
+            }
           } catch {
             // Not JSON, use text as error message (limit length)
-            const preview = text.length > 200 ? text.substring(0, 200) + '...' : text;
-            errorMessage = `${errorMessage}\n\nServer response: ${preview}`;
+            const preview = text.length > 500 ? text.substring(0, 500) + '...' : text;
+            errorMessage = `${errorMessage}\n\nServer response:\n${preview}`;
           }
         }
       }
@@ -608,7 +784,7 @@ export async function exportToEPUB(
       // Use default error message
     }
     
-    console.error('[EPUB Export] Conversion failed:', {
+    console.error('[EPUB Export] Conversion error summary:', {
       status: response.status,
       statusText: response.statusText,
       url,
@@ -616,36 +792,70 @@ export async function exportToEPUB(
       errorDetails
     });
     
+    // Log the full error details to console for debugging
+    if (errorDetails) {
+      console.error('[EPUB Export] Full error details:', JSON.stringify(errorDetails, null, 2));
+    }
+    
     throw new Error(errorMessage);
   }
 
   // Verify we got an EPUB response
   const contentType = response.headers.get('content-type') || '';
+  console.log('[EPUB Export] Response content-type:', contentType);
+  
   if (!contentType.includes('application/epub') && !contentType.includes('application/zip')) {
+    console.warn('[EPUB Export] Unexpected content type, reading response as text...');
     // Might be an error response, try to read as JSON or text
     const text = await response.text();
+    console.log('[EPUB Export] Response text preview (first 500 chars):', text.substring(0, 500));
+    
     // Check if it's the SvelteKit app shell (common error when proxy fails)
     if (text.includes('__sveltekit') || text.includes('sveltekit-preload-data')) {
-      throw new Error('Server returned SvelteKit app shell instead of EPUB. Check AsciiDoctor server is running at /asciidoctor/ and proxy is configured correctly.');
+      const errorMsg = 'Server returned SvelteKit app shell instead of EPUB. Check AsciiDoctor server is running at /asciidoctor/ and proxy is configured correctly.';
+      console.error('[EPUB Export]', errorMsg);
+      throw new Error(errorMsg);
     }
     // Check if it's a JSON error response
     if (text.trim().startsWith('{')) {
       try {
         const error = JSON.parse(text);
-        throw new Error(error.error || error.message || 'Server returned error instead of EPUB');
-      } catch {
+        const errorMsg = error.error || error.message || 'Server returned error instead of EPUB';
+        console.error('[EPUB Export] Server error response:', error);
+        throw new Error(errorMsg);
+      } catch (parseErr) {
         // Not valid JSON, continue with generic error
+        console.error('[EPUB Export] Failed to parse error response as JSON:', parseErr);
       }
     }
-    throw new Error(`Server returned unexpected content type: ${contentType}. Response preview: ${text.substring(0, 200)}`);
+    const errorMsg = `Server returned unexpected content type: ${contentType}. Response preview: ${text.substring(0, 200)}`;
+    console.error('[EPUB Export]', errorMsg);
+    throw new Error(errorMsg);
   }
 
   onProgress?.(75, 'Receiving EPUB file from server...');
+  console.log('[EPUB Export] Starting to read response as blob...');
+  
   // For large files, optimize the download process
   // Read as blob (binary) - this is necessary for validation
-  const blob = await response.blob();
+  // Add timeout for blob reading (should be fast, but protect against hanging)
+  const blobReadTimeout = setTimeout(() => {
+    console.error('[EPUB Export] Blob read timeout - server may not have sent the file');
+  }, 60000); // 1 minute timeout for reading blob
+  
+  let blob: Blob;
+  try {
+    blob = await response.blob();
+    clearTimeout(blobReadTimeout);
+  } catch (err) {
+    clearTimeout(blobReadTimeout);
+    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[EPUB Export] Error reading blob:', errorMessage);
+    throw new Error(`Failed to read EPUB file from server: ${errorMessage}`);
+  }
   
   if (!blob || blob.size === 0) {
+    console.error('[EPUB Export] Server returned empty blob');
     throw new Error('Server returned empty EPUB file');
   }
   
@@ -659,16 +869,44 @@ export async function exportToEPUB(
   const uint8Array = new Uint8Array(arrayBuffer);
   const magicBytes = String.fromCharCode(...uint8Array);
   if (magicBytes !== 'PK\x03\x04') {
+    console.error('[EPUB Export] Invalid EPUB file - not a ZIP archive. Magic bytes:', magicBytes);
     // Not a ZIP file, try to read as text to get error message
     // For large files, only read a portion to avoid memory issues
     const text = blob.size > 10000 
       ? await blob.slice(0, 10000).text() 
       : await blob.text();
+    
+    console.log('[EPUB Export] Attempting to parse error response from blob (first 500 chars):', text.substring(0, 500));
+    
     try {
       const error = JSON.parse(text);
-      throw new Error(error.error || error.message || 'Server returned invalid EPUB (not a ZIP file)');
-    } catch {
-      throw new Error('Server returned invalid EPUB file (not a valid ZIP archive). File may be corrupted or an error response.');
+      const errorMsg = error.error || error.message || 'Server returned invalid EPUB (not a ZIP file)';
+      console.error('[EPUB Export] Server conversion error:', error);
+      
+      // Build detailed error message
+      let detailedError = errorMsg;
+      if (error.hint) {
+        detailedError += `\n\nHint: ${error.hint}`;
+      }
+      if (error.line) {
+        detailedError += `\n\nError detected at line ${error.line}`;
+      }
+      if (error.stack) {
+        console.error('[EPUB Export] Server error stack:', error.stack);
+      }
+      
+      throw new Error(detailedError);
+    } catch (parseErr) {
+      // Not JSON, check if it's an HTML error page or plain text error
+      if (text.includes('<html>') || text.includes('<!DOCTYPE')) {
+        // Extract text from HTML if possible
+        const textMatch = text.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+        const bodyText = textMatch ? textMatch[1].replace(/<[^>]+>/g, ' ').trim() : text.substring(0, 200);
+        throw new Error(`Server returned HTML error page instead of EPUB:\n\n${bodyText}`);
+      }
+      // Plain text error
+      const errorText = text.length > 500 ? text.substring(0, 500) + '...' : text;
+      throw new Error(`Server returned invalid EPUB file (not a valid ZIP archive). Server response:\n\n${errorText}`);
     }
   }
   
