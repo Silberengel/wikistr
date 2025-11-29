@@ -292,8 +292,9 @@
       })
       .catch((error) => {
         if (abortSignal.aborted) {
-          downloadStatus = 'Download cancelled';
-          downloadState = 'downloading';
+          downloadProgress = 100;
+          downloadStatus = 'Download cancelled successfully';
+          downloadState = 'success';
           isDownloading = false;
           stopLogCapture();
           return;
