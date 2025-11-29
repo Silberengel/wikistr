@@ -63,6 +63,15 @@
   let rawJsonCopied = $state(false);
   let showDownloadMenu = $state(false);
   let isDownloading = $state(false);
+  let downloadProgress = $state(0);
+  let downloadStatus = $state('');
+  let downloadState = $state<'downloading' | 'success' | 'error'>('downloading');
+  let downloadLogs = $state<string[]>([]);
+  let downloadError = $state<string>('');
+  let downloadAbortController: AbortController | null = null;
+  let showDownloadModal = $state(false);
+  let currentDownloadFn: ((event: NostrEvent, filename?: string, onProgress?: (progress: number, status: string) => void, abortSignal?: AbortSignal) => Promise<void>) | null = null;
+  let currentDownloadEvent: NostrEvent | null = null;
   let isBookmarkedState = $state(false);
   let isBookmarking = $state(false);
   let errorDialogOpen = $state(false);
@@ -125,6 +134,177 @@
     errorDialogMessage = message;
     errorDialogOpen = true;
     errorCopied = false;
+  }
+
+  // Console log capture for download progress modal
+  let originalConsoleLog: typeof console.log | null = null;
+  let originalConsoleError: typeof console.error | null = null;
+  let originalConsoleWarn: typeof console.warn | null = null;
+
+  function startLogCapture() {
+    // Store original console methods
+    originalConsoleLog = console.log;
+    originalConsoleError = console.error;
+    originalConsoleWarn = console.warn;
+
+    // Override console methods to capture logs
+    console.log = (...args: any[]) => {
+      const message = args.map(arg => {
+        if (typeof arg === 'object' && arg !== null) {
+          try {
+            return JSON.stringify(arg);
+          } catch {
+            return String(arg);
+          }
+        }
+        return String(arg);
+      }).join(' ');
+      downloadLogs = [...downloadLogs, `[LOG] ${message}`];
+      originalConsoleLog?.apply(console, args);
+    };
+
+    console.error = (...args: any[]) => {
+      const message = args.map(arg => {
+        if (typeof arg === 'object' && arg !== null) {
+          try {
+            return JSON.stringify(arg);
+          } catch {
+            return String(arg);
+          }
+        }
+        return String(arg);
+      }).join(' ');
+      downloadLogs = [...downloadLogs, `[ERROR] ${message}`];
+      originalConsoleError?.apply(console, args);
+    };
+
+    console.warn = (...args: any[]) => {
+      const message = args.map(arg => {
+        if (typeof arg === 'object' && arg !== null) {
+          try {
+            return JSON.stringify(arg);
+          } catch {
+            return String(arg);
+          }
+        }
+        return String(arg);
+      }).join(' ');
+      downloadLogs = [...downloadLogs, `[WARN] ${message}`];
+      originalConsoleWarn?.apply(console, args);
+    };
+  }
+
+  function stopLogCapture() {
+    // Restore original console methods
+    if (originalConsoleLog) {
+      console.log = originalConsoleLog;
+      originalConsoleLog = null;
+    }
+    if (originalConsoleError) {
+      console.error = originalConsoleError;
+      originalConsoleError = null;
+    }
+    if (originalConsoleWarn) {
+      console.warn = originalConsoleWarn;
+      originalConsoleWarn = null;
+    }
+  }
+
+  // Helper function to close download modal
+  function closeDownloadModal() {
+    if (isDownloading && downloadState === 'downloading') {
+      // Don't close if download is in progress, just hide the modal
+      // The download will continue in the background
+      showDownloadModal = false;
+    } else {
+      // Close and reset if download is complete or failed
+      showDownloadModal = false;
+      downloadLogs = [];
+      downloadError = '';
+      downloadProgress = 0;
+      downloadStatus = '';
+      downloadState = 'downloading';
+      isDownloading = false;
+      downloadAbortController = null;
+    }
+  }
+
+  // Helper function to cancel download
+  function cancelDownload() {
+    if (downloadAbortController) {
+      downloadAbortController.abort();
+      downloadStatus = 'Cancelling...';
+    }
+    // The download promise will handle setting isDownloading = false
+    // and updating the state when it catches the AbortError
+  }
+
+  // Helper function to retry download
+  function retryDownload() {
+    if (currentDownloadFn && currentDownloadEvent) {
+      // Abort any existing download
+      if (downloadAbortController) {
+        downloadAbortController.abort();
+      }
+      // Start fresh download
+      startDownload(currentDownloadFn, currentDownloadEvent);
+    } else {
+      showErrorDialog('Cannot retry: download context lost.');
+      closeDownloadModal();
+    }
+  }
+
+  // Helper function to start download with progress tracking
+  function startDownload(
+    downloadFn: (event: NostrEvent, filename?: string, onProgress?: (progress: number, status: string) => void, abortSignal?: AbortSignal) => Promise<void>,
+    event: NostrEvent
+  ) {
+    showDownloadMenu = false;
+    isDownloading = true;
+    showDownloadModal = true;
+    downloadProgress = 0;
+    downloadStatus = 'Preparing...';
+    downloadState = 'downloading';
+    downloadError = '';
+    downloadLogs = [];
+    currentDownloadFn = downloadFn;
+    currentDownloadEvent = event;
+    
+    // Create abort controller for cancellation
+    downloadAbortController = new AbortController();
+    const abortSignal = downloadAbortController.signal;
+    
+    // Start capturing console logs
+    startLogCapture();
+    
+    downloadFn(event, undefined, (progress, status) => {
+      if (abortSignal.aborted) return;
+      downloadProgress = progress;
+      downloadStatus = status;
+    }, abortSignal)
+      .then(() => {
+        if (abortSignal.aborted) return;
+        downloadProgress = 100;
+        downloadStatus = 'Download completed successfully!';
+        downloadState = 'success';
+        isDownloading = false;
+        stopLogCapture();
+      })
+      .catch((error) => {
+        if (abortSignal.aborted) {
+          downloadStatus = 'Download cancelled';
+          downloadState = 'downloading';
+          isDownloading = false;
+          stopLogCapture();
+          return;
+        }
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        downloadError = errorMessage;
+        downloadStatus = `Error: ${errorMessage}`;
+        downloadState = 'error';
+        isDownloading = false;
+        stopLogCapture();
+      });
   }
 
   // Copy error message to clipboard
@@ -977,227 +1157,108 @@
                     {#if event && event.kind === 30040}
                       <!-- Book (30040) - HTML, EPUB, AsciiDoc, PDF -->
                       <button
-                        onclick={async () => {
+                        onclick={() => {
                           if (!event) return;
-                          showDownloadMenu = false;
-                          isDownloading = true;
-                          try {
-                            await downloadAsHTML5(event);
-                          } catch (error) {
-                            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                            showErrorDialog(`Failed to download HTML:\n\n${errorMessage}`);
-                          } finally {
-                            isDownloading = false;
-                          }
+                          startDownload(downloadAsHTML5, event);
                         }}
                         disabled={isDownloading}
                         class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                         style="color: var(--text-primary);"
                       >
-                        {#if isDownloading}
-                          Downloading HTML...
-                        {:else}
-                          HTML
-                        {/if}
+                        HTML
                       </button>
                       <button
-                        onclick={async () => {
+                        onclick={() => {
                           if (!event) return;
-                          showDownloadMenu = false;
-                          isDownloading = true;
-                          try {
-                            await downloadBookAsEPUB(event);
-                          } catch (error) {
-                            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                            console.error('EPUB download failed:', error);
-                            showErrorDialog(`Failed to download EPUB:\n\n${errorMessage}`);
-                          } finally {
-                            isDownloading = false;
-                          }
+                          startDownload(downloadBookAsEPUB, event);
                         }}
                         disabled={isDownloading}
                         class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                         style="color: var(--text-primary);"
                       >
-                        {#if isDownloading}
-                          Downloading EPUB...
-                        {:else}
-                          EPUB
-                        {/if}
+                        EPUB
                       </button>
                       <button
-                        onclick={async () => {
+                        onclick={() => {
                           if (!event) return;
-                          showDownloadMenu = false;
-                          isDownloading = true;
-                          try {
-                            await downloadBookAsAsciiDoc(event);
-                          } catch (error) {
-                            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                            showErrorDialog(`Failed to download AsciiDoc:\n\n${errorMessage}`);
-                          } finally {
-                            isDownloading = false;
-                          }
+                          startDownload(downloadBookAsAsciiDoc, event);
                         }}
                         disabled={isDownloading}
                         class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                         style="color: var(--text-primary);"
                       >
-                        {#if isDownloading}
-                          Downloading AsciiDoc...
-                        {:else}
-                          AsciiDoc
-                        {/if}
+                        AsciiDoc
                       </button>
                       <button
-                        onclick={async () => {
+                        onclick={() => {
                           if (!event) return;
-                          showDownloadMenu = false;
-                          isDownloading = true;
-                          try {
-                            await downloadAsPDF(event);
-                          } catch (error) {
-                            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                            showErrorDialog(`Failed to download PDF:\n\n${errorMessage}`);
-                          } finally {
-                            isDownloading = false;
-                          }
+                          startDownload(downloadAsPDF, event);
                         }}
                         disabled={isDownloading}
                         class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                         style="color: var(--text-primary);"
                       >
-                        {#if isDownloading}
-                          Downloading PDF...
-                        {:else}
-                          PDF
-                        {/if}
+                        PDF
                       </button>
                     {:else if event}
                       <!-- All events: HTML, EPUB, AsciiDoc -->
                       <button
-                        onclick={async () => {
+                        onclick={() => {
                           if (!event) return;
-                          showDownloadMenu = false;
-                          isDownloading = true;
-                          try {
-                            await downloadAsHTML5(event);
-                          } catch (error) {
-                            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                            showErrorDialog(`Failed to download HTML:\n\n${errorMessage}`);
-                          } finally {
-                            isDownloading = false;
-                          }
+                          startDownload(downloadAsHTML5, event);
                         }}
                         disabled={isDownloading}
                         class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                         style="color: var(--text-primary);"
                       >
-                        {#if isDownloading}
-                          Downloading HTML...
-                        {:else}
-                          HTML
-                        {/if}
+                        HTML
                       </button>
                         <button
-                          onclick={async () => {
+                          onclick={() => {
                             if (!event) return;
-                            showDownloadMenu = false;
-                            isDownloading = true;
-                            try {
-                              await downloadAsEPUB(event);
-                            } catch (error) {
-                              const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                              console.error('EPUB download failed:', error);
-                              showErrorDialog(`Failed to download EPUB:\n\n${errorMessage}`);
-                            } finally {
-                              isDownloading = false;
-                            }
+                            startDownload(downloadAsEPUB, event);
                           }}
                           disabled={isDownloading}
                           class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                           style="color: var(--text-primary);"
                         >
-                          {#if isDownloading}
-                            Downloading EPUB...
-                          {:else}
-                            EPUB
-                          {/if}
+                          EPUB
                         </button>
                         <button
-                          onclick={async () => {
+                          onclick={() => {
                             if (!event) return;
-                            showDownloadMenu = false;
-                            isDownloading = true;
-                            try {
-                              await downloadAsAsciiDoc(event);
-                            } catch (error) {
-                              const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                              showErrorDialog(`Failed to download AsciiDoc:\n\n${errorMessage}`);
-                            } finally {
-                              isDownloading = false;
-                            }
+                            startDownload(downloadAsAsciiDoc, event);
                           }}
                           disabled={isDownloading}
                           class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                           style="color: var(--text-primary);"
                         >
-                          {#if isDownloading}
-                            Downloading AsciiDoc...
-                          {:else}
-                            AsciiDoc
-                          {/if}
+                          AsciiDoc
                         </button>
                         {#if event && (event.kind === 30817 || event.kind === 30023)}
                           <button
-                            onclick={async () => {
+                            onclick={() => {
                               if (!event) return;
-                              showDownloadMenu = false;
-                              isDownloading = true;
-                              try {
-                                await downloadAsMarkdown(event);
-                              } catch (error) {
-                                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                                showErrorDialog(`Failed to download Markdown:\n\n${errorMessage}`);
-                              } finally {
-                                isDownloading = false;
-                              }
+                              startDownload(downloadAsMarkdown, event);
                             }}
                             disabled={isDownloading}
                             class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                             style="color: var(--text-primary);"
                           >
-                            {#if isDownloading}
-                              Downloading Markdown...
-                            {:else}
-                              Markdown
-                            {/if}
+                            Markdown
                           </button>
                         {/if}
                         {#if event && (event.kind === 30818 || event.kind === 30040 || event.kind === 30041 || event.kind === 30023 || event.kind === 30817)}
                           <button
-                            onclick={async () => {
+                            onclick={() => {
                               if (!event) return;
-                              showDownloadMenu = false;
-                              isDownloading = true;
-                              try {
-                                await downloadAsPDF(event);
-                              } catch (error) {
-                                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                                showErrorDialog(`Failed to download PDF:\n\n${errorMessage}`);
-                              } finally {
-                                isDownloading = false;
-                              }
+                              startDownload(downloadAsPDF, event);
                             }}
                             disabled={isDownloading}
                             class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                             style="color: var(--text-primary);"
                           >
-                            {#if isDownloading}
-                              Downloading PDF...
-                            {:else}
-                              PDF
-                            {/if}
+                            PDF
                           </button>
                         {/if}
                     {/if}
@@ -1436,6 +1497,132 @@
         >
           OK
         </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Download Progress Modal -->
+{#if showDownloadModal}
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
+    role="dialog"
+    aria-labelledby="download-progress-title"
+    aria-modal="true"
+    tabindex="-1"
+    onclick={(e) => { if (e.target === e.currentTarget) closeDownloadModal(); }}
+    onkeydown={(e) => { if (e.key === 'Escape' && e.target === e.currentTarget) closeDownloadModal(); }}
+  >
+    <div
+      class="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-2xl w-full mx-4 max-h-[90vh] flex flex-col"
+      style="background-color: var(--bg-primary); border: 1px solid var(--border);"
+    >
+      <!-- Header with X button -->
+      <div class="flex items-center justify-between mb-4">
+        <h3 id="download-progress-title" class="text-lg font-semibold" style="color: var(--text-primary);">
+          {#if downloadState === 'success'}
+            Download Complete
+          {:else if downloadState === 'error'}
+            Download Error
+          {:else}
+            Downloading
+          {/if}
+        </h3>
+        <button
+          onclick={closeDownloadModal}
+          class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+          aria-label="Close"
+          title="Close (download continues in background)"
+        >
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Status Message -->
+      <div class="mb-4">
+        {#if downloadState === 'success'}
+          <div class="text-sm p-3 rounded" style="background-color: var(--accent); color: white; opacity: 0.9;">
+            ✓ {downloadStatus}
+          </div>
+        {:else if downloadState === 'error'}
+          <div class="text-sm p-3 rounded bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200">
+            ✗ {downloadError || downloadStatus}
+          </div>
+        {:else}
+          <div class="text-sm mb-2" style="color: var(--text-secondary);">
+            {downloadStatus}
+          </div>
+          <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+            <div
+              class="bg-blue-600 h-3 rounded-full transition-all duration-300 ease-out"
+              style="width: {downloadProgress}%"
+              role="progressbar"
+              aria-valuenow={downloadProgress}
+              aria-valuemin="0"
+              aria-valuemax="100"
+            ></div>
+          </div>
+          <div class="text-xs mt-2 text-right" style="color: var(--text-secondary);">
+            {Math.round(downloadProgress)}%
+          </div>
+        {/if}
+      </div>
+
+      <!-- Console Logs -->
+      {#if downloadLogs.length > 0}
+        <div class="flex-1 min-h-0 mb-4">
+          <div class="text-xs font-semibold mb-2" style="color: var(--text-secondary);">
+            Console Logs:
+          </div>
+          <div 
+            class="overflow-y-auto p-3 rounded text-xs font-mono"
+            style="background-color: var(--bg-secondary); border: 1px solid var(--border); max-height: 300px;"
+          >
+            {#each downloadLogs as log}
+              <div class="mb-1" style="color: var(--text-secondary);">
+                {log}
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
+      <!-- Action Buttons -->
+      <div class="flex items-center justify-end gap-2">
+        {#if downloadState === 'success'}
+          <button
+            onclick={() => { showDownloadModal = false; }}
+            class="px-4 py-2 rounded transition-colors hover:opacity-90"
+            style="background-color: var(--accent); color: white;"
+          >
+            OK
+          </button>
+        {:else if downloadState === 'error'}
+          <button
+            onclick={retryDownload}
+            class="px-4 py-2 rounded transition-colors hover:opacity-90"
+            style="background-color: var(--accent); color: white;"
+          >
+            Retry
+          </button>
+          <button
+            onclick={cancelDownload}
+            class="px-4 py-2 rounded transition-colors hover:opacity-90"
+            style="background-color: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border);"
+          >
+            Cancel
+          </button>
+        {:else}
+          <button
+            onclick={cancelDownload}
+            class="px-4 py-2 rounded transition-colors hover:opacity-90"
+            style="background-color: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border);"
+          >
+            Cancel
+          </button>
+        {/if}
       </div>
     </div>
   </div>

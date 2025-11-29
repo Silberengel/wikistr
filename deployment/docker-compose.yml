@@ -94,7 +94,7 @@ services:
     networks:
       - default
       - wikistr-network
-    restart: unless-stopped
+    restart: always
 
 networks:
   wikistr-network:

@@ -99,7 +99,7 @@ async function getHTML5ErrorMessage(error: unknown, url: string): Promise<string
 /**
  * Convert AsciiDoc content to HTML5
  */
-export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
+export async function exportToHTML5(options: ExportOptions, abortSignal?: AbortSignal): Promise<Blob> {
   const baseUrl = ASCIIDOCTOR_SERVER_URL.endsWith('/') ? ASCIIDOCTOR_SERVER_URL : `${ASCIIDOCTOR_SERVER_URL}/`;
   const url = `${baseUrl}convert/html5`;
   
@@ -123,8 +123,12 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
         title: options.title,
         author: options.author || '',
       }),
+      signal: abortSignal,
     });
   } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Download cancelled');
+    }
     // Network/connection error - check server health and provide helpful message
     const errorMsg = await getHTML5ErrorMessage(error, url);
     throw new Error(errorMsg);
@@ -521,7 +525,7 @@ export async function exportToHTML5(options: ExportOptions): Promise<Blob> {
 /**
  * Convert AsciiDoc content to EPUB
  */
-export async function exportToEPUB(options: ExportOptions): Promise<Blob> {
+export async function exportToEPUB(options: ExportOptions, abortSignal?: AbortSignal): Promise<Blob> {
   // Normalize baseUrl - remove trailing slash, then add it back to ensure clean URL construction
   const normalizedBase = ASCIIDOCTOR_SERVER_URL.replace(/\/+$/, '');
   const baseUrl = `${normalizedBase}/`;
@@ -543,8 +547,12 @@ export async function exportToEPUB(options: ExportOptions): Promise<Blob> {
       title: options.title,
       author: options.author || '',
     }),
+      signal: abortSignal,
     });
   } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('Download cancelled');
+    }
     const errorMessage = err instanceof Error ? err.message : 'Network error';
     console.error('[EPUB Export] Network error:', errorMessage);
     throw new Error(`Failed to connect to EPUB conversion server: ${errorMessage}. Make sure the AsciiDoctor server is running.`);
@@ -625,7 +633,8 @@ export async function exportToEPUB(options: ExportOptions): Promise<Blob> {
     throw new Error(`Server returned unexpected content type: ${contentType}. Response preview: ${text.substring(0, 200)}`);
   }
 
-  // Read as blob (binary)
+  // For large files, optimize the download process
+  // Read as blob (binary) - this is necessary for validation
   const blob = await response.blob();
   
   if (!blob || blob.size === 0) {
@@ -636,12 +645,16 @@ export async function exportToEPUB(options: ExportOptions): Promise<Blob> {
   
   // Verify it's actually a ZIP file (EPUB is a ZIP archive)
   // Check ZIP magic bytes (first 4 bytes should be "PK\x03\x04")
+  // Only check magic bytes for validation, don't read the entire file
   const arrayBuffer = await blob.slice(0, 4).arrayBuffer();
   const uint8Array = new Uint8Array(arrayBuffer);
   const magicBytes = String.fromCharCode(...uint8Array);
   if (magicBytes !== 'PK\x03\x04') {
     // Not a ZIP file, try to read as text to get error message
-    const text = await blob.text();
+    // For large files, only read a portion to avoid memory issues
+    const text = blob.size > 10000 
+      ? await blob.slice(0, 10000).text() 
+      : await blob.text();
     try {
       const error = JSON.parse(text);
       throw new Error(error.error || error.message || 'Server returned invalid EPUB (not a ZIP file)');
@@ -650,12 +663,13 @@ export async function exportToEPUB(options: ExportOptions): Promise<Blob> {
     }
   }
   
-  console.log('[EPUB Export] Successfully generated EPUB file');
+  console.log('[EPUB Export] Successfully generated EPUB file, ready for download');
   return blob;
 }
 
 /**
  * Download a blob as a file
+ * Optimized for large files by using requestIdleCallback when available
  */
 export function downloadBlob(blob: Blob, filename: string): void {
   if (!blob || blob.size === 0) {
@@ -663,24 +677,60 @@ export function downloadBlob(blob: Blob, filename: string): void {
     throw new Error('Cannot download empty file');
   }
   
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.style.display = 'none';
-  document.body.appendChild(a);
+  console.log('[Download] Starting download:', filename, 'Size:', blob.size, 'bytes');
   
-  // Trigger download
-  a.click();
+  // For large files, use a more efficient approach
+  const isLargeFile = blob.size > 10 * 1024 * 1024; // > 10MB
   
-  // Clean up after a short delay to ensure download starts
-  // Some browsers need the URL to remain valid briefly
-  setTimeout(() => {
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, 100);
-  
-  console.log('[Download] Triggered download:', filename, 'Size:', blob.size, 'bytes');
+  if (isLargeFile) {
+    // Use requestIdleCallback if available to avoid blocking the UI
+    const triggerDownload = () => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      
+      // Trigger download immediately
+      a.click();
+      
+      // Clean up after a longer delay for large files
+      // This ensures the download has time to start
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        console.log('[Download] Download triggered for large file:', filename);
+      }, 500);
+    };
+    
+    // Use requestIdleCallback if available, otherwise trigger immediately
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      (window as any).requestIdleCallback(triggerDownload, { timeout: 1000 });
+    } else {
+      // Fallback: use setTimeout with minimal delay
+      setTimeout(triggerDownload, 0);
+    }
+  } else {
+    // For smaller files, use standard approach
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    
+    // Trigger download
+    a.click();
+    
+    // Clean up after a short delay to ensure download starts
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 100);
+    
+    console.log('[Download] Download triggered:', filename);
+  }
 }
 
 /**
@@ -701,7 +751,7 @@ export async function openInViewer(
 /**
  * Convert AsciiDoc content to PDF
  */
-export async function exportToPDF(options: ExportOptions): Promise<Blob> {
+export async function exportToPDF(options: ExportOptions, abortSignal?: AbortSignal): Promise<Blob> {
   const baseUrl = ASCIIDOCTOR_SERVER_URL.endsWith('/') ? ASCIIDOCTOR_SERVER_URL : `${ASCIIDOCTOR_SERVER_URL}/`;
   const url = `${baseUrl}convert/pdf`;
   
@@ -726,8 +776,12 @@ export async function exportToPDF(options: ExportOptions): Promise<Blob> {
         title: options.title,
         author: options.author || '',
       }),
+      signal: abortSignal,
     });
   } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('Download cancelled');
+    }
     const errorMessage = err instanceof Error ? err.message : 'Network error';
     console.error('[PDF Export] Network error:', errorMessage);
     throw new Error(`Failed to connect to PDF conversion server: ${errorMessage}. Make sure the AsciiDoctor server is running.`);

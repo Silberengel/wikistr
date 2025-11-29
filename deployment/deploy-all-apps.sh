@@ -100,6 +100,7 @@ fi
 
 docker run -d \
   --name og-proxy \
+  --restart always \
   --network ${NETWORK_NAME} \
   -p 127.0.0.1:8090:8090 \
   -v "${PARENT_DIR}/deployment/proxy-server.js:/app/deployment/proxy-server.js:ro" \
@@ -125,6 +126,7 @@ fi
 # Gems are installed in vendor/bundle in the image, so Gemfile.lock won't be accessed
 docker run -d \
   --name asciidoctor \
+  --restart always \
   --network ${NETWORK_NAME} \
   -p 127.0.0.1:8091:8091 \
   -v "${PARENT_DIR}/deployment/asciidoctor-server.rb:/app/deployment/asciidoctor-server.rb:ro" \

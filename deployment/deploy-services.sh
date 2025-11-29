@@ -82,6 +82,7 @@ echo -e "  ${BLUE}🚀 Starting OG Proxy container...${NC}"
 if [ "$USE_VOLUMES" = true ]; then
     docker run -d \
       --name og-proxy \
+      --restart always \
       -p 127.0.0.1:8090:8090 \
       -v "${REPO_PATH}/deployment/proxy-server.js:/app/deployment/proxy-server.js:ro" \
       -e PROXY_PORT=8090 \
@@ -90,11 +91,11 @@ if [ "$USE_VOLUMES" = true ]; then
       --dns 8.8.8.8 \
       --dns 8.8.4.4 \
       --dns 1.1.1.1 \
-      --restart unless-stopped \
       silberengel/wikistr:latest-og-proxy
 else
     docker run -d \
       --name og-proxy \
+      --restart always \
       -p 127.0.0.1:8090:8090 \
       -e PROXY_PORT=8090 \
       -e PROXY_ALLOW_ORIGIN="https://*.imwald.eu" \
@@ -102,7 +103,6 @@ else
       --dns 8.8.8.8 \
       --dns 8.8.4.4 \
       --dns 1.1.1.1 \
-      --restart unless-stopped \
       silberengel/wikistr:latest-og-proxy
 fi
 
@@ -153,21 +153,21 @@ echo -e "  ${BLUE}🚀 Starting AsciiDoctor container...${NC}"
 if [ "$USE_VOLUMES" = true ]; then
     docker run -d \
       --name asciidoctor \
+      --restart always \
       -p 127.0.0.1:8091:8091 \
       -v "${REPO_PATH}/deployment/asciidoctor-server.rb:/app/deployment/asciidoctor-server.rb:ro" \
       -e ASCIIDOCTOR_PORT=8091 \
       -e ASCIIDOCTOR_ALLOW_ORIGIN="https://*.imwald.eu" \
       -e BUNDLE_PATH=/app/deployment/vendor/bundle \
-      --restart unless-stopped \
       silberengel/wikistr:latest-asciidoctor
 else
     docker run -d \
       --name asciidoctor \
+      --restart always \
       -p 127.0.0.1:8091:8091 \
       -e ASCIIDOCTOR_PORT=8091 \
       -e ASCIIDOCTOR_ALLOW_ORIGIN="https://*.imwald.eu" \
       -e BUNDLE_PATH=/app/deployment/vendor/bundle \
-      --restart unless-stopped \
       silberengel/wikistr:latest-asciidoctor
 fi
 
