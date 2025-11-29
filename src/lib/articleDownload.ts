@@ -15,6 +15,33 @@ import {
 } from './contentQualityControl';
 
 /**
+ * Format date for PDF title page
+ * For years < 1000: Format as "original date ca. [rounded year] AD/BC" (rounded to nearest 50)
+ * For years >= 1000: Just return the year (assumed AD, more precise)
+ */
+function formatDateForTitlePage(year: number): string {
+  if (year < 1000) {
+    // Round to nearest 50 years
+    const rounded = Math.round(year / 50) * 50;
+    
+    // Determine AD/BC
+    if (rounded < 0) {
+      // BC: remove negative sign, no leading zeros
+      const bcYear = Math.abs(rounded);
+      return `original date ca. ${bcYear} BC`;
+    } else if (rounded === 0) {
+      return 'original date ca. 1 AD';
+    } else {
+      // AD: no leading zeros
+      return `original date ca. ${rounded} AD`;
+    }
+  } else {
+    // Year >= 1000: just return the year (assumed AD)
+    return String(year);
+  }
+}
+
+/**
  * Detect if content is AsciiDoc format
  */
 function isAsciiDoc(content: string): boolean {
@@ -360,18 +387,32 @@ async function buildAsciiDocWithMetadata(
     doc += `:stylesheet: epub-classic.css\n`; // Reference custom stylesheet if available
   }
   
-  if (version) {
-    doc += `:version: ${version}\n`;
-    // For EPUB/PDF, also set revnumber (title page expects revision info)
-    if (exportFormat === 'pdf' || exportFormat === 'epub') {
-      doc += `:revnumber: ${version}\n`;
+  // For PDF/EPUB, always set revnumber and revdate to prevent title page layout issues
+  // These are critical for PDF title page layout - missing values cause content to shift
+  if (exportFormat === 'pdf' || exportFormat === 'epub') {
+    const versionValue = version || 'first edition';
+    doc += `:version: ${versionValue}\n`;
+    doc += `:revnumber: ${versionValue}\n`; // Title page uses revnumber (required for layout)
+    
+    // Use publishedOn if available, otherwise use created_at year, or current year
+    let revdateValue = publishedOn;
+    if (!revdateValue && event.created_at) {
+      const year = new Date(event.created_at * 1000).getFullYear();
+      revdateValue = formatDateForTitlePage(year);
     }
-  }
-  if (publishedOn) {
-    doc += `:pubdate: ${publishedOn}\n`;
-    // For EPUB/PDF, also set revdate (title page expects revision info)
-    if (exportFormat === 'pdf' || exportFormat === 'epub') {
-      doc += `:revdate: ${publishedOn}\n`;
+    if (!revdateValue) {
+      const currentYear = new Date().getFullYear();
+      revdateValue = formatDateForTitlePage(currentYear);
+    }
+    doc += `:pubdate: ${revdateValue}\n`;
+    doc += `:revdate: ${revdateValue}\n`; // Title page uses revdate (required for layout)
+  } else {
+    // For other formats, only set if values exist
+    if (version) {
+      doc += `:version: ${version}\n`;
+    }
+    if (publishedOn) {
+      doc += `:pubdate: ${publishedOn}\n`;
     }
   }
   if (source) {
@@ -543,18 +584,32 @@ export async function prepareAsciiDocContent(
           doc += `:pdf-style: default\n`;
         }
         
-        if (version) {
-          doc += `:version: ${version}\n`;
-          // For EPUB/PDF, also set revnumber (title page expects revision info)
-          if (exportFormat === 'pdf' || exportFormat === 'epub') {
-            doc += `:revnumber: ${version}\n`;
+        // For PDF/EPUB, always set revnumber and revdate to prevent title page layout issues
+        // These are critical for PDF title page layout - missing values cause content to shift
+        if (exportFormat === 'pdf' || exportFormat === 'epub') {
+          const versionValue = version || 'first edition';
+          doc += `:version: ${versionValue}\n`;
+          doc += `:revnumber: ${versionValue}\n`; // Title page uses revnumber (required for layout)
+          
+          // Use publishedOn if available, otherwise use created_at year, or current year
+          let revdateValue = publishedOn;
+          if (!revdateValue && event.created_at) {
+            const year = new Date(event.created_at * 1000).getFullYear();
+            revdateValue = formatDateForTitlePage(year);
           }
-        }
-        if (publishedOn) {
-          doc += `:pubdate: ${publishedOn}\n`;
-          // For EPUB/PDF, also set revdate (title page expects revision info)
-          if (exportFormat === 'pdf' || exportFormat === 'epub') {
-            doc += `:revdate: ${publishedOn}\n`;
+          if (!revdateValue) {
+            const currentYear = new Date().getFullYear();
+            revdateValue = formatDateForTitlePage(currentYear);
+          }
+          doc += `:pubdate: ${revdateValue}\n`;
+          doc += `:revdate: ${revdateValue}\n`; // Title page uses revdate (required for layout)
+        } else {
+          // For other formats, only set if values exist
+          if (version) {
+            doc += `:version: ${version}\n`;
+          }
+          if (publishedOn) {
+            doc += `:pubdate: ${publishedOn}\n`;
           }
         }
         if (source) doc += `:source: ${source}\n`;
@@ -850,13 +905,22 @@ export async function combineBookEvents(
   
   // For books, use revnumber and revdate for title page (title page expects revision info)
   // Always set these to ensure consistent title page layout - missing values cause layout issues
+  // These are critical for PDF title page layout - missing values cause content to shift
   // Also keep version and pubdate for backward compatibility
-  const versionValue = version || '1.0';
+  const versionValue = version || 'first edition';
   doc += `:version: ${versionValue}\n`;
   doc += `:revnumber: ${versionValue}\n`; // Title page uses revnumber (required for layout)
   
-  // Use publishedOn if available, otherwise use current date to ensure layout consistency
-  const revdateValue = publishedOn || new Date().toISOString().split('T')[0];
+  // Use publishedOn if available, otherwise use created_at year, or current year to ensure layout consistency
+  let revdateValue = publishedOn;
+  if (!revdateValue && indexEvent.created_at) {
+    const year = new Date(indexEvent.created_at * 1000).getFullYear();
+    revdateValue = formatDateForTitlePage(year);
+  }
+  if (!revdateValue) {
+    const currentYear = new Date().getFullYear();
+    revdateValue = formatDateForTitlePage(currentYear);
+  }
   doc += `:pubdate: ${revdateValue}\n`;
   doc += `:revdate: ${revdateValue}\n`; // Title page uses revdate (required for layout)
   if (source) doc += `:source: ${source}\n`;
