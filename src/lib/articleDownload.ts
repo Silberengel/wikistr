@@ -42,6 +42,30 @@ function formatDateForTitlePage(year: number): string {
 }
 
 /**
+ * Format publishedOn date string for title page
+ * Extracts year from publishedOn (handles yyyy-mm-dd, yyyy, or other formats)
+ * and formats it using formatDateForTitlePage
+ */
+function formatPublishedOnForTitlePage(publishedOn: string | undefined, fallbackYear?: number): string | undefined {
+  if (!publishedOn) {
+    if (fallbackYear !== undefined) {
+      return formatDateForTitlePage(fallbackYear);
+    }
+    return undefined;
+  }
+  
+  // Try to extract year from various formats (yyyy-mm-dd, yyyy, etc.)
+  const yearMatch = publishedOn.match(/(\d{4})/);
+  if (yearMatch) {
+    const year = parseInt(yearMatch[1], 10);
+    return formatDateForTitlePage(year);
+  }
+  
+  // If we can't parse a year, return undefined (caller should use fallback)
+  return undefined;
+}
+
+/**
  * Detect if content is AsciiDoc format
  */
 function isAsciiDoc(content: string): boolean {
@@ -382,10 +406,8 @@ async function buildAsciiDocWithMetadata(
   doc += `:stem:\n`;
   doc += `:page-break-mode: auto\n`;
   
-  // Add CSS styling for images in EPUB/HTML exports
-  if (exportFormat === 'epub' || exportFormat === 'html') {
-    doc += `:stylesheet: epub-classic.css\n`; // Reference custom stylesheet if available
-  }
+  // Note: We don't set :stylesheet: to avoid server errors if the file doesn't exist
+  // Image styling will be handled via inline CSS in the document body instead
   
   // For PDF/EPUB, always set revnumber and revdate to prevent title page layout issues
   // These are critical for PDF title page layout - missing values cause content to shift
@@ -395,14 +417,13 @@ async function buildAsciiDocWithMetadata(
     doc += `:revnumber: ${versionValue}\n`; // Title page uses revnumber (required for layout)
     
     // Use publishedOn if available, otherwise use created_at year, or current year
-    let revdateValue = publishedOn;
-    if (!revdateValue && event.created_at) {
-      const year = new Date(event.created_at * 1000).getFullYear();
-      revdateValue = formatDateForTitlePage(year);
-    }
-    if (!revdateValue) {
+    let revdateValue: string;
+    if (event.created_at) {
+      const createdYear = new Date(event.created_at * 1000).getFullYear();
+      revdateValue = formatPublishedOnForTitlePage(publishedOn, createdYear) || formatDateForTitlePage(createdYear);
+    } else {
       const currentYear = new Date().getFullYear();
-      revdateValue = formatDateForTitlePage(currentYear);
+      revdateValue = formatPublishedOnForTitlePage(publishedOn, currentYear) || formatDateForTitlePage(currentYear);
     }
     doc += `:pubdate: ${revdateValue}\n`;
     doc += `:revdate: ${revdateValue}\n`; // Title page uses revdate (required for layout)
@@ -592,14 +613,13 @@ export async function prepareAsciiDocContent(
           doc += `:revnumber: ${versionValue}\n`; // Title page uses revnumber (required for layout)
           
           // Use publishedOn if available, otherwise use created_at year, or current year
-          let revdateValue = publishedOn;
-          if (!revdateValue && event.created_at) {
-            const year = new Date(event.created_at * 1000).getFullYear();
-            revdateValue = formatDateForTitlePage(year);
-          }
-          if (!revdateValue) {
+          let revdateValue: string;
+          if (event.created_at) {
+            const createdYear = new Date(event.created_at * 1000).getFullYear();
+            revdateValue = formatPublishedOnForTitlePage(publishedOn, createdYear) || formatDateForTitlePage(createdYear);
+          } else {
             const currentYear = new Date().getFullYear();
-            revdateValue = formatDateForTitlePage(currentYear);
+            revdateValue = formatPublishedOnForTitlePage(publishedOn, currentYear) || formatDateForTitlePage(currentYear);
           }
           doc += `:pubdate: ${revdateValue}\n`;
           doc += `:revdate: ${revdateValue}\n`; // Title page uses revdate (required for layout)
@@ -735,11 +755,23 @@ async function getEventContent(
   if (event.kind === 30040) {
     // For books, fetch all branches and leaves
     const contentEvents = await fetchBookContentEvents(event);
+    console.log(`[Book Export] Fetched ${contentEvents.length} content events for book`);
+    
+    // Count and log top-level sections
+    const { total, found } = countTopLevelSections(event, contentEvents);
+    console.log(`[Book Export] ${found} of ${total} top-level sections published.`);
+    
+    if (contentEvents.length === 0) {
+      throw new Error('No content events found for this book');
+    }
+    
     const combined = await combineBookEvents(event, contentEvents, true, exportFormat);
     
     if (!combined || combined.trim().length === 0) {
-      throw new Error('Book content is empty');
+      throw new Error('Book content is empty after combining');
     }
+    
+    console.log(`[Book Export] Combined book content: ${combined.length} characters`);
     
     const title = getTitleFromEventTags(event);
     
@@ -756,6 +788,34 @@ async function getEventContent(
     const author = await getAuthorName(event);
     return { content, title, author };
   }
+}
+
+/**
+ * Count top-level 30040 sections (direct children of root, not nested)
+ * Returns { total: number of top-level 30040 sections in root, found: number actually found in contentEvents }
+ */
+function countTopLevelSections(indexEvent: NostrEvent, contentEvents: NostrEvent[]): { total: number; found: number } {
+  const rootATags = indexEvent.tags
+    .filter(([tag]) => tag === 'a')
+    .map(([, aTag]) => aTag)
+    .filter(Boolean);
+  
+  const topLevel30040Count = rootATags.filter(aTag => {
+    const [kindStr] = aTag.split(':');
+    return kindStr === '30040';
+  }).length;
+  
+  // Count how many top-level 30040 sections were actually found
+  const foundTopLevel30040s = contentEvents.filter(e => {
+    // Check if this event is referenced by a root 'a' tag
+    return rootATags.some(aTag => {
+      const [kindStr, pubkey, dTag] = aTag.split(':');
+      return kindStr === '30040' && e.kind === 30040 && e.pubkey === pubkey && 
+             (e.tags.find(([k]) => k === 'd')?.[1] === dTag);
+    });
+  }).length;
+  
+  return { total: topLevel30040Count, found: foundTopLevel30040s };
 }
 
 /**
@@ -890,12 +950,8 @@ export async function combineBookEvents(
   doc += `:toc:\n`; // Enable table of contents for books
   doc += `:stem:\n`; // Enable STEM (math) support
   
-  // Add CSS styling for images in EPUB/HTML exports
-  if (exportFormat === 'epub' || exportFormat === 'html') {
-    doc += `:stylesheet: epub-classic.css\n`; // Reference custom stylesheet if available
-    // Add inline styles for image handling via AsciiDoc attributes
-    doc += `[role="image-styles"]\n++++\n<style>\nimg { max-width: 100%; height: auto; display: block; margin: 1em auto; }\n.imageblock { text-align: center; margin: 1.5em 0; }\n.imageblock img { display: block; margin: 0 auto; max-width: 100%; height: auto; }\n.content img, .sect1 img, .sect2 img, .sect3 img { max-width: 100%; height: auto; }\n</style>\n++++\n\n`;
-  }
+  // Note: We don't set :stylesheet: here to avoid server errors if the file doesn't exist
+  // Image styling will be handled via inline CSS in the document body instead
   
   // Set author attribute for AsciiDoctor PDF title page (only if available)
   // Note: Missing :author: is okay, but :revnumber: and :revdate: are critical for layout
@@ -912,14 +968,13 @@ export async function combineBookEvents(
   doc += `:revnumber: ${versionValue}\n`; // Title page uses revnumber (required for layout)
   
   // Use publishedOn if available, otherwise use created_at year, or current year to ensure layout consistency
-  let revdateValue = publishedOn;
-  if (!revdateValue && indexEvent.created_at) {
-    const year = new Date(indexEvent.created_at * 1000).getFullYear();
-    revdateValue = formatDateForTitlePage(year);
-  }
-  if (!revdateValue) {
+  let revdateValue: string;
+  if (indexEvent.created_at) {
+    const createdYear = new Date(indexEvent.created_at * 1000).getFullYear();
+    revdateValue = formatPublishedOnForTitlePage(publishedOn, createdYear) || formatDateForTitlePage(createdYear);
+  } else {
     const currentYear = new Date().getFullYear();
-    revdateValue = formatDateForTitlePage(currentYear);
+    revdateValue = formatPublishedOnForTitlePage(publishedOn, currentYear) || formatDateForTitlePage(currentYear);
   }
   doc += `:pubdate: ${revdateValue}\n`;
   doc += `:revdate: ${revdateValue}\n`; // Title page uses revdate (required for layout)
@@ -932,7 +987,14 @@ export async function combineBookEvents(
   
   doc = doc.trimEnd() + '\n\n';
   
+  // Add inline CSS for images in EPUB/HTML exports AFTER all attributes to avoid parsing errors
+  if (exportFormat === 'epub' || exportFormat === 'html') {
+    // Add inline styles at the beginning of the document body (after attributes)
+    doc += `++++\n<style>\nimg { max-width: 100%; height: auto; display: block; margin: 1em auto; }\n.imageblock { text-align: center; margin: 1.5em 0; }\n.imageblock img { display: block; margin: 0 auto; max-width: 100%; height: auto; }\n.content img, .sect1 img, .sect2 img, .sect3 img { max-width: 100%; height: auto; }\n</style>\n++++\n\n`;
+  }
+  
   // Add book metadata section for top-level 30040 events
+  // Include metadata for EPUB as well (not just HTML/AsciiDoc) to ensure TOC and metadata work
   if (isTopLevel && indexEvent.kind === 30040) {
     const metadataFields: Array<{ label: string; value: string }> = [];
     
@@ -948,9 +1010,9 @@ export async function combineBookEvents(
       doc += '\n';
       doc += `[.book-metadata]\n== ${displayTitle}\n\n`;
       
-      // Add cover image for HTML/AsciiDoc exports (in metadata section)
-      // For PDF/EPUB, the cover image is handled via :front-cover-image: attribute
-      if ((exportFormat === 'html' || exportFormat === 'asciidoc' || !exportFormat) && image) {
+      // Add cover image for HTML/AsciiDoc/EPUB exports (in metadata section)
+      // For PDF, the cover image is handled via :front-cover-image: attribute
+      if ((exportFormat === 'html' || exportFormat === 'asciidoc' || exportFormat === 'epub' || !exportFormat) && image) {
         doc += `image::${image}[Cover Image]\n\n`;
       }
       
@@ -965,9 +1027,17 @@ export async function combineBookEvents(
   }
   
   // Add each content event as a section (chapters)
-  for (const event of contentEvents) {
+  for (let i = 0; i < contentEvents.length; i++) {
+    const event = contentEvents[i];
     const sectionTitle = event.tags.find(([k]) => k === 'title')?.[1];
+    
+    console.log(`[Book Export] Processing chapter ${i + 1}/${contentEvents.length}: ${sectionTitle || 'Untitled'}`);
+    
     if (sectionTitle) {
+      // For PDF, add page break before each chapter (except the first one)
+      if (exportFormat === 'pdf' && i > 0) {
+        doc += `[page-break]\n`;
+      }
       doc += `== ${sectionTitle}\n\n`;
     }
     
@@ -976,8 +1046,32 @@ export async function combineBookEvents(
       eventContent = convertMarkdownToAsciiDoc(eventContent);
     }
     
-    doc += eventContent;
-    doc += `\n\n`;
+    // Log content length for debugging
+    const contentLength = eventContent.length;
+    console.log(`[Book Export] Chapter ${i + 1} content length: ${contentLength} characters`);
+    
+    if (!eventContent || eventContent.trim().length === 0) {
+      console.warn(`[Book Export] Warning: Chapter ${i + 1} (${sectionTitle || 'Untitled'}) has empty content`);
+      doc += `_This chapter has no content._\n\n`;
+    } else {
+      doc += eventContent;
+      doc += `\n\n`;
+    }
+  }
+  
+  console.log(`[Book Export] Combined document length: ${doc.length} characters`);
+  console.log(`[Book Export] Total chapters processed: ${contentEvents.length}`);
+  
+  // Verify all chapters were included by checking the document
+  const chapterHeaders = doc.match(/^== /gm) || [];
+  const chapterCount = chapterHeaders.length;
+  console.log(`[Book Export] Chapter headers found in document: ${chapterCount}`);
+  
+  if (chapterCount < contentEvents.length) {
+    console.error(`[Book Export] ERROR: Document has fewer chapter headers (${chapterCount}) than content events (${contentEvents.length}). Some chapters may be missing!`);
+    console.error(`[Book Export] Missing chapters: ${contentEvents.length - chapterCount}`);
+  } else if (chapterCount > contentEvents.length) {
+    console.warn(`[Book Export] WARNING: Document has more chapter headers (${chapterCount}) than content events (${contentEvents.length}). This may include metadata sections.`);
   }
   
   return doc;
@@ -1129,7 +1223,8 @@ export async function getPDFBlob(
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(40, 'Generating PDF file...');
-  const blob = await exportToPDF({ content, title, author }, abortSignal);
+  // Pass onProgress to exportToPDF for granular progress updates during PDF generation
+  const blob = await exportToPDF({ content, title, author }, abortSignal, onProgress);
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   if (!blob || blob.size === 0) {
@@ -1245,6 +1340,11 @@ export async function downloadBookAsAsciiDoc(
 ): Promise<void> {
   onProgress?.(5, 'Fetching book content...');
   const contentEvents = await fetchBookContentEvents(indexEvent);
+  console.log(`[Book Export] Fetched ${contentEvents.length} content events for book`);
+  
+  // Count and log top-level sections
+  const { total, found } = countTopLevelSections(indexEvent, contentEvents);
+  console.log(`[Book Export] ${found} of ${total} top-level sections published.`);
   
   onProgress?.(25, 'Combining chapters...');
   let combined = await combineBookEvents(indexEvent, contentEvents, true, 'asciidoc');
@@ -1276,6 +1376,11 @@ export async function downloadBookAsEPUB(
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(5, 'Fetching book content...');
   const contentEvents = await fetchBookContentEvents(indexEvent);
+  console.log(`[Book Export] Fetched ${contentEvents.length} content events for book`);
+  
+  // Count and log top-level sections
+  const { total, found } = countTopLevelSections(indexEvent, contentEvents);
+  console.log(`[Book Export] ${found} of ${total} top-level sections published.`);
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(25, 'Combining chapters...');

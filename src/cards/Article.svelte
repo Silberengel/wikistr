@@ -231,12 +231,15 @@
 
   // Helper function to cancel download
   function cancelDownload() {
-    if (downloadAbortController) {
+    if (downloadAbortController && !downloadAbortController.signal.aborted) {
       downloadAbortController.abort();
       downloadStatus = 'Cancelling...';
+      // Immediately update UI to show cancellation in progress
+      // The download promise will handle final state updates
+    } else if (downloadState === 'error' || downloadState === 'success') {
+      // If already in error or success state, just close the modal
+      closeDownloadModal();
     }
-    // The download promise will handle setting isDownloading = false
-    // and updating the state when it catches the AbortError
   }
 
   // Helper function to retry download

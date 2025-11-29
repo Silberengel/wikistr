@@ -657,8 +657,12 @@ export async function exportToEPUB(
   onProgress?.(45, 'Sending request to server...');
   let response: Response;
   
-  // Create a timeout controller (5 minutes for large EPUBs)
-  const timeoutMs = 5 * 60 * 1000; // 5 minutes
+  // Create a timeout controller - longer timeout for large EPUBs
+  // Base timeout: 10 minutes, add 1 minute per 100KB of content (minimum 10 minutes)
+  const contentSizeKB = options.content.length / 1024;
+  const timeoutMs = Math.max(10 * 60 * 1000, 10 * 60 * 1000 + Math.ceil(contentSizeKB / 100) * 60 * 1000);
+  console.log('[EPUB Export] Content size:', Math.round(contentSizeKB), 'KB, timeout:', Math.round(timeoutMs / 1000), 'seconds');
+  
   const timeoutController = new AbortController();
   let timeoutId: NodeJS.Timeout | null = null;
   
@@ -708,7 +712,8 @@ export async function exportToEPUB(
     }
     if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) {
       if (timeoutController.signal.aborted) {
-        throw new Error('EPUB generation timed out after 5 minutes. The server took too long to respond. Please try again or check server logs.');
+        const timeoutMinutes = Math.round(timeoutMs / 60000);
+        throw new Error(`EPUB generation timed out after ${timeoutMinutes} minutes. The server took too long to respond. Please try again or check server logs.`);
       }
       if (abortSignal?.aborted) {
         throw new Error('Download cancelled');
@@ -759,6 +764,36 @@ export async function exportToEPUB(
         const text = await response.text();
         console.log('[EPUB Export] Error response text (first 500 chars):', text.substring(0, 500));
         
+        // Check for fatal server error: "Could not locate Gemfile or .bundle/ directory"
+        if (text.includes('Could not locate Gemfile') || text.includes('.bundle/ directory')) {
+          const fatalError = 'FATAL: AsciiDoctor server is in a broken state and needs to be restarted.\n\n' +
+            'The server is repeatedly reporting "Could not locate Gemfile or .bundle/ directory" errors.\n\n' +
+            'Please restart the AsciiDoctor server container:\n' +
+            '  docker restart asciidoctor\n\n' +
+            'Or if using docker-compose:\n' +
+            '  docker-compose restart asciidoctor';
+          console.error('[EPUB Export]', fatalError);
+          throw new Error(fatalError);
+        }
+        
+        // Check for revdate parsing error (caused by CSS block placement issue)
+        if (text.includes('failed to parse revdate') || text.includes('no time information')) {
+          const errorMsg = 'AsciiDoc parsing error: revdate attribute parsing failed. This may be caused by document structure issues.\n\n' +
+            'The server reported: "failed to parse revdate: no time information".\n\n' +
+            'This error has been logged for debugging.';
+          console.error('[EPUB Export]', errorMsg);
+          console.error('[EPUB Export] Server error text:', text.substring(0, 1000));
+        }
+        
+        // Check for stylesheet file not found error
+        if (text.includes('epub3.css') || text.includes('epub-classic.css') || (text.includes('No such file or directory') && text.includes('.css'))) {
+          const errorMsg = 'Stylesheet file not found on server. The server tried to load a CSS file that doesn\'t exist.\n\n' +
+            'This is a non-fatal error - the server should retry without the custom stylesheet.\n\n' +
+            'If EPUB generation fails, check server logs for details.';
+          console.warn('[EPUB Export]', errorMsg);
+          console.warn('[EPUB Export] Server error text:', text.substring(0, 1000));
+        }
+        
         if (text) {
           // Try to parse as JSON in case content-type is wrong
           try {
@@ -780,6 +815,10 @@ export async function exportToEPUB(
         }
       }
     } catch (err) {
+      // Re-throw fatal errors
+      if (err instanceof Error && err.message.includes('FATAL:')) {
+        throw err;
+      }
       console.error('[EPUB Export] Failed to read error response:', err);
       // Use default error message
     }
@@ -838,17 +877,35 @@ export async function exportToEPUB(
   
   // For large files, optimize the download process
   // Read as blob (binary) - this is necessary for validation
-  // Add timeout for blob reading (should be fast, but protect against hanging)
+  // Add timeout for blob reading - longer for large files (2 minutes per MB, minimum 2 minutes)
+  const estimatedSizeMB = contentSizeKB / 1024;
+  const blobReadTimeoutMs = Math.max(2 * 60 * 1000, Math.ceil(estimatedSizeMB) * 2 * 60 * 1000);
+  console.log('[EPUB Export] Estimated size:', Math.round(estimatedSizeMB * 100) / 100, 'MB, blob read timeout:', Math.round(blobReadTimeoutMs / 1000), 'seconds');
+  
   const blobReadTimeout = setTimeout(() => {
-    console.error('[EPUB Export] Blob read timeout - server may not have sent the file');
-  }, 60000); // 1 minute timeout for reading blob
+    console.error('[EPUB Export] Blob read timeout after', blobReadTimeoutMs, 'ms - server may not have sent the file');
+  }, blobReadTimeoutMs);
   
   let blob: Blob;
   try {
+    // Check for abort before reading blob
+    if (abortSignal?.aborted || combinedController.signal.aborted) {
+      clearTimeout(blobReadTimeout);
+      throw new Error('Download cancelled');
+    }
+    
     blob = await response.blob();
     clearTimeout(blobReadTimeout);
+    
+    // Check for abort after reading blob
+    if (abortSignal?.aborted || combinedController.signal.aborted) {
+      throw new Error('Download cancelled');
+    }
   } catch (err) {
     clearTimeout(blobReadTimeout);
+    if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted') || err.message.includes('cancelled'))) {
+      throw new Error('Download cancelled');
+    }
     const errorMessage = err instanceof Error ? err.message : 'Unknown error';
     console.error('[EPUB Export] Error reading blob:', errorMessage);
     throw new Error(`Failed to read EPUB file from server: ${errorMessage}`);
@@ -877,6 +934,36 @@ export async function exportToEPUB(
       : await blob.text();
     
     console.log('[EPUB Export] Attempting to parse error response from blob (first 500 chars):', text.substring(0, 500));
+    
+    // Check for fatal server error: "Could not locate Gemfile or .bundle/ directory"
+    if (text.includes('Could not locate Gemfile') || text.includes('.bundle/ directory')) {
+      const fatalError = 'FATAL: AsciiDoctor server is in a broken state and needs to be restarted.\n\n' +
+        'The server is repeatedly reporting "Could not locate Gemfile or .bundle/ directory" errors.\n\n' +
+        'Please restart the AsciiDoctor server container:\n' +
+        '  docker restart asciidoctor\n\n' +
+        'Or if using docker-compose:\n' +
+        '  docker-compose restart asciidoctor';
+      console.error('[EPUB Export]', fatalError);
+      throw new Error(fatalError);
+    }
+    
+    // Check for revdate parsing error (caused by CSS block placement issue)
+    if (text.includes('failed to parse revdate') || text.includes('no time information')) {
+      const errorMsg = 'AsciiDoc parsing error: revdate attribute parsing failed. This may be caused by document structure issues.\n\n' +
+        'The server reported: "failed to parse revdate: no time information".\n\n' +
+        'This error has been logged for debugging.';
+      console.error('[EPUB Export]', errorMsg);
+      console.error('[EPUB Export] Server error text:', text.substring(0, 1000));
+    }
+    
+    // Check for stylesheet file not found error
+    if (text.includes('epub3.css') || text.includes('epub-classic.css') || text.includes('No such file or directory') && text.includes('.css')) {
+      const errorMsg = 'Stylesheet file not found on server. The server tried to load a CSS file that doesn\'t exist.\n\n' +
+        'This is a non-fatal error - the server should retry without the custom stylesheet.\n\n' +
+        'If EPUB generation fails, check server logs for details.';
+      console.warn('[EPUB Export]', errorMsg);
+      console.warn('[EPUB Export] Server error text:', text.substring(0, 1000));
+    }
     
     try {
       const error = JSON.parse(text);
@@ -1032,7 +1119,11 @@ export async function openInViewer(
 /**
  * Convert AsciiDoc content to PDF
  */
-export async function exportToPDF(options: ExportOptions, abortSignal?: AbortSignal): Promise<Blob> {
+export async function exportToPDF(
+  options: ExportOptions,
+  abortSignal?: AbortSignal,
+  onProgress?: (progress: number, status: string) => void
+): Promise<Blob> {
   const baseUrl = ASCIIDOCTOR_SERVER_URL.endsWith('/') ? ASCIIDOCTOR_SERVER_URL : `${ASCIIDOCTOR_SERVER_URL}/`;
   const url = `${baseUrl}convert/pdf`;
   
@@ -1045,9 +1136,39 @@ export async function exportToPDF(options: ExportOptions, abortSignal?: AbortSig
   console.log('[PDF Export] Content length:', options.content.length);
   console.log('[PDF Export] Title:', options.title);
   
+  onProgress?.(45, 'Sending request to server...');
   let response: Response;
+  
+  // Create a timeout controller - longer timeout for large PDFs
+  // Base timeout: 10 minutes, add 1 minute per 100KB of content (minimum 10 minutes)
+  const contentSizeKB = options.content.length / 1024;
+  const timeoutMs = Math.max(10 * 60 * 1000, 10 * 60 * 1000 + Math.ceil(contentSizeKB / 100) * 60 * 1000);
+  console.log('[PDF Export] Content size:', Math.round(contentSizeKB), 'KB, timeout:', Math.round(timeoutMs / 1000), 'seconds');
+  
+  const timeoutController = new AbortController();
+  let timeoutId: NodeJS.Timeout | null = null;
+  
+  // Set up timeout
+  timeoutId = setTimeout(() => {
+    console.error('[PDF Export] Request timeout after', timeoutMs, 'ms - aborting fetch');
+    timeoutController.abort();
+  }, timeoutMs);
+  
+  // Combine abort signals: if user cancels OR timeout occurs, abort the fetch
+  const combinedController = new AbortController();
+  if (abortSignal) {
+    abortSignal.addEventListener('abort', () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      combinedController.abort();
+    });
+  }
+  timeoutController.signal.addEventListener('abort', () => {
+    combinedController.abort();
+  });
+  
   try {
-    response = await fetch(url, {
+    console.log('[PDF Export] Starting fetch request...');
+    const fetchPromise = fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1057,25 +1178,52 @@ export async function exportToPDF(options: ExportOptions, abortSignal?: AbortSig
         title: options.title,
         author: options.author || '',
       }),
-      signal: abortSignal,
+      signal: combinedController.signal,
     });
+    
+    response = await fetchPromise;
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+    console.log('[PDF Export] Fetch completed, status:', response.status, response.statusText);
   } catch (err) {
-    if (err instanceof Error && err.name === 'AbortError') {
-      throw new Error('Download cancelled');
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+    if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) {
+      if (timeoutController.signal.aborted) {
+        const timeoutMinutes = Math.round(timeoutMs / 60000);
+        throw new Error(`PDF generation timed out after ${timeoutMinutes} minutes. The server took too long to respond. Please try again or check server logs.`);
+      }
+      if (abortSignal?.aborted) {
+        throw new Error('Download cancelled');
+      }
+      throw new Error('Request was aborted');
     }
     const errorMessage = err instanceof Error ? err.message : 'Network error';
     console.error('[PDF Export] Network error:', errorMessage);
     throw new Error(`Failed to connect to PDF conversion server: ${errorMessage}. Make sure the AsciiDoctor server is running.`);
   }
 
+  onProgress?.(60, 'Waiting for server response...');
+  console.log('[PDF Export] Response received, checking status...');
+
   if (!response.ok) {
+    console.error('[PDF Export] Server returned error status:', response.status, response.statusText);
+    
     let errorMessage = `PDF conversion failed: ${response.status} ${response.statusText}`;
     let errorDetails: any = null;
     
     try {
       const contentType = response.headers.get('content-type') || '';
+      console.log('[PDF Export] Error response content-type:', contentType);
+      
       if (contentType.includes('application/json')) {
         errorDetails = await response.json();
+        console.error('[PDF Export] Server error (JSON):', errorDetails);
+        
         errorMessage = errorDetails.error || errorDetails.message || errorMessage;
         if (errorDetails.hint) {
           errorMessage += `\n\nHint: ${errorDetails.hint}`;
@@ -1084,25 +1232,52 @@ export async function exportToPDF(options: ExportOptions, abortSignal?: AbortSig
           errorMessage += `\n\nError detected at line ${errorDetails.line}`;
         }
       } else {
+        // Try to read as text even if not JSON
         const text = await response.text();
+        console.log('[PDF Export] Error response text (first 500 chars):', text.substring(0, 500));
+        
+        // Check for fatal server error: "Could not locate Gemfile or .bundle/ directory"
+        if (text.includes('Could not locate Gemfile') || text.includes('.bundle/ directory')) {
+          const fatalError = 'FATAL: AsciiDoctor server is in a broken state and needs to be restarted.\n\n' +
+            'The server is repeatedly reporting "Could not locate Gemfile or .bundle/ directory" errors.\n\n' +
+            'Please restart the AsciiDoctor server container:\n' +
+            '  docker restart asciidoctor\n\n' +
+            'Or if using docker-compose:\n' +
+            '  docker-compose restart asciidoctor';
+          console.error('[PDF Export]', fatalError);
+          throw new Error(fatalError);
+        }
+        
         if (text) {
+          // Try to parse as JSON in case content-type is wrong
           try {
             errorDetails = JSON.parse(text);
+            console.error('[PDF Export] Server error (parsed as JSON):', errorDetails);
+            
             errorMessage = errorDetails.error || errorDetails.message || errorMessage;
             if (errorDetails.hint) {
               errorMessage += `\n\nHint: ${errorDetails.hint}`;
             }
+            if (errorDetails.line) {
+              errorMessage += `\n\nError detected at line ${errorDetails.line}`;
+            }
           } catch {
-            const preview = text.length > 200 ? text.substring(0, 200) + '...' : text;
-            errorMessage = `${errorMessage}\n\nServer response: ${preview}`;
+            // Not JSON, use text as error message (limit length)
+            const preview = text.length > 500 ? text.substring(0, 500) + '...' : text;
+            errorMessage = `${errorMessage}\n\nServer response:\n${preview}`;
           }
         }
       }
     } catch (err) {
+      // Re-throw fatal errors
+      if (err instanceof Error && err.message.includes('FATAL:')) {
+        throw err;
+      }
       console.error('[PDF Export] Failed to read error response:', err);
+      // Use default error message
     }
     
-    console.error('[PDF Export] Conversion failed:', {
+    console.error('[PDF Export] Conversion error summary:', {
       status: response.status,
       statusText: response.statusText,
       url,
@@ -1110,34 +1285,103 @@ export async function exportToPDF(options: ExportOptions, abortSignal?: AbortSig
       errorDetails
     });
     
+    // Log the full error details to console for debugging
+    if (errorDetails) {
+      console.error('[PDF Export] Full error details:', JSON.stringify(errorDetails, null, 2));
+    }
+    
     throw new Error(errorMessage);
   }
 
   // Verify we got a PDF response
   const contentType = response.headers.get('content-type') || '';
+  console.log('[PDF Export] Response content-type:', contentType);
+  
   if (!contentType.includes('application/pdf')) {
+    console.warn('[PDF Export] Unexpected content type, reading response as text...');
     const text = await response.text();
+    console.log('[PDF Export] Response text preview (first 500 chars):', text.substring(0, 500));
+    
+    // Check for fatal server error: "Could not locate Gemfile or .bundle/ directory"
+    if (text.includes('Could not locate Gemfile') || text.includes('.bundle/ directory')) {
+      const fatalError = 'FATAL: AsciiDoctor server is in a broken state and needs to be restarted.\n\n' +
+        'The server is repeatedly reporting "Could not locate Gemfile or .bundle/ directory" errors.\n\n' +
+        'Please restart the AsciiDoctor server container:\n' +
+        '  docker restart asciidoctor\n\n' +
+        'Or if using docker-compose:\n' +
+        '  docker-compose restart asciidoctor';
+      console.error('[PDF Export]', fatalError);
+      throw new Error(fatalError);
+    }
+    
     if (text.includes('__sveltekit') || text.includes('sveltekit-preload-data')) {
-      throw new Error('Server returned SvelteKit app shell instead of PDF. Check AsciiDoctor server is running at /asciidoctor/ and proxy is configured correctly.');
+      const errorMsg = 'Server returned SvelteKit app shell instead of PDF. Check AsciiDoctor server is running at /asciidoctor/ and proxy is configured correctly.';
+      console.error('[PDF Export]', errorMsg);
+      throw new Error(errorMsg);
     }
     if (text.trim().startsWith('{')) {
       try {
         const error = JSON.parse(text);
-        throw new Error(error.error || error.message || 'Server returned error instead of PDF');
-      } catch {
+        const errorMsg = error.error || error.message || 'Server returned error instead of PDF';
+        console.error('[PDF Export] Server error response:', error);
+        throw new Error(errorMsg);
+      } catch (parseErr) {
         // Not valid JSON, continue with generic error
+        console.error('[PDF Export] Failed to parse error response as JSON:', parseErr);
       }
     }
-    throw new Error(`Server returned unexpected content type: ${contentType}. Response preview: ${text.substring(0, 200)}`);
+    const errorMsg = `Server returned unexpected content type: ${contentType}. Response preview: ${text.substring(0, 200)}`;
+    console.error('[PDF Export]', errorMsg);
+    throw new Error(errorMsg);
   }
 
-  const blob = await response.blob();
+  onProgress?.(75, 'Receiving PDF file from server...');
+  console.log('[PDF Export] Starting to read response as blob...');
+  
+  // For large files, optimize the download process
+  // Read as blob (binary) - this is necessary for validation
+  // Add timeout for blob reading - longer for large files (2 minutes per MB, minimum 2 minutes)
+  const estimatedSizeMB = contentSizeKB / 1024;
+  const blobReadTimeoutMs = Math.max(2 * 60 * 1000, Math.ceil(estimatedSizeMB) * 2 * 60 * 1000);
+  console.log('[PDF Export] Estimated size:', Math.round(estimatedSizeMB * 100) / 100, 'MB, blob read timeout:', Math.round(blobReadTimeoutMs / 1000), 'seconds');
+  
+  const blobReadTimeout = setTimeout(() => {
+    console.error('[PDF Export] Blob read timeout after', blobReadTimeoutMs, 'ms - server may not have sent the file');
+  }, blobReadTimeoutMs);
+  
+  let blob: Blob;
+  try {
+    // Check for abort before reading blob
+    if (abortSignal?.aborted || combinedController.signal.aborted) {
+      clearTimeout(blobReadTimeout);
+      throw new Error('Download cancelled');
+    }
+    
+    blob = await response.blob();
+    clearTimeout(blobReadTimeout);
+    
+    // Check for abort after reading blob
+    if (abortSignal?.aborted || combinedController.signal.aborted) {
+      throw new Error('Download cancelled');
+    }
+  } catch (err) {
+    clearTimeout(blobReadTimeout);
+    if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted') || err.message.includes('cancelled'))) {
+      throw new Error('Download cancelled');
+    }
+    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[PDF Export] Error reading blob:', errorMessage);
+    throw new Error(`Failed to read PDF file from server: ${errorMessage}`);
+  }
   
   if (!blob || blob.size === 0) {
+    console.error('[PDF Export] Server returned empty blob');
     throw new Error('Server returned empty PDF file');
   }
   
-  console.log('[PDF Export] Successfully generated PDF file');
+  console.log('[PDF Export] Received blob:', blob.size, 'bytes');
+  onProgress?.(95, 'PDF file ready');
+  console.log('[PDF Export] Successfully generated PDF file, ready for download');
   return blob;
 }
 
