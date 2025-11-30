@@ -75,10 +75,9 @@ export function convertMarkdownToAsciiDoc(
       if (convertLevel1ToLevel2 && underlineLevel === 1) {
         // Convert level 1 to level 2 for panel rendering (level 1 is document title in AsciiDoc)
         asciiDocLevel = 2;
-      } else if (convertLevel1ToLevel2 && underlineLevel === 2) {
-        // Shift level 2 to level 3 to maintain hierarchy
-        asciiDocLevel = 3;
       }
+      // Note: level 2 headers stay as level 2 even when convertLevel1ToLevel2 is true
+      // to maintain proper hierarchy (h1->h2, h2->h2, not h2->h3)
       const equals = '='.repeat(asciiDocLevel);
       processedHeaderLines.push(`${equals} ${trimmedLine}`);
       // Skip the underline line
@@ -93,7 +92,11 @@ export function convertMarkdownToAsciiDoc(
   // Convert ATX-style headers: # Title -> = Title, ## Section -> == Section, etc.
   if (convertATXHeaders) {
     converted = converted.replace(/^(#{1,6})\s+(.+)$/gm, (match, hashes, text) => {
-      const level = hashes.length;
+      let level = hashes.length;
+      // Apply convertLevel1ToLevel2 option: shift level 1 to level 2
+      if (convertLevel1ToLevel2 && level === 1) {
+        level = 2;
+      }
       const equals = '='.repeat(level);
       return `${equals} ${text}`;
     });
