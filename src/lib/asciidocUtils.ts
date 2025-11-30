@@ -246,8 +246,8 @@ export function buildArticleMetadataSection(
   }
   
   let doc = '\n';
-  doc += '[.article-metadata]\n';
-  doc += `== Article Information\n\n`;
+  
+  doc += '[.article-metadata]\n== Article Information\n\n';
   
   // Display the title in a classic title style within the section
   const cleanTitle = displayTitle.replace(/\n/g, ' ').trim();
@@ -311,7 +311,8 @@ export function buildBookMetadataSection(
   }
   
   let doc = '\n';
-  doc += `[.book-metadata]\n== Book Information\n\n`;
+  
+  doc += '[.book-metadata]\n== Book Information\n\n';
   
   // Display the title in a classic title style within the section
   const cleanTitle = title.replace(/\n/g, ' ').trim();
