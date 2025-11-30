@@ -306,9 +306,15 @@ export function buildArticleMetadataSection(
     doc += `[.book-title]\n${cleanTitle}\n\n`;
   }
   
-  // Only show image for HTML/AsciiDoc (EPUB/PDF have cover pages)
-  if ((exportFormat === 'html' || exportFormat === 'asciidoc' || !exportFormat) && image) {
-    doc += `image::${image}[Cover Image]\n\n`;
+  // Show image for all formats (limit size to 500px for metadata images)
+  if (image) {
+    if (exportFormat === 'epub' || exportFormat === 'pdf') {
+      // For EPUB/PDF, still show image in metadata but limit size
+      doc += `image::${image}[Cover Image,maxwidth=500px]\n\n`;
+    } else {
+      // For HTML/AsciiDoc, limit size to 500px
+      doc += `image::${image}[Cover Image,maxwidth=500px]\n\n`;
+    }
   }
   
   for (const field of metadataFields) {
@@ -382,13 +388,10 @@ export function buildBookMetadataSection(
     doc += `[.book-title]\n${cleanTitle}\n\n`;
   }
   
-  // Only show image for HTML/AsciiDoc (EPUB/PDF have cover pages)
-  const showImage = (options.exportFormat === 'html' || 
-                     options.exportFormat === 'asciidoc' || 
-                     !options.exportFormat);
-  
-  if (showImage && options.image) {
-    doc += `image::${options.image}[Cover Image]\n\n`;
+  // Show image for all formats (limit size to 500px for metadata images)
+  if (options.image) {
+    // For all formats, show image in metadata but limit size to 500px
+    doc += `image::${options.image}[Cover Image,maxwidth=500px]\n\n`;
   }
   
   for (const field of metadataFields) {

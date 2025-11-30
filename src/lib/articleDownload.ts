@@ -79,6 +79,57 @@ function convertMarkdownToAsciiDoc(content: string): string {
 }
 
 /**
+ * Limit image sizes in AsciiDoc content to 500px max (except cover images)
+ */
+function limitImageSizes(content: string): string {
+  if (!content) return content;
+  
+  // Process image:: directives (block images)
+  // Match: image::url[alt] or image::url[alt,attributes]
+  content = content.replace(/image::([^\[]+)\[([^\]]*)\]/g, (match, url, altAndAttrs) => {
+    // Skip if this is a cover image (has "cover" in alt or attributes)
+    if (altAndAttrs.toLowerCase().includes('cover')) {
+      return match;
+    }
+    
+    // Check if maxwidth or width is already specified
+    if (altAndAttrs.includes('maxwidth=') || altAndAttrs.includes('width=')) {
+      return match;
+    }
+    
+    // Add maxwidth=500px to the attributes
+    const parts = altAndAttrs.split(',');
+    const alt = parts[0] || '';
+    const attrs = parts.slice(1).join(',');
+    const newAttrs = attrs ? `${attrs},maxwidth=500px` : 'maxwidth=500px';
+    return `image::${url}[${alt},${newAttrs}]`;
+  });
+  
+  // Process image: directives (inline images)
+  // Match: image:url[alt] or image:url[alt,attributes]
+  content = content.replace(/image:([^\[]+)\[([^\]]*)\]/g, (match, url, altAndAttrs) => {
+    // Skip if this is a cover image
+    if (altAndAttrs.toLowerCase().includes('cover')) {
+      return match;
+    }
+    
+    // Check if maxwidth or width is already specified
+    if (altAndAttrs.includes('maxwidth=') || altAndAttrs.includes('width=')) {
+      return match;
+    }
+    
+    // Add maxwidth=500px to the attributes
+    const parts = altAndAttrs.split(',');
+    const alt = parts[0] || '';
+    const attrs = parts.slice(1).join(',');
+    const newAttrs = attrs ? `${attrs},maxwidth=500px` : 'maxwidth=500px';
+    return `image:${url}[${alt},${newAttrs}]`;
+  });
+  
+  return content;
+}
+
+/**
  * Process wikilinks in content
  */
 function processWikilinks(content: string, isAsciiDoc: boolean, exportFormat?: 'html' | 'epub' | 'asciidoc' | 'pdf'): string {
@@ -333,6 +384,9 @@ export async function prepareAsciiDocContent(
   if (isMarkdownEvent || (hasMarkdownContent && !isAsciiDoc(content))) {
     content = convertMarkdownToAsciiDoc(event.content);
   }
+  
+  // Limit image sizes to 500px max (except cover images)
+  content = limitImageSizes(content);
   
   if (includeMetadata) {
     // Check if content already starts with a title
@@ -839,6 +893,9 @@ export async function combineBookEvents(
     if (event.kind === 30023 || event.kind === 30817) {
       eventContent = convertMarkdownToAsciiDoc(eventContent);
     }
+    
+    // Limit image sizes to 500px max (except cover images)
+    eventContent = limitImageSizes(eventContent);
     
     // Log content length for debugging
     const contentLength = eventContent.length;
