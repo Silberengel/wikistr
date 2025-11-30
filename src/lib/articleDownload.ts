@@ -2,10 +2,12 @@
  * Article Download Utilities
  * Handles conversion, metadata addition, and export of articles and books
  * Content quality control runs AFTER all conversions and metadata additions
+ * Refactored to use shared utilities for reduced redundancy
  */
 
 import type { NostrEvent } from '@nostr/tools/pure';
 import { nip19 } from '@nostr/tools';
+import { neventEncode } from '@nostr/tools/nip19';
 import { relayService } from '$lib/relayService';
 import { exportToEPUB, exportToHTML5, exportToPDF, downloadBlob } from './asciidoctorExport';
 import {
@@ -13,57 +15,17 @@ import {
   getTitleFromEvent,
   formatBookWikilinkDisplayTextForGUI
 } from './contentQualityControl';
-
-/**
- * Format date for PDF title page
- * For years < 1000: Format as "original date ca. [rounded year] AD/BC" (rounded to nearest 50)
- * For years >= 1000: Just return the year (assumed AD, more precise)
- */
-function formatDateForTitlePage(year: number): string {
-  if (year < 1000) {
-    // Round to nearest 50 years
-    const rounded = Math.round(year / 50) * 50;
-    
-    // Determine AD/BC
-    if (rounded < 0) {
-      // BC: remove negative sign, no leading zeros
-      const bcYear = Math.abs(rounded);
-      return `original date ca. ${bcYear} BC`;
-    } else if (rounded === 0) {
-      return 'original date ca. 1 AD';
-    } else {
-      // AD: no leading zeros
-      return `original date ca. ${rounded} AD`;
-    }
-  } else {
-    // Year >= 1000: just return the year (assumed AD)
-    return String(year);
-  }
-}
-
-/**
- * Format publishedOn date string for title page
- * Extracts year from publishedOn (handles yyyy-mm-dd, yyyy, or other formats)
- * and formats it using formatDateForTitlePage
- */
-function formatPublishedOnForTitlePage(publishedOn: string | undefined, fallbackYear?: number): string | undefined {
-  if (!publishedOn) {
-    if (fallbackYear !== undefined) {
-      return formatDateForTitlePage(fallbackYear);
-    }
-    return undefined;
-  }
-  
-  // Try to extract year from various formats (yyyy-mm-dd, yyyy, etc.)
-  const yearMatch = publishedOn.match(/(\d{4})/);
-  if (yearMatch) {
-    const year = parseInt(yearMatch[1], 10);
-    return formatDateForTitlePage(year);
-  }
-  
-  // If we can't parse a year, return undefined (caller should use fallback)
-  return undefined;
-}
+import {
+  formatDateForTitlePage,
+  formatPublishedOnForTitlePage,
+  getTitleFromEventTags as getTitleFromEventTagsUtil,
+  getRevdateValue,
+  buildBaseAsciiDocAttributes,
+  buildArticleMetadataSection,
+  buildBookMetadataSection,
+  addAbstractSection,
+  dTagToTitleCase
+} from './asciidocUtils';
 
 /**
  * Detect if content is AsciiDoc format
@@ -322,39 +284,8 @@ async function getAuthorName(event: NostrEvent): Promise<string> {
   return `npub1${event.pubkey.slice(0, 8)}...`;
 }
 
-/**
- * Convert d-tag to title case
- * Example: "bitcoin-is-time" -> "Bitcoin Is Time"
- */
-function dTagToTitleCase(dTag: string): string {
-  if (!dTag || dTag.trim().length === 0) return '';
-  
-  return dTag
-    .split(/[-_\s]+/)
-    .map(word => {
-      if (word.length === 0) return word;
-      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-    })
-    .join(' ');
-}
-
-/**
- * Get title from event, with fallback to d-tag in title case
- */
-function getTitleFromEventTags(event: NostrEvent): string {
-  const titleTag = event.tags.find(([k]) => k === 'title')?.[1];
-  if (titleTag) return titleTag;
-  
-  const tTag = event.tags.find(([k]) => k === 'T')?.[1];
-  if (tTag) return tTag;
-  
-  // Fallback to d-tag in title case
-  const dTag = event.tags.find(([k]) => k === 'd')?.[1];
-  if (dTag) return dTagToTitleCase(dTag);
-  
-  // Final fallback to first 8 chars of ID (should rarely happen)
-  return event.id.slice(0, 8);
-}
+// Use shared utility for title extraction
+const getTitleFromEventTags = getTitleFromEventTagsUtil;
 
 /**
  * Get user handle (for Nostr address processing)
@@ -381,6 +312,7 @@ async function getUserHandle(pubkey: string): Promise<string> {
 
 /**
  * Build AsciiDoc document with metadata header
+ * Refactored to use shared utilities for metadata building
  */
 async function buildAsciiDocWithMetadata(
   event: NostrEvent,
@@ -395,146 +327,39 @@ async function buildAsciiDocWithMetadata(
   const summary = event.tags.find(([k]) => k === 'summary')?.[1];
   const image = providedImage || event.tags.find(([k]) => k === 'image')?.[1];
   const version = event.tags.find(([k]) => k === 'version')?.[1];
-  const source = event.tags.find(([k]) => k === 'source')?.[1];
+  let source = event.tags.find(([k]) => k === 'source')?.[1];
+  
+  // If source is empty, default to nevent of the event
+  if (!source) {
+    try {
+      source = neventEncode({
+        id: event.id
+      });
+    } catch (e) {
+      console.warn('[Article Export] Failed to generate nevent for source:', e);
+    }
+  }
+  
   const publishedOn = event.tags.find(([k]) => k === 'published_on')?.[1];
   const topicTags = event.tags.filter(([k]) => k === 't').map(([, v]) => v);
   
-  // Build AsciiDoc document with metadata
-  let doc = `= ${displayTitle}\n`;
-  doc += `:author: ${author}\n`;
-  doc += `:toc:\n`;
-  doc += `:stem:\n`;
-  doc += `:page-break-mode: auto\n`;
+  // Build base AsciiDoc attributes using shared utility
+  let doc = buildBaseAsciiDocAttributes(displayTitle, author, {
+    version,
+    publishedOn,
+    source,
+    topicTags,
+    summary: summary && description ? summary : undefined,
+    image,
+    exportFormat,
+    event
+  });
   
-  // Note: We don't set :stylesheet: to avoid server errors if the file doesn't exist
-  // Image styling will be handled via inline CSS in the document body instead
+  // Add abstract section using shared utility
+  doc += addAbstractSection(description, summary);
   
-  // For PDF/EPUB, always set revnumber and revdate to prevent title page layout issues
-  // These are critical for PDF title page layout - missing values cause content to shift
-  if (exportFormat === 'pdf' || exportFormat === 'epub') {
-    const versionValue = version || 'first edition';
-    doc += `:version: ${versionValue}\n`;
-    doc += `:revnumber: ${versionValue}\n`; // Title page uses revnumber (required for layout)
-    
-    // Use publishedOn if available, otherwise use created_at year, or current year
-    let revdateValue: string;
-    if (event.created_at) {
-      const createdYear = new Date(event.created_at * 1000).getFullYear();
-      revdateValue = formatPublishedOnForTitlePage(publishedOn, createdYear) || formatDateForTitlePage(createdYear);
-    } else {
-      const currentYear = new Date().getFullYear();
-      revdateValue = formatPublishedOnForTitlePage(publishedOn, currentYear) || formatDateForTitlePage(currentYear);
-    }
-    doc += `:pubdate: ${revdateValue}\n`;
-    doc += `:revdate: ${revdateValue}\n`; // Title page uses revdate (required for layout)
-  } else {
-    // For other formats, only set if values exist
-    if (version) {
-      doc += `:version: ${version}\n`;
-    }
-    if (publishedOn) {
-      doc += `:pubdate: ${publishedOn}\n`;
-    }
-  }
-  if (source) {
-    doc += `:source: ${source}\n`;
-  }
-  if (topicTags.length > 0) {
-    doc += `:keywords: ${topicTags.join(', ')}\n`;
-  }
-  
-  if (summary && description) {
-    doc += `:summary: ${summary}\n`;
-  }
-  
-  // Add cover image for PDF/EPUB exports (via attribute, not in content)
-  if (image && (exportFormat === 'pdf' || exportFormat === 'epub' || !exportFormat)) {
-    doc += `:front-cover-image: ${image}\n`;
-  }
-  
-  // CRITICAL: Must have a blank line after all attributes before content begins
-  doc = doc.trimEnd() + '\n\n';
-  
-  // Add description as abstract if available
-  if (description && description.trim()) {
-    doc += `\n== Abstract\n\n`;
-    doc += `${description}\n\n`;
-  } else if (summary && summary.trim()) {
-    doc += `\n== Abstract\n\n`;
-    doc += `${summary}\n\n`;
-  }
-  
-  // Add article metadata section for article kinds (30023, 30041, 30817, 30818)
-  // IMPORTANT: Always check for 30040 first and skip article-metadata if it's a book
-  if (event.kind === 30040) {
-    // Skip article-metadata for 30040 - they get book-metadata instead
-  } else {
-    const isArticleKind = event.kind === 30023 || event.kind === 30041 || event.kind === 30817 || event.kind === 30818;
-    if (isArticleKind) {
-      const metadataFields: Array<{ label: string; value: string }> = [];
-      
-      // Add Title field to metadata section
-      if (displayTitle) metadataFields.push({ label: 'Title', value: displayTitle });
-      
-      // Add pubkey (as npub)
-      if (event.pubkey) {
-        const npub = nip19.npubEncode(event.pubkey);
-        metadataFields.push({ label: 'Author Pubkey', value: npub });
-      }
-      
-      // Add author
-      if (author && author.trim()) {
-        metadataFields.push({ label: 'Author', value: author });
-      }
-      
-      // Add topics
-      if (topicTags.length > 0) {
-        metadataFields.push({ label: 'Topics', value: topicTags.join(', ') });
-      }
-      
-      // Add published_at
-      const publishedAt = event.tags.find(([k]) => k === 'published_at')?.[1] || 
-                          event.tags.find(([k]) => k === 'published_on')?.[1];
-      if (publishedAt) {
-        try {
-          const publishedDate = new Date(parseInt(publishedAt) * 1000);
-          metadataFields.push({ label: 'Published', value: publishedDate.toLocaleDateString() });
-        } catch (e) {
-          metadataFields.push({ label: 'Published', value: publishedAt });
-        }
-      }
-      
-      // Add created_at
-      if (event.created_at) {
-        try {
-          const createdDate = new Date(event.created_at * 1000);
-          metadataFields.push({ label: 'Created', value: createdDate.toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' }) });
-        } catch (e) {
-          // Ignore if date parsing fails
-        }
-      }
-      
-      // Add metadata section if we have any fields
-      if (metadataFields.length > 0) {
-        doc += '\n';
-        doc += '[.article-metadata]\n';
-        doc += `== ${displayTitle}\n\n`;
-        
-        // Add cover image at the top of metadata section (for HTML/AsciiDoc only)
-        if ((exportFormat === 'html' || exportFormat === 'asciidoc' || !exportFormat) && image) {
-          doc += `image::${image}[Cover Image]\n\n`;
-        }
-        
-        for (const field of metadataFields) {
-          if (field.value && field.value.trim()) {
-            doc += `*${field.label}:* ${field.value}\n\n`;
-          }
-        }
-        // Add marker to indicate end of metadata section
-        doc += '__This document was published with a GitCitadel app.__\n\n';
-      }
-    }
-  }
+  // Add article metadata section using shared utility
+  doc += buildArticleMetadataSection(event, displayTitle, author, image, exportFormat);
   
   // Add content
   doc += content;
@@ -573,145 +398,26 @@ export async function prepareAsciiDocContent(
     // Check if content already starts with a title
     const hasTitle = /^=+\s+.+/.test(content.trim());
     if (hasTitle) {
-      // Content already has AsciiDoc structure, add metadata before it
+      // Content already has AsciiDoc structure, extract title and rest of content
       const lines = content.split('\n');
       const titleLineIndex = lines.findIndex(line => /^=+\s+/.test(line));
       if (titleLineIndex >= 0) {
         const existingTitle = lines[titleLineIndex].replace(/^=+\s+/, '');
         const restContent = lines.slice(titleLineIndex + 1).join('\n');
         
+        // Use existing title or fallback to event title
         const title = existingTitle || getTitleFromEventTags(event);
-        const displayTitle = title || 'Untitled';
-        const author = await getAuthorName(event);
-        const description = event.tags.find(([k]) => k === 'description')?.[1];
-        const summary = event.tags.find(([k]) => k === 'summary')?.[1];
-        const image = event.tags.find(([k]) => k === 'image')?.[1];
-        const version = event.tags.find(([k]) => k === 'version')?.[1];
-        const source = event.tags.find(([k]) => k === 'source')?.[1];
-        const publishedOn = event.tags.find(([k]) => k === 'published_on')?.[1];
-        const topicTags = event.tags.filter(([k]) => k === 't').map(([, v]) => v);
+        const eventImage = event.tags.find(([k]) => k === 'image')?.[1];
         
-        let doc = `= ${displayTitle}\n`;
-        doc += `:author: ${author}\n`;
-        doc += `:toc:\n`;
-        doc += `:stem:\n`;
-        doc += `:page-break-mode: auto\n`;
-        doc += `:pdf-page-break-mode: auto\n`;
+        // Build metadata with the extracted title, then append rest of content
+        let doc = await buildAsciiDocWithMetadata(event, '', eventImage, exportFormat);
         
+        // Replace title in metadata with the extracted title from content
+        doc = doc.replace(/^=\s+[^\n]+/m, `= ${title}`);
+        
+        // Add PDF-specific attributes if needed
         if (exportFormat === 'pdf') {
-          doc += `:media: prepress\n`;
-          doc += `:pdf-page-size: A4\n`;
-          doc += `:pdf-page-margin: [54, 72, 54, 72]\n`;
-          doc += `:pdf-style: default\n`;
-        }
-        
-        // For PDF/EPUB, always set revnumber and revdate to prevent title page layout issues
-        // These are critical for PDF title page layout - missing values cause content to shift
-        if (exportFormat === 'pdf' || exportFormat === 'epub') {
-          const versionValue = version || 'first edition';
-          doc += `:version: ${versionValue}\n`;
-          doc += `:revnumber: ${versionValue}\n`; // Title page uses revnumber (required for layout)
-          
-          // Use publishedOn if available, otherwise use created_at year, or current year
-          let revdateValue: string;
-          if (event.created_at) {
-            const createdYear = new Date(event.created_at * 1000).getFullYear();
-            revdateValue = formatPublishedOnForTitlePage(publishedOn, createdYear) || formatDateForTitlePage(createdYear);
-          } else {
-            const currentYear = new Date().getFullYear();
-            revdateValue = formatPublishedOnForTitlePage(publishedOn, currentYear) || formatDateForTitlePage(currentYear);
-          }
-          doc += `:pubdate: ${revdateValue}\n`;
-          doc += `:revdate: ${revdateValue}\n`; // Title page uses revdate (required for layout)
-        } else {
-          // For other formats, only set if values exist
-          if (version) {
-            doc += `:version: ${version}\n`;
-          }
-          if (publishedOn) {
-            doc += `:pubdate: ${publishedOn}\n`;
-          }
-        }
-        if (source) doc += `:source: ${source}\n`;
-        if (topicTags.length > 0) doc += `:keywords: ${topicTags.join(', ')}\n`;
-        if (summary && description) doc += `:summary: ${summary}\n`;
-        if (image && (exportFormat === 'pdf' || exportFormat === 'epub' || !exportFormat)) {
-          doc += `:front-cover-image: ${image}\n`;
-        }
-        
-        doc = doc.trimEnd() + '\n\n';
-        
-        // Add abstract section
-        if (description && description.trim()) {
-          doc += `\n== Abstract\n\n`;
-          doc += `${description}\n\n`;
-        } else if (summary && summary.trim()) {
-          doc += `\n== Abstract\n\n`;
-          doc += `${summary}\n\n`;
-        }
-        
-        // Add article metadata section
-        if (event.kind === 30040) {
-          // Skip article-metadata for 30040
-        } else {
-          const isArticleKind = event.kind === 30023 || event.kind === 30041 || event.kind === 30817 || event.kind === 30818;
-          if (isArticleKind) {
-            const metadataFields: Array<{ label: string; value: string }> = [];
-            
-            // Add Title field to metadata section
-            if (displayTitle) metadataFields.push({ label: 'Title', value: displayTitle });
-            
-            if (event.pubkey) {
-              const npub = nip19.npubEncode(event.pubkey);
-              metadataFields.push({ label: 'Author Pubkey', value: npub });
-            }
-            
-            if (author && author.trim()) {
-              metadataFields.push({ label: 'Author', value: author });
-            }
-            
-            if (topicTags.length > 0) {
-              metadataFields.push({ label: 'Topics', value: topicTags.join(', ') });
-            }
-            
-            const publishedAt = event.tags.find(([k]) => k === 'published_at')?.[1] || 
-                                event.tags.find(([k]) => k === 'published_on')?.[1];
-            if (publishedAt) {
-              try {
-                const publishedDate = new Date(parseInt(publishedAt) * 1000);
-                metadataFields.push({ label: 'Published', value: publishedDate.toLocaleDateString() });
-              } catch (e) {
-                metadataFields.push({ label: 'Published', value: publishedAt });
-              }
-            }
-            
-            if (event.created_at) {
-              try {
-                const createdDate = new Date(event.created_at * 1000);
-                metadataFields.push({ label: 'Created', value: createdDate.toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' }) });
-              } catch (e) {
-                // Ignore
-              }
-            }
-            
-            if (metadataFields.length > 0) {
-              doc += '\n';
-              doc += '[.article-metadata]\n';
-              doc += `== ${displayTitle}\n\n`;
-              
-              if ((exportFormat === 'html' || exportFormat === 'asciidoc' || !exportFormat) && image) {
-                doc += `image::${image}[Cover Image]\n\n`;
-              }
-              
-              for (const field of metadataFields) {
-                if (field.value && field.value.trim()) {
-                  doc += `*${field.label}:* ${field.value}\n\n`;
-                }
-              }
-              // Add marker to indicate end of metadata section
-              doc += '__This document was published with a GitCitadel app.__\n\n';
-            }
-          }
+          doc = doc.replace(':page-break-mode: auto\n', ':page-break-mode: auto\n:pdf-page-break-mode: auto\n:media: prepress\n:pdf-page-size: A4\n:pdf-page-margin: [54, 72, 54, 72]\n:pdf-style: default\n');
         }
         
         // Add the rest of the content after metadata
@@ -933,7 +639,19 @@ export async function combineBookEvents(
   
   const image = indexEvent.tags.find(([k]) => k === 'image')?.[1];
   const version = indexEvent.tags.find(([k]) => k === 'version')?.[1];
-  const source = indexEvent.tags.find(([k]) => k === 'source')?.[1];
+  let source = indexEvent.tags.find(([k]) => k === 'source')?.[1];
+  
+  // If source is empty, default to nevent of the book event
+  if (!source) {
+    try {
+      source = neventEncode({
+        id: indexEvent.id
+      });
+    } catch (e) {
+      console.warn('[Book Export] Failed to generate nevent for source:', e);
+    }
+  }
+  
   let publishedOn = indexEvent.tags.find(([k]) => k === 'published_on')?.[1];
   // If no published_on tag, use created_at timestamp converted to ISO date
   if (!publishedOn && indexEvent.created_at) {
@@ -942,42 +660,30 @@ export async function combineBookEvents(
   const topicTags = indexEvent.tags.filter(([k]) => k === 't').map(([, v]) => v);
   
   const displayTitle = title || 'Untitled';
+  
+  // Build book document header with attributes
   let doc = `= ${displayTitle}\n`;
   if (author && author.trim()) {
     doc += `${author}\n`;
   }
   doc += `:doctype: book\n`;
-  doc += `:toc:\n`; // Enable table of contents for books
-  doc += `:stem:\n`; // Enable STEM (math) support
+  doc += `:toc:\n`;
+  doc += `:stem:\n`;
+  doc += `:page-break-mode: auto\n`;
   
-  // Note: We don't set :stylesheet: here to avoid server errors if the file doesn't exist
-  // Image styling will be handled via inline CSS in the document body instead
-  
-  // Set author attribute for AsciiDoctor PDF title page (only if available)
-  // Note: Missing :author: is okay, but :revnumber: and :revdate: are critical for layout
   if (author && author.trim()) {
     doc += `:author: ${author}\n`;
   }
   
-  // For books, use revnumber and revdate for title page (title page expects revision info)
-  // Always set these to ensure consistent title page layout - missing values cause layout issues
-  // These are critical for PDF title page layout - missing values cause content to shift
-  // Also keep version and pubdate for backward compatibility
+  // For books, always set revnumber and revdate using shared utility
   const versionValue = version || 'first edition';
   doc += `:version: ${versionValue}\n`;
-  doc += `:revnumber: ${versionValue}\n`; // Title page uses revnumber (required for layout)
+  doc += `:revnumber: ${versionValue}\n`;
   
-  // Use publishedOn if available, otherwise use created_at year, or current year to ensure layout consistency
-  let revdateValue: string;
-  if (indexEvent.created_at) {
-    const createdYear = new Date(indexEvent.created_at * 1000).getFullYear();
-    revdateValue = formatPublishedOnForTitlePage(publishedOn, createdYear) || formatDateForTitlePage(createdYear);
-  } else {
-    const currentYear = new Date().getFullYear();
-    revdateValue = formatPublishedOnForTitlePage(publishedOn, currentYear) || formatDateForTitlePage(currentYear);
-  }
+  const revdateValue = getRevdateValue(indexEvent, publishedOn);
   doc += `:pubdate: ${revdateValue}\n`;
-  doc += `:revdate: ${revdateValue}\n`; // Title page uses revdate (required for layout)
+  doc += `:revdate: ${revdateValue}\n`;
+  
   if (source) doc += `:source: ${source}\n`;
   if (topicTags.length > 0) doc += `:keywords: ${topicTags.join(', ')}\n`;
   
@@ -987,44 +693,20 @@ export async function combineBookEvents(
   
   doc = doc.trimEnd() + '\n\n';
   
-  // Add inline CSS for images in EPUB/HTML exports AFTER all attributes to avoid parsing errors
+  // Add inline CSS for images in EPUB/HTML exports
   if (exportFormat === 'epub' || exportFormat === 'html') {
-    // Add inline styles at the beginning of the document body (after attributes)
     doc += `++++\n<style>\nimg { max-width: 100%; height: auto; display: block; margin: 1em auto; }\n.imageblock { text-align: center; margin: 1.5em 0; }\n.imageblock img { display: block; margin: 0 auto; max-width: 100%; height: auto; }\n.content img, .sect1 img, .sect2 img, .sect3 img { max-width: 100%; height: auto; }\n</style>\n++++\n\n`;
   }
   
-  // Add book metadata section for top-level 30040 events
-  // Include metadata for EPUB as well (not just HTML/AsciiDoc) to ensure TOC and metadata work
-  if (isTopLevel && indexEvent.kind === 30040) {
-    const metadataFields: Array<{ label: string; value: string }> = [];
-    
-    // Add Title field to metadata section
-    if (title) metadataFields.push({ label: 'Title', value: title });
-    if (author) metadataFields.push({ label: 'Author', value: author });
-    if (version) metadataFields.push({ label: 'Version', value: version });
-    if (source) metadataFields.push({ label: 'Source', value: source });
-    if (publishedOn) metadataFields.push({ label: 'Published On', value: publishedOn });
-    if (topicTags.length > 0) metadataFields.push({ label: 'Topics', value: topicTags.join(', ') });
-    
-    if (metadataFields.length > 0) {
-      doc += '\n';
-      doc += `[.book-metadata]\n== ${displayTitle}\n\n`;
-      
-      // Add cover image for HTML/AsciiDoc/EPUB exports (in metadata section)
-      // For PDF, the cover image is handled via :front-cover-image: attribute
-      if ((exportFormat === 'html' || exportFormat === 'asciidoc' || exportFormat === 'epub' || !exportFormat) && image) {
-        doc += `image::${image}[Cover Image]\n\n`;
-      }
-      
-      for (const field of metadataFields) {
-        if (field.value && field.value.trim()) {
-          doc += `*${field.label}:* ${field.value}\n\n`;
-        }
-      }
-      // Add marker to indicate end of metadata section
-      doc += '__This document was published with a GitCitadel app.__\n\n';
-    }
-  }
+  // Add book metadata section using shared utility
+  doc += buildBookMetadataSection(displayTitle, author, {
+    version,
+    source,
+    publishedOn,
+    topicTags,
+    image,
+    exportFormat
+  }, isTopLevel && indexEvent.kind === 30040);
   
   // Add each content event as a section (chapters)
   for (let i = 0; i < contentEvents.length; i++) {
