@@ -70,8 +70,8 @@ import { convertMarkdownToAsciiDoc as convertMarkdownToAsciiDocShared } from '$l
 function convertMarkdownToAsciiDoc(content: string): string {
   return convertMarkdownToAsciiDocShared(content, {
     convertLevel1ToLevel2: true, // Convert level 1 to level 2 for exports (prevents extraction as document title)
-    convertTables: false, // Tables not needed for exports (handled separately if needed)
-    convertCodeBlocks: false, // Code blocks handled by AsciiDoctor
+    convertTables: true, // Convert markdown tables to AsciiDoc tables for exports
+    convertCodeBlocks: true, // Convert markdown code blocks to AsciiDoc source blocks for exports
     convertStrikethrough: false, // Strikethrough not needed for exports
     convertBlockquotes: true, // Convert blockquotes for exports
     convertATXHeaders: true // Convert ATX headers for exports

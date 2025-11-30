@@ -160,9 +160,14 @@ export function convertMarkdownToAsciiDoc(
   // Convert code blocks: ```lang ... ``` -> [source,lang]
   // Do this BEFORE image/link conversion to protect code blocks
   if (convertCodeBlocks) {
-    converted = converted.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+    // Match code blocks with optional language and handle various formats
+    // Pattern: ``` followed by optional language (word chars, hyphens, dots), optional newline, code content, closing ```
+    // Use non-greedy match to handle multiple code blocks
+    converted = converted.replace(/```([\w-]+)?\s*\n?([\s\S]*?)```/g, (match, lang, code) => {
       const langAttr = lang ? `,${lang}` : '';
-      return `[source${langAttr}]\n----\n${code.trim()}\n----`;
+      // Trim code content but preserve internal structure
+      const trimmedCode = code.trim();
+      return `[source${langAttr}]\n----\n${trimmedCode}\n----`;
     });
   }
 
@@ -204,7 +209,10 @@ export function convertMarkdownToAsciiDoc(
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      const isTableRow = /^\s*\|[^|]*\|/.test(line);
+      // Match table rows: must start with | and contain at least one more |
+      // Allow leading/trailing spaces
+      const trimmedLine = line.trim();
+      const isTableRow = trimmedLine.length > 0 && /^\|.*\|/.test(trimmedLine);
 
       if (isTableRow) {
         if (!inTable) {
