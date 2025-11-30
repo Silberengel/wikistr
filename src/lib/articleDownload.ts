@@ -668,6 +668,7 @@ export async function combineBookEvents(
   }
   doc += `:doctype: book\n`;
   doc += `:toc:\n`;
+  doc += `:toclevels: 2\n`;
   doc += `:stem:\n`;
   doc += `:page-break-mode: auto\n`;
   
@@ -693,8 +694,8 @@ export async function combineBookEvents(
   
   doc = doc.trimEnd() + '\n\n';
   
-  // Add inline CSS for images in EPUB/HTML exports
-  if (exportFormat === 'epub' || exportFormat === 'html') {
+  // Add inline CSS for HTML exports only (EPUB needs separate stylesheet)
+  if (exportFormat === 'html') {
     doc += `++++\n<style>\nimg { max-width: 100%; height: auto; display: block; margin: 1em auto; }\n.imageblock { text-align: center; margin: 1.5em 0; }\n.imageblock img { display: block; margin: 0 auto; max-width: 100%; height: auto; }\n.content img, .sect1 img, .sect2 img, .sect3 img { max-width: 100%; height: auto; }\n</style>\n++++\n\n`;
   }
   

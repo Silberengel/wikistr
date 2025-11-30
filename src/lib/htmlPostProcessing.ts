@@ -228,6 +228,20 @@ export function getTitlePageStyles(): string {
         letter-spacing: 0.1em;
         color: #000;
       }
+      /* Book title within metadata section - classic title style */
+      .book-metadata .book-title,
+      .book-metadata p.book-title {
+        font-size: 4em !important;
+        font-weight: 700 !important;
+        color: #000 !important;
+        margin: 0.5em 0 1em 0 !important;
+        padding: 0 !important;
+        line-height: 1.2 !important;
+        text-align: center !important;
+        text-transform: none !important;
+        letter-spacing: normal !important;
+        font-family: 'Crimson Text', 'Times New Roman', serif !important;
+      }
       .book-metadata p {
         margin: 0.8em 0;
         font-size: 1em;

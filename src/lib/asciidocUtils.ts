@@ -302,7 +302,10 @@ export function buildBookMetadataSection(
   }
   
   let doc = '\n';
-  doc += `[.book-metadata]\n== ${title}\n\n`;
+  doc += `[.book-metadata]\n== Book Information\n\n`;
+  
+  // Display the title in a classic title style within the section
+  doc += `[.book-title]\n${title}\n\n`;
   
   const showImage = (options.exportFormat === 'html' || 
                      options.exportFormat === 'asciidoc' || 
