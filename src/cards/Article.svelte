@@ -141,6 +141,26 @@
   let originalConsoleError: typeof console.error | null = null;
   let originalConsoleWarn: typeof console.warn | null = null;
 
+  // Import console log store
+  let consoleLogStore: typeof import('$lib/consoleLogStore').consoleLogStore;
+  import('$lib/consoleLogStore').then(module => {
+    consoleLogStore = module.consoleLogStore;
+  });
+
+  // Check if a log message is related to downloads
+  function isDownloadRelated(message: string): boolean {
+    // Only capture logs with specific download/export prefixes
+    const downloadPrefixes = [
+      '[Book Export]',
+      '[PDF Export]',
+      '[EPUB Export]',
+      '[HTML5 Export]',
+      '[HTML Export]',
+      '[Download]'
+    ];
+    return downloadPrefixes.some(prefix => message.includes(prefix));
+  }
+
   function startLogCapture() {
     // Store original console methods
     originalConsoleLog = console.log;
@@ -159,7 +179,18 @@
         }
         return String(arg);
       }).join(' ');
-      downloadLogs = [...downloadLogs, `[LOG] ${message}`];
+      
+      // Only capture download-related logs for modal
+      if (isDownloadRelated(message)) {
+        downloadLogs = [...downloadLogs, `[LOG] ${message}`];
+      }
+      
+      // Also add to global console store (for settings viewer)
+      if (consoleLogStore) {
+        consoleLogStore.addLog('LOG', ...args);
+      }
+      
+      // Call original console method (which may be settings capture)
       originalConsoleLog?.apply(console, args);
     };
 
@@ -174,7 +205,18 @@
         }
         return String(arg);
       }).join(' ');
-      downloadLogs = [...downloadLogs, `[ERROR] ${message}`];
+      
+      // Only capture download-related errors for modal
+      if (isDownloadRelated(message)) {
+        downloadLogs = [...downloadLogs, `[ERROR] ${message}`];
+      }
+      
+      // Also add to global console store (for settings viewer)
+      if (consoleLogStore) {
+        consoleLogStore.addLog('ERROR', ...args);
+      }
+      
+      // Call original console method (which may be settings capture)
       originalConsoleError?.apply(console, args);
     };
 
@@ -189,7 +231,18 @@
         }
         return String(arg);
       }).join(' ');
-      downloadLogs = [...downloadLogs, `[WARN] ${message}`];
+      
+      // Only capture download-related warnings for modal
+      if (isDownloadRelated(message)) {
+        downloadLogs = [...downloadLogs, `[WARN] ${message}`];
+      }
+      
+      // Also add to global console store (for settings viewer)
+      if (consoleLogStore) {
+        consoleLogStore.addLog('WARN', ...args);
+      }
+      
+      // Call original console method (which may be settings capture)
       originalConsoleWarn?.apply(console, args);
     };
   }

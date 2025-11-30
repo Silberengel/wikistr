@@ -1,12 +1,13 @@
 <script lang="ts">
   import ModeToggle from '$components/ModeToggle.svelte';
   import { contentCache } from '$lib/contentCache';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import type { Card } from '$lib/types';
   import { account } from '$lib/nostr';
   import { getCacheRelayUrls, saveCacheRelayUrls } from '$lib/cacheRelay';
   import { relayService } from '$lib/relayService';
   import BookmarksPanel from '$components/BookmarksPanel.svelte';
+  import { consoleLogStore, type ConsoleLog, type LogLevel } from '$lib/consoleLogStore';
 
   interface Props {
     createChild?: (card: Card) => void;
@@ -14,7 +15,7 @@
 
   let { createChild }: Props = $props();
 
-  let activeTab = $state<'general' | 'bookmarks' | 'versions'>('general');
+  let activeTab = $state<'general' | 'bookmarks' | 'versions' | 'console'>('general');
   
   let saveMessage = $state<{ type: 'success' | 'error'; text: string } | null>(null);
   let currentRelays = $state<string[]>([]);
@@ -27,6 +28,16 @@
   let changelogError = $state<string | null>(null);
   let relayStatuses = $state<Map<string, 'parked' | 'retrying' | 'connected'>>(new Map());
   let isRefreshingRelays = $state(false);
+  
+  // Console viewer state
+  let consoleLogs = $state<ConsoleLog[]>([]);
+  let consoleSearchQuery = $state('');
+  let consoleLogLevelFilter = $state<LogLevel | 'ALL'>('ALL');
+  let originalConsoleLog: typeof console.log | null = null;
+  let originalConsoleError: typeof console.error | null = null;
+  let originalConsoleWarn: typeof console.warn | null = null;
+  let unsubscribeConsoleLogs: (() => void) | null = null;
+  let copyButtonText = $state('Copy Logs');
   
   // Get version from package.json (injected at build time via vite.config.ts)
   const appVersion = (typeof __VERSION__ !== 'undefined' ? String(__VERSION__) : '5.0.0').trim();
@@ -97,6 +108,96 @@
     }
   }
 
+  // Console log capture functions
+  function startConsoleCapture() {
+    if (originalConsoleLog) return; // Already capturing
+    
+    originalConsoleLog = console.log;
+    originalConsoleError = console.error;
+    originalConsoleWarn = console.warn;
+
+    console.log = (...args: any[]) => {
+      consoleLogStore.addLog('LOG', ...args);
+      originalConsoleLog?.apply(console, args);
+    };
+
+    console.error = (...args: any[]) => {
+      consoleLogStore.addLog('ERROR', ...args);
+      originalConsoleError?.apply(console, args);
+    };
+
+    console.warn = (...args: any[]) => {
+      consoleLogStore.addLog('WARN', ...args);
+      originalConsoleWarn?.apply(console, args);
+    };
+  }
+
+  function stopConsoleCapture() {
+    if (!originalConsoleLog) return;
+    
+    if (originalConsoleLog) {
+      console.log = originalConsoleLog;
+      originalConsoleLog = null;
+    }
+    if (originalConsoleError) {
+      console.error = originalConsoleError;
+      originalConsoleError = null;
+    }
+    if (originalConsoleWarn) {
+      console.warn = originalConsoleWarn;
+      originalConsoleWarn = null;
+    }
+  }
+
+  function clearConsoleLogs() {
+    consoleLogStore.clearLogs();
+  }
+
+  async function copyLogs() {
+    try {
+      // Format logs as text
+      const logText = filteredLogs.map(log => {
+        const timestamp = formatTimestamp(log.timestamp);
+        return `[${log.level}] ${timestamp}\n${log.message}`;
+      }).join('\n\n');
+      
+      await navigator.clipboard.writeText(logText);
+      copyButtonText = 'Copied!';
+      setTimeout(() => {
+        copyButtonText = 'Copy Logs';
+      }, 2000);
+    } catch (error) {
+      console.error('Failed to copy logs:', error);
+      copyButtonText = 'Copy Failed';
+      setTimeout(() => {
+        copyButtonText = 'Copy Logs';
+      }, 2000);
+    }
+  }
+
+  function formatTimestamp(timestamp: number): string {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString();
+  }
+
+  // Filtered logs based on search and level
+  const filteredLogs = $derived.by(() => {
+    let logs = consoleLogs;
+    
+    // Filter by level
+    if (consoleLogLevelFilter !== 'ALL') {
+      logs = logs.filter(log => log.level === consoleLogLevelFilter);
+    }
+    
+    // Filter by search query
+    if (consoleSearchQuery.trim()) {
+      const query = consoleSearchQuery.toLowerCase();
+      logs = logs.filter(log => log.message.toLowerCase().includes(query));
+    }
+    
+    return logs;
+  });
+
   onMount(() => {
     // Get current relays from cache
     currentRelays = contentCache.getAllRelays();
@@ -136,9 +237,28 @@
       changelogEntry = null;
     }
     
+    // Start capturing console logs
+    startConsoleCapture();
+    
+    // Subscribe to console log store updates
+    unsubscribeConsoleLogs = consoleLogStore.subscribe((logs) => {
+      consoleLogs = logs;
+    });
+    
     return () => {
       clearInterval(statusInterval);
+      stopConsoleCapture();
+      if (unsubscribeConsoleLogs) {
+        unsubscribeConsoleLogs();
+        unsubscribeConsoleLogs = null;
+      }
     };
+  });
+  
+  onDestroy(() => {
+    if (unsubscribeConsoleLogs) {
+      unsubscribeConsoleLogs();
+    }
   });
 
 
@@ -176,6 +296,15 @@
         onmouseleave={(e) => { if (activeTab !== 'versions') { e.currentTarget.style.color = 'var(--text-secondary)'; } }}
       >
         Versions
+      </button>
+      <button
+        onclick={() => activeTab = 'console'}
+        class="py-4 px-1 border-b-2 font-medium text-sm transition-colors"
+        style="border-color: {activeTab === 'console' ? 'var(--accent)' : 'transparent'}; color: {activeTab === 'console' ? 'var(--accent)' : 'var(--text-secondary)'};"
+        onmouseenter={(e) => { if (activeTab !== 'console') { e.currentTarget.style.color = 'var(--text-primary)'; } }}
+        onmouseleave={(e) => { if (activeTab !== 'console') { e.currentTarget.style.color = 'var(--text-secondary)'; } }}
+      >
+        Console
       </button>
     </nav>
   </div>
@@ -395,6 +524,121 @@
             </div>
           {/if}
         </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Console Tab -->
+  {#if activeTab === 'console'}
+    <div class="border rounded-lg p-4 md:p-6 lg:p-8 min-h-[60vh] md:min-h-[70vh]" style="border-color: var(--border);">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-2xl font-semibold">Console Viewer</h2>
+        <div class="flex gap-2">
+          <button
+            onclick={copyLogs}
+            disabled={filteredLogs.length === 0}
+            class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {copyButtonText}
+          </button>
+          <button
+            onclick={clearConsoleLogs}
+            class="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700"
+          >
+            Clear Logs
+          </button>
+        </div>
+      </div>
+      
+      <!-- Search and Filter Controls -->
+      <div class="space-y-4 mb-4">
+        <!-- Search Bar -->
+        <div>
+          <input
+            type="text"
+            bind:value={consoleSearchQuery}
+            placeholder="Search logs..."
+            class="w-full px-4 py-2 rounded-md border focus:outline-none focus:ring-2"
+            style="background-color: var(--bg-primary); border-color: var(--border); color: var(--text-primary); --tw-ring-color: var(--accent);"
+          />
+        </div>
+        
+        <!-- Log Level Filter -->
+        <div class="flex gap-2 flex-wrap">
+          <button
+            onclick={() => consoleLogLevelFilter = 'ALL'}
+            class="px-3 py-1.5 text-sm rounded-md border transition-colors"
+            style="background-color: {consoleLogLevelFilter === 'ALL' ? 'var(--accent)' : 'var(--bg-primary)'}; border-color: var(--border); color: {consoleLogLevelFilter === 'ALL' ? 'white' : 'var(--text-primary)'};"
+          >
+            All ({consoleLogs.length})
+          </button>
+          <button
+            onclick={() => consoleLogLevelFilter = 'LOG'}
+            class="px-3 py-1.5 text-sm rounded-md border transition-colors"
+            style="background-color: {consoleLogLevelFilter === 'LOG' ? 'var(--accent)' : 'var(--bg-primary)'}; border-color: var(--border); color: {consoleLogLevelFilter === 'LOG' ? 'white' : 'var(--text-primary)'};"
+          >
+            Log ({consoleLogs.filter(l => l.level === 'LOG').length})
+          </button>
+          <button
+            onclick={() => consoleLogLevelFilter = 'WARN'}
+            class="px-3 py-1.5 text-sm rounded-md border transition-colors"
+            style="background-color: {consoleLogLevelFilter === 'WARN' ? 'var(--accent)' : 'var(--bg-primary)'}; border-color: var(--border); color: {consoleLogLevelFilter === 'WARN' ? 'white' : 'var(--text-primary)'};"
+          >
+            Warn ({consoleLogs.filter(l => l.level === 'WARN').length})
+          </button>
+          <button
+            onclick={() => consoleLogLevelFilter = 'ERROR'}
+            class="px-3 py-1.5 text-sm rounded-md border transition-colors"
+            style="background-color: {consoleLogLevelFilter === 'ERROR' ? 'var(--accent)' : 'var(--bg-primary)'}; border-color: var(--border); color: {consoleLogLevelFilter === 'ERROR' ? 'white' : 'var(--text-primary)'};"
+          >
+            Error ({consoleLogs.filter(l => l.level === 'ERROR').length})
+          </button>
+        </div>
+      </div>
+      
+      <!-- Logs Display -->
+      <div class="border rounded-md overflow-hidden" style="border-color: var(--border); background-color: var(--bg-primary);">
+        <div class="max-h-[60vh] overflow-y-auto p-4 font-mono text-xs" style="background-color: var(--bg-secondary);">
+          {#if filteredLogs.length > 0}
+            {#each filteredLogs as log (log.timestamp)}
+              <div class="mb-2 pb-2 border-b last:border-b-0" style="border-color: var(--border);">
+                <div class="flex items-start gap-2">
+                  <span
+                    class="px-2 py-0.5 rounded text-xs font-semibold whitespace-nowrap"
+                    style="background-color: {
+                      log.level === 'ERROR' ? '#ef4444' :
+                      log.level === 'WARN' ? '#f59e0b' :
+                      '#3b82f6'
+                    }; color: white;"
+                  >
+                    {log.level}
+                  </span>
+                  <span class="text-xs opacity-70" style="color: var(--text-secondary);">
+                    {formatTimestamp(log.timestamp)}
+                  </span>
+                </div>
+                <div class="mt-1 break-words whitespace-pre-wrap" style="color: var(--text-primary);">
+                  {@html log.message.replace(/\n/g, '<br>')}
+                </div>
+              </div>
+            {/each}
+          {:else}
+            <div class="text-center py-8" style="color: var(--text-secondary);">
+              {#if consoleSearchQuery.trim() || consoleLogLevelFilter !== 'ALL'}
+                No logs match your filters
+              {:else}
+                No logs captured yet. Console logs will appear here as they occur.
+              {/if}
+            </div>
+          {/if}
+        </div>
+      </div>
+      
+      <div class="mt-4 text-xs" style="color: var(--text-secondary);">
+        Showing {filteredLogs.length} of {consoleLogs.length} logs
+        {#if consoleLogs.length >= 1000}
+          <span class="text-orange-500">(limited to 1000 most recent)</span>
+        {/if}
       </div>
     </div>
   {/if}
