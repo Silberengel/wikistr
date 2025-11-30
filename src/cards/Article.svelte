@@ -159,7 +159,7 @@
       '[Download]',
       '[EPUB]',  // Server-side EPUB logs
       '[PDF]', // Server-side PDF logs
-      '[HTML]', // Server-side HTML logs
+      '[HTML5]', // Server-side HTML logs
       'asciidoctor:',  // AsciiDoctor error messages
       'Conversion error',
       'Conversion failed',
