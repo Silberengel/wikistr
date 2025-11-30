@@ -150,6 +150,24 @@ section.article-metadata h2 {
   visibility: visible !important;
 }
 
+/* Article title within metadata section - classic title style */
+.article-metadata .book-title,
+.article-metadata p.book-title,
+div.article-metadata .book-title,
+section.article-metadata .book-title {
+  font-size: 36pt !important;
+  font-weight: bold !important;
+  color: #1a1a1a !important;
+  margin: 0.3in 0 0.5in 0 !important;
+  padding: 0 !important;
+  line-height: 1.3 !important;
+  text-align: center !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  display: block !important;
+  font-family: "Liberation Serif", "Times New Roman", "Times", serif !important;
+}
+
 .article-metadata p {
   margin: 0.3in 0;
   font-size: 11pt;

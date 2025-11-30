@@ -199,9 +199,7 @@ export function buildArticleMetadataSection(
   }
   
   const metadataFields: Array<{ label: string; value: string }> = [];
-  
-  if (displayTitle) metadataFields.push({ label: 'Title', value: displayTitle });
-  
+   
   if (event.pubkey) {
     const npub = nip19.npubEncode(event.pubkey);
     metadataFields.push({ label: 'Author Pubkey', value: npub });
@@ -249,8 +247,20 @@ export function buildArticleMetadataSection(
   
   let doc = '\n';
   doc += '[.article-metadata]\n';
-  doc += `== ${displayTitle}\n\n`;
+  doc += `== Article Information\n\n`;
   
+  // Display the title in a classic title style within the section
+  const cleanTitle = displayTitle.replace(/\n/g, ' ').trim();
+  
+  // For PDF, use a simpler format (PDF has title page, no special styling needed)
+  if (exportFormat === 'pdf') {
+    doc += `${cleanTitle}\n\n`;
+  } else {
+    // For HTML/EPUB, use role syntax for CSS styling
+    doc += `[.book-title]\n${cleanTitle}\n\n`;
+  }
+  
+  // Only show image for HTML/AsciiDoc (EPUB/PDF have cover pages)
   if ((exportFormat === 'html' || exportFormat === 'asciidoc' || !exportFormat) && image) {
     doc += `image::${image}[Cover Image]\n\n`;
   }
@@ -288,7 +298,6 @@ export function buildBookMetadataSection(
   
   const metadataFields: Array<{ label: string; value: string }> = [];
   
-  if (title) metadataFields.push({ label: 'Title', value: title });
   if (author) metadataFields.push({ label: 'Author', value: author });
   if (options.version) metadataFields.push({ label: 'Version', value: options.version });
   if (options.source) metadataFields.push({ label: 'Source', value: options.source });
@@ -305,11 +314,19 @@ export function buildBookMetadataSection(
   doc += `[.book-metadata]\n== Book Information\n\n`;
   
   // Display the title in a classic title style within the section
-  doc += `[.book-title]\n${title}\n\n`;
+  const cleanTitle = title.replace(/\n/g, ' ').trim();
   
+  // For PDF, use a simpler format (PDF has title page, no special styling needed)
+  if (options.exportFormat === 'pdf') {
+    doc += `${cleanTitle}\n\n`;
+  } else {
+    // For HTML/EPUB, use role syntax for CSS styling
+    doc += `[.book-title]\n${cleanTitle}\n\n`;
+  }
+  
+  // Only show image for HTML/AsciiDoc (EPUB/PDF have cover pages)
   const showImage = (options.exportFormat === 'html' || 
                      options.exportFormat === 'asciidoc' || 
-                     options.exportFormat === 'epub' || 
                      !options.exportFormat);
   
   if (showImage && options.image) {
