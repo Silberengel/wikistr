@@ -122,7 +122,17 @@
 
   function cardFromPathPart(pathPart: string): Card {
     // This function always returns a Card - all code paths end with a return statement
-    let ditem = decodeURIComponent(pathPart);
+    // SvelteKit may already decode path segments, but we try to decode anyway
+    // If decoding fails (e.g., already decoded or malformed), use the original pathPart
+    let ditem: string;
+    try {
+      // Only decode if it contains encoded characters (contains %)
+      // SvelteKit should handle this, but we decode to be safe
+      ditem = pathPart.includes('%') ? decodeURIComponent(pathPart) : pathPart;
+    } catch (e) {
+      // If decoding fails, use the original pathPart (might already be decoded)
+      ditem = pathPart;
+    }
     if (ditem.startsWith('edit:')) {
       return {
         id: next(),
@@ -192,8 +202,15 @@
       ditem.startsWith('ws://')
     ) {
       return { id: next(), type: 'relay', data: normalizeURL(ditem) } as RelayCard;
-    } else if (ditem.match(/^[^*]+\*[a-f0-9]{64}$/)) {
-      return { id: next(), type: 'article', data: ditem.split('*') } as ArticleCard;
+    } else if (ditem.includes('*')) {
+      // Check if it's in the format dTag*pubkey (pubkey is 64 hex chars)
+      const parts = ditem.split('*');
+      if (parts.length === 2 && parts[1].match(/^[a-f0-9]{64}$/i)) {
+        // This is an article card: dTag*pubkey format
+        // Decode the dTag part if it contains encoded characters
+        const dTag = parts[0].includes('%') ? decodeURIComponent(parts[0]) : parts[0];
+        return { id: next(), type: 'article', data: [dTag, parts[1]] } as ArticleCard;
+      }
     } else if (pathPart.match(/^[a-f0-9]{64}$/i)) {
       // 64-character hex string - could be event ID or pubkey
       // Create a find card that will handle the lookup

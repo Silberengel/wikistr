@@ -9,7 +9,10 @@ function cardToPath(card: Card): string | null {
     case 'find':
       return card.data;
     case 'article':
-      return (card.data as [string, string]).join('*');
+      // Encode the d-tag to handle special characters like æ, but keep * separator unencoded
+      // The pubkey is hex and doesn't need encoding, but encoding it is harmless
+      const [dTag, pubkey] = card.data as [string, string];
+      return encodeURIComponent(dTag) + '*' + pubkey;
     case 'relay':
       return encodeURIComponent(card.data);
     case 'user':
