@@ -4,7 +4,6 @@
  * @param content - The markdown content to convert
  * @param options - Conversion options
  * @param options.convertLevel1ToLevel2 - If true, converts setext level 1 headers to AsciiDoc level 2 (for panel rendering)
- * @param options.allowBlankLinesInSetext - If true, allows blank lines between setext header text and underline
  * @param options.convertTables - If true, converts markdown tables to AsciiDoc tables
  * @param options.convertCodeBlocks - If true, converts markdown code blocks to AsciiDoc source blocks
  * @param options.convertStrikethrough - If true, converts strikethrough syntax
@@ -16,7 +15,6 @@ export function convertMarkdownToAsciiDoc(
   content: string,
   options: {
     convertLevel1ToLevel2?: boolean;
-    allowBlankLinesInSetext?: boolean;
     convertTables?: boolean;
     convertCodeBlocks?: boolean;
     convertStrikethrough?: boolean;
@@ -28,7 +26,6 @@ export function convertMarkdownToAsciiDoc(
 
   const {
     convertLevel1ToLevel2 = false,
-    allowBlankLinesInSetext = false,
     convertTables = false,
     convertCodeBlocks = false,
     convertStrikethrough = false,
@@ -40,6 +37,7 @@ export function convertMarkdownToAsciiDoc(
 
   // Convert setext-style headers FIRST (before ATX headers)
   // Setext headers use underlines: === for h1, --- for h2
+  // Pattern: text on one line, followed by === or --- on the next line (no blank lines in between)
   const headerLines = converted.split('\n');
   const processedHeaderLines: string[] = [];
 
@@ -48,57 +46,27 @@ export function convertMarkdownToAsciiDoc(
     const trimmedLine = line.trim();
 
     // Skip blank lines - they'll be preserved
-    if (trimmedLine === '' && !allowBlankLinesInSetext) {
+    if (trimmedLine === '') {
       processedHeaderLines.push(line);
       continue;
     }
 
+    // Check next line for setext underline
+    const nextLine = i + 1 < headerLines.length ? headerLines[i + 1] : '';
+    const trimmedNext = nextLine.trim();
+
     let foundUnderline = false;
     let underlineLevel = 0;
-    let skipCount = 0;
 
-    if (allowBlankLinesInSetext) {
-      // Look ahead for setext underline (allowing blank lines in between)
-      for (let j = i + 1; j < headerLines.length; j++) {
-        const nextLine = headerLines[j];
-        const trimmedNext = nextLine.trim();
-
-        // If we hit a blank line, continue looking
-        if (trimmedNext === '') {
-          skipCount++;
-          continue;
-        }
-
-        // Check if this line is a setext underline
-        if (/^={3,}$/.test(trimmedNext)) {
-          // Level 1 header (===)
-          foundUnderline = true;
-          underlineLevel = 1;
-          skipCount++; // Count the underline line
-          break;
-        } else if (/^-{3,}$/.test(trimmedNext)) {
-          // Level 2 header (---)
-          foundUnderline = true;
-          underlineLevel = 2;
-          skipCount++; // Count the underline line
-          break;
-        } else {
-          // Not a blank line or underline, stop looking
-          break;
-        }
-      }
-    } else {
-      // Simple case: check next line only
-      const nextLine = i + 1 < headerLines.length ? headerLines[i + 1] : '';
-      if (nextLine && /^={3,}$/.test(nextLine.trim())) {
-        foundUnderline = true;
-        underlineLevel = 1;
-        skipCount = 1;
-      } else if (nextLine && /^-{3,}$/.test(nextLine.trim())) {
-        foundUnderline = true;
-        underlineLevel = 2;
-        skipCount = 1;
-      }
+    // Check if next line is a setext underline
+    if (trimmedNext && /^={3,}$/.test(trimmedNext)) {
+      // Level 1 header (===)
+      foundUnderline = true;
+      underlineLevel = 1;
+    } else if (trimmedNext && /^-{3,}$/.test(trimmedNext)) {
+      // Level 2 header (---)
+      foundUnderline = true;
+      underlineLevel = 2;
     }
 
     if (foundUnderline) {
@@ -113,8 +81,8 @@ export function convertMarkdownToAsciiDoc(
       }
       const equals = '='.repeat(asciiDocLevel);
       processedHeaderLines.push(`${equals} ${trimmedLine}`);
-      // Skip the blank lines and underline line
-      i += skipCount;
+      // Skip the underline line
+      i++;
     } else {
       processedHeaderLines.push(line);
     }

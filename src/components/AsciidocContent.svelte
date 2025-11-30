@@ -652,7 +652,6 @@
   function convertMarkdownToAsciiDoc(markdown: string): string {
     return convertMarkdownToAsciiDocShared(markdown, {
       convertLevel1ToLevel2: true, // Convert level 1 to level 2 for panel rendering (level 1 is document title in AsciiDoc)
-      allowBlankLinesInSetext: true, // Allow blank lines between header text and underline
       convertTables: true, // Convert markdown tables to AsciiDoc tables
       convertCodeBlocks: true, // Convert markdown code blocks to AsciiDoc source blocks
       convertStrikethrough: true, // Convert strikethrough syntax
