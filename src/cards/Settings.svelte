@@ -1,7 +1,7 @@
 <script lang="ts">
   import ModeToggle from '$components/ModeToggle.svelte';
   import { contentCache } from '$lib/contentCache';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import type { Card } from '$lib/types';
   import { account } from '$lib/nostr';
   import { getCacheRelayUrls, saveCacheRelayUrls } from '$lib/cacheRelay';
@@ -38,6 +38,15 @@
   let originalConsoleWarn: typeof console.warn | null = null;
   let unsubscribeConsoleLogs: (() => void) | null = null;
   let copyButtonText = $state('Copy Logs');
+  
+  // Helper to safely update filter
+  function setLogLevelFilter(level: LogLevel | 'ALL') {
+    try {
+      consoleLogLevelFilter = level;
+    } catch (error) {
+      console.error('Error setting log level filter:', error);
+    }
+  }
   
   // Get version from package.json (injected at build time via vite.config.ts)
   const appVersion = (typeof __VERSION__ !== 'undefined' ? String(__VERSION__) : '5.0.0').trim();
@@ -182,20 +191,30 @@
 
   // Filtered logs based on search and level
   const filteredLogs = $derived.by(() => {
-    let logs = consoleLogs;
-    
-    // Filter by level
-    if (consoleLogLevelFilter !== 'ALL') {
-      logs = logs.filter(log => log.level === consoleLogLevelFilter);
+    try {
+      // Ensure consoleLogs is an array
+      if (!Array.isArray(consoleLogs)) {
+        return [];
+      }
+      
+      let logs = [...consoleLogs]; // Create a copy to avoid mutation issues
+      
+      // Filter by level
+      if (consoleLogLevelFilter !== 'ALL') {
+        logs = logs.filter(log => log && log.level === consoleLogLevelFilter);
+      }
+      
+      // Filter by search query
+      if (consoleSearchQuery.trim()) {
+        const query = consoleSearchQuery.toLowerCase();
+        logs = logs.filter(log => log && log.message && log.message.toLowerCase().includes(query));
+      }
+      
+      return logs;
+    } catch (error) {
+      console.error('Error filtering logs:', error);
+      return [];
     }
-    
-    // Filter by search query
-    if (consoleSearchQuery.trim()) {
-      const query = consoleSearchQuery.toLowerCase();
-      logs = logs.filter(log => log.message.toLowerCase().includes(query));
-    }
-    
-    return logs;
   });
 
   onMount(() => {
@@ -242,7 +261,18 @@
     
     // Subscribe to console log store updates
     unsubscribeConsoleLogs = consoleLogStore.subscribe((logs) => {
-      consoleLogs = logs;
+      try {
+        // Ensure logs is an array before assigning
+        if (Array.isArray(logs)) {
+          // Create a new array reference to trigger reactivity properly
+          consoleLogs = [...logs];
+        } else {
+          consoleLogs = [];
+        }
+      } catch (error) {
+        console.error('Error updating console logs:', error);
+        consoleLogs = [];
+      }
     });
     
     return () => {
@@ -566,32 +596,32 @@
         <!-- Log Level Filter -->
         <div class="flex gap-2 flex-wrap">
           <button
-            onclick={() => consoleLogLevelFilter = 'ALL'}
+            onclick={() => setLogLevelFilter('ALL')}
             class="px-3 py-1.5 text-sm rounded-md border transition-colors"
             style="background-color: {consoleLogLevelFilter === 'ALL' ? 'var(--accent)' : 'var(--bg-primary)'}; border-color: var(--border); color: {consoleLogLevelFilter === 'ALL' ? 'white' : 'var(--text-primary)'};"
           >
             All ({consoleLogs.length})
           </button>
           <button
-            onclick={() => consoleLogLevelFilter = 'LOG'}
+            onclick={() => setLogLevelFilter('LOG')}
             class="px-3 py-1.5 text-sm rounded-md border transition-colors"
             style="background-color: {consoleLogLevelFilter === 'LOG' ? 'var(--accent)' : 'var(--bg-primary)'}; border-color: var(--border); color: {consoleLogLevelFilter === 'LOG' ? 'white' : 'var(--text-primary)'};"
           >
-            Log ({consoleLogs.filter(l => l.level === 'LOG').length})
+            Log ({consoleLogs.filter(l => l && l.level === 'LOG').length})
           </button>
           <button
-            onclick={() => consoleLogLevelFilter = 'WARN'}
+            onclick={() => setLogLevelFilter('WARN')}
             class="px-3 py-1.5 text-sm rounded-md border transition-colors"
             style="background-color: {consoleLogLevelFilter === 'WARN' ? 'var(--accent)' : 'var(--bg-primary)'}; border-color: var(--border); color: {consoleLogLevelFilter === 'WARN' ? 'white' : 'var(--text-primary)'};"
           >
-            Warn ({consoleLogs.filter(l => l.level === 'WARN').length})
+            Warn ({consoleLogs.filter(l => l && l.level === 'WARN').length})
           </button>
           <button
-            onclick={() => consoleLogLevelFilter = 'ERROR'}
+            onclick={() => setLogLevelFilter('ERROR')}
             class="px-3 py-1.5 text-sm rounded-md border transition-colors"
             style="background-color: {consoleLogLevelFilter === 'ERROR' ? 'var(--accent)' : 'var(--bg-primary)'}; border-color: var(--border); color: {consoleLogLevelFilter === 'ERROR' ? 'white' : 'var(--text-primary)'};"
           >
-            Error ({consoleLogs.filter(l => l.level === 'ERROR').length})
+            Error ({consoleLogs.filter(l => l && l.level === 'ERROR').length})
           </button>
         </div>
       </div>
@@ -600,27 +630,29 @@
       <div class="border rounded-md overflow-hidden" style="border-color: var(--border); background-color: var(--bg-primary);">
         <div class="max-h-[60vh] overflow-y-auto p-4 font-mono text-xs" style="background-color: var(--bg-secondary);">
           {#if filteredLogs.length > 0}
-            {#each filteredLogs as log (log.timestamp)}
-              <div class="mb-2 pb-2 border-b last:border-b-0" style="border-color: var(--border);">
-                <div class="flex items-start gap-2">
-                  <span
-                    class="px-2 py-0.5 rounded text-xs font-semibold whitespace-nowrap"
-                    style="background-color: {
-                      log.level === 'ERROR' ? '#ef4444' :
-                      log.level === 'WARN' ? '#f59e0b' :
-                      '#3b82f6'
-                    }; color: white;"
-                  >
-                    {log.level}
-                  </span>
-                  <span class="text-xs opacity-70" style="color: var(--text-secondary);">
-                    {formatTimestamp(log.timestamp)}
-                  </span>
+            {#each filteredLogs as log, index (log.timestamp + '-' + index)}
+              {#if log}
+                <div class="mb-2 pb-2 border-b last:border-b-0" style="border-color: var(--border);">
+                  <div class="flex items-start gap-2">
+                    <span
+                      class="px-2 py-0.5 rounded text-xs font-semibold whitespace-nowrap"
+                      style="background-color: {
+                        log.level === 'ERROR' ? '#ef4444' :
+                        log.level === 'WARN' ? '#f59e0b' :
+                        '#3b82f6'
+                      }; color: white;"
+                    >
+                      {log.level || 'LOG'}
+                    </span>
+                    <span class="text-xs opacity-70" style="color: var(--text-secondary);">
+                      {log.timestamp ? formatTimestamp(log.timestamp) : ''}
+                    </span>
+                  </div>
+                  <div class="mt-1 break-words whitespace-pre-wrap" style="color: var(--text-primary);">
+                    {@html (log.message || '').replace(/\n/g, '<br>')}
+                  </div>
                 </div>
-                <div class="mt-1 break-words whitespace-pre-wrap" style="color: var(--text-primary);">
-                  {@html log.message.replace(/\n/g, '<br>')}
-                </div>
-              </div>
+              {/if}
             {/each}
           {:else}
             <div class="text-center py-8" style="color: var(--text-secondary);">
