@@ -399,19 +399,11 @@ async function getEventContent(
   exportFormat?: 'html' | 'epub' | 'asciidoc' | 'pdf'
 ): Promise<{ content: string; title: string; author: string }> {
   if (event.kind === 30040) {
-    // For books, fetch all branches and leaves
-    const contentEvents = await fetchBookContentEvents(event);
-    console.log(`[Book Export] Fetched ${contentEvents.length} content events for book`);
+    // For books, build hierarchical structure from indexEvent's 'a' tags
+    // This preserves nesting of subchapters under their parent chapters
+    console.log(`[Book Export] Building hierarchical book structure from index event`);
     
-    // Count and log top-level sections
-    const { total, found } = countTopLevelSections(event, contentEvents);
-    console.log(`[Book Export] ${found} of ${total} top-level sections published.`);
-    
-    if (contentEvents.length === 0) {
-      throw new Error('No content events found for this book');
-    }
-    
-    const combined = await combineBookEvents(event, contentEvents, true, exportFormat);
+    const combined = await combineBookEvents(event, undefined, true, exportFormat);
     
     if (!combined || combined.trim().length === 0) {
       throw new Error('Book content is empty after combining');
@@ -465,7 +457,147 @@ function countTopLevelSections(indexEvent: NostrEvent, contentEvents: NostrEvent
 }
 
 /**
+ * Build a hierarchical structure of book events from an index event
+ * Returns a tree structure where each node contains the event and its children
+ */
+interface BookEventNode {
+  event: NostrEvent;
+  children: BookEventNode[];
+  aTag: string; // The 'a' tag that references this event
+}
+
+async function buildBookEventHierarchy(
+  indexEvent: NostrEvent,
+  visitedIds: Set<string> = new Set()
+): Promise<BookEventNode[]> {
+  const currentVisited = new Set(visitedIds);
+  currentVisited.add(indexEvent.id);
+  
+  // Collect all 'a' and 'e' tags in their original order
+  const aTags: string[] = [];
+  const eTags: string[] = [];
+  const tagOrder: Array<{ type: 'a' | 'e'; value: string; index: number }> = [];
+  
+  indexEvent.tags.forEach((tag, index) => {
+    if (tag[0] === 'a' && tag[1]) {
+      aTags.push(tag[1]);
+      tagOrder.push({ type: 'a', value: tag[1], index });
+    } else if (tag[0] === 'e' && tag[1] && tag[1] !== indexEvent.id && !visitedIds.has(tag[1])) {
+      eTags.push(tag[1]);
+      tagOrder.push({ type: 'e', value: tag[1], index });
+    }
+  });
+  
+  const nodes: BookEventNode[] = [];
+  
+  // Fetch all events in parallel for efficiency
+  const aTagEvents = new Map<string, NostrEvent>();
+  const eTagEvents = new Map<string, NostrEvent>();
+  
+  // Fetch events referenced by 'a' tags (branches 30040 and leaves 30041)
+  if (aTags.length > 0) {
+    try {
+      const aTagFilters: any[] = [];
+      for (const aTag of aTags) {
+        const [kindStr, pubkey, dTag] = aTag.split(':');
+        if (kindStr && pubkey && dTag) {
+          const kind = parseInt(kindStr, 10);
+          if (kind === 30040 || kind === 30041) {
+            aTagFilters.push({
+              kinds: [kind],
+              authors: [pubkey],
+              '#d': [dTag]
+            });
+          }
+        }
+      }
+      
+      if (aTagFilters.length > 0) {
+        const result = await relayService.queryEvents(
+          'anonymous',
+          'wiki-read',
+          aTagFilters,
+          { excludeUserContent: false, currentUserPubkey: undefined }
+        );
+        
+        // Create a map of events by their a-tag identifier
+        for (const event of result.events.filter(e => e.kind === 30040 || e.kind === 30041)) {
+          const dTag = event.tags.find(([k]) => k === 'd')?.[1];
+          if (dTag) {
+            const aTagKey = `${event.kind}:${event.pubkey}:${dTag}`;
+            aTagEvents.set(aTagKey, event);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch book content events (a-tags):', error);
+    }
+  }
+  
+  // Fetch events referenced by 'e' tags (legacy support for 30041 leaves or other content kinds)
+  if (eTags.length > 0) {
+    try {
+      // Fetch events by ID - these are typically 30041 but could be other kinds
+      const result = await relayService.queryEvents(
+        'anonymous',
+        'wiki-read',
+        [{ ids: eTags }],
+        { excludeUserContent: false, currentUserPubkey: undefined }
+      );
+      
+      // Create a map of events by ID for quick lookup
+      for (const event of result.events) {
+        eTagEvents.set(event.id, event);
+      }
+    } catch (error) {
+      console.error('Failed to fetch book content events (e-tags):', error);
+    }
+  }
+  
+  // Build nodes in the original tag order to preserve structure
+  for (const tagInfo of tagOrder) {
+    if (tagInfo.type === 'a') {
+      const [kindStr, pubkey, dTag] = tagInfo.value.split(':');
+      if (kindStr && pubkey && dTag) {
+        const aTagKey = `${kindStr}:${pubkey}:${dTag}`;
+        const event = aTagEvents.get(aTagKey);
+        if (event) {
+          const node: BookEventNode = {
+            event,
+            children: [],
+            aTag: tagInfo.value
+          };
+          
+          // If this is a 30040 event (branch), recursively fetch its children
+          if (event.kind === 30040 && !currentVisited.has(event.id)) {
+            node.children = await buildBookEventHierarchy(event, currentVisited);
+          }
+          // 30041 events (leaves) have no children
+          
+          nodes.push(node);
+        }
+      }
+    } else if (tagInfo.type === 'e') {
+      const event = eTagEvents.get(tagInfo.value);
+      if (event) {
+        // 'e' tags reference leaves (content), so they have no children
+        const node: BookEventNode = {
+          event,
+          children: [],
+          aTag: `e:${tagInfo.value}` // Use 'e:' prefix to indicate this came from an 'e' tag
+        };
+        
+        nodes.push(node);
+      }
+    }
+  }
+  
+  return nodes;
+}
+
+/**
  * Fetch all 30040 (branches) and 30041 (leaves) events referenced by a 30040 index event
+ * @deprecated Use buildBookEventHierarchy instead for proper nesting
  */
 async function fetchBookContentEvents(indexEvent: NostrEvent): Promise<NostrEvent[]> {
   const visitedIds = new Set<string>();
@@ -557,10 +689,11 @@ async function fetchBookContentEventsRecursive(
 
 /**
  * Combine book events into a single AsciiDoc document
+ * Builds hierarchical structure from indexEvent's 'a' tags to preserve nesting
  */
 export async function combineBookEvents(
   indexEvent: NostrEvent,
-  contentEvents: NostrEvent[],
+  contentEvents?: NostrEvent[], // Optional, kept for backward compatibility but not used for hierarchical structure
   isTopLevel: boolean = true,
   exportFormat?: 'html' | 'epub' | 'asciidoc' | 'pdf'
 ): Promise<string> {
@@ -608,7 +741,7 @@ export async function combineBookEvents(
   }
   doc += `:doctype: book\n`;
   doc += `:toc:\n`;
-  doc += `:toclevels: 2\n`;
+  doc += `:toclevels: 1\n`; // Only show top-level chapters (level 2 headings) in TOC for all formats
   doc += `:stem:\n`;
   doc += `:page-break-mode: auto\n`;
   
@@ -655,19 +788,51 @@ export async function combineBookEvents(
     exportFormat
   }, isTopLevel && indexEvent.kind === 30040);
   
-  // Add each content event as a section (chapters)
-  for (let i = 0; i < contentEvents.length; i++) {
-    const event = contentEvents[i];
-    const sectionTitle = event.tags.find(([k]) => k === 'title')?.[1];
+  // Build hierarchical structure from indexEvent's 'a' tags to preserve nesting
+  const hierarchy = await buildBookEventHierarchy(indexEvent);
+  let sectionIndex = 0;
+  let totalSections = 0;
+  
+  // Maximum heading level is 6 (level 1 is document title, so max chapter level is 6)
+  const MAX_HEADING_LEVEL = 6;
+  
+  // Count total sections for logging
+  function countSections(nodes: BookEventNode[]): number {
+    let count = 0;
+    for (const node of nodes) {
+      count++;
+      count += countSections(node.children);
+    }
+    return count;
+  }
+  totalSections = countSections(hierarchy);
+  
+  function renderEventNode(node: BookEventNode, level: number = 2, isFirst: boolean = false): void {
+    // Enforce maximum heading level of 6 (level 1 is document title, so max chapter level is 6)
+    const actualLevel = Math.min(level, MAX_HEADING_LEVEL);
     
-    console.log(`[Book Export] Processing chapter ${i + 1}/${contentEvents.length}: ${sectionTitle || 'Untitled'}`);
+    const event = node.event;
+    const sectionTitle = event.tags.find(([k]) => k === 'title')?.[1] || 
+                        event.tags.find(([k]) => k === 'T')?.[1];
+    
+    sectionIndex++;
+    console.log(`[Book Export] Processing section ${sectionIndex}/${totalSections} (level ${actualLevel}): ${sectionTitle || 'Untitled'}`);
     
     if (sectionTitle) {
-      // For PDF, add page break before each chapter (except the first one)
-      if (exportFormat === 'pdf' && i > 0) {
+      // For PDF, add page break before each top-level chapter (except the first one)
+      if (exportFormat === 'pdf' && actualLevel === 2 && !isFirst) {
         doc += `[page-break]\n`;
       }
-      doc += `== ${sectionTitle}\n\n`;
+      
+      // Use appropriate heading level: == for level 2, === for level 3, etc.
+      // Maximum is level 6 (======) since level 1 (=) is the document title
+      const headingLevel = '='.repeat(actualLevel);
+      doc += `${headingLevel} ${sectionTitle}\n\n`;
+      
+      // Warn if we hit the maximum level and there are still nested children
+      if (level > MAX_HEADING_LEVEL && node.children.length > 0) {
+        console.warn(`[Book Export] WARNING: Section "${sectionTitle}" is at maximum heading level ${MAX_HEADING_LEVEL}. ${node.children.length} nested section(s) will be rendered at the same level.`);
+      }
     }
     
     let eventContent = event.content;
@@ -677,29 +842,46 @@ export async function combineBookEvents(
     
     // Log content length for debugging
     const contentLength = eventContent.length;
-    console.log(`[Book Export] Chapter ${i + 1} content length: ${contentLength} characters`);
+    console.log(`[Book Export] Section ${sectionIndex} content length: ${contentLength} characters`);
     
-    if (!eventContent || eventContent.trim().length === 0) {
-      console.warn(`[Book Export] Warning: Chapter ${i + 1} (${sectionTitle || 'Untitled'}) has empty content`);
-      doc += `_This chapter has no content._\n\n`;
-    } else {
+    // Only show "no content" message if section has neither content nor children
+    const hasContent = eventContent && eventContent.trim().length > 0;
+    const hasChildren = node.children.length > 0;
+    
+    if (!hasContent && !hasChildren) {
+      console.warn(`[Book Export] Warning: Section ${sectionIndex} (${sectionTitle || 'Untitled'}) has no content and no subsections`);
+      doc += `_This section has no content._\n\n`;
+    } else if (hasContent) {
+      // Render content if it exists
       doc += eventContent;
       doc += `\n\n`;
     }
+    // If section has children but no content, just skip the content part (children will be rendered below)
+    
+    // Render children (nested sections) with increased level
+    // Cap at MAX_HEADING_LEVEL to prevent exceeding AsciiDoc's 6-level limit
+    const nextLevel = Math.min(level + 1, MAX_HEADING_LEVEL);
+    for (let i = 0; i < node.children.length; i++) {
+      renderEventNode(node.children[i], nextLevel, i === 0 && !sectionTitle);
+    }
+  }
+  
+  // Render all top-level nodes
+  for (let i = 0; i < hierarchy.length; i++) {
+    renderEventNode(hierarchy[i], 2, i === 0);
   }
   
   console.log(`[Book Export] Combined document length: ${doc.length} characters`);
-  console.log(`[Book Export] Total chapters processed: ${contentEvents.length}`);
+  console.log(`[Book Export] Total sections processed: ${sectionIndex}`);
   
-  // Verify all chapters were included by checking the document
-  const chapterHeaders = doc.match(/^== /gm) || [];
+  // Verify all sections were included by checking the document
+  const chapterHeaders = doc.match(/^==+ /gm) || [];
   const chapterCount = chapterHeaders.length;
-  console.log(`[Book Export] Chapter headers found in document: ${chapterCount}`);
+  console.log(`[Book Export] Section headers found in document: ${chapterCount}`);
   
-  // Note: chapterCount may be greater than contentEvents.length due to metadata sections (expected)
-  if (chapterCount < contentEvents.length) {
-    console.error(`[Book Export] ERROR: Document has fewer chapter headers (${chapterCount}) than content events (${contentEvents.length}). Some chapters may be missing!`);
-    console.error(`[Book Export] Missing chapters: ${contentEvents.length - chapterCount}`);
+  // Note: chapterCount may be greater than sectionIndex due to metadata sections (expected)
+  if (chapterCount < sectionIndex) {
+    console.warn(`[Book Export] WARNING: Document has fewer section headers (${chapterCount}) than sections processed (${sectionIndex}). Some sections may be missing!`);
   }
   
   return doc;
@@ -966,16 +1148,9 @@ export async function downloadBookAsAsciiDoc(
   filename?: string,
   onProgress?: (progress: number, status: string) => void
 ): Promise<void> {
-  onProgress?.(5, 'Fetching book content...');
-  const contentEvents = await fetchBookContentEvents(indexEvent);
-  console.log(`[Book Export] Fetched ${contentEvents.length} content events for book`);
-  
-  // Count and log top-level sections
-  const { total, found } = countTopLevelSections(indexEvent, contentEvents);
-  console.log(`[Book Export] ${found} of ${total} top-level sections published.`);
-  
+  onProgress?.(5, 'Building book structure...');
   onProgress?.(25, 'Combining chapters...');
-  let combined = await combineBookEvents(indexEvent, contentEvents, true, 'asciidoc');
+  let combined = await combineBookEvents(indexEvent, undefined, true, 'asciidoc');
   
   onProgress?.(50, 'Processing content...');
   // Apply quality control AFTER all conversions and metadata additions
@@ -1002,17 +1177,10 @@ export async function downloadBookAsEPUB(
   abortSignal?: AbortSignal
 ): Promise<void> {
   if (abortSignal?.aborted) throw new Error('Download cancelled');
-  onProgress?.(5, 'Fetching book content...');
-  const contentEvents = await fetchBookContentEvents(indexEvent);
-  console.log(`[Book Export] Fetched ${contentEvents.length} content events for book`);
-  
-  // Count and log top-level sections
-  const { total, found } = countTopLevelSections(indexEvent, contentEvents);
-  console.log(`[Book Export] ${found} of ${total} top-level sections published.`);
-  
+  onProgress?.(5, 'Building book structure...');
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(25, 'Combining chapters...');
-  let combined = await combineBookEvents(indexEvent, contentEvents, true, 'epub');
+  let combined = await combineBookEvents(indexEvent, undefined, true, 'epub');
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(50, 'Processing content quality...');
