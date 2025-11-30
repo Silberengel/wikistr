@@ -156,7 +156,15 @@
       '[EPUB Export]',
       '[HTML5 Export]',
       '[HTML Export]',
-      '[Download]'
+      '[Download]',
+      '[EPUB]',  // Server-side EPUB logs
+      '[PDF]', // Server-side PDF logs
+      '[HTML]', // Server-side HTML logs
+      'asciidoctor:',  // AsciiDoctor error messages
+      'Conversion error',
+      'Conversion failed',
+      'Stylesheet error',
+      'failed to parse'
     ];
     return downloadPrefixes.some(prefix => message.includes(prefix));
   }

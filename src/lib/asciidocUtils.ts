@@ -51,22 +51,44 @@ export function formatPublishedOnForTitlePage(
 
 /**
  * Get revdate value for AsciiDoc attributes
+ * AsciiDoctor requires a full date format (YYYY-MM-DD), not just a year
  */
 export function getRevdateValue(
   event: NostrEvent,
   publishedOn?: string
 ): string {
-  let revdateValue: string;
-  if (event.created_at) {
-    const createdYear = new Date(event.created_at * 1000).getFullYear();
-    revdateValue = formatPublishedOnForTitlePage(publishedOn, createdYear) || 
-                   formatDateForTitlePage(createdYear);
-  } else {
-    const currentYear = new Date().getFullYear();
-    revdateValue = formatPublishedOnForTitlePage(publishedOn, currentYear) || 
-                   formatDateForTitlePage(currentYear);
+  // If publishedOn is provided and is a valid date, use it
+  if (publishedOn) {
+    // Try to parse as ISO date (YYYY-MM-DD)
+    const isoDateMatch = publishedOn.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoDateMatch) {
+      return publishedOn.substring(0, 10); // Return YYYY-MM-DD portion
+    }
+    
+    // Try to extract year and create a date
+    const yearMatch = publishedOn.match(/(\d{4})/);
+    if (yearMatch) {
+      const year = parseInt(yearMatch[1], 10);
+      // Use January 1st as default date for year-only values
+      return `${year}-01-01`;
+    }
   }
-  return revdateValue;
+  
+  // Fallback to event created_at date
+  if (event.created_at) {
+    const date = new Date(event.created_at * 1000);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  
+  // Final fallback: current date
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /**
