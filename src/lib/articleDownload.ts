@@ -60,130 +60,23 @@ function isMarkdown(content: string): boolean {
   return false;
 }
 
+// Import shared markdown conversion utility
+import { convertMarkdownToAsciiDoc as convertMarkdownToAsciiDocShared } from '$lib/markdownToAsciiDoc';
+
 /**
- * Convert Markdown to AsciiDoc format
+ * Convert Markdown to AsciiDoc format (for exports)
+ * Uses the shared conversion utility with export-specific options
  */
 function convertMarkdownToAsciiDoc(content: string): string {
-  if (!content) return content;
-  
-  let converted = content;
-  
-  // Convert setext-style headers FIRST (before ATX headers)
-  // Setext headers use underlines: === for h1, --- for h2
-  // Pattern: text on one line, followed by === or --- on the next line
-  const headerLines = converted.split('\n');
-  const processedHeaderLines: string[] = [];
-  
-  for (let i = 0; i < headerLines.length; i++) {
-    const line = headerLines[i];
-    const nextLine = i + 1 < headerLines.length ? headerLines[i + 1] : '';
-    
-    // Check if next line is a setext underline
-    if (nextLine && /^={3,}$/.test(nextLine.trim())) {
-      // Level 1 header (===)
-      processedHeaderLines.push(`= ${line.trim()}`);
-      i++; // Skip the underline line
-    } else if (nextLine && /^-{3,}$/.test(nextLine.trim())) {
-      // Level 2 header (---)
-      processedHeaderLines.push(`== ${line.trim()}`);
-      i++; // Skip the underline line
-    } else {
-      processedHeaderLines.push(line);
-    }
-  }
-  
-  converted = processedHeaderLines.join('\n');
-  
-  // Convert ATX-style headers: # Title -> = Title, ## Section -> == Section, etc.
-  converted = converted.replace(/^(#{1,6})\s+(.+)$/gm, (match, hashes, text) => {
-    const level = hashes.length;
-    const equals = '='.repeat(level);
-    return `${equals} ${text}`;
+  return convertMarkdownToAsciiDocShared(content, {
+    convertLevel1ToLevel2: false, // Keep level 1 as level 1 for exports
+    allowBlankLinesInSetext: false, // Simple setext header detection for exports
+    convertTables: false, // Tables not needed for exports (handled separately if needed)
+    convertCodeBlocks: false, // Code blocks handled by AsciiDoctor
+    convertStrikethrough: false, // Strikethrough not needed for exports
+    convertBlockquotes: true, // Convert blockquotes for exports
+    convertATXHeaders: true // Convert ATX headers for exports
   });
-  
-  // Convert blockquotes: group consecutive lines starting with >
-  // First, identify blockquote blocks
-  const lines = converted.split('\n');
-  const processed: string[] = [];
-  let inBlockquote = false;
-  let blockquoteLines: string[] = [];
-  
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-    
-    if (trimmed.startsWith('>')) {
-      // Extract the quote text (remove > and optional space)
-      const quoteText = trimmed.replace(/^>\s*/, '');
-      if (!inBlockquote) {
-        // Start new blockquote
-        inBlockquote = true;
-        blockquoteLines = [quoteText];
-      } else {
-        // Continue blockquote
-        blockquoteLines.push(quoteText);
-      }
-    } else {
-      // Not a blockquote line
-      if (inBlockquote) {
-        // End current blockquote
-        if (blockquoteLines.length > 0) {
-          processed.push('[quote]');
-          processed.push('____');
-          processed.push(...blockquoteLines);
-          processed.push('____');
-        }
-        inBlockquote = false;
-        blockquoteLines = [];
-      }
-      processed.push(line);
-    }
-  }
-  
-  // Handle blockquote at end of content
-  if (inBlockquote && blockquoteLines.length > 0) {
-    processed.push('[quote]');
-    processed.push('____');
-    processed.push(...blockquoteLines);
-    processed.push('____');
-  }
-  
-  converted = processed.join('\n');
-  
-  // Convert images: ![alt](url) -> image::url[alt]
-  // Handle both regular and reference-style images
-  converted = converted.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, url) => {
-    // Preserve the URL as-is, but ensure it's properly formatted
-    const cleanUrl = url.trim();
-    return `image::${cleanUrl}[${alt || ''}]`;
-  });
-  
-  // Also handle reference-style images: ![alt][ref] -> convert to image::url[alt] if we can find the ref
-  // This is a simple implementation - full reference resolution would require more parsing
-  converted = converted.replace(/!\[([^\]]*)\]\[([^\]]+)\]/g, (match, alt, ref) => {
-    // Try to find the reference definition [ref]: url
-    const refPattern = new RegExp(`^\\[${ref}\\]:\\s*(.+)$`, 'm');
-    const refMatch = converted.match(refPattern);
-    if (refMatch && refMatch[1]) {
-      const url = refMatch[1].trim();
-      return `image::${url}[${alt || ''}]`;
-    }
-    // If reference not found, keep the original (will be handled by AsciiDoctor)
-    return match;
-  });
-  
-  // Convert links: [text](url) -> link:url[text]
-  converted = converted.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
-    return `link:${url}[${text}]`;
-  });
-  
-  // Convert bold: **text** -> *text*
-  converted = converted.replace(/\*\*([^*]+)\*\*/g, '*$1*');
-  
-  // Convert italic: *text* -> _text_ (but be careful not to convert bold markers)
-  converted = converted.replace(/(?<!\*)\*([^*\n]+?)\*(?!\*)/g, '_$1_');
-  
-  return converted;
 }
 
 /**

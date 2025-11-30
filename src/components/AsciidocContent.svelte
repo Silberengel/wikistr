@@ -26,6 +26,7 @@
   import { openArticleCard, openOrCreateArticleCard } from '$lib/articleLauncher';
   import { formatBookWikilinkDisplayTextForGUI } from '$lib/contentQualityControl';
   import { saveReadingPlace } from '$lib/bookmarks';
+  import { convertMarkdownToAsciiDoc as convertMarkdownToAsciiDocShared } from '$lib/markdownToAsciiDoc';
 
   interface Props {
     event: NostrEvent;
@@ -340,6 +341,7 @@
       
       // Fetch the event by ID using relayService - check cache first
       try {
+        const { contentCache } = await import('$lib/contentCache');
         const allCached = [
           ...contentCache.getEvents('publications'),
           ...contentCache.getEvents('longform'),
@@ -373,12 +375,12 @@
             }
           }
           
-          fetchedEvent = result.events.find(evt => evt.id === eventId) || null;
+          fetchedEvent = result.events.find((evt: NostrEvent) => evt.id === eventId) || null;
         }
         
         if (fetchedEvent) {
         // Create an ArticleCard for the fetched event
-        const dTag = fetchedEvent.tags.find(([k]) => k === 'd')?.[1] || fetchedEvent.id;
+        const dTag = fetchedEvent.tags.find((tag) => tag[0] === 'd')?.[1] || fetchedEvent.id;
         const articleCard: Omit<ArticleCard, 'id'> = {
           type: 'article',
           data: [dTag, fetchedEvent.pubkey],
@@ -645,226 +647,18 @@
     return processed;
   }
 
-  // Convert Markdown syntax to AsciiDoc syntax
+  // Convert Markdown syntax to AsciiDoc syntax (for panel rendering)
+  // Uses the shared conversion utility with panel-specific options
   function convertMarkdownToAsciiDoc(markdown: string): string {
-    let asciidoc = markdown;
-    
-    // Convert setext-style headers FIRST (before other processing)
-    // Setext headers use underlines: === for h1, --- for h2
-    // Pattern: text on one line, followed by === or --- on the next line
-    const headerLines = asciidoc.split('\n');
-    const processedHeaderLines: string[] = [];
-    
-    for (let i = 0; i < headerLines.length; i++) {
-      const line = headerLines[i];
-      const nextLine = i + 1 < headerLines.length ? headerLines[i + 1] : '';
-      
-      // Check if next line is a setext underline
-      if (nextLine && /^={3,}$/.test(nextLine.trim())) {
-        // Level 1 header (===)
-        processedHeaderLines.push(`= ${line.trim()}`);
-        i++; // Skip the underline line
-      } else if (nextLine && /^-{3,}$/.test(nextLine.trim())) {
-        // Level 2 header (---)
-        processedHeaderLines.push(`== ${line.trim()}`);
-        i++; // Skip the underline line
-      } else {
-        processedHeaderLines.push(line);
-      }
-    }
-    
-    asciidoc = processedHeaderLines.join('\n');
-    
-    // Convert strikethrough: ~~text~~ -> [line-through]#text#
-    asciidoc = asciidoc.replace(/~~([^~]+)~~/g, '[line-through]#$1#');
-    
-    // Convert bold: **text** -> *text* (must be done before italic to avoid conflicts)
-    // Match **text** but not ***text*** (which is bold+italic)
-    asciidoc = asciidoc.replace(/\*\*([^*]+)\*\*/g, '*$1*');
-    
-    // Convert italic: *text* -> _text_ (but not if it's part of **text** which we just converted)
-    // Match single asterisks that aren't preceded or followed by another asterisk
-    // Use a simpler approach: match *text* where text doesn't contain asterisks
-    asciidoc = asciidoc.replace(/(?<!\*)\*([^*\n]+?)\*(?!\*)/g, '_$1_');
-    
-    // Convert code blocks: ```lang ... ``` -> [source,lang]
-    // Do this BEFORE image/link conversion to protect code blocks
-    asciidoc = asciidoc.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
-      const langAttr = lang ? `,${lang}` : '';
-      return `[source${langAttr}]\n----\n${code.trim()}\n----`;
+    return convertMarkdownToAsciiDocShared(markdown, {
+      convertLevel1ToLevel2: true, // Convert level 1 to level 2 for panel rendering (level 1 is document title in AsciiDoc)
+      allowBlankLinesInSetext: true, // Allow blank lines between header text and underline
+      convertTables: true, // Convert markdown tables to AsciiDoc tables
+      convertCodeBlocks: true, // Convert markdown code blocks to AsciiDoc source blocks
+      convertStrikethrough: true, // Convert strikethrough syntax
+      convertBlockquotes: false, // Blockquotes handled by AsciiDoctor
+      convertATXHeaders: false // ATX headers not needed for panel (setext headers are primary)
     });
-
-    // Convert images: ![alt](url) -> image::url[alt]
-    // MUST be done BEFORE link conversion to avoid conflicts
-    // Handle both with and without alt text: ![alt](url) or ![](url)
-    // Also handle images with title: ![alt](url "title")
-    asciidoc = asciidoc.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]+)")?\)/g, (match, alt, url, title) => {
-      // AsciiDoc image syntax: image::url[alt text,title]
-      // If title is provided, include it
-      const altText = alt || '';
-      const titlePart = title ? `,${title}` : '';
-      return `image::${url}[${altText}${titlePart}]`;
-    });
-    
-    // Convert links: [text](url) -> link:url[text]
-    // Must come AFTER image conversion to avoid matching ![alt](url) patterns
-    asciidoc = asciidoc.replace(/(?<!!)\[([^\]]+)\]\(([^)]+)\)/g, 'link:$2[$1]');
-    
-    // Convert tables: | col1 | col2 | -> [cols="2,1,1,3"]
-    // Match multi-line tables with proper markdown table format
-    // Process line by line to find table blocks
-    const lines = asciidoc.split('\n');
-    const result: string[] = [];
-    let inTable = false;
-    let tableLines: string[] = [];
-    
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const isTableRow = /^\s*\|[^|]*\|/.test(line);
-      
-      if (isTableRow) {
-        if (!inTable) {
-          inTable = true;
-          tableLines = [];
-        }
-        tableLines.push(line);
-      } else {
-        // Process accumulated table if we were in one
-        if (inTable && tableLines.length >= 2) {
-          // Find separator row
-          let separatorIndex = -1;
-          for (let j = 0; j < tableLines.length; j++) {
-            const cells = tableLines[j].split('|').map(c => c.trim()).filter(c => c.length > 0);
-            if (cells.length > 0 && cells.every(cell => /^-+$/.test(cell))) {
-              separatorIndex = j;
-              break;
-            }
-          }
-          
-          if (separatorIndex !== -1) {
-            // Valid table - convert it
-            const firstRow = tableLines[0];
-            const colCount = (firstRow.match(/\|/g) || []).length - 1;
-            
-            if (colCount >= 2) {
-              // Use flexible column widths
-              let colSpec = '';
-              if (colCount === 4) {
-                colSpec = '2*,1*,1*,3*'; // Name, Kind, d-tag, Tags
-              } else if (colCount === 3) {
-                colSpec = '2*,1*,2*';
-              } else if (colCount === 2) {
-                colSpec = '1*,2*';
-              } else {
-                colSpec = '1*,'.repeat(colCount).slice(0, -1);
-              }
-              
-              let asciidocTable = `[cols="${colSpec}",options="header"]\n|===\n`;
-              
-              tableLines.forEach((row, index) => {
-                // Skip separator rows
-                const cells = row.split('|').map(c => c.trim()).filter(c => c.length > 0);
-                if (cells.length > 0 && cells.every(cell => /^-+$/.test(cell))) {
-                  return;
-                }
-                
-                // Parse cells properly
-                const allCells = row.split('|');
-                const parsedCells = allCells.slice(1, -1).map(c => c.trim());
-                
-                // Build the row
-                let rowContent = '';
-                parsedCells.forEach(cell => {
-                  if (index < separatorIndex) {
-                    rowContent += `|*${cell}*`;
-                  } else {
-                    rowContent += `|${cell}`;
-                  }
-                });
-                asciidocTable += rowContent + '\n';
-              });
-              
-              asciidocTable += '|===';
-              result.push(asciidocTable);
-            } else {
-              // Invalid table, keep original
-              result.push(...tableLines);
-            }
-          } else {
-            // No separator, keep original
-            result.push(...tableLines);
-          }
-          
-          inTable = false;
-          tableLines = [];
-        }
-        
-        result.push(line);
-      }
-    }
-    
-    // Handle table at end of document
-    if (inTable && tableLines.length >= 2) {
-      let separatorIndex = -1;
-      for (let j = 0; j < tableLines.length; j++) {
-        const cells = tableLines[j].split('|').map(c => c.trim()).filter(c => c.length > 0);
-        if (cells.length > 0 && cells.every(cell => /^-+$/.test(cell))) {
-          separatorIndex = j;
-          break;
-        }
-      }
-      
-      if (separatorIndex !== -1) {
-        const firstRow = tableLines[0];
-        const colCount = (firstRow.match(/\|/g) || []).length - 1;
-        
-        if (colCount >= 2) {
-          let colSpec = '';
-          if (colCount === 4) {
-            colSpec = '2*,1*,1*,3*';
-          } else if (colCount === 3) {
-            colSpec = '2*,1*,2*';
-          } else if (colCount === 2) {
-            colSpec = '1*,2*';
-          } else {
-            colSpec = '1*,'.repeat(colCount).slice(0, -1);
-          }
-          
-          let asciidocTable = `[cols="${colSpec}",options="header"]\n|===\n`;
-          
-          tableLines.forEach((row, index) => {
-            const cells = row.split('|').map(c => c.trim()).filter(c => c.length > 0);
-            if (cells.length > 0 && cells.every(cell => /^-+$/.test(cell))) {
-              return;
-            }
-            
-            const allCells = row.split('|');
-            const parsedCells = allCells.slice(1, -1).map(c => c.trim());
-            
-            let rowContent = '';
-            parsedCells.forEach(cell => {
-              if (index < separatorIndex) {
-                rowContent += `|*${cell}*`;
-              } else {
-                rowContent += `|${cell}`;
-              }
-            });
-            asciidocTable += rowContent + '\n';
-          });
-          
-          asciidocTable += '|===';
-          result.push(asciidocTable);
-        } else {
-          result.push(...tableLines);
-        }
-      } else {
-        result.push(...tableLines);
-      }
-    }
-    
-    asciidoc = result.join('\n');
-    
-    return asciidoc;
   }
 
   // Detect if content is primarily Markdown vs AsciiDoc
@@ -1990,6 +1784,7 @@
             // Fetch the event to determine its real kind - check cache first
             const eventPromise = new Promise<NostrEvent | null>(async (resolve) => {
               let eventData: NostrEvent | null = null;
+              const { contentCache } = await import('$lib/contentCache');
               const allCached = [
                 ...contentCache.getEvents('publications'),
                 ...contentCache.getEvents('longform'),
@@ -2033,9 +1828,9 @@
                   }
                 }
                 
-                const event = result.events.find(evt => 
+                const event = result.events.find((evt: NostrEvent) => 
                   evt.pubkey === data.pubkey && 
-                  evt.tags.some(([tag, value]) => tag === 'd' && value === data.identifier) &&
+                  evt.tags.some((tag) => tag[0] === 'd' && tag[1] === data.identifier) &&
                   evt.kind === data.kind
                 );
                 resolve(event || null);
@@ -2104,6 +1899,7 @@
             // Fetch the event to determine its real kind - check cache first
             const eventPromise = new Promise<NostrEvent | null>(async (resolve) => {
               let eventData: NostrEvent | null = null;
+              const { contentCache } = await import('$lib/contentCache');
               const allCached = [
                 ...contentCache.getEvents('publications'),
                 ...contentCache.getEvents('longform'),
@@ -2147,9 +1943,9 @@
                   }
                 }
                 
-                const event = result.events.find(evt => 
+                const event = result.events.find((evt: NostrEvent) => 
                   evt.pubkey === data.pubkey && 
-                  evt.tags.some(([tag, value]) => tag === 'd' && value === data.identifier) &&
+                  evt.tags.some((tag) => tag[0] === 'd' && tag[1] === data.identifier) &&
                   evt.kind === data.kind
                 );
                 resolve(event || null);
