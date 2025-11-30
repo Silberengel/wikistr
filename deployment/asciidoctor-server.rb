@@ -273,15 +273,18 @@ post '/convert/epub' do
     
     begin
       # EPUB - always use classic stylesheet
+      # Determine deployment directory dynamically (where this script is located)
+      deployment_dir = __dir__ || Dir.pwd
       stylesheet_name = 'epub-classic.css'
-      stylesheet_path = File.join('/app/deployment', stylesheet_name)
+      stylesheet_path = File.join(deployment_dir, stylesheet_name)
       
       # Verify stylesheet exists
       unless File.exist?(stylesheet_path)
-        puts "[EPUB] Warning: Classic stylesheet not found, proceeding without custom stylesheet"
+        puts "[EPUB] Warning: Classic stylesheet not found at #{stylesheet_path}, proceeding without custom stylesheet"
+        puts "[EPUB] Debug: Current directory: #{Dir.pwd}, Script directory: #{__dir__}"
         stylesheet_name = nil
       else
-        puts "[EPUB] Using stylesheet: #{stylesheet_name}"
+        puts "[EPUB] Using stylesheet: #{stylesheet_path}"
       end
       
       # Build EPUB attributes
@@ -312,7 +315,8 @@ post '/convert/epub' do
       # Add stylesheet if available
       stylesheet_attempted = false
       if stylesheet_name && File.exist?(stylesheet_path)
-        epub_attributes['epub3-stylesdir'] = '/app/deployment'
+        # Use the deployment directory where the stylesheet was found
+        epub_attributes['epub3-stylesdir'] = deployment_dir
         epub_attributes['stylesheet'] = stylesheet_name
         stylesheet_attempted = true
       end

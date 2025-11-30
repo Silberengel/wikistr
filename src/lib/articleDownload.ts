@@ -681,13 +681,12 @@ export async function combineBookEvents(
   doc += `:version: ${versionValue}\n`;
   doc += `:revnumber: ${versionValue}\n`;
   
-  // Use formatted value for display (AsciiDoctor will display this on title page)
-  const revdateDisplay = getRevdateDisplayValue(indexEvent, publishedOn);
-  // For pubdate, use ISO format (less likely to cause parsing issues)
+  // Use formatted display value for pubdate (what user sees on title page)
+  // Keep revdate in ISO format (YYYY-MM-DD) so AsciiDoctor can parse it
   const revdateISO = getRevdateValue(indexEvent, publishedOn);
-  doc += `:pubdate: ${revdateISO}\n`;
-  // Use formatted display value for revdate (what user sees on title page)
-  doc += `:revdate: ${revdateDisplay}\n`;
+  const pubdateDisplay = getRevdateDisplayValue(indexEvent, publishedOn);
+  doc += `:pubdate: ${pubdateDisplay}\n`;
+  doc += `:revdate: ${revdateISO}\n`;
   
   if (source) doc += `:source: ${source}\n`;
   if (topicTags.length > 0) doc += `:keywords: ${topicTags.join(', ')}\n`;

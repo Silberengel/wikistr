@@ -166,22 +166,20 @@ export function buildBaseAsciiDocAttributes(
     doc += `:revnumber: ${versionValue}\n`;
     
     if (event) {
-      // Use formatted value for display (AsciiDoctor will display this on title page)
-      // The formatted value should still be parseable as a date when possible
-      const revdateDisplay = getRevdateDisplayValue(event, publishedOn);
-      // For pubdate, use ISO format (less likely to cause parsing issues)
+      // Use formatted display value for pubdate (what user sees on title page)
+      // Keep revdate in ISO format (YYYY-MM-DD) so AsciiDoctor can parse it
       const revdateISO = getRevdateValue(event, publishedOn);
-      doc += `:pubdate: ${revdateISO}\n`;
-      // Use formatted display value for revdate (what user sees on title page)
-      doc += `:revdate: ${revdateDisplay}\n`;
+      const pubdateDisplay = getRevdateDisplayValue(event, publishedOn);
+      doc += `:pubdate: ${pubdateDisplay}\n`;
+      doc += `:revdate: ${revdateISO}\n`;
     } else if (publishedOn) {
       const yearMatch = publishedOn.match(/(\d{4})/);
       if (yearMatch) {
         const year = parseInt(yearMatch[1], 10);
         const revdateISO = `${year}-01-01`;
-        const revdateDisplay = formatDateForTitlePage(year);
-        doc += `:pubdate: ${revdateISO}\n`;
-        doc += `:revdate: ${revdateDisplay}\n`;
+        const pubdateDisplay = formatDateForTitlePage(year);
+        doc += `:pubdate: ${pubdateDisplay}\n`;
+        doc += `:revdate: ${revdateISO}\n`;
       }
     }
   } else {
