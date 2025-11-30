@@ -17,9 +17,9 @@ import {
 } from './contentQualityControl';
 import {
   formatDateForTitlePage,
-  formatPublishedOnForTitlePage,
   getTitleFromEventTags as getTitleFromEventTagsUtil,
   getRevdateValue,
+  getRevdateDisplayValue,
   buildBaseAsciiDocAttributes,
   buildArticleMetadataSection,
   buildBookMetadataSection,
@@ -681,9 +681,13 @@ export async function combineBookEvents(
   doc += `:version: ${versionValue}\n`;
   doc += `:revnumber: ${versionValue}\n`;
   
-  const revdateValue = getRevdateValue(indexEvent, publishedOn);
-  doc += `:pubdate: ${revdateValue}\n`;
-  doc += `:revdate: ${revdateValue}\n`;
+  // Use formatted value for display (AsciiDoctor will display this on title page)
+  const revdateDisplay = getRevdateDisplayValue(indexEvent, publishedOn);
+  // For pubdate, use ISO format (less likely to cause parsing issues)
+  const revdateISO = getRevdateValue(indexEvent, publishedOn);
+  doc += `:pubdate: ${revdateISO}\n`;
+  // Use formatted display value for revdate (what user sees on title page)
+  doc += `:revdate: ${revdateDisplay}\n`;
   
   if (source) doc += `:source: ${source}\n`;
   if (topicTags.length > 0) doc += `:keywords: ${topicTags.join(', ')}\n`;

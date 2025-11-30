@@ -27,31 +27,9 @@ export function formatDateForTitlePage(year: number): string {
 }
 
 /**
- * Format publishedOn date string for title page
- */
-export function formatPublishedOnForTitlePage(
-  publishedOn: string | undefined,
-  fallbackYear?: number
-): string | undefined {
-  if (!publishedOn) {
-    if (fallbackYear !== undefined) {
-      return formatDateForTitlePage(fallbackYear);
-    }
-    return undefined;
-  }
-  
-  const yearMatch = publishedOn.match(/(\d{4})/);
-  if (yearMatch) {
-    const year = parseInt(yearMatch[1], 10);
-    return formatDateForTitlePage(year);
-  }
-  
-  return undefined;
-}
-
-/**
- * Get revdate value for AsciiDoc attributes
+ * Get revdate value for AsciiDoc attributes (ISO format for parsing)
  * AsciiDoctor requires a full date format (YYYY-MM-DD), not just a year
+ * Returns ISO date format (YYYY-MM-DD) for AsciiDoctor to parse correctly
  */
 export function getRevdateValue(
   event: NostrEvent,
@@ -89,6 +67,36 @@ export function getRevdateValue(
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+/**
+ * Get formatted revdate display value for title page
+ * Returns formatted value according to formatDateForTitlePage rules
+ */
+export function getRevdateDisplayValue(
+  event: NostrEvent,
+  publishedOn?: string
+): string {
+  let year: number;
+  
+  // Extract year from publishedOn if available
+  if (publishedOn) {
+    const yearMatch = publishedOn.match(/(\d{4})/);
+    if (yearMatch) {
+      year = parseInt(yearMatch[1], 10);
+      return formatDateForTitlePage(year);
+    }
+  }
+  
+  // Fallback to event created_at year
+  if (event.created_at) {
+    year = new Date(event.created_at * 1000).getFullYear();
+    return formatDateForTitlePage(year);
+  }
+  
+  // Final fallback: current year
+  year = new Date().getFullYear();
+  return formatDateForTitlePage(year);
 }
 
 /**
@@ -158,16 +166,22 @@ export function buildBaseAsciiDocAttributes(
     doc += `:revnumber: ${versionValue}\n`;
     
     if (event) {
-      const revdateValue = getRevdateValue(event, publishedOn);
-      doc += `:pubdate: ${revdateValue}\n`;
-      doc += `:revdate: ${revdateValue}\n`;
+      // Use formatted value for display (AsciiDoctor will display this on title page)
+      // The formatted value should still be parseable as a date when possible
+      const revdateDisplay = getRevdateDisplayValue(event, publishedOn);
+      // For pubdate, use ISO format (less likely to cause parsing issues)
+      const revdateISO = getRevdateValue(event, publishedOn);
+      doc += `:pubdate: ${revdateISO}\n`;
+      // Use formatted display value for revdate (what user sees on title page)
+      doc += `:revdate: ${revdateDisplay}\n`;
     } else if (publishedOn) {
       const yearMatch = publishedOn.match(/(\d{4})/);
       if (yearMatch) {
         const year = parseInt(yearMatch[1], 10);
-        const revdateValue = formatDateForTitlePage(year);
-        doc += `:pubdate: ${revdateValue}\n`;
-        doc += `:revdate: ${revdateValue}\n`;
+        const revdateISO = `${year}-01-01`;
+        const revdateDisplay = formatDateForTitlePage(year);
+        doc += `:pubdate: ${revdateISO}\n`;
+        doc += `:revdate: ${revdateDisplay}\n`;
       }
     }
   } else {
