@@ -476,8 +476,13 @@
   }
 
   function shareCopy() {
+    if (!event) {
+      console.error('Cannot share: event not loaded');
+      return;
+    }
+    // Use the actual event kind instead of the hardcoded wikiKind
     const naddr = naddrEncode({
-      kind: wikiKind,
+      kind: event.kind,
       identifier: dTag,
       pubkey,
       relays: seenOn
