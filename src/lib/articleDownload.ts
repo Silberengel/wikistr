@@ -750,11 +750,10 @@ export async function combineBookEvents(
   const chapterCount = chapterHeaders.length;
   console.log(`[Book Export] Chapter headers found in document: ${chapterCount}`);
   
+  // Note: chapterCount may be greater than contentEvents.length due to metadata sections (expected)
   if (chapterCount < contentEvents.length) {
     console.error(`[Book Export] ERROR: Document has fewer chapter headers (${chapterCount}) than content events (${contentEvents.length}). Some chapters may be missing!`);
     console.error(`[Book Export] Missing chapters: ${contentEvents.length - chapterCount}`);
-  } else if (chapterCount > contentEvents.length) {
-    console.warn(`[Book Export] WARNING: Document has more chapter headers (${chapterCount}) than content events (${contentEvents.length}). This may include metadata sections.`);
   }
   
   return doc;
