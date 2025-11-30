@@ -219,7 +219,9 @@ export function buildArticleMetadataSection(
   displayTitle: string,
   author: string,
   image?: string,
-  exportFormat?: 'html' | 'epub' | 'asciidoc' | 'pdf'
+  exportFormat?: 'html' | 'epub' | 'asciidoc' | 'pdf',
+  publishedOnFormatted?: string,
+  revdateISO?: string
 ): string {
   // Skip article-metadata for books (30040)
   if (event.kind === 30040) {
@@ -248,15 +250,25 @@ export function buildArticleMetadataSection(
     metadataFields.push({ label: 'Topics', value: topicTags.join(', ') });
   }
   
-  const publishedAt = event.tags.find(([k]) => k === 'published_at')?.[1] || 
-                      event.tags.find(([k]) => k === 'published_on')?.[1];
-  if (publishedAt) {
-    try {
-      const publishedDate = new Date(parseInt(publishedAt) * 1000);
-      metadataFields.push({ label: 'Published', value: publishedDate.toLocaleDateString() });
-    } catch (e) {
-      metadataFields.push({ label: 'Published', value: publishedAt });
+  // Show formatted publishedOn if available, otherwise try to format from tags
+  if (publishedOnFormatted) {
+    metadataFields.push({ label: 'Published On', value: publishedOnFormatted });
+  } else {
+    const publishedAt = event.tags.find(([k]) => k === 'published_at')?.[1] || 
+                        event.tags.find(([k]) => k === 'published_on')?.[1];
+    if (publishedAt) {
+      try {
+        const publishedDate = new Date(parseInt(publishedAt) * 1000);
+        metadataFields.push({ label: 'Published', value: publishedDate.toLocaleDateString() });
+      } catch (e) {
+        metadataFields.push({ label: 'Published', value: publishedAt });
+      }
     }
+  }
+  
+  // Show revision date in ISO format if available
+  if (revdateISO) {
+    metadataFields.push({ label: 'Revision Date', value: revdateISO });
   }
   
   if (event.created_at) {
@@ -320,6 +332,8 @@ export function buildBookMetadataSection(
     version?: string;
     source?: string;
     publishedOn?: string;
+    publishedOnFormatted?: string;  // Formatted display value for publishedOn
+    revdateISO?: string;  // ISO format revision date
     topicTags?: string[];
     image?: string;
     exportFormat?: 'html' | 'epub' | 'asciidoc' | 'pdf';
@@ -335,7 +349,16 @@ export function buildBookMetadataSection(
   if (author) metadataFields.push({ label: 'Author', value: author });
   if (options.version) metadataFields.push({ label: 'Version', value: options.version });
   if (options.source) metadataFields.push({ label: 'Source', value: options.source });
-  if (options.publishedOn) metadataFields.push({ label: 'Published On', value: options.publishedOn });
+  // Show formatted publishedOn if available, otherwise fall back to raw value
+  if (options.publishedOnFormatted) {
+    metadataFields.push({ label: 'Published On', value: options.publishedOnFormatted });
+  } else if (options.publishedOn) {
+    metadataFields.push({ label: 'Published On', value: options.publishedOn });
+  }
+  // Show revision date in ISO format if available
+  if (options.revdateISO) {
+    metadataFields.push({ label: 'Revision Date', value: options.revdateISO });
+  }
   if (options.topicTags && options.topicTags.length > 0) {
     metadataFields.push({ label: 'Topics', value: options.topicTags.join(', ') });
   }

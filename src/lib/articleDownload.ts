@@ -355,11 +355,20 @@ async function buildAsciiDocWithMetadata(
     event
   });
   
+  // Calculate formatted dates for metadata display (for PDF/EPUB)
+  let publishedOnFormatted: string | undefined;
+  let revdateISO: string | undefined;
+  if (exportFormat === 'pdf' || exportFormat === 'epub') {
+    revdateISO = getRevdateValue(event, publishedOn);
+    publishedOnFormatted = getRevdateDisplayValue(event, publishedOn);
+  }
+  
   // Add abstract section using shared utility
   doc += addAbstractSection(description, summary);
   
   // Add article metadata section using shared utility
-  doc += buildArticleMetadataSection(event, displayTitle, author, image, exportFormat);
+  // Pass both formatted publishedOn and ISO revdate for display
+  doc += buildArticleMetadataSection(event, displayTitle, author, image, exportFormat, publishedOnFormatted, revdateISO);
   
   // Add content
   doc += content;
@@ -703,10 +712,13 @@ export async function combineBookEvents(
   }
   
   // Add book metadata section using shared utility
+  // Pass both formatted publishedOn and ISO revdate for display
   doc += buildBookMetadataSection(displayTitle, author, {
     version,
     source,
     publishedOn,
+    publishedOnFormatted: pubdateDisplay,  // Formatted display value
+    revdateISO: revdateISO,  // ISO format revision date
     topicTags,
     image,
     exportFormat
