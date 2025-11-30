@@ -98,8 +98,17 @@ import { highlightedArticleCardId } from '$lib/articleLauncher';
       ev.preventDefault();
       ev.stopPropagation();
     }
-    if (card.type === 'editor' && card.data.previous) replaceSelf(card.data.previous);
-    else removeSelf();
+    try {
+      if (card.type === 'editor' && card.data && (card.data as any).previous) {
+        replaceSelf((card.data as any).previous);
+      } else {
+        removeSelf();
+      }
+    } catch (error) {
+      // Fallback: just remove the card if there's an error
+      console.error('Error closing card:', error);
+      removeSelf();
+    }
   }
 
   function back() {
