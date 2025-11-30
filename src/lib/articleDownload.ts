@@ -43,8 +43,21 @@ function isAsciiDoc(content: string): boolean {
 function isMarkdown(content: string): boolean {
   if (!content || content.trim().length === 0) return false;
   const trimmed = content.trim();
-  // Check for Markdown headers
-  return /^#\s+/.test(trimmed) || /^##+\s+/.test(trimmed);
+  // Check for ATX-style Markdown headers (# Header)
+  if (/^#\s+/.test(trimmed) || /^##+\s+/.test(trimmed)) {
+    return true;
+  }
+  // Check for setext-style Markdown headers (text followed by === or ---)
+  const lines = trimmed.split('\n');
+  for (let i = 0; i < lines.length - 1; i++) {
+    const line = lines[i].trim();
+    const nextLine = lines[i + 1].trim();
+    // Setext header: non-empty line followed by === (h1) or --- (h2)
+    if (line && (nextLine.match(/^={3,}$/) || nextLine.match(/^-{3,}$/))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -55,7 +68,33 @@ function convertMarkdownToAsciiDoc(content: string): string {
   
   let converted = content;
   
-  // Convert headers: # Title -> = Title, ## Section -> == Section, etc.
+  // Convert setext-style headers FIRST (before ATX headers)
+  // Setext headers use underlines: === for h1, --- for h2
+  // Pattern: text on one line, followed by === or --- on the next line
+  const headerLines = converted.split('\n');
+  const processedHeaderLines: string[] = [];
+  
+  for (let i = 0; i < headerLines.length; i++) {
+    const line = headerLines[i];
+    const nextLine = i + 1 < headerLines.length ? headerLines[i + 1] : '';
+    
+    // Check if next line is a setext underline
+    if (nextLine && /^={3,}$/.test(nextLine.trim())) {
+      // Level 1 header (===)
+      processedHeaderLines.push(`= ${line.trim()}`);
+      i++; // Skip the underline line
+    } else if (nextLine && /^-{3,}$/.test(nextLine.trim())) {
+      // Level 2 header (---)
+      processedHeaderLines.push(`== ${line.trim()}`);
+      i++; // Skip the underline line
+    } else {
+      processedHeaderLines.push(line);
+    }
+  }
+  
+  converted = processedHeaderLines.join('\n');
+  
+  // Convert ATX-style headers: # Title -> = Title, ## Section -> == Section, etc.
   converted = converted.replace(/^(#{1,6})\s+(.+)$/gm, (match, hashes, text) => {
     const level = hashes.length;
     const equals = '='.repeat(level);

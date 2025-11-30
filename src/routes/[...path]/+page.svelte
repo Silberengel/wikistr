@@ -5,7 +5,7 @@
 
   import { page } from '$app/state';
   import { cards } from '$lib/state';
-  import { next, scrollCardIntoView } from '$lib/utils';
+  import { next, scrollCardIntoView, normalizeDTag } from '$lib/utils';
   import type { ArticleCard, Card, EditorCard, RelayCard, SearchCard, UserCard, BookCard, DiffCard } from '$lib/types';
 
   // Track previous path to avoid infinite loops
@@ -208,15 +208,41 @@
       if (parts.length === 2 && parts[1].match(/^[a-f0-9]{64}$/i)) {
         // This is an article card: dTag*pubkey format
         // Decode the dTag part if it contains encoded characters
-        const dTag = parts[0].includes('%') ? decodeURIComponent(parts[0]) : parts[0];
-        return { id: next(), type: 'article', data: [dTag, parts[1]] } as ArticleCard;
+        // SvelteKit may have already decoded it, so try decoding and catch errors
+        let dTag: string;
+        try {
+          dTag = parts[0].includes('%') ? decodeURIComponent(parts[0]) : parts[0];
+        } catch (e) {
+          // If decoding fails (e.g., already decoded), use as-is
+          dTag = parts[0];
+        }
+        // Normalize the dTag to match what openOrCreateArticleCard does
+        // This ensures consistency when refreshing pages
+        const normalizedDTag = normalizeDTag(dTag);
+        return { id: next(), type: 'article', data: [normalizedDTag, parts[1]] } as ArticleCard;
       }
-    } else if (pathPart.match(/^[a-f0-9]{64}$/i)) {
+      // If it contains * but doesn't match article format, fall through to find card
+    }
+    
+    // Handle remaining cases (hex strings and other identifiers)
+    if (pathPart.match(/^[a-f0-9]{64}$/i)) {
       // 64-character hex string - could be event ID or pubkey
       // Create a find card that will handle the lookup
+      // Don't normalize hex strings - they're already in the correct format
       return { id: next(), type: 'find', data: pathPart, preferredAuthors: [] } as SearchCard;
     } else {
-      return { id: next(), type: 'find', data: pathPart, preferredAuthors: [] } as SearchCard;
+      // Normalize the identifier to ensure consistency when refreshing
+      // This ensures that identifiers with special characters are handled correctly
+      let normalizedData: string;
+      try {
+        // Decode if needed, then normalize
+        const decoded = ditem.includes('%') ? decodeURIComponent(ditem) : ditem;
+        normalizedData = normalizeDTag(decoded);
+      } catch (e) {
+        // If decoding fails, normalize the original ditem
+        normalizedData = normalizeDTag(ditem);
+      }
+      return { id: next(), type: 'find', data: normalizedData, preferredAuthors: [] } as SearchCard;
     }
   }
 </script>
