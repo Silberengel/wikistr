@@ -25,8 +25,12 @@
   } from '$lib/books';
   import { parseBookWikilink as parseBookWikilinkNKBIP08, bookReferenceToTags, type ParsedBookReference } from '$lib/bookWikilinkParser';
   import { generateBibleGatewayUrl, fetchBibleGatewayOg } from '$lib/bibleGatewayUtils';
+  import { generateSefariaUrl, fetchSefariaOg } from '$lib/sefariaUtils';
+  import { generateExploreQuranUrl, fetchExploreQuranOg } from '$lib/exploreQuranUtils';
   import BookFallbackCards from '$components/BookFallbackCards.svelte';
   import { generateBibleGatewayUrlForReference } from '$lib/bibleGatewayUtils';
+  import { generateSefariaUrlForReference } from '$lib/sefariaUtils';
+  import { generateExploreQuranUrlForReference } from '$lib/exploreQuranUtils';
 
   interface Props {
     query: string;
@@ -53,6 +57,8 @@
   let referenceOgLoading = $state<Map<string, boolean>>(new Map());
   let referenceOgErrors = $state<Map<string, string | null>>(new Map());
   const bibleGatewayUrlForQuery = $derived.by(() => (bookType === 'bible' && parsedQuery ? generateBibleGatewayUrl(parsedQuery) : null));
+  const sefariaUrlForQuery = $derived.by(() => (bookType === 'torah' && parsedQuery ? generateSefariaUrl(parsedQuery) : null));
+  const exploreQuranUrlForQuery = $derived.by(() => (bookType === 'quran' && parsedQuery ? generateExploreQuranUrl(parsedQuery) : null));
 
   // close handlers
   let uwrcancel: () => void;
@@ -105,7 +111,7 @@
               
               // Store in cache
               if (result.events.length > 0) {
-                await contentCache.storeEvents('publications', result.events.map(event => ({ event, relays: result.relays })));
+                await contentCache.storeEvents('publications', result.events.map((event: NostrEvent) => ({ event, relays: result.relays })));
               }
             }
             
@@ -195,7 +201,7 @@
             
             // Store in cache
             if (result.events.length > 0) {
-              await contentCache.storeEvents('publications', result.events.map(event => ({ event, relays: result.relays })));
+              await contentCache.storeEvents('publications', result.events.map((event: NostrEvent) => ({ event, relays: result.relays })));
             }
           }
           
@@ -288,6 +294,72 @@
     }
   }
 
+  async function loadSefariaPreview() {
+    const targetUrl = generateSefariaUrl(parsedQuery);
+    console.log('BookSearch: loadSefariaPreview', { query, targetUrl, bookType, tried, resultsLength: results.length, versionNotFound });
+    
+    if (!targetUrl) {
+      console.log('BookSearch: No Sefaria URL generated for query:', query);
+      ogPreview = null;
+      ogError = null;
+      ogLoadedQuery = query;
+      return;
+    }
+
+    if (ogLoadedQuery === query || ogLoading) {
+      console.log('BookSearch: Skipping OG load - already loaded or loading', { ogLoadedQuery, query, ogLoading });
+      return;
+    }
+
+    console.log('BookSearch: Loading OG preview from:', targetUrl);
+    ogLoading = true;
+    ogError = null;
+
+    try {
+      ogPreview = await fetchSefariaOg(targetUrl);
+      console.log('BookSearch: OG preview loaded:', ogPreview);
+      ogLoadedQuery = query;
+    } catch (error) {
+      console.error('BookSearch: Failed to load OG preview:', error);
+      ogError = (error as Error).message;
+    } finally {
+      ogLoading = false;
+    }
+  }
+
+  async function loadExploreQuranPreview() {
+    const targetUrl = generateExploreQuranUrl(parsedQuery);
+    console.log('BookSearch: loadExploreQuranPreview', { query, targetUrl, bookType, tried, resultsLength: results.length, versionNotFound });
+    
+    if (!targetUrl) {
+      console.log('BookSearch: No ExploreQuran URL generated for query:', query);
+      ogPreview = null;
+      ogError = null;
+      ogLoadedQuery = query;
+      return;
+    }
+
+    if (ogLoadedQuery === query || ogLoading) {
+      console.log('BookSearch: Skipping OG load - already loaded or loading', { ogLoadedQuery, query, ogLoading });
+      return;
+    }
+
+    console.log('BookSearch: Loading OG preview from:', targetUrl);
+    ogLoading = true;
+    ogError = null;
+
+    try {
+      ogPreview = await fetchExploreQuranOg(targetUrl);
+      console.log('BookSearch: OG preview loaded:', ogPreview);
+      ogLoadedQuery = query;
+    } catch (error) {
+      console.error('BookSearch: Failed to load OG preview:', error);
+      ogError = (error as Error).message;
+    } finally {
+      ogLoading = false;
+    }
+  }
+
   $effect(() => {
     if (query && ogLoadedQuery !== query) {
       ogPreview = null;
@@ -306,7 +378,13 @@
       return;
     }
 
-    const targetUrl = generateBibleGatewayUrlForReference(ref);
+    const targetUrl = bookType === 'bible'
+      ? generateBibleGatewayUrlForReference(ref)
+      : bookType === 'torah'
+      ? generateSefariaUrlForReference(ref)
+      : bookType === 'quran'
+      ? generateExploreQuranUrlForReference(ref)
+      : null;
     if (!targetUrl) {
       referenceOgErrors.set(refKey, 'Could not generate URL');
       return;
@@ -316,7 +394,13 @@
     referenceOgErrors.set(refKey, null);
 
     try {
-      const preview = await fetchBibleGatewayOg(targetUrl);
+      const preview = bookType === 'bible'
+        ? await fetchBibleGatewayOg(targetUrl)
+        : bookType === 'torah'
+        ? await fetchSefariaOg(targetUrl)
+        : bookType === 'quran'
+        ? await fetchExploreQuranOg(targetUrl)
+        : { title: undefined, description: undefined, image: undefined };
       referenceOgPreviews.set(refKey, preview);
     } catch (error) {
       referenceOgErrors.set(refKey, (error as Error).message);
@@ -340,10 +424,16 @@
   });
 
   $effect(() => {
-    const shouldLoad = query && ogLoadedQuery !== query && !ogLoading && bookType === 'bible' && tried && (results.length === 0 || versionNotFound);
-    console.log('BookSearch: OG preview effect', { query, ogLoadedQuery, ogLoading, bookType, tried, resultsLength: results.length, versionNotFound, shouldLoad });
-    if (shouldLoad) {
+    const shouldLoadBible = query && ogLoadedQuery !== query && !ogLoading && bookType === 'bible' && tried && (results.length === 0 || versionNotFound);
+    const shouldLoadSefaria = query && ogLoadedQuery !== query && !ogLoading && bookType === 'torah' && tried && (results.length === 0 || versionNotFound);
+    const shouldLoadExploreQuran = query && ogLoadedQuery !== query && !ogLoading && bookType === 'quran' && tried && (results.length === 0 || versionNotFound);
+    console.log('BookSearch: OG preview effect', { query, ogLoadedQuery, ogLoading, bookType, tried, resultsLength: results.length, versionNotFound, shouldLoadBible, shouldLoadSefaria, shouldLoadExploreQuran });
+    if (shouldLoadBible) {
       loadBibleGatewayPreview();
+    } else if (shouldLoadSefaria) {
+      loadSefariaPreview();
+    } else if (shouldLoadExploreQuran) {
+      loadExploreQuranPreview();
     }
   });
 
@@ -407,7 +497,7 @@
       
       // Check cache first, then use relayService for book search
       try {
-        let result;
+        let result: { events: NostrEvent[]; relays: string[] };
         
         // First, try to get book events from cache
         const cachedBooks = await contentCache.getEvents('publications');
@@ -433,7 +523,7 @@
           
           // Store in cache
           if (result.events.length > 0) {
-            await contentCache.storeEvents('publications', result.events.map(event => ({ event, relays: result.relays })));
+            await contentCache.storeEvents('publications', result.events.map((event: NostrEvent) => ({ event, relays: result.relays })));
           }
         }
 
@@ -451,7 +541,7 @@
 
     // Also search using general search for book-related content
     try {
-      let searchResult;
+      let searchResult: { events: NostrEvent[]; relays: string[] };
       
       // First, try to get book events from cache using search
       const cachedBooks = await contentCache.getEvents('publications');
@@ -478,7 +568,7 @@
         
         // Store in cache
         if (searchResult.events.length > 0) {
-          await contentCache.storeEvents('publications', searchResult.events.map(event => ({ event, relays: searchResult.relays })));
+          await contentCache.storeEvents('publications', searchResult.events.map((event: NostrEvent) => ({ event, relays: searchResult.relays })));
         }
       }
 
@@ -612,7 +702,8 @@
   }
 
   // Get the display name for the book type
-  const bookTypeDisplayName = BOOK_TYPES[bookType]?.displayName || bookType.charAt(0).toUpperCase() + bookType.slice(1);
+  // Default to "book" for bible (default bookType), otherwise use the specific book type display name
+  const bookTypeDisplayName = bookType === 'bible' ? 'book' : (BOOK_TYPES[bookType]?.displayName || 'book');
 </script>
 
 <div class="book-search-results">
@@ -636,11 +727,15 @@
     <BookFallbackCards
       parsedQuery={parsedQuery}
       bibleGatewayUrl={bibleGatewayUrlForQuery}
+      sefariaUrl={sefariaUrlForQuery}
+      exploreQuranUrl={exploreQuranUrlForQuery}
       referenceOgPreviews={referenceOgPreviews}
       referenceOgLoading={referenceOgLoading}
       referenceOgErrors={referenceOgErrors}
       getReferenceKey={getReferenceKey}
       showBibleGateway={bookType === 'bible'}
+      showSefaria={bookType === 'torah'}
+      showExploreQuran={bookType === 'quran'}
     />
   {:else if results.length > 0}
     {#if versionNotFound}

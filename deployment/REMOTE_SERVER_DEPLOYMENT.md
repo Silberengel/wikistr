@@ -32,7 +32,7 @@ cd deployment/
 ```
 
 This will create and push images like:
-- `silberengel/wikistr:v5.1.1-wikistr`
+- `silberengel/wikistr:v5.2.0-wikistr`
 - `silberengel/wikistr:latest-wikistr`
 
 **Note:** If you don't have a Docker Hub account or want to use a different registry, you can:

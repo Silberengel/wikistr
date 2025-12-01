@@ -1,0 +1,292 @@
+import type { BookReference } from './books';
+
+// Mapping from Quran book names (surah names) to surah numbers (1-114)
+// This follows the standard compilation order
+const surahNameToNumber: Record<string, number> = {
+  'Al-Fatiha': 1,
+  'Al-Baqarah': 2,
+  'Ali Imran': 3,
+  'An-Nisa': 4,
+  'Al-Maidah': 5,
+  'Al-Anam': 6,
+  'Al-Araf': 7,
+  'Al-Anfal': 8,
+  'At-Tawbah': 9,
+  'Yunus': 10,
+  'Hud': 11,
+  'Yusuf': 12,
+  'Ar-Rad': 13,
+  'Ibrahim': 14,
+  'Al-Hijr': 15,
+  'An-Nahl': 16,
+  'Al-Isra': 17,
+  'Al-Kahf': 18,
+  'Maryam': 19,
+  'Taha': 20,
+  'Al-Anbiya': 21,
+  'Al-Hajj': 22,
+  'Al-Muminun': 23,
+  'An-Nur': 24,
+  'Al-Furqan': 25,
+  'Ash-Shuara': 26,
+  'An-Naml': 27,
+  'Al-Qasas': 28,
+  'Al-Ankabut': 29,
+  'Ar-Rum': 30,
+  'Luqman': 31,
+  'As-Sajdah': 32,
+  'Al-Ahzab': 33,
+  'Saba': 34,
+  'Fatir': 35,
+  'Ya-Sin': 36,
+  'As-Saffat': 37,
+  'Sad': 38,
+  'Az-Zumar': 39,
+  'Ghafir': 40,
+  'Fussilat': 41,
+  'Ash-Shura': 42,
+  'Az-Zukhruf': 43,
+  'Ad-Dukhan': 44,
+  'Al-Jathiyah': 45,
+  'Al-Ahqaf': 46,
+  'Muhammad': 47,
+  'Al-Fath': 48,
+  'Al-Hujurat': 49,
+  'Qaf': 50,
+  'Adh-Dhariyat': 51,
+  'At-Tur': 52,
+  'An-Najm': 53,
+  'Al-Qamar': 54,
+  'Ar-Rahman': 55,
+  'Al-Waqiah': 56,
+  'Al-Hadid': 57,
+  'Al-Mujadilah': 58,
+  'Al-Hashr': 59,
+  'Al-Mumtahanah': 60,
+  'As-Saff': 61,
+  'Al-Jumuah': 62,
+  'Al-Munafiqun': 63,
+  'At-Taghabun': 64,
+  'At-Talaq': 65,
+  'At-Tahrim': 66,
+  'Al-Mulk': 67,
+  'Al-Qalam': 68,
+  'Al-Haqqah': 69,
+  'Al-Maarij': 70,
+  'Nuh': 71,
+  'Al-Jinn': 72,
+  'Al-Muzzammil': 73,
+  'Al-Muddaththir': 74,
+  'Al-Qiyamah': 75,
+  'Al-Insan': 76,
+  'Al-Mursalat': 77,
+  'An-Naba': 78,
+  'An-Naziat': 79,
+  'Abasa': 80,
+  'At-Takwir': 81,
+  'Al-Infitar': 82,
+  'Al-Mutaffifin': 83,
+  'Al-Inshiqaq': 84,
+  'Al-Buruj': 85,
+  'At-Tariq': 86,
+  'Al-Ala': 87,
+  'Al-Ghashiyah': 88,
+  'Al-Fajr': 89,
+  'Al-Balad': 90,
+  'Ash-Shams': 91,
+  'Al-Layl': 92,
+  'Ad-Duha': 93,
+  'Ash-Sharh': 94,
+  'At-Tin': 95,
+  'Al-Alaq': 96,
+  'Al-Qadr': 97,
+  'Al-Bayyinah': 98,
+  'Az-Zalzalah': 99,
+  'Al-Adiyat': 100,
+  'Al-Qariah': 101,
+  'At-Takathur': 102,
+  'Al-Asr': 103,
+  'Al-Humazah': 104,
+  'Al-Fil': 105,
+  'Quraysh': 106,
+  'Al-Maun': 107,
+  'Al-Kawthar': 108,
+  'Al-Kafirun': 109,
+  'An-Nasr': 110,
+  'Al-Masad': 111,
+  'Al-Ikhlas': 112,
+  'Al-Falaq': 113,
+  'An-Nas': 114
+};
+
+/**
+ * Get the first ayah number from an ayah string (handles ranges and lists)
+ * Since ExploreQuran doesn't support ranges, we always use the first ayah requested
+ */
+function getFirstAyah(ayah: string): number | null {
+  if (!ayah) return null;
+  
+  // Split by comma to handle lists like "6,8,10"
+  const firstPart = ayah.split(',')[0].trim();
+  
+  // Handle ranges like "6-8" - take the first number
+  if (firstPart.includes('-')) {
+    const start = parseInt(firstPart.split('-')[0].trim(), 10);
+    return isNaN(start) ? null : start;
+  }
+  
+  // Single ayah number
+  const ayahNum = parseInt(firstPart, 10);
+  return isNaN(ayahNum) ? null : ayahNum;
+}
+
+/**
+ * Generate ExploreQuran URL for a single reference
+ * Format:
+ * - Surah only: https://www.explorequran.org/index2.php?surah={number}
+ * - Surah with ayah: https://www.explorequran.org/index2.php?surah={number}&ayah={number}
+ */
+function generateSingleReferenceUrl(ref: BookReference): string | null {
+  if (!ref.book) return null;
+  
+  // Get surah number from book name
+  const surahNumber = surahNameToNumber[ref.book];
+  if (!surahNumber) {
+    console.warn('ExploreQuran: Unknown surah name:', ref.book);
+    return null;
+  }
+  
+  if (!ref.chapter) {
+    // Surah only (though in Quran, chapter is the same as surah, so this shouldn't happen)
+    return `https://www.explorequran.org/index2.php?surah=${surahNumber}`;
+  }
+  
+  // In Quran, "chapter" is actually the surah number, and "verse" is the ayah
+  // But our system uses chapter/verse, so we need to handle this
+  // If we have a verse, use it as ayah
+  if (ref.verse) {
+    const firstAyah = getFirstAyah(ref.verse);
+    if (firstAyah === null) {
+      // Invalid ayah, fall back to surah only
+      return `https://www.explorequran.org/index2.php?surah=${surahNumber}`;
+    }
+    
+    // Surah with ayah
+    return `https://www.explorequran.org/index2.php?surah=${surahNumber}&ayah=${firstAyah}`;
+  }
+  
+  // Surah only (no ayah specified)
+  return `https://www.explorequran.org/index2.php?surah=${surahNumber}`;
+}
+
+/**
+ * Generate ExploreQuran URL from parsed query
+ * For multiple references, we generate a URL for the first reference
+ * (ExploreQuran doesn't support multiple references in one URL)
+ */
+export function generateExploreQuranUrl(
+  parsedQuery: { references: BookReference[]; version?: string; versions?: string[] } | null
+): string | null {
+  if (!parsedQuery || parsedQuery.references.length === 0) return null;
+  
+  // ExploreQuran doesn't support multiple references, so use the first one
+  return generateSingleReferenceUrl(parsedQuery.references[0]);
+}
+
+/**
+ * Generate ExploreQuran URL for a single book reference (for individual cards)
+ */
+export function generateExploreQuranUrlForReference(
+  ref: BookReference
+): string | null {
+  return generateSingleReferenceUrl(ref);
+}
+
+// Get proxy URL from environment variable, default to relative path
+const OG_PROXY_URL = (import.meta.env.VITE_OG_PROXY_URL as string | undefined)?.trim() || '/sites/';
+
+function buildProxyUrl(target: string): string {
+  // Use query parameter instead of encoding in path
+  const encoded = encodeURIComponent(target);
+  
+  // If OG_PROXY_URL is a full URL, use it directly
+  if (OG_PROXY_URL.startsWith('http://') || OG_PROXY_URL.startsWith('https://')) {
+    const sanitizedProxy = OG_PROXY_URL.replace(/\/$/, '');
+    return `${sanitizedProxy}?url=${encoded}`;
+  }
+  
+  // Otherwise, treat it as a relative path - ensure it ends with / for query param usage
+  const basePath = OG_PROXY_URL.endsWith('/') ? OG_PROXY_URL : (OG_PROXY_URL || '/sites/');
+  return `${basePath}?url=${encoded}`;
+}
+
+/**
+ * Fetch OG metadata from ExploreQuran via proxy
+ */
+export async function fetchExploreQuranOg(url: string): Promise<{ title?: string; description?: string; image?: string }> {
+  const proxied = buildProxyUrl(url);
+  
+  let response: Response;
+  try {
+    response = await fetch(proxied, {
+      headers: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      },
+      // Add timeout to prevent hanging (5 seconds - should be quick, fallback to link if slow)
+      signal: AbortSignal.timeout(5000)
+    });
+    
+    if (!response.ok) {
+      // For 502/504 errors, provide more context
+      if (response.status === 502 || response.status === 504) {
+        console.warn('ExploreQuran OG fetch failed: Proxy server error', response.status, response.statusText, 'for', url);
+        throw new Error('Proxy server error - ExploreQuran may be temporarily unavailable');
+      }
+      console.warn('ExploreQuran OG fetch failed:', response.status, response.statusText, 'for', url);
+      throw new Error('Preview unavailable');
+    }
+  } catch (error: any) {
+    // Handle timeout and network errors
+    if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+      console.warn('ExploreQuran OG fetch timeout for', url);
+      throw new Error('Request timeout - ExploreQuran took too long to respond');
+    }
+    if (error.message?.includes('Proxy server error')) {
+      throw error; // Re-throw our custom error
+    }
+    console.warn('ExploreQuran OG fetch error:', error.message || error, 'for', url);
+    throw new Error('Preview unavailable');
+  }
+  
+  // Check content type
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
+    console.warn('ExploreQuran OG fetch: unexpected content type', contentType, 'for', url);
+  }
+  
+  const html = await response.text();
+  
+  if (!html || html.trim().length === 0) {
+    console.warn('ExploreQuran OG fetch: empty response for', url);
+    throw new Error('Preview unavailable');
+  }
+  
+  if (typeof DOMParser === 'undefined') {
+    throw new Error('Preview unavailable');
+  }
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  const title = doc.querySelector('meta[property="og:title"]')?.getAttribute('content') || doc.querySelector('title')?.textContent || '';
+  const description =
+    doc.querySelector('meta[property="og:description"]')?.getAttribute('content') ||
+    doc.querySelector('meta[name="description"]')?.getAttribute('content') ||
+    '';
+  const image = doc.querySelector('meta[property="og:image"]')?.getAttribute('content') || undefined;
+
+  return {
+    title: title?.trim() || undefined,
+    description: description?.trim() || undefined,
+    image
+  };
+}
+

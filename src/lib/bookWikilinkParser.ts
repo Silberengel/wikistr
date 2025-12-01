@@ -173,53 +173,56 @@ function parseSingleBookReference(
   let versions = currentVersions || [];
   let collection = currentCollection;
   
-  // Split by pipes to analyze structure
-  const pipeParts = content.split(/\s+\|\s+/);
+  // Parse using pipe-based format: collection | title
+  if (!collection) {
+    // Split by pipes to analyze structure
+    const pipeParts = content.split(/\s+\|\s+/);
   
-  if (pipeParts.length === 1) {
-    // No pipes, just parse normally
-    mainContent = content;
-  } else if (pipeParts.length === 2) {
-    // Single pipe: could be "collection | title" or "title chapter | version"
-    const beforePipe = pipeParts[0].trim();
-    const afterPipe = pipeParts[1].trim();
-    
-    // Check if beforePipe has a chapter number (pattern: word(s) followed by number)
-    const hasChapter = beforePipe.match(/\s+\d+(\s|$|:)/) || beforePipe.match(/^[a-zA-Z0-9_-]+\s+\d+/);
-    
-    if (hasChapter) {
-      // This is "title chapter | version" or "title chapter:section | version"
-      mainContent = beforePipe;
-      versions = afterPipe.split(/\s+/).map(v => normalizeNip54(v.trim())).filter(v => v);
-    } else {
-      // Check if beforePipe is a simple identifier (collection)
-      const collectionMatch = beforePipe.match(/^([a-zA-Z0-9_-]+)$/);
-      if (collectionMatch) {
-        // This is "collection | title"
-        collection = normalizeNip54(collectionMatch[1]);
-        mainContent = afterPipe;
+    if (pipeParts.length === 1) {
+      // No pipes, just parse normally
+      mainContent = content;
+    } else if (pipeParts.length === 2) {
+      // Single pipe: could be "collection | title" or "title chapter | version"
+      const beforePipe = pipeParts[0].trim();
+      const afterPipe = pipeParts[1].trim();
+      
+      // Check if beforePipe has a chapter number (pattern: word(s) followed by number)
+      const hasChapter = beforePipe.match(/\s+\d+(\s|$|:)/) || beforePipe.match(/^[a-zA-Z0-9_-]+\s+\d+/);
+      
+      if (hasChapter) {
+        // This is "title chapter | version" or "title chapter:section | version"
+        mainContent = beforePipe;
+        versions = afterPipe.split(/\s+/).map(v => normalizeNip54(v.trim())).filter(v => v);
       } else {
-        // Ambiguous - treat as no pipe, parse normally
-        mainContent = content;
+        // Check if beforePipe is a simple identifier (collection)
+        const collectionMatch = beforePipe.match(/^([a-zA-Z0-9_-]+)$/);
+        if (collectionMatch) {
+          // This is "collection | title"
+          collection = normalizeNip54(collectionMatch[1]);
+          mainContent = afterPipe;
+        } else {
+          // Ambiguous - treat as no pipe, parse normally
+          mainContent = content;
+        }
       }
-    }
-  } else {
-    // Multiple pipes: "collection | title | version" or "collection | title chapter | version"
-    const firstPart = pipeParts[0].trim();
-    const lastPart = pipeParts[pipeParts.length - 1].trim();
-    const middleParts = pipeParts.slice(1, -1).join(' | ');
-    
-    // Last part is versions (split by spaces for multiple versions)
-    versions = lastPart.split(/\s+/).map(v => normalizeNip54(v.trim())).filter(v => v);
-    
-    // First part might be collection
-    const collectionMatch = firstPart.match(/^([a-zA-Z0-9_-]+)$/);
-    if (collectionMatch && !firstPart.match(/\s/)) {
-      collection = normalizeNip54(collectionMatch[1]);
-      mainContent = middleParts || pipeParts[1].trim();
     } else {
-      // No collection, first part is part of title
-      mainContent = pipeParts.slice(0, -1).join(' | ');
+      // Multiple pipes: "collection | title | version" or "collection | title chapter | version"
+      const firstPart = pipeParts[0].trim();
+      const lastPart = pipeParts[pipeParts.length - 1].trim();
+      const middleParts = pipeParts.slice(1, -1).join(' | ');
+      
+      // Last part is versions (split by spaces for multiple versions)
+      versions = lastPart.split(/\s+/).map(v => normalizeNip54(v.trim())).filter(v => v);
+      
+      // First part might be collection
+      const collectionMatch = firstPart.match(/^([a-zA-Z0-9_-]+)$/);
+      if (collectionMatch && !firstPart.match(/\s/)) {
+        collection = normalizeNip54(collectionMatch[1]);
+        mainContent = middleParts || pipeParts[1].trim();
+      } else {
+        // No collection, first part is part of title
+        mainContent = pipeParts.slice(0, -1).join(' | ');
+      }
     }
   }
   
