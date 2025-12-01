@@ -8,7 +8,7 @@
     parsedQuery: { references: BookReference[]; version?: string; versions?: string[] } | null;
     bibleGatewayUrl: string | null;
     sefariaUrl?: string | null;
-    exploreQuranUrl?: string | null;
+    quranComUrl?: string | null;
     referenceOgPreviews: Map<string, { title?: string; description?: string; image?: string } | null>;
     referenceOgLoading: Map<string, boolean>;
     referenceOgErrors: Map<string, string | null>;
@@ -25,15 +25,15 @@
     showBibleGateway?: boolean;
     // Only show Sefaria fallback if bookType is 'torah'
     showSefaria?: boolean;
-    // Only show ExploreQuran fallback if bookType is 'quran'
-    showExploreQuran?: boolean;
+    // Only show quran.com fallback if bookType is 'quran'
+    showQuranCom?: boolean;
   }
 
   let {
     parsedQuery,
     bibleGatewayUrl,
     sefariaUrl = null,
-    exploreQuranUrl = null,
+    quranComUrl = null,
     referenceOgPreviews,
     referenceOgLoading,
     referenceOgErrors,
@@ -44,7 +44,7 @@
     noWrapper = false,
     showBibleGateway = false,
     showSefaria = false,
-    showExploreQuran = false
+    showQuranCom = false
   }: Props = $props();
 </script>
 
@@ -62,10 +62,10 @@
       {versionDisplayName}
       {noWrapper}
     />
-  {:else if showExploreQuran}
+  {:else if showQuranCom}
     <QuranFallbackCard
       {parsedQuery}
-      {exploreQuranUrl}
+      quranComUrl={quranComUrl}
       {referenceOgPreviews}
       {referenceOgLoading}
       {referenceOgErrors}

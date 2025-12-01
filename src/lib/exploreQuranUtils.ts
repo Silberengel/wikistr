@@ -157,13 +157,16 @@ function getFirstAyah(ayah: string): number | null {
 function generateSingleReferenceUrl(ref: BookReference): string | null {
   if (!ref.book) return null;
   
+  console.log('Quran.com: generateSingleReferenceUrl', { book: ref.book, chapter: ref.chapter, verse: ref.verse });
+  
   // For Quran, "chapter" is actually the surah number
   // If ref.chapter exists and is a valid surah number (1-114), use it directly
   let surahNumber: number | undefined;
   if (ref.chapter && typeof ref.chapter === 'number' && ref.chapter >= 1 && ref.chapter <= 114) {
     surahNumber = ref.chapter;
+    console.log('Quran.com: Using chapter as surah number:', surahNumber);
   } else {
-    // Fall back to book name lookup
+    // Fall back to book name lookuphf 18
     // First, check if the book name is already a number (1-114)
     // This handles numbered surahs like "18" or "1"
     const bookAsNumber = parseInt(ref.book.trim(), 10);
@@ -188,7 +191,7 @@ function generateSingleReferenceUrl(ref: BookReference): string | null {
       }
     
       // Also try matching against normalized versions (remove hyphens, spaces, etc.)
-      // This handles cases where "al-kahf" needs to match "Al-Kahf"
+      // This handles cases where the parser normalized "Al-Kahf" to "alkahf"
       if (!surahNumber) {
         const normalizedBook = ref.book.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
         const matchingKey = Object.keys(surahNameToNumber).find(key => {
@@ -206,6 +209,10 @@ function generateSingleReferenceUrl(ref: BookReference): string | null {
         const matchingKey = Object.keys(surahNameToNumber).find(key => {
           const normalizedKey = key.toLowerCase();
           // Check if the normalized book name is contained in the key or vice versa
+          // But require at least 3 characters to avoid false matches
+          if (normalizedBook.length < 3 || normalizedKey.length < 3) {
+            return false;
+          }
           return normalizedKey.includes(normalizedBook) || normalizedBook.includes(normalizedKey);
         });
         if (matchingKey) {
@@ -218,8 +225,11 @@ function generateSingleReferenceUrl(ref: BookReference): string | null {
   if (!surahNumber) {
     console.warn('Quran.com: Unknown surah name:', ref.book, '(tried chapter, number, exact, case-insensitive, normalized, and partial matching)');
     console.warn('Quran.com: Available surah names:', Object.keys(surahNameToNumber).slice(0, 10).join(', '), '...');
+    console.warn('Quran.com: Reference details:', { book: ref.book, chapter: ref.chapter, verse: ref.verse });
     return null;
   }
+  
+  console.log('Quran.com: Found surah number:', surahNumber, 'for book:', ref.book);
   
   // In Quran, "verse" is the ayah
   // quran.com uses startingVerse parameter to jump to a specific verse
@@ -245,7 +255,7 @@ function generateSingleReferenceUrl(ref: BookReference): string | null {
  * For multiple references, we generate a URL for the first reference
  * (quran.com doesn't support multiple references in one URL)
  */
-export function generateExploreQuranUrl(
+export function generateQuranComUrl(
   parsedQuery: { references: BookReference[]; version?: string; versions?: string[] } | null
 ): string | null {
   if (!parsedQuery || parsedQuery.references.length === 0) return null;
@@ -257,11 +267,15 @@ export function generateExploreQuranUrl(
 /**
  * Generate quran.com URL for a single book reference (for individual cards)
  */
-export function generateExploreQuranUrlForReference(
+export function generateQuranComUrlForReference(
   ref: BookReference
 ): string | null {
   return generateSingleReferenceUrl(ref);
 }
+
+// Legacy function names for backward compatibility
+export const generateExploreQuranUrl = generateQuranComUrl;
+export const generateExploreQuranUrlForReference = generateQuranComUrlForReference;
 
 // Get proxy URL from environment variable, default to relative path
 const OG_PROXY_URL = (import.meta.env.VITE_OG_PROXY_URL as string | undefined)?.trim() || '/sites/';
@@ -289,7 +303,7 @@ function buildProxyUrl(target: string): string {
 /**
  * Fetch OG metadata from quran.com via proxy
  */
-export async function fetchExploreQuranOg(url: string): Promise<{ title?: string; description?: string; image?: string }> {
+export async function fetchQuranComOg(url: string): Promise<{ title?: string; description?: string; image?: string }> {
   const proxied = buildProxyUrl(url);
   console.log('Quran.com: Proxy URL constructed:', proxied, 'from target:', url);
   
@@ -356,4 +370,7 @@ export async function fetchExploreQuranOg(url: string): Promise<{ title?: string
     image
   };
 }
+
+// Legacy function name for backward compatibility
+export const fetchExploreQuranOg = fetchQuranComOg;
 

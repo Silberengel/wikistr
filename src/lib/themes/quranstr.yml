@@ -35,16 +35,16 @@ searchHelpText: |
 
   **Quran Examples:**
 
-  • Named surahs: `[[book::quran | Al-Fatiha 1:1-7 | SAHIH]]` or `[[book::quran | Al-Kahf 18:1-10 | PICKTHALL]]`
-  • Numbered surahs: `[[book::quran | 1 1:1-7 | SAHIH]]` or `[[book::quran | 18 1-10 | PICKTHALL]]`
-  • Search bar: `book::quran | Al-Fatiha 1:1-7 | SAHIH` or `book::quran | 18 1-10`
+  • Named surahs: `[[book::quran | Surah Al-Fatiha 1:1-7 | SAHIH]]` or `[[book::quran | Surah Al-Kahf 18:1-10 | PICKTHALL]]`
+  • Numbered surahs: `[[book::quran | Surah 1:1-7 | SAHIH]]` or `[[book::quran | Surah 18:1-10 | PICKTHALL]]`
+  • Search bar: `book::quran | Surah Al-Fatiha 1:1-7 | SAHIH` or `book::quran | Surah 18:1-10`
 
   **Compare content with diff:**
 
   • diff::article1 | article2
   • diff::article1*pubkey1 | article2*pubkey2 (compare specific authors)
-  • diff::[[book::quran | Al-Fatiha 1:1-7 | PICKTHALL]] | [[book::quran | Al-Fatiha 1:1-7 | SHAKIR]]
-  • diff::[[book::quran | 18 1-10 | PICKTHALL]] | [[book::quran | 18 1-10 | SHAKIR]]
+  • diff::[[book::quran | Surah Al-Fatiha 1:1-7 | PICKTHALL]] | [[book::quran | Surah Al-Fatiha 1:1-7 | SHAKIR]]
+  • diff::[[book::quran | Surah 18:1-10 | PICKTHALL]] | [[book::quran | Surah 18:1-10 | SHAKIR]]
 typography:
   fontFamily: '"Scheherazade New", "Amiri", "Traditional Arabic", "Arabic Typesetting", "Times New Roman", "Times", serif'
   fontFamilyHeading: '"Scheherazade New", "Amiri", "Traditional Arabic", "Arabic Typesetting", "Times New Roman", "Times", serif'

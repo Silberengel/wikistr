@@ -62,7 +62,7 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
   import { cards } from '$lib/state';
   import { generateBibleGatewayUrl, generateBibleGatewayUrlForReference, fetchBibleGatewayOg } from '$lib/bibleGatewayUtils';
   import { generateSefariaUrl, generateSefariaUrlForReference, fetchSefariaOg } from '$lib/sefariaUtils';
-  import { generateExploreQuranUrl, generateExploreQuranUrlForReference, fetchExploreQuranOg } from '$lib/exploreQuranUtils';
+  import { generateQuranComUrl, generateQuranComUrlForReference, fetchQuranComOg } from '$lib/exploreQuranUtils';
   import BookFallbackCards from '$components/BookFallbackCards.svelte';
 
   interface Props {
@@ -92,7 +92,7 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
   let referenceOgErrors = $state<Map<string, string | null>>(new Map());
   const bibleGatewayUrlForQuery = $derived.by(() => (bookCard.bookType === 'bible' && parsedQuery ? generateBibleGatewayUrl(parsedQuery) : null));
   const sefariaUrlForQuery = $derived.by(() => (bookCard.bookType === 'torah' && parsedQuery ? generateSefariaUrl(parsedQuery) : null));
-  const exploreQuranUrlForQuery = $derived.by(() => (bookCard.bookType === 'quran' && parsedQuery ? generateExploreQuranUrl(parsedQuery) : null));
+  const quranComUrlForQuery = $derived.by(() => (bookCard.bookType === 'quran' && parsedQuery ? generateQuranComUrl(parsedQuery) : null));
 
   const bookCard = card as BookCard;
 
@@ -169,12 +169,12 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
     }
   }
 
-  async function loadExploreQuranPreview() {
-    const targetUrl = generateExploreQuranUrl(parsedQuery);
-    console.log('Book: loadExploreQuranPreview', { query, targetUrl, bookType: bookCard.bookType, tried, resultsLength: results.length, versionNotFound });
+  async function loadQuranComPreview() {
+    const targetUrl = generateQuranComUrl(parsedQuery);
+    console.log('Book: loadQuranComPreview', { query, targetUrl, bookType: bookCard.bookType, tried, resultsLength: results.length, versionNotFound });
     
     if (!targetUrl) {
-      console.log('Book: No ExploreQuran URL generated for query:', query);
+      console.log('Book: No quran.com URL generated for query:', query);
       ogPreview = null;
       ogError = null;
       ogLoadedQuery = query;
@@ -191,9 +191,32 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
     ogError = null;
 
     try {
-      ogPreview = await fetchExploreQuranOg(targetUrl);
+      ogPreview = await fetchQuranComOg(targetUrl);
       console.log('Book: OG preview loaded:', ogPreview);
       ogLoadedQuery = query;
+      
+      // Also populate referenceOgPreviews for each reference so BookFallbackCards can display them
+      if (parsedQuery && parsedQuery.references.length > 0 && ogPreview) {
+        const newPreviews = new Map(referenceOgPreviews);
+        for (const ref of parsedQuery.references) {
+          const refKey = getReferenceKey(ref);
+          // Only set if not already set (don't overwrite individual reference previews)
+          if (!newPreviews.has(refKey)) {
+            newPreviews.set(refKey, ogPreview);
+            console.log('Book: Set referenceOgPreview for', refKey, 'preview:', ogPreview);
+          } else {
+            console.log('Book: Skipping referenceOgPreview for', refKey, '- already exists');
+          }
+        }
+        referenceOgPreviews = newPreviews;
+        console.log('Book: Populated referenceOgPreviews with OG preview for', parsedQuery.references.length, 'references. Map size:', newPreviews.size);
+      } else {
+        console.log('Book: Not populating referenceOgPreviews', { 
+          hasParsedQuery: !!parsedQuery, 
+          referencesLength: parsedQuery?.references?.length || 0, 
+          hasOgPreview: !!ogPreview 
+        });
+      }
     } catch (error) {
       console.error('Book: Failed to load OG preview:', error);
       ogError = (error as Error).message;
@@ -211,12 +234,12 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
       : bookCard.bookType === 'torah'
       ? generateSefariaUrl(parsedQuery)
       : bookCard.bookType === 'quran'
-      ? generateExploreQuranUrl(parsedQuery)
+      ? generateQuranComUrl(parsedQuery)
       : null;
     console.log('Book: loadVersionOgPreview', { versionKey, targetUrl, bookType: bookCard.bookType });
     
     if (!targetUrl) {
-      const serviceName = bookCard.bookType === 'bible' ? 'BibleGateway' : bookCard.bookType === 'torah' ? 'Sefaria' : bookCard.bookType === 'quran' ? 'ExploreQuran' : 'external service';
+      const serviceName = bookCard.bookType === 'bible' ? 'BibleGateway' : bookCard.bookType === 'torah' ? 'Sefaria' : bookCard.bookType === 'quran' ? 'quran.com' : 'external service';
       console.log(`Book: No ${serviceName} URL generated for version:`, versionKey);
       versionOgErrors.set(versionKey, `Could not generate ${serviceName} URL`);
       return;
@@ -237,7 +260,7 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
         : bookCard.bookType === 'torah'
         ? await fetchSefariaOg(targetUrl)
         : bookCard.bookType === 'quran'
-        ? await fetchExploreQuranOg(targetUrl)
+        ? await fetchQuranComOg(targetUrl)
         : { title: undefined, description: undefined, image: undefined };
       console.log('Book: OG preview loaded for version:', versionKey, preview);
       versionOgPreviews.set(versionKey, preview);
@@ -269,11 +292,11 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
       : bookCard.bookType === 'torah'
       ? generateSefariaUrlForReference(ref)
       : bookCard.bookType === 'quran'
-      ? generateExploreQuranUrlForReference(ref)
+      ? generateQuranComUrlForReference(ref)
       : null;
     
     if (!targetUrl) {
-      const serviceName = bookCard.bookType === 'bible' ? 'BibleGateway' : bookCard.bookType === 'torah' ? 'Sefaria' : bookCard.bookType === 'quran' ? 'ExploreQuran' : 'external service';
+      const serviceName = bookCard.bookType === 'bible' ? 'BibleGateway' : bookCard.bookType === 'torah' ? 'Sefaria' : bookCard.bookType === 'quran' ? 'quran.com' : 'external service';
       referenceOgErrors.set(refKey, `Could not generate ${serviceName} URL`);
       return;
     }
@@ -311,7 +334,7 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
         : bookCard.bookType === 'torah'
         ? await fetchSefariaOg(targetUrl)
         : bookCard.bookType === 'quran'
-        ? await fetchExploreQuranOg(targetUrl)
+        ? await fetchQuranComOg(targetUrl)
         : { title: undefined, description: undefined, image: undefined };
       console.log('Book: OG load successful', { refKey, preview });
       // Create a new Map to trigger reactivity
@@ -357,7 +380,7 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
     // This prevents loading Bible Gateway for torah/quran queries
     const shouldLoadBible = query && ogLoadedQuery !== query && !ogLoading && bookCard.bookType === 'bible' && tried && (results.length === 0 || versionNotFound);
     const shouldLoadSefaria = query && ogLoadedQuery !== query && !ogLoading && bookCard.bookType === 'torah' && tried && (results.length === 0 || versionNotFound);
-    const shouldLoadExploreQuran = query && ogLoadedQuery !== query && !ogLoading && bookCard.bookType === 'quran' && tried && (results.length === 0 || versionNotFound);
+    const shouldLoadQuranCom = query && ogLoadedQuery !== query && !ogLoading && bookCard.bookType === 'quran' && tried && (results.length === 0 || versionNotFound);
     
     // Debug logging
     if (query && tried && (results.length === 0 || versionNotFound)) {
@@ -366,21 +389,21 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
         bookType: bookCard.bookType, 
         shouldLoadBible, 
         shouldLoadSefaria, 
-        shouldLoadExploreQuran,
+        shouldLoadQuranCom,
         ogLoadedQuery,
         ogLoading,
         resultsLength: results.length,
         versionNotFound
       });
     }
-    console.log('Book: OG preview effect - shouldLoadBible:', shouldLoadBible, 'shouldLoadSefaria:', shouldLoadSefaria, 'shouldLoadExploreQuran:', shouldLoadExploreQuran);
+    console.log('Book: OG preview effect - shouldLoadBible:', shouldLoadBible, 'shouldLoadSefaria:', shouldLoadSefaria, 'shouldLoadQuranCom:', shouldLoadQuranCom);
     
     if (shouldLoadBible) {
       loadBibleGatewayPreview();
     } else if (shouldLoadSefaria) {
       loadSefariaPreview();
-    } else if (shouldLoadExploreQuran) {
-      loadExploreQuranPreview();
+    } else if (shouldLoadQuranCom) {
+      loadQuranComPreview();
     }
   });
 
@@ -1252,8 +1275,8 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
               console.error('Book: Failed to load OG preview:', err);
             });
           } else if (bookCard.bookType === 'quran') {
-            console.log('Book: IMMEDIATELY Triggering ExploreQuran OG preview load');
-            loadExploreQuranPreview().catch(err => {
+            console.log('Book: IMMEDIATELY Triggering quran.com OG preview load');
+            loadQuranComPreview().catch(err => {
               console.error('Book: Failed to load OG preview:', err);
             });
           }
@@ -1289,8 +1312,8 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
               console.log('Book: Triggering Sefaria OG preview load after eosed (no results)');
               loadSefariaPreview();
             } else if (bookCard.bookType === 'quran') {
-              console.log('Book: Triggering ExploreQuran OG preview load after eosed (no results)');
-              loadExploreQuranPreview();
+              console.log('Book: Triggering quran.com OG preview load after eosed (no results)');
+              loadQuranComPreview();
             }
           }
         }
@@ -1739,7 +1762,7 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
         parsedQuery={parsedQuery}
         bibleGatewayUrl={bookCard.bookType === 'bible' ? generateBibleGatewayUrl(parsedQuery, version) : null}
         sefariaUrl={bookCard.bookType === 'torah' ? generateSefariaUrl(parsedQuery) : null}
-        exploreQuranUrl={bookCard.bookType === 'quran' ? generateExploreQuranUrl(parsedQuery) : null}
+        quranComUrl={bookCard.bookType === 'quran' ? generateQuranComUrl(parsedQuery) : null}
         referenceOgPreviews={referenceOgPreviews}
         referenceOgLoading={referenceOgLoading}
         referenceOgErrors={referenceOgErrors}
@@ -1750,7 +1773,7 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
         noWrapper={false}
         showBibleGateway={bookCard.bookType === 'bible'}
         showSefaria={bookCard.bookType === 'torah'}
-        showExploreQuran={bookCard.bookType === 'quran'}
+        showQuranCom={bookCard.bookType === 'quran'}
       />
     {/each}
   {:else}
@@ -1759,7 +1782,7 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
       parsedQuery={parsedQuery}
       bibleGatewayUrl={bibleGatewayUrlForQuery}
       sefariaUrl={sefariaUrlForQuery}
-      exploreQuranUrl={exploreQuranUrlForQuery}
+      quranComUrl={quranComUrlForQuery}
       referenceOgPreviews={referenceOgPreviews}
       referenceOgLoading={referenceOgLoading}
       referenceOgErrors={referenceOgErrors}
@@ -1767,7 +1790,7 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
       getReferenceKeyWithVersion={getReferenceKeyWithVersion}
       showBibleGateway={bookCard.bookType === 'bible'}
       showSefaria={bookCard.bookType === 'torah'}
-      showExploreQuran={bookCard.bookType === 'quran'}
+      showQuranCom={bookCard.bookType === 'quran'}
     />
   {/if}
 {:else if results.length > 0}
@@ -1928,13 +1951,13 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
             <!-- No results for this version - show reference cards -->
             {@const versionSpecificBgUrl = bookCard.bookType === 'bible' ? generateCompositeBibleGatewayUrl(versionKey) : null}
             {@const versionSpecificSefariaUrl = bookCard.bookType === 'torah' ? generateSefariaUrl(parsedQuery) : null}
-            {@const versionSpecificExploreQuranUrl = bookCard.bookType === 'quran' ? generateExploreQuranUrl(parsedQuery) : null}
+            {@const versionSpecificQuranComUrl = bookCard.bookType === 'quran' ? generateQuranComUrl(parsedQuery) : null}
             {@const versionSpecificParsedQuery = parsedQuery ? { ...parsedQuery, versions: [versionKey] } : null}
             <BookFallbackCards
               parsedQuery={versionSpecificParsedQuery}
               bibleGatewayUrl={versionSpecificBgUrl}
               sefariaUrl={versionSpecificSefariaUrl}
-              exploreQuranUrl={versionSpecificExploreQuranUrl}
+              quranComUrl={versionSpecificQuranComUrl}
               referenceOgPreviews={referenceOgPreviews}
               referenceOgLoading={referenceOgLoading}
               referenceOgErrors={referenceOgErrors}
@@ -1945,7 +1968,7 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
               noWrapper={true}
               showBibleGateway={bookCard.bookType === 'bible'}
               showSefaria={bookCard.bookType === 'torah'}
-              showExploreQuran={bookCard.bookType === 'quran'}
+              showQuranCom={bookCard.bookType === 'quran'}
             />
           {/if}
         </div>

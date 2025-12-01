@@ -26,11 +26,11 @@
   import { parseBookWikilink as parseBookWikilinkNKBIP08, bookReferenceToTags, type ParsedBookReference } from '$lib/bookWikilinkParser';
   import { generateBibleGatewayUrl, fetchBibleGatewayOg } from '$lib/bibleGatewayUtils';
   import { generateSefariaUrl, fetchSefariaOg } from '$lib/sefariaUtils';
-  import { generateExploreQuranUrl, fetchExploreQuranOg } from '$lib/exploreQuranUtils';
+  import { generateQuranComUrl, fetchQuranComOg } from '$lib/exploreQuranUtils';
   import BookFallbackCards from '$components/BookFallbackCards.svelte';
   import { generateBibleGatewayUrlForReference } from '$lib/bibleGatewayUtils';
   import { generateSefariaUrlForReference } from '$lib/sefariaUtils';
-  import { generateExploreQuranUrlForReference } from '$lib/exploreQuranUtils';
+  import { generateQuranComUrlForReference } from '$lib/exploreQuranUtils';
 
   interface Props {
     query: string;
@@ -58,7 +58,7 @@
   let referenceOgErrors = $state<Map<string, string | null>>(new Map());
   const bibleGatewayUrlForQuery = $derived.by(() => (bookType === 'bible' && parsedQuery ? generateBibleGatewayUrl(parsedQuery) : null));
   const sefariaUrlForQuery = $derived.by(() => (bookType === 'torah' && parsedQuery ? generateSefariaUrl(parsedQuery) : null));
-  const exploreQuranUrlForQuery = $derived.by(() => (bookType === 'quran' && parsedQuery ? generateExploreQuranUrl(parsedQuery) : null));
+  const quranComUrlForQuery = $derived.by(() => (bookType === 'quran' && parsedQuery ? generateQuranComUrl(parsedQuery) : null));
 
   // close handlers
   let uwrcancel: () => void;
@@ -327,12 +327,12 @@
     }
   }
 
-  async function loadExploreQuranPreview() {
-    const targetUrl = generateExploreQuranUrl(parsedQuery);
-    console.log('BookSearch: loadExploreQuranPreview', { query, targetUrl, bookType, tried, resultsLength: results.length, versionNotFound });
+  async function loadQuranComPreview() {
+    const targetUrl = generateQuranComUrl(parsedQuery);
+    console.log('BookSearch: loadQuranComPreview', { query, targetUrl, bookType, tried, resultsLength: results.length, versionNotFound });
     
     if (!targetUrl) {
-      console.log('BookSearch: No ExploreQuran URL generated for query:', query);
+      console.log('BookSearch: No quran.com URL generated for query:', query);
       ogPreview = null;
       ogError = null;
       ogLoadedQuery = query;
@@ -349,7 +349,7 @@
     ogError = null;
 
     try {
-      ogPreview = await fetchExploreQuranOg(targetUrl);
+      ogPreview = await fetchQuranComOg(targetUrl);
       console.log('BookSearch: OG preview loaded:', ogPreview);
       ogLoadedQuery = query;
     } catch (error) {
@@ -383,7 +383,7 @@
       : bookType === 'torah'
       ? generateSefariaUrlForReference(ref)
       : bookType === 'quran'
-      ? generateExploreQuranUrlForReference(ref)
+      ? generateQuranComUrlForReference(ref)
       : null;
     if (!targetUrl) {
       referenceOgErrors.set(refKey, 'Could not generate URL');
@@ -399,7 +399,7 @@
         : bookType === 'torah'
         ? await fetchSefariaOg(targetUrl)
         : bookType === 'quran'
-        ? await fetchExploreQuranOg(targetUrl)
+        ? await fetchQuranComOg(targetUrl)
         : { title: undefined, description: undefined, image: undefined };
       referenceOgPreviews.set(refKey, preview);
     } catch (error) {
@@ -426,14 +426,14 @@
   $effect(() => {
     const shouldLoadBible = query && ogLoadedQuery !== query && !ogLoading && bookType === 'bible' && tried && (results.length === 0 || versionNotFound);
     const shouldLoadSefaria = query && ogLoadedQuery !== query && !ogLoading && bookType === 'torah' && tried && (results.length === 0 || versionNotFound);
-    const shouldLoadExploreQuran = query && ogLoadedQuery !== query && !ogLoading && bookType === 'quran' && tried && (results.length === 0 || versionNotFound);
-    console.log('BookSearch: OG preview effect', { query, ogLoadedQuery, ogLoading, bookType, tried, resultsLength: results.length, versionNotFound, shouldLoadBible, shouldLoadSefaria, shouldLoadExploreQuran });
+    const shouldLoadQuranCom = query && ogLoadedQuery !== query && !ogLoading && bookType === 'quran' && tried && (results.length === 0 || versionNotFound);
+    console.log('BookSearch: OG preview effect', { query, ogLoadedQuery, ogLoading, bookType, tried, resultsLength: results.length, versionNotFound, shouldLoadBible, shouldLoadSefaria, shouldLoadQuranCom });
     if (shouldLoadBible) {
       loadBibleGatewayPreview();
     } else if (shouldLoadSefaria) {
       loadSefariaPreview();
-    } else if (shouldLoadExploreQuran) {
-      loadExploreQuranPreview();
+    } else if (shouldLoadQuranCom) {
+      loadQuranComPreview();
     }
   });
 
@@ -799,14 +799,14 @@
       parsedQuery={parsedQuery}
       bibleGatewayUrl={bibleGatewayUrlForQuery}
       sefariaUrl={sefariaUrlForQuery}
-      exploreQuranUrl={exploreQuranUrlForQuery}
+      quranComUrl={quranComUrlForQuery}
       referenceOgPreviews={referenceOgPreviews}
       referenceOgLoading={referenceOgLoading}
       referenceOgErrors={referenceOgErrors}
       getReferenceKey={getReferenceKey}
       showBibleGateway={bookType === 'bible'}
       showSefaria={bookType === 'torah'}
-      showExploreQuran={bookType === 'quran'}
+      showQuranCom={bookType === 'quran'}
     />
   {:else if results.length > 0}
     {#if versionNotFound}

@@ -1,11 +1,11 @@
 <script lang="ts">
   import type { BookReference } from '$lib/books';
-  import { generateExploreQuranUrlForReference } from '$lib/exploreQuranUtils';
+  import { generateQuranComUrlForReference } from '$lib/exploreQuranUtils';
   import BookFallbackCard from './BookFallbackCard.svelte';
 
   interface Props {
     parsedQuery: { references: BookReference[]; version?: string; versions?: string[] } | null;
-    exploreQuranUrl: string | null;
+    quranComUrl: string | null;
     referenceOgPreviews: Map<string, { title?: string; description?: string; image?: string } | null>;
     referenceOgLoading: Map<string, boolean>;
     referenceOgErrors: Map<string, string | null>;
@@ -18,7 +18,7 @@
 
   let {
     parsedQuery,
-    exploreQuranUrl,
+    quranComUrl,
     referenceOgPreviews,
     referenceOgLoading,
     referenceOgErrors,
@@ -30,14 +30,14 @@
   }: Props = $props();
 
   function generateUrlForReference(ref: BookReference): string | null {
-    return generateExploreQuranUrlForReference(ref);
+    return generateQuranComUrlForReference(ref);
   }
 </script>
 
 <BookFallbackCard
   {parsedQuery}
-  serviceUrl={exploreQuranUrl}
-  serviceName="ExploreQuran"
+  serviceUrl={quranComUrl}
+  serviceName="quran.com"
   {referenceOgPreviews}
   {referenceOgLoading}
   {referenceOgErrors}
