@@ -17,7 +17,7 @@
 
   let activeTab = $state<'bookmarks' | 'last-viewed'>('bookmarks');
   let bookmarks = $state<NostrEvent[]>([]);
-  let readingPlaces = $state<Array<{ eventId: string; timestamp: number }>>([]);
+  let readingPlaces = $state<Array<{ eventId: string; timestamp: number; parentEventId?: string }>>([]);
   let readingPlaceEvents = $state<Map<string, NostrEvent>>(new Map());
   let selectedItems = $state<Set<string>>(new Set());
   let isLoading = $state(false);
@@ -84,8 +84,46 @@
     }
   }
 
-  async function openEvent(eventId: string) {
+  async function openEvent(eventId: string, parentEventId?: string) {
     try {
+      // If there's a parent event ID (30040 book), open that instead and scroll to the chapter
+      if (parentEventId) {
+        const parentResult = await relayService.queryEvents(
+          $account?.pubkey || 'anonymous',
+          'wiki-read',
+          [{ ids: [parentEventId], limit: 1 }],
+          { excludeUserContent: false, currentUserPubkey: $account?.pubkey }
+        );
+        
+        if (parentResult.events.length > 0) {
+          const parentEvent = parentResult.events[0];
+          const parentDTag = getTagOr(parentEvent, 'd') || parentEvent.id;
+          const articleCard: Omit<ArticleCard, 'id'> = {
+            type: 'article',
+            data: [parentDTag, parentEvent.pubkey],
+            relayHints: parentResult.relays,
+            actualEvent: parentEvent
+          };
+          openOrCreateArticleCard(articleCard);
+          
+          // Scroll to the chapter after a delay to allow the book to render
+          setTimeout(() => {
+            const chapterHeading = document.querySelector(`h2[data-nested-event-id="${eventId}"]`);
+            if (chapterHeading) {
+              chapterHeading.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              // Highlight the heading briefly
+              (chapterHeading as HTMLElement).style.transition = 'background-color 0.3s';
+              (chapterHeading as HTMLElement).style.backgroundColor = 'var(--accent)';
+              setTimeout(() => {
+                (chapterHeading as HTMLElement).style.backgroundColor = '';
+              }, 2000);
+            }
+          }, 1000);
+          return;
+        }
+      }
+      
+      // Otherwise, open the event directly
       const result = await relayService.queryEvents(
         $account?.pubkey || 'anonymous',
         'wiki-read',
@@ -254,8 +292,8 @@
             }}
             role="button"
             tabindex="0"
-            onclick={() => openEvent(place.eventId)}
-            onkeydown={(e) => e.key === 'Enter' && openEvent(place.eventId)}
+            onclick={() => openEvent(place.eventId, place.parentEventId)}
+            onkeydown={(e) => e.key === 'Enter' && openEvent(place.eventId, place.parentEventId)}
           >
             <input
               type="checkbox"

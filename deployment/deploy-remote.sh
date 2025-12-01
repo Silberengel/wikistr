@@ -17,7 +17,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-VERSION="v5.1.0"
+VERSION="v5.1.1"
 THEME_ARG="${1:-all}"
 PORT_ARG="${2:-}"
 

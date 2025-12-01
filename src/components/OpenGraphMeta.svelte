@@ -79,7 +79,7 @@
       return {
         title: 'Wikistr - A decentralized book study and wiki system built on Nostr',
         description: 'Biblestr - A decentralized Bible study and wiki system built on Nostr',
-        image: `${baseUrl}/favicon.png`,
+        image: undefined,
         url: fullUrl,
         type: 'website'
       };
@@ -92,9 +92,9 @@
                        (event.content ? event.content.substring(0, 200).replace(/\n/g, ' ').trim() : '') ||
                        'A Nostr article';
     
-    // Get image if available
+    // Get image if available - only use event image tag, no fallback
     const imageTag = event.tags.find(([k]) => k === 'image');
-    const image = imageTag?.[1] || `${baseUrl}/favicon.png`;
+    const image = imageTag?.[1] || undefined;
 
     // Generate naddr for the event
     let naddr = '';
@@ -130,7 +130,7 @@
       return {
         title: 'Wikistr - A decentralized book study and wiki system built on Nostr',
         description: 'Biblestr - A decentralized Bible study and wiki system built on Nostr',
-        image: `${baseUrl}/favicon.png`,
+        image: `${baseUrl}/favicon.svg`,
         url: `${baseUrl}${currentPath}`,
         type: 'website'
       };
@@ -149,7 +149,9 @@
   <meta property="og:url" content={ogData().url} />
   <meta property="og:title" content={ogData().title} />
   <meta property="og:description" content={ogData().description} />
-  <meta property="og:image" content={ogData().image} />
+  {#if ogData().image}
+    <meta property="og:image" content={ogData().image} />
+  {/if}
   <meta property="og:site_name" content="Wikistr" />
 
   <!-- Twitter -->
@@ -157,7 +159,9 @@
   <meta property="twitter:url" content={ogData().url} />
   <meta property="twitter:title" content={ogData().title} />
   <meta property="twitter:description" content={ogData().description} />
-  <meta property="twitter:image" content={ogData().image} />
+  {#if ogData().image}
+    <meta property="twitter:image" content={ogData().image} />
+  {/if}
 
   <!-- Nostr-specific meta -->
   {#if ogData().naddr}

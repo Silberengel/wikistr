@@ -470,7 +470,9 @@
         content: event?.content || '',
         image: event?.tags?.find(([k]) => k === 'image')?.[1] || '',
         author: event?.tags?.find(([k]) => k === 'author')?.[1] || '',
-        previous: card as ArticleCard
+        previous: card as ArticleCard,
+        kind: event?.kind,
+        tags: event?.tags ? [...event.tags.map(t => [...t])] : undefined
       }
     });
   }
@@ -916,6 +918,16 @@
       // Use relay service for social event publishing
       const result = await relayService.publishEvent($account.pubkey, 'social-write', deletion);
       
+      // Cache the deletion event after publishing (kind 5)
+      if (result.success && result.publishedTo.length > 0) {
+        const { contentCache } = await import('$lib/contentCache');
+        // Deletions are ephemeral, but we can cache them briefly
+        await contentCache.storeEvents('reactions', [{
+          event: deletion,
+          relays: result.publishedTo
+        }]);
+      }
+      
       if (result.success) {
         // Update local state only if publish succeeded
         userReaction = null;
@@ -972,6 +984,15 @@
 
       // Use relay service for social event publishing
       const result = await relayService.publishEvent($account.pubkey, 'social-write', reaction);
+      
+      // Cache the reaction after publishing (kind 6 or 7)
+      if (result.success && result.publishedTo.length > 0) {
+        const { contentCache } = await import('$lib/contentCache');
+        await contentCache.storeEvents('reactions', [{
+          event: reaction,
+          relays: result.publishedTo
+        }]);
+      }
       
       if (result.success) {
         // Update local state only if publish succeeded

@@ -1220,12 +1220,21 @@
       });
       
       // Publish kind 0 event (use social-write for profile metadata)
-      await relayService.publishEvent(
+      const publishResult0 = await relayService.publishEvent(
         $account.pubkey,
         'social-write',
         kind0Event,
         false
       );
+      
+      // Store in cache after publishing
+      if (publishResult0.success && publishResult0.publishedTo.length > 0) {
+        const { contentCache } = await import('$lib/contentCache');
+        await contentCache.storeEvents('profile', [{
+          event: kind0Event,
+          relays: publishResult0.publishedTo
+        }]);
+      }
       
       // Create kind 10133 event for payto targets
       const paytoTags: string[][] = [];
@@ -1244,12 +1253,21 @@
         });
         
         // Publish kind 10133 event (use social-write for payment metadata)
-        await relayService.publishEvent(
+        const publishResult = await relayService.publishEvent(
           $account.pubkey,
           'social-write',
           kind10133Event,
           false
         );
+        
+        // Store in cache after publishing
+        if (publishResult.success && publishResult.publishedTo.length > 0) {
+          const { contentCache } = await import('$lib/contentCache');
+          await contentCache.storeEvents('profile', [{
+            event: kind10133Event,
+            relays: publishResult.publishedTo
+          }]);
+        }
       }
       
       // Refresh profile data

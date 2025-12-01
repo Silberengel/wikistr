@@ -220,17 +220,23 @@ export async function refreshBookmarksCache(): Promise<void> {
 
 /**
  * Save reading place for an event
+ * @param eventId - The event ID to save reading place for
+ * @param parentEventId - Optional parent event ID (e.g., 30040 book ID for a 30041 chapter)
  */
-export async function saveReadingPlace(eventId: string): Promise<void> {
+export async function saveReadingPlace(eventId: string, parentEventId?: string): Promise<void> {
   const timestamp = Date.now();
   const key = `${READING_PLACE_PREFIX}${eventId}`;
-  await set(key, timestamp);
+  const data: { timestamp: number; parentEventId?: string } = { timestamp };
+  if (parentEventId) {
+    data.parentEventId = parentEventId;
+  }
+  await set(key, data);
 }
 
 /**
  * Get all reading places (sorted by newest first)
  */
-export async function getReadingPlaces(): Promise<Array<{ eventId: string; timestamp: number }>> {
+export async function getReadingPlaces(): Promise<Array<{ eventId: string; timestamp: number; parentEventId?: string }>> {
   const allKeys = await keys();
   const readingPlaceKeys = allKeys.filter((k): k is string => 
     typeof k === 'string' && k.startsWith(READING_PLACE_PREFIX)
@@ -239,8 +245,16 @@ export async function getReadingPlaces(): Promise<Array<{ eventId: string; times
   const places = await Promise.all(
     readingPlaceKeys.map(async (key) => {
       const eventId = key.replace(READING_PLACE_PREFIX, '');
-      const timestamp = await get<number>(key) || 0;
-      return { eventId, timestamp };
+      const data = await get<{ timestamp: number; parentEventId?: string } | number>(key);
+      
+      // Handle both old format (just number) and new format (object with timestamp and parentEventId)
+      if (typeof data === 'number') {
+        return { eventId, timestamp: data };
+      } else if (data && typeof data === 'object') {
+        return { eventId, timestamp: data.timestamp || 0, parentEventId: data.parentEventId };
+      } else {
+        return { eventId, timestamp: 0 };
+      }
     })
   );
   
@@ -259,8 +273,19 @@ export async function removeReadingPlace(eventId: string): Promise<void> {
 /**
  * Get reading place for an event
  */
-export async function getReadingPlace(eventId: string): Promise<number | null> {
+export async function getReadingPlace(eventId: string): Promise<{ timestamp: number; parentEventId?: string } | null> {
   const key = `${READING_PLACE_PREFIX}${eventId}`;
-  return await get<number>(key) || null;
+  const data = await get<{ timestamp: number; parentEventId?: string } | number>(key);
+  
+  if (!data) return null;
+  
+  // Handle both old format (just number) and new format (object)
+  if (typeof data === 'number') {
+    return { timestamp: data };
+  } else if (typeof data === 'object') {
+    return { timestamp: data.timestamp || 0, parentEventId: data.parentEventId };
+  }
+  
+  return null;
 }
 

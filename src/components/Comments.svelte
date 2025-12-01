@@ -113,6 +113,15 @@
         false // Don't show toast for comments
       );
       
+      // Cache the comment after publishing
+      if (result.success && result.publishedTo.length > 0) {
+        const { contentCache } = await import('$lib/contentCache');
+        await contentCache.storeEvents('kind1111', [{
+          event: signedEvent,
+          relays: result.publishedTo
+        }]);
+      }
+      
       const attempts = result.publishedTo.concat(result.failedRelays).map((relay: string) => ({
         status: result.publishedTo.includes(relay) ? 'success' as const : 'failure' as const,
         url: relay,
@@ -269,6 +278,15 @@
           false // Don't show toast notification
         );
         
+        // Cache the comment after publishing
+        if (result.success && result.publishedTo.length > 0) {
+          const { contentCache } = await import('$lib/contentCache');
+          await contentCache.storeEvents('kind1111', [{
+            event: signedEvent,
+            relays: result.publishedTo
+          }]);
+        }
+        
         if (result.success) {
           publishStatus.attempts.forEach((_, index) => {
             publishStatus.attempts[index] = { status: 'success' };
@@ -357,31 +375,61 @@
     if (!browser) return;
     
     try {
-      let result;
-      
       // Check cache first before making relay queries (unless forcing refresh)
       if (!forceRefresh) {
-        const allCachedComments = await contentCache.getEvents('kind1111');
+        // Use synchronous cache access for faster retrieval
+        const allCachedComments = contentCache.getEvents('kind1111');
         
         // Filter cached comments to only show replies to the current article
         // NIP-22: Use uppercase 'A' for root scope
-        const cachedComments = allCachedComments.filter(cached => 
-          cached.event.tags.some(tag => tag[0] === 'A' && tag[1] === articleCoordinate)
-        );
+        // Optimize: use a more efficient filter that checks the A tag first
+        const cachedComments = allCachedComments.filter(cached => {
+          const event = cached.event;
+          // Quick check: find A tag first (most comments will have it)
+          const aTag = event.tags.find(tag => tag[0] === 'A');
+          return aTag && aTag[1] === articleCoordinate;
+        });
         
         if (cachedComments.length > 0) {
-          result = {
-            events: cachedComments.map(cached => cached.event),
-            relays: [...new Set(cachedComments.flatMap(cached => cached.relays))]
-          };
+          // Display cached results immediately
+          const cachedEvents = cachedComments.map(cached => cached.event);
+          processComments(cachedEvents);
           
-          // Display cached results immediately and exit - don't query relays
-          processComments(result.events);
+          // Fetch fresh comments in background to update cache
+          // Don't await - let it run in background
+          relayService.queryEvents(
+            $account?.pubkey || 'anonymous',
+            'social-read',
+            [
+              {
+                kinds: [1111],
+                '#A': [articleCoordinate], // NIP-22: Use uppercase #A for root scope
+                limit: 200
+              }
+            ],
+            {
+              excludeUserContent: false,
+              currentUserPubkey: $account?.pubkey
+            }
+          ).then(async (freshResult) => {
+            // Update cache with fresh results
+            if (freshResult.events.length > 0) {
+              await contentCache.storeEvents('kind1111', 
+                freshResult.events.map(event => ({ event, relays: freshResult.relays }))
+              );
+              // Update comments if we got new ones
+              processComments(freshResult.events);
+            }
+          }).catch(err => {
+            // Silently fail background refresh
+            console.debug('Background comment refresh failed:', err);
+          });
+          
           return;
         }
       }
       
-      // Only query relays if no cached comments found
+      // Only query relays if no cached comments found or forcing refresh
       const freshResult = await relayService.queryEvents(
         $account?.pubkey || 'anonymous',
         'social-read',

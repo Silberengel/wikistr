@@ -1,10 +1,10 @@
 # Build all themes
 # Usage: docker-compose -f docker-compose.yml build
 # After building, tag as latest:
-#   docker tag silberengel/wikistr:v5.1.0-wikistr silberengel/wikistr:latest-wikistr
-#   docker tag silberengel/wikistr:v5.1.0-biblestr silberengel/wikistr:latest-biblestr
-#   docker tag silberengel/wikistr:v5.1.0-quranstr silberengel/wikistr:latest-quranstr
-#   docker tag silberengel/wikistr:v5.1.0-torahstr silberengel/wikistr:latest-torahstr
+#   docker tag silberengel/wikistr:v5.1.1-wikistr silberengel/wikistr:latest-wikistr
+#   docker tag silberengel/wikistr:v5.1.1-biblestr silberengel/wikistr:latest-biblestr
+#   docker tag silberengel/wikistr:v5.1.1-quranstr silberengel/wikistr:latest-quranstr
+#   docker tag silberengel/wikistr:v5.1.1-torahstr silberengel/wikistr:latest-torahstr
 
 services:
   wikistr:
@@ -13,7 +13,7 @@ services:
       dockerfile: deployment/Dockerfile.wikistr
       args:
         VITE_OG_PROXY_URL: ${VITE_OG_PROXY_URL:-/sites/}
-    image: silberengel/wikistr:v5.1.0-wikistr
+    image: silberengel/wikistr:v5.1.1-wikistr
 
   biblestr:
     build:
@@ -21,7 +21,7 @@ services:
       dockerfile: deployment/Dockerfile.biblestr
       args:
         VITE_OG_PROXY_URL: ${VITE_OG_PROXY_URL:-/sites/}
-    image: silberengel/wikistr:v5.1.0-biblestr
+    image: silberengel/wikistr:v5.1.1-biblestr
 
   quranstr:
     build:
@@ -29,7 +29,7 @@ services:
       dockerfile: deployment/Dockerfile.quranstr
       args:
         VITE_OG_PROXY_URL: ${VITE_OG_PROXY_URL:-/sites/}
-    image: silberengel/wikistr:v5.1.0-quranstr
+    image: silberengel/wikistr:v5.1.1-quranstr
 
   torahstr:
     build:
@@ -37,7 +37,7 @@ services:
       dockerfile: deployment/Dockerfile.torahstr
       args:
         VITE_OG_PROXY_URL: ${VITE_OG_PROXY_URL:-/sites/}
-    image: silberengel/wikistr:v5.1.0-torahstr
+    image: silberengel/wikistr:v5.1.1-torahstr
 
   og-proxy:
     build:

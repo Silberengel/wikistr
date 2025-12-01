@@ -108,7 +108,12 @@ export async function fetchOGMetadata(url: string): Promise<OGMetadata | null> {
                        getMetaContent('description') || 
                        undefined;
     
-    const image = getMetaContent('og:image') || undefined;
+    let image = getMetaContent('og:image') || undefined;
+    
+    // Filter out empty strings - if og:image is empty, treat it as no image
+    if (image === '' || !image) {
+      image = undefined;
+    }
     
     const urlFromOG = !!getMetaContent('og:url');
     const urlMeta = getMetaContent('og:url') || url;
@@ -149,9 +154,33 @@ export async function fetchOGMetadata(url: string): Promise<OGMetadata | null> {
  * Check if a URL contains a Nostr identifier
  */
 export function extractNostrIdentifier(url: string): {
-  type: 'npub' | 'nprofile' | 'nevent' | 'note' | 'naddr' | null;
+  type: 'npub' | 'nprofile' | 'nevent' | 'note' | 'naddr' | 'hex' | 'nip05' | 'pubkey-dtag' | 'npub-dtag' | 'dtag-only' | null;
   value: string;
+  pubkey?: string;
+  dTag?: string;
 } | null {
+  // First, try to extract pubkey + d-tag patterns (these should be checked before bech32)
+  // Pattern 1: d-tag*pubkey (e.g., editable-short-notes*460c25e682fda7832b52d1f22d3d22b3176d972f60dcdc3212ed8c92ef85065c)
+  // D-tags only contain alphanumeric and hyphens, no underscores
+  const dtagPubkeyPattern = /([a-zA-Z0-9-]+)\*([0-9a-fA-F]{64})/;
+  const dtagPubkeyMatch = url.match(dtagPubkeyPattern);
+  
+  if (dtagPubkeyMatch) {
+    const dTag = dtagPubkeyMatch[1];
+    const pubkey = dtagPubkeyMatch[2];
+    return { type: 'pubkey-dtag', value: `${pubkey}:${dTag}`, pubkey, dTag };
+  }
+  
+  // Pattern 2: pubkey*d-tag (with asterisk, reverse order)
+  const pubkeyDtagPattern = /([0-9a-fA-F]{64})\*([a-zA-Z0-9-]+)/;
+  const pubkeyDtagMatch = url.match(pubkeyDtagPattern);
+  
+  if (pubkeyDtagMatch) {
+    const pubkey = pubkeyDtagMatch[1];
+    const dTag = pubkeyDtagMatch[2];
+    return { type: 'pubkey-dtag', value: `${pubkey}:${dTag}`, pubkey, dTag };
+  }
+  
   // Try to extract bech32 identifiers from URL
   const bech32Pattern = /(npub1|nprofile1|nevent1|note1|naddr1)[a-zA-Z0-9]{58,}/;
   const match = url.match(bech32Pattern);
@@ -159,15 +188,169 @@ export function extractNostrIdentifier(url: string): {
   if (match) {
     const bech32 = match[0];
     const type = bech32.substring(0, bech32.indexOf('1')) as 'npub' | 'nprofile' | 'nevent' | 'note' | 'naddr';
+    
+    const urlParts = url.split('/');
+    const bech32Index = urlParts.findIndex(part => part.includes(bech32));
+    
+    if (bech32Index >= 0) {
+      // Check if there's a d-tag before the npub (e.g., /d-tag/npub...)
+      if (bech32Index > 0) {
+        // Look backwards through path segments to find a non-hex, non-empty segment
+        for (let i = bech32Index - 1; i >= 0; i--) {
+          const segment = urlParts[i];
+          if (!segment || segment.trim() === '') continue;
+          
+          // Skip common URL path segments that aren't d-tags
+          if (segment.match(/^(https?:|www\.|http|https)$/i)) continue;
+          
+          // Skip hex strings (64 char hex) - those are likely pubkeys/event IDs, not d-tags
+          if (segment.match(/^[0-9a-fA-F]{64}$/)) continue;
+          
+          // Skip segments that are just domains or common paths
+          if (segment.includes('.') && !segment.includes('*')) continue;
+          
+          // This looks like a d-tag (alphanumeric with hyphens only, possibly with asterisk)
+          // D-tags only contain alphanumeric characters and hyphens, no underscores
+          const dTagCandidate = segment.split('*')[0]; // Take part before asterisk if present
+          if (dTagCandidate && dTagCandidate.length > 0 && 
+              !dTagCandidate.match(/^[0-9a-fA-F]{64}$/) &&
+              dTagCandidate.match(/^[a-zA-Z0-9-]+$/)) { // Only alphanumeric and hyphens
+            // This looks like d-tag/npub pattern
+            if (type === 'npub') {
+              return { type: 'npub-dtag', value: bech32, dTag: dTagCandidate };
+            }
+            break; // Found a candidate, stop looking
+          }
+        }
+      }
+      
+      // Check if there's a d-tag after the npub (e.g., /npub.../d-tag)
+      if (bech32Index < urlParts.length - 1) {
+        const nextSegment = urlParts[bech32Index + 1];
+        if (nextSegment && nextSegment.trim() !== '') {
+          // Skip hex strings and common URL parts
+          if (!nextSegment.match(/^[0-9a-fA-F]{64}$/) && 
+              !nextSegment.match(/^(https?:|www\.|http|https)$/i) &&
+              !nextSegment.includes('.')) {
+            const dTagCandidate = nextSegment.split('*')[0];
+            if (dTagCandidate && dTagCandidate.length > 0 && 
+                !dTagCandidate.match(/^[0-9a-fA-F]{64}$/) &&
+                dTagCandidate.match(/^[a-zA-Z0-9-]+$/)) { // Only alphanumeric and hyphens
+              // This looks like npub/d-tag pattern
+              if (type === 'npub') {
+                return { type: 'npub-dtag', value: bech32, dTag: dTagCandidate };
+              }
+            }
+          }
+        }
+      }
+    }
+    
     return { type, value: bech32 };
   }
   
-  // Try to extract hex IDs (64 char hex strings)
+  // Pattern 3: pubkey/d-tag or d-tag/pubkey (in URL path)
+  // First check if we have a hex pubkey in the URL
   const hexPattern = /[0-9a-fA-F]{64}/;
   const hexMatch = url.match(hexPattern);
   
   if (hexMatch) {
-    return { type: 'note', value: hexMatch[0] };
+    const pubkey = hexMatch[0];
+    const urlParts = url.split('/');
+    const pubkeyIndex = urlParts.findIndex(part => part.includes(pubkey));
+    
+    if (pubkeyIndex >= 0) {
+      // Check if there's a d-tag after the pubkey (e.g., /pubkey/d-tag)
+      if (pubkeyIndex < urlParts.length - 1) {
+        const nextSegment = urlParts[pubkeyIndex + 1];
+        if (nextSegment && nextSegment.trim() !== '') {
+          // Skip hex strings and common URL parts
+          if (!nextSegment.match(/^[0-9a-fA-F]{64}$/) && 
+              !nextSegment.match(/^(https?:|www\.|http|https)$/i) &&
+              !nextSegment.includes('.')) {
+            const dTagCandidate = nextSegment.split('*')[0];
+            if (dTagCandidate && dTagCandidate.length > 0 && 
+                !dTagCandidate.match(/^[0-9a-fA-F]{64}$/) &&
+                dTagCandidate.match(/^[a-zA-Z0-9-]+$/)) { // Only alphanumeric and hyphens
+              // This looks like pubkey/d-tag pattern
+              return { type: 'pubkey-dtag', value: `${pubkey}:${dTagCandidate}`, pubkey, dTag: dTagCandidate };
+            }
+          }
+        }
+      }
+      
+      // Check if there's a d-tag before the pubkey (e.g., /d-tag/pubkey)
+      if (pubkeyIndex > 0) {
+        for (let i = pubkeyIndex - 1; i >= 0; i--) {
+          const segment = urlParts[i];
+          if (!segment || segment.trim() === '') continue;
+          
+          // Skip common URL path segments that aren't d-tags
+          if (segment.match(/^(https?:|www\.|http|https)$/i)) continue;
+          
+          // Skip hex strings
+          if (segment.match(/^[0-9a-fA-F]{64}$/)) continue;
+          
+          // Skip segments that are just domains
+          if (segment.includes('.') && !segment.includes('*')) continue;
+          
+          const dTagCandidate = segment.split('*')[0];
+          if (dTagCandidate && dTagCandidate.length > 0 && 
+              !dTagCandidate.match(/^[0-9a-fA-F]{64}$/) &&
+              dTagCandidate.match(/^[a-zA-Z0-9-]+$/)) { // Only alphanumeric and hyphens
+            // This looks like d-tag/pubkey pattern
+            return { type: 'pubkey-dtag', value: `${pubkey}:${dTagCandidate}`, pubkey, dTag: dTagCandidate };
+          }
+        }
+      }
+    }
+    
+    // If no d-tag found, return as plain hex (event ID or pubkey)
+    return { type: 'hex', value: hexMatch[0] };
+  }
+  
+  // Try to extract nip-05 identifiers (user@domain.com format)
+  const nip05Pattern = /([a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/;
+  const nip05Match = url.match(nip05Pattern);
+
+  if (nip05Match) {
+    return { type: 'nip05', value: nip05Match[1] };
+  }
+  
+  // Try to extract d-tag only patterns (e.g., /article/d/Paradox-Of-Tolerance-4owm05 or /d/Paradox-Of-Tolerance-4owm05)
+  // Look for URL patterns like /d/... or /article/d/... where the last segment is a d-tag
+  const urlParts = url.split('/');
+  // Check if URL contains /d/ or /article/d/ pattern
+  const dIndex = urlParts.findIndex((part, idx) => 
+    (part === 'd' || part === 'article') && 
+    idx < urlParts.length - 1 && 
+    urlParts[idx + 1] === 'd'
+  );
+  
+  if (dIndex >= 0) {
+    // The d-tag should be the segment after /d/
+    const dTagIndex = dIndex + (urlParts[dIndex] === 'article' ? 2 : 1);
+    if (dTagIndex < urlParts.length) {
+      const dTagCandidate = urlParts[dTagIndex].split('?')[0].split('#')[0]; // Remove query params and hash
+      // Validate it looks like a d-tag (alphanumeric and hyphens only)
+      if (dTagCandidate && dTagCandidate.length > 0 && dTagCandidate.match(/^[a-zA-Z0-9-]+$/)) {
+        return { type: 'dtag-only', value: dTagCandidate, dTag: dTagCandidate };
+      }
+    }
+  }
+  
+  // Also check for patterns where d-tag might be in the last path segment after a known prefix
+  // This handles cases like /article/Paradox-Of-Tolerance-4owm05 where the last segment is the d-tag
+  if (urlParts.length > 0) {
+    const lastSegment = urlParts[urlParts.length - 1].split('?')[0].split('#')[0];
+    // If the last segment looks like a d-tag and the URL structure suggests it might be one
+    // (e.g., contains /article/ or similar patterns)
+    if (lastSegment && lastSegment.match(/^[a-zA-Z0-9-]+$/) && lastSegment.length > 3) {
+      const hasArticlePath = urlParts.some(part => part === 'article' || part === 'd');
+      if (hasArticlePath) {
+        return { type: 'dtag-only', value: lastSegment, dTag: lastSegment };
+      }
+    }
   }
   
   return null;

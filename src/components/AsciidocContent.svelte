@@ -1227,6 +1227,41 @@
     // Convert to HTML
     let renderedHtml = doc.convert();
     
+    // For kind 30040, add data attributes to h2 headings with nested event IDs
+    // We need to match h2 headings that correspond to the nested events we rendered
+    if (event.kind === 30040 && referencedEvents.length > 0) {
+      // Add a temporary marker to identify which h2s we created
+      // We'll replace the markers with data attributes
+      let eventIndex = 0;
+      let markedHtml = renderedHtml;
+      
+      // First, mark the h2s we created by matching them with the titles we rendered
+      for (const refEvent of referencedEvents) {
+        const title = refEvent.tags.find(t => t[0] === 'title')?.[1] || 'Untitled';
+        // Escape special regex characters in title
+        const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Match h2 with this title (may have other attributes from AsciiDoc)
+        const titlePattern = new RegExp(`(<h2([^>]*)>\\s*${escapedTitle}\\s*</h2>)`, 'i');
+        const match = markedHtml.match(titlePattern);
+        if (match && eventIndex < referencedEvents.length) {
+          const nestedEvent = referencedEvents[eventIndex];
+          const eventId = nestedEvent.id;
+          // Replace with h2 that has data attribute
+          markedHtml = markedHtml.replace(titlePattern, (fullMatch, h2Tag, attrs) => {
+            // Skip if already has the data attribute
+            if (attrs && attrs.includes('data-nested-event-id')) {
+              return fullMatch;
+            }
+            const newAttrs = attrs ? `${attrs} data-nested-event-id="${eventId}"` : `data-nested-event-id="${eventId}"`;
+            return `<h2${newAttrs}>${title}</h2>`;
+          });
+          eventIndex++;
+        }
+      }
+      
+      renderedHtml = markedHtml;
+    }
+    
     // Remove any max-width constraints from AsciiDoc-generated HTML
     renderedHtml = renderedHtml.replace(/max-width:\s*[^;]+;?/gi, '');
     renderedHtml = renderedHtml.replace(/style="([^"]*max-width[^"]*)"/gi, (match, styles) => {
@@ -1242,9 +1277,13 @@
     
     htmlContent = renderedHtml;
     
-    // Setup TOC after a delay
+    // Setup TOC and reading place buttons after a delay
     setTimeout(() => {
       setupCollapsibleTOC();
+      if (event.kind === 30040) {
+        // For kind 30040, add reading place buttons after DOM is ready
+        addReadingPlaceButtons();
+      }
     }, 100);
     
     isLoading = false;
@@ -1421,7 +1460,10 @@
       renderLatexExpressions();
       setupCollapsibleTOC();
       styleAdmonitionContent();
-      addReadingPlaceButtons();
+      // Only add reading place buttons for kind 30040
+      if (event.kind === 30040) {
+        addReadingPlaceButtons();
+      }
     }, 100);
   });
 
@@ -1656,16 +1698,38 @@
     });
   }
 
-  // Add reading place buttons next to chapter/subchapter headings
+  // Add reading place buttons next to chapter headings (only for kind 30040)
   function addReadingPlaceButtons() {
     if (!contentDiv || !event) return;
     
-    // Find all headings (h1, h2, h3, h4, h5, h6)
-    const headings = contentDiv.querySelectorAll('h1, h2, h3, h4, h5, h6');
+    // Only add reading place buttons for kind 30040 (book index)
+    if (event.kind !== 30040) return;
     
-    headings.forEach((heading) => {
+    // Find all h2 headings with data-nested-event-id (nested events are rendered as == which becomes h2)
+    const nestedHeadings = contentDiv.querySelectorAll('h2[data-nested-event-id]');
+    
+    if (nestedHeadings.length === 0) {
+      // If no h2s with data attributes found, try finding all h2s (fallback)
+      // This handles cases where data attributes might not have been added yet
+      const allH2s = contentDiv.querySelectorAll('h2');
+      console.debug('No h2[data-nested-event-id] found, found', allH2s.length, 'h2 elements');
+    }
+    
+    nestedHeadings.forEach((heading) => {
       // Skip if already has a reading place button
       if (heading.querySelector('.reading-place-button')) return;
+      
+      // Get the nested event ID from the data attribute
+      const nestedEventId = heading.getAttribute('data-nested-event-id');
+      if (!nestedEventId) {
+        console.warn('h2 heading found but missing data-nested-event-id attribute');
+        return;
+      }
+      
+      // Use the nested event ID to save reading place for that specific chapter
+      // Also save the parent 30040 event ID so we can open the book context
+      const eventIdToSave = nestedEventId;
+      const parentEventId = event.id; // The 30040 book ID
       
       // Create button
       const button = document.createElement('button');
@@ -1697,7 +1761,7 @@
         e.stopPropagation();
         
         try {
-          await saveReadingPlace(event.id);
+          await saveReadingPlace(eventIdToSave, parentEventId);
           // Visual feedback
           button.style.opacity = '1';
           button.title = 'Reading place saved';

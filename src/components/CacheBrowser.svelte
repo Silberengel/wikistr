@@ -34,7 +34,7 @@
   ];
 
   // Metadata kinds category
-  const metadataKinds = [0, 10002, 10003, 10133, 10432];
+  const metadataKinds = [0, 10002, 10003, 10133];
 
   onMount(async () => {
     await loadEvents();
@@ -194,47 +194,49 @@
 
     <!-- Search and Filters -->
     <div class="p-4 border-b space-y-2" style="border-color: var(--border);">
-      <div class="flex gap-2">
+      <div class="flex flex-col md:flex-row gap-2">
         <input
           type="text"
           bind:value={searchQuery}
           placeholder="Search by ID, content, or tags..."
-          class="flex-1 px-3 py-2 border rounded-md"
+          class="flex-1 px-3 py-2 border rounded-md min-h-[44px]"
           style="background-color: var(--bg-secondary); color: var(--text-primary); border-color: var(--border);"
           onkeydown={(e) => e.key === 'Enter' && search()}
         />
         <select
           bind:value={selectedKind}
-          class="px-3 py-2 border rounded-md"
+          class="px-3 py-2 border rounded-md min-h-[44px]"
           style="background-color: var(--bg-secondary); color: var(--text-primary); border-color: var(--border);"
         >
           {#each kindOptions as option}
             <option value={option.value}>{option.label}</option>
           {/each}
         </select>
-        <button
-          onclick={search}
-          class="px-4 py-2 text-white rounded-md hover:opacity-90"
-          style="background-color: var(--accent);"
-        >
-          Search
-        </button>
-        <button
-          onclick={loadEvents}
-          class="px-4 py-2 text-white rounded-md hover:opacity-90"
-          style="background-color: var(--text-secondary);"
-        >
-          Refresh
-        </button>
-        <button
-          onclick={clearAllCache}
-          disabled={isClearing || cachedEvents.length === 0}
-          class="px-4 py-2 text-white rounded-md hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-          style="background-color: #dc2626;"
-          title={cachedEvents.length === 0 ? 'No events to clear' : 'Clear all cached events'}
-        >
-          {isClearing ? 'Clearing...' : 'Clear Cache'}
-        </button>
+        <div class="flex gap-2">
+          <button
+            onclick={search}
+            class="px-4 py-2 text-white rounded-md hover:opacity-90 min-h-[44px] flex-1 md:flex-none"
+            style="background-color: var(--accent);"
+          >
+            Search
+          </button>
+          <button
+            onclick={loadEvents}
+            class="px-4 py-2 text-white rounded-md hover:opacity-90 min-h-[44px] flex-1 md:flex-none"
+            style="background-color: var(--text-secondary);"
+          >
+            Refresh
+          </button>
+          <button
+            onclick={clearAllCache}
+            disabled={isClearing || cachedEvents.length === 0}
+            class="px-4 py-2 text-white rounded-md hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] flex-1 md:flex-none"
+            style="background-color: #dc2626;"
+            title={cachedEvents.length === 0 ? 'No events to clear' : 'Clear all cached events'}
+          >
+            {isClearing ? 'Clearing...' : 'Clear Cache'}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -248,31 +250,31 @@
         <div class="space-y-2">
           {#each cachedEvents as event (event.id)}
             <div
-              class="cache-event-item p-3 border rounded-md cursor-pointer"
+              class="cache-event-item p-3 border rounded-md cursor-pointer min-h-[60px] touch-manipulation"
               style="background-color: var(--bg-secondary); border-color: var(--border);"
               onclick={() => selectedEvent = selectedEvent?.id === event.id ? null : event}
               onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectedEvent = selectedEvent?.id === event.id ? null : event; } }}
               role="button"
               tabindex="0"
             >
-              <div class="flex items-center justify-between">
-                <div class="flex-1">
-                  <div class="font-semibold" style="color: var(--text-primary);">{getEventTitle(event)}</div>
-                  <div class="text-sm" style="color: var(--text-secondary);">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex-1 min-w-0">
+                  <div class="font-semibold break-words" style="color: var(--text-primary);">{getEventTitle(event)}</div>
+                  <div class="text-sm break-words" style="color: var(--text-secondary);">
                     Kind {event.kind} • {new Date(event.created_at * 1000).toLocaleString()}
                   </div>
                 </div>
                 <button
                   onclick={(e) => { e.stopPropagation(); deleteEvent(event); }}
-                  class="ml-2 hover:opacity-80"
+                  class="ml-2 hover:opacity-80 flex-shrink-0 min-h-[44px] px-3 py-2 rounded"
                   style="color: #dc2626;"
                 >
                   Delete
                 </button>
               </div>
               {#if selectedEvent?.id === event.id}
-                <div class="mt-3 p-3 rounded text-xs font-mono overflow-auto max-h-96" style="background-color: var(--bg-tertiary); color: var(--text-primary);">
-                  <pre style="color: var(--text-primary);">{formatEvent(event)}</pre>
+                <div class="mt-3 p-3 rounded text-xs font-mono overflow-x-auto max-h-96" style="background-color: #1e1e1e; color: #d4d4d4;">
+                  <pre style="color: #d4d4d4; background-color: #1e1e1e; margin: 0; white-space: pre; word-wrap: normal; overflow-wrap: normal;">{formatEvent(event)}</pre>
                 </div>
               {/if}
             </div>
@@ -301,10 +303,16 @@
   @media (max-width: 768px) {
     .cache-browser {
       align-items: flex-end;
+      padding: 0;
     }
     .cache-browser > div {
-      max-height: 80vh;
+      max-height: 90vh;
       border-radius: 1rem 1rem 0 0;
+      width: 100%;
+      margin: 0;
+    }
+    .cache-event-item {
+      min-height: 72px;
     }
   }
 </style>

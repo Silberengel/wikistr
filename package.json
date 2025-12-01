@@ -1,6 +1,6 @@
 {
   "name": "wikistr",
-  "version": "5.1.0",
+  "version": "5.1.1",
   "description": "A decentralized book study and wiki system built on Nostr",
   "private": true,
   "scripts": {

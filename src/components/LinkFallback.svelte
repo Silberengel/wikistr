@@ -6,6 +6,9 @@
   import { getTagOr } from '$lib/utils';
   import type { NostrEvent } from '@nostr/tools/pure';
   import UserBadge from './UserBadge.svelte';
+  import asciidoctor from '@asciidoctor/core';
+  import { convertMarkdownToAsciiDoc } from '$lib/markdownToAsciiDoc';
+  import { contentCache } from '$lib/contentCache';
 
   interface Props {
     url: string;
@@ -13,10 +16,49 @@
 
   let { url }: Props = $props();
   
-  let nostrId = $state<{ type: 'npub' | 'nprofile' | 'nevent' | 'note' | 'naddr' | null; value: string } | null>(null);
+  let nostrId = $state<{ type: 'npub' | 'nprofile' | 'nevent' | 'note' | 'naddr' | 'hex' | 'nip05' | 'pubkey-dtag' | 'npub-dtag' | 'dtag-only' | null; value: string; pubkey?: string; dTag?: string } | null>(null);
   let event = $state<NostrEvent | null>(null);
   let profileData = $state<{ pubkey: string; display_name?: string; name?: string; picture?: string } | null>(null);
   let loading = $state(true);
+  let contentPreview = $state<string>('');
+  let contentPreviewHtml = $state<string>('');
+  
+  // Render content preview (markdown or asciidoc)
+  function renderContentPreview(content: string, kind: number): string {
+    if (!content) return '';
+    
+    const preview = content.substring(0, 500);
+    
+    // Determine if it's markdown or asciidoc
+    // 30040 is an index, so it has not content
+    const isMarkdown = kind === 30817 || kind === 30023;
+    const isAsciiDoc = kind === 30818 || kind === 30041;
+    
+    try {
+      const adoc = asciidoctor();
+      let contentToRender = preview;
+      
+      if (isMarkdown) {
+        // Convert markdown to asciidoc first, then render
+        contentToRender = convertMarkdownToAsciiDoc(preview, {
+          convertTables: false,
+          convertCodeBlocks: false,
+          convertBlockquotes: false
+        });
+      }
+      
+      // Render as asciidoc (works for both asciidoc and converted markdown)
+      if (isAsciiDoc || isMarkdown) {
+        return adoc.convert(contentToRender, { safe: 'safe', attributes: { showtitle: true } }) as string;
+      } else {
+        // For other kinds, just return plain text with line breaks
+        return preview.replace(/\n/g, '<br>');
+      }
+    } catch (e) {
+      // Fallback to plain text if rendering fails
+      return preview.replace(/\n/g, '<br>');
+    }
+  }
 
   // Human-readable bookstr tag names
   const bookstrTagNames: Record<string, string> = {
@@ -37,8 +79,140 @@
         return;
       }
 
+      // Handle dtag-only - query events by d-tag across all authors
+      if (nostrId.type === 'dtag-only' && nostrId.dTag) {
+        try {
+          const dTag = nostrId.dTag;
+          
+          // Try common event kinds that use d-tags
+          const kindsToTry = [30040, 30041, 30023, 30817, 30818];
+          
+          // Check cache first
+          const allCached = [
+            ...contentCache.getEvents('publications'),
+            ...contentCache.getEvents('longform'),
+            ...contentCache.getEvents('wikis')
+          ];
+          
+          let foundEvent = allCached.find(c => 
+            kindsToTry.includes(c.event.kind) &&
+            getTagOr(c.event, 'd') === dTag
+          )?.event;
+          
+          if (foundEvent) {
+            event = foundEvent;
+            const content = foundEvent.content || '';
+            contentPreview = content.substring(0, 500);
+            contentPreviewHtml = renderContentPreview(content, foundEvent.kind);
+          } else {
+            // Try each kind until we find a match (query without authors to search across all)
+            for (const kind of kindsToTry) {
+              const result = await relayService.queryEvents(
+                'anonymous',
+                'wiki-read',
+                [{ kinds: [kind], '#d': [dTag], limit: 1 }],
+                { excludeUserContent: false, currentUserPubkey: undefined }
+              );
+              
+              if (result.events.length > 0) {
+                event = result.events[0];
+                const content = event.content || '';
+                contentPreview = content.substring(0, 500);
+                contentPreviewHtml = renderContentPreview(content, event.kind);
+                
+                // Store in cache
+                const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                                 event.kind === 30023 ? 'longform' :
+                                 (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+                if (cacheType) {
+                  await contentCache.storeEvents(cacheType, [{ event, relays: result.relays }]);
+                }
+                break; // Found it, stop trying other kinds
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Failed to fetch event by d-tag only:', e);
+        }
+      }
+      // Handle nip-05 - fetch profile by nip-05
+      else if (nostrId.type === 'nip05') {
+        try {
+          // Resolve nip-05 to pubkey
+          const [localPart, domain] = nostrId.value.split('@');
+          const wellKnownUrl = `https://${domain}/.well-known/nostr.json?name=${localPart}`;
+          
+          const response = await fetch(wellKnownUrl);
+          if (response.ok) {
+            const data = await response.json();
+            const names = data.names || {};
+            const pubkey = names[localPart];
+            
+            if (pubkey) {
+              // Fetch profile using the resolved pubkey
+              const cachedProfile = contentCache.getEvents('profile').find(c => 
+                c.event.pubkey === pubkey && c.event.kind === 0
+              );
+              
+              let result: any;
+              if (cachedProfile) {
+                result = { events: [cachedProfile.event], relays: cachedProfile.relays };
+              } else {
+                result = await relayService.queryEvents(
+                  'anonymous',
+                  'metadata-read',
+                  [{ kinds: [0], authors: [pubkey], limit: 1 }],
+                  { excludeUserContent: false, currentUserPubkey: undefined }
+                );
+                
+                if (result.events.length > 0) {
+                  await contentCache.storeEvents('profile', result.events.map((event: NostrEvent) => ({ event, relays: result.relays })));
+                }
+              }
+              
+              if (result.events.length > 0) {
+                const profileEvent = result.events[0];
+                let content: any = {};
+                
+                if (profileEvent.tags && Array.isArray(profileEvent.tags)) {
+                  for (const tag of profileEvent.tags) {
+                    if (Array.isArray(tag) && tag.length >= 2) {
+                      const key = tag[0].toLowerCase();
+                      const value = Array.isArray(tag[1]) ? tag[1][0] : tag[1];
+                      if (value && typeof value === 'string') {
+                        if (key === 'display_name' || key === 'displayname') content.display_name = value;
+                        else if (key === 'name') content.name = value;
+                        else if (key === 'picture' || key === 'avatar') content.picture = value;
+                      }
+                    }
+                  }
+                }
+                
+                if (!content.display_name && !content.name && !content.picture) {
+                  try {
+                    content = JSON.parse(profileEvent.content);
+                  } catch (e) {
+                    // Ignore parse errors
+                  }
+                }
+                
+                profileData = {
+                  pubkey,
+                  display_name: content.display_name,
+                  name: content.name,
+                  picture: content.picture
+                };
+              } else {
+                profileData = { pubkey };
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Failed to resolve nip-05:', e);
+        }
+      }
       // Handle npub/nprofile - fetch profile
-      if (nostrId.type === 'npub' || nostrId.type === 'nprofile') {
+      else if (nostrId.type === 'npub' || nostrId.type === 'nprofile') {
         try {
           const decoded = nip19.decode(nostrId.value);
           let pubkey: string;
@@ -55,7 +229,6 @@
           }
           
           // Check cache first for profile metadata
-          const { contentCache } = await import('$lib/contentCache');
           const cachedProfile = contentCache.getEvents('profile').find(c => 
             c.event.pubkey === pubkey && c.event.kind === 0
           );
@@ -74,7 +247,7 @@
             
             // Store in cache
             if (result.events.length > 0) {
-              await contentCache.storeEvents('profile', result.events.map(event => ({ event, relays: result.relays })));
+              await contentCache.storeEvents('profile', result.events.map((event: NostrEvent) => ({ event, relays: result.relays })));
             }
           }
           
@@ -119,7 +292,170 @@
           console.error('Failed to decode/fetch profile:', e);
         }
       } 
-      // Handle nevent/note/naddr/hex ID - fetch event
+      // Handle hex ID - fetch event by hex ID
+      else if (nostrId.type === 'hex') {
+        try {
+          const eventId = nostrId.value;
+          const allCached = [
+            ...contentCache.getEvents('publications'),
+            ...contentCache.getEvents('longform'),
+            ...contentCache.getEvents('wikis')
+          ];
+          
+          let foundEvent = allCached.find(c => c.event.id === eventId)?.event;
+          if (foundEvent) {
+            event = foundEvent;
+            // Generate content preview
+            const content = foundEvent.content || '';
+            contentPreview = content.substring(0, 500);
+            contentPreviewHtml = renderContentPreview(content, foundEvent.kind);
+          } else {
+            const result = await relayService.queryEvents(
+              'anonymous',
+              'wiki-read',
+              [{ ids: [eventId], limit: 1 }],
+              { excludeUserContent: false, currentUserPubkey: undefined }
+            );
+            if (result.events.length > 0) {
+              event = result.events[0];
+              // Generate content preview
+              const content = event.content || '';
+              contentPreview = content.substring(0, 500);
+              contentPreviewHtml = renderContentPreview(content, event.kind);
+              // Store in cache
+              const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                               event.kind === 30023 ? 'longform' :
+                               (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+              if (cacheType) {
+                await contentCache.storeEvents(cacheType, [{ event, relays: result.relays }]);
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Failed to fetch event by hex ID:', e);
+        }
+      }
+      // Handle pubkey-dtag pattern (d-tag*pubkey or pubkey*d-tag)
+      else if (nostrId.type === 'pubkey-dtag' && nostrId.pubkey && nostrId.dTag) {
+        try {
+          const pubkey = nostrId.pubkey;
+          const dTag = nostrId.dTag;
+          
+          // Try common event kinds that use d-tags
+          const kindsToTry = [30040, 30041, 30023, 30817, 30818];
+          
+          // Check cache first
+          const allCached = [
+            ...contentCache.getEvents('publications'),
+            ...contentCache.getEvents('longform'),
+            ...contentCache.getEvents('wikis')
+          ];
+          
+          let foundEvent = allCached.find(c => 
+            c.event.pubkey === pubkey &&
+            getTagOr(c.event, 'd') === dTag &&
+            kindsToTry.includes(c.event.kind)
+          )?.event;
+          
+          if (foundEvent) {
+            event = foundEvent;
+            const content = foundEvent.content || '';
+            contentPreview = content.substring(0, 500);
+            contentPreviewHtml = renderContentPreview(content, foundEvent.kind);
+          } else {
+            // Try each kind until we find a match
+            for (const kind of kindsToTry) {
+              const result = await relayService.queryEvents(
+                'anonymous',
+                'wiki-read',
+                [{ kinds: [kind], authors: [pubkey], '#d': [dTag], limit: 1 }],
+                { excludeUserContent: false, currentUserPubkey: undefined }
+              );
+              
+              if (result.events.length > 0) {
+                event = result.events[0];
+                const content = event.content || '';
+                contentPreview = content.substring(0, 500);
+                contentPreviewHtml = renderContentPreview(content, event.kind);
+                
+                // Store in cache
+                const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                                 event.kind === 30023 ? 'longform' :
+                                 (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+                if (cacheType) {
+                  await contentCache.storeEvents(cacheType, [{ event, relays: result.relays }]);
+                }
+                break; // Found it, stop trying other kinds
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Failed to fetch event by pubkey+d-tag:', e);
+        }
+      }
+      // Handle npub-dtag pattern (d-tag/npub)
+      else if (nostrId.type === 'npub-dtag' && nostrId.dTag) {
+        try {
+          // Decode npub to get pubkey
+          const decoded = nip19.decode(nostrId.value);
+          if (decoded.type === 'npub') {
+            const pubkey = decoded.data as string;
+            const dTag = nostrId.dTag;
+            
+            // Try common event kinds that use d-tags
+            const kindsToTry = [30040, 30041, 30023, 30817, 30818];
+            
+            // Check cache first
+            const allCached = [
+              ...contentCache.getEvents('publications'),
+              ...contentCache.getEvents('longform'),
+              ...contentCache.getEvents('wikis')
+            ];
+            
+            let foundEvent = allCached.find(c => 
+              c.event.pubkey === pubkey &&
+              getTagOr(c.event, 'd') === dTag &&
+              kindsToTry.includes(c.event.kind)
+            )?.event;
+            
+            if (foundEvent) {
+              event = foundEvent;
+              const content = foundEvent.content || '';
+              contentPreview = content.substring(0, 500);
+              contentPreviewHtml = renderContentPreview(content, foundEvent.kind);
+            } else {
+              // Try each kind until we find a match
+              for (const kind of kindsToTry) {
+                const result = await relayService.queryEvents(
+                  'anonymous',
+                  'wiki-read',
+                  [{ kinds: [kind], authors: [pubkey], '#d': [dTag], limit: 1 }],
+                  { excludeUserContent: false, currentUserPubkey: undefined }
+                );
+                
+                if (result.events.length > 0) {
+                  event = result.events[0];
+                  const content = event.content || '';
+                  contentPreview = content.substring(0, 500);
+                  contentPreviewHtml = renderContentPreview(content, event.kind);
+                  
+                  // Store in cache
+                  const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                                   event.kind === 30023 ? 'longform' :
+                                   (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+                  if (cacheType) {
+                    await contentCache.storeEvents(cacheType, [{ event, relays: result.relays }]);
+                  }
+                  break; // Found it, stop trying other kinds
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Failed to fetch event by npub+d-tag:', e);
+        }
+      }
+      // Handle nevent/note/naddr - fetch event
       else if (nostrId.type === 'nevent' || nostrId.type === 'note' || nostrId.type === 'naddr') {
         try {
           let eventId: string | null = null;
@@ -157,6 +493,10 @@
             let foundEvent = allCached.find(c => c.event.id === eventId)?.event;
             if (foundEvent) {
               event = foundEvent;
+              // Generate content preview
+              const content = foundEvent.content || '';
+              contentPreview = content.substring(0, 500);
+              contentPreviewHtml = renderContentPreview(content, foundEvent.kind);
             } else {
               const result = await relayService.queryEvents(
                 'anonymous',
@@ -166,6 +506,10 @@
               );
               if (result.events.length > 0) {
                 event = result.events[0];
+                // Generate content preview
+                const content = event.content || '';
+                contentPreview = content.substring(0, 500);
+                contentPreviewHtml = renderContentPreview(content, event.kind);
                 // Store in cache
                 const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
                                  event.kind === 30023 ? 'longform' :
@@ -184,6 +528,10 @@
             )?.event;
             if (foundEvent) {
               event = foundEvent;
+              // Generate content preview
+              const content = foundEvent.content || '';
+              contentPreview = content.substring(0, 500);
+              contentPreviewHtml = renderContentPreview(content, foundEvent.kind);
             } else {
               const result = await relayService.queryEvents(
                 'anonymous',
@@ -193,6 +541,10 @@
               );
               if (result.events.length > 0) {
                 event = result.events[0];
+                // Generate content preview
+                const content = event.content || '';
+                contentPreview = content.substring(0, 500);
+                contentPreviewHtml = renderContentPreview(content, event.kind);
                 // Store in cache
                 const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
                                  event.kind === 30023 ? 'longform' :
@@ -297,6 +649,17 @@
         </div>
       {/if}
       
+      <!-- Content Preview (first 500 chars) -->
+      {#if contentPreviewHtml}
+        <div class="text-sm mb-2 line-clamp-4 prose prose-sm max-w-none" style="color: var(--text-secondary);">
+          {@html contentPreviewHtml}
+        </div>
+      {:else if contentPreview}
+        <div class="text-sm mb-2 line-clamp-4 whitespace-pre-wrap" style="color: var(--text-secondary);">
+          {contentPreview}
+        </div>
+      {/if}
+      
       <!-- Bookstr tags -->
       {#if event.tags}
         {@const bookstrTags = event.tags.filter(([t]) => ['C', 'c', 'T', 't', 's', 'S', 'v', 'V'].includes(t))}
@@ -314,11 +677,29 @@
           </div>
         {/if}
         
-        <!-- T tags (topics) -->
+        <!-- Hashtags and T tags (topics) -->
+        {@const hashtags = (() => {
+          // Extract hashtags from content (words starting with #)
+          const content = event.content || '';
+          const hashtagMatches = content.match(/#[a-zA-Z0-9_-]+/g) || [];
+          return [...new Set(hashtagMatches.map(h => h.substring(1).toLowerCase()))];
+        })()}
         {@const tTags = event.tags.filter(([t]) => t === 't' || t === 'T').map(([, v]) => v).filter(Boolean)}
-        {#if tTags.length > 0}
+        {@const tTagsNotInHashtags = tTags.filter(t => !hashtags.includes(t.toLowerCase()))}
+        
+        {#if hashtags.length > 0}
           <div class="flex flex-wrap gap-2 mb-2">
-            {#each tTags as topic}
+            {#each hashtags as hashtag}
+              <span class="text-xs px-2 py-1 rounded" style="background-color: var(--bg-tertiary); color: var(--text-secondary);">
+                #{hashtag}
+              </span>
+            {/each}
+          </div>
+        {/if}
+        
+        {#if tTagsNotInHashtags.length > 0}
+          <div class="flex flex-wrap gap-2 mb-2">
+            {#each tTagsNotInHashtags as topic}
               <span class="text-xs px-2 py-1 rounded" style="background-color: var(--bg-tertiary); color: var(--text-secondary);">
                 #{topic}
               </span>
@@ -329,12 +710,15 @@
       
       <!-- Author -->
       <div class="flex items-center space-x-2 mt-2">
-        <UserBadge pubkey={event.pubkey} />
         {#if getTagOr(event, 'author')}
+          <span class="text-xs font-medium" style="color: var(--text-primary);">
+            {getTagOr(event, 'author')}
+          </span>
           <span class="text-xs" style="color: var(--text-secondary);">
-            via {getTagOr(event, 'author')}
+            via
           </span>
         {/if}
+        <UserBadge pubkey={event.pubkey} />
       </div>
     </div>
   </a>

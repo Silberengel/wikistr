@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fetchOGMetadata, type OGMetadata } from '$lib/ogUtils';
+  import { fetchOGMetadata, type OGMetadata, extractNostrIdentifier } from '$lib/ogUtils';
+  import LinkFallback from './LinkFallback.svelte';
 
   interface Props {
     url: string;
@@ -11,9 +12,18 @@
   let ogData = $state<OGMetadata | null>(null);
   let loading = $state(true);
   let error = $state(false);
+  let hasNostrId = $state(false);
 
   onMount(async () => {
     try {
+      // First check if URL contains a Nostr identifier - if so, use LinkFallback instead
+      const nostrId = extractNostrIdentifier(url);
+      if (nostrId) {
+        hasNostrId = true;
+        loading = false;
+        return;
+      }
+      
       const data = await fetchOGMetadata(url);
       ogData = data;
       error = !data;
@@ -81,6 +91,9 @@
       {/if}
     </div>
   </a>
+{:else if hasNostrId}
+  <!-- Use LinkFallback for Nostr identifiers -->
+  <LinkFallback url={url} />
 {:else}
   <!-- Fallback: just show the URL as a link -->
   <a

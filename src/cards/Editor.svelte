@@ -36,6 +36,16 @@
   let previewing = $state(false);
   let editingJson = $state(false);
   let jsonContent = $state('');
+  
+  // Get the original event kind (from data.kind, previous event, or default to wikiKind)
+  const originalKind = $derived(
+    data.kind || 
+    editorCard.data.previous?.actualEvent?.kind || 
+    wikiKind
+  );
+  
+  // Check if this is a kind 30040 (book index) which has no content, just tags
+  const isBookIndex = $derived(originalKind === 30040);
 
 
   async function publish() {
@@ -46,13 +56,34 @@
 
     data.title = data.title.trim();
 
-    let eventTemplate: EventTemplate = {
-      kind: wikiKind,
-      tags: [['d', normalizeIdentifier(data.title)]],
-      content: data.content.trim(),
-      created_at: Math.round(Date.now() / 1000)
-    };
-    if (data.title !== eventTemplate.tags[0][1]) eventTemplate.tags.push(['title', data.title]);
+    let eventTemplate: EventTemplate;
+    
+    if (isBookIndex) {
+      // For kind 30040, use tags from data.tags (includes a-tags/e-tags)
+      eventTemplate = {
+        kind: originalKind,
+        tags: data.tags ? [...data.tags.map(t => [...t])] : [['d', normalizeIdentifier(data.title)]],
+        content: '', // Kind 30040 has no content
+        created_at: Math.round(Date.now() / 1000)
+      };
+      // Ensure d-tag exists
+      if (!eventTemplate.tags.find(t => t[0] === 'd')) {
+        eventTemplate.tags.unshift(['d', normalizeIdentifier(data.title)]);
+      }
+    } else {
+      // Regular content-based event
+      eventTemplate = {
+        kind: originalKind,
+        tags: [['d', normalizeIdentifier(data.title)]],
+        content: data.content.trim(),
+        created_at: Math.round(Date.now() / 1000)
+      };
+    }
+    
+    // Add metadata tags
+    if (data.title && data.title !== getTagOr({ tags: eventTemplate.tags } as any, 'd')) {
+      eventTemplate.tags.push(['title', data.title]);
+    }
     if (data.summary) eventTemplate.tags.push(['summary', data.summary]);
     if (data.image) eventTemplate.tags.push(['image', data.image]);
     if (data.author) eventTemplate.tags.push(['author', data.author]);
@@ -68,12 +99,40 @@
         false // Don't show toast for articles
       );
       
-      // Update targets with results
-      targets = result.publishedTo.concat(result.failedRelays).map(url => ({
-        url,
-        status: result.publishedTo.includes(url) ? 'success' as const : 'failure' as const,
-        message: result.publishedTo.includes(url) ? 'Published' : 'Failed'
-      }));
+      // Only show relay status if there are failures, or show briefly on success then auto-hide
+      if (result.failedRelays.length > 0) {
+        // Show failures - user should know about these
+        targets = result.publishedTo.concat(result.failedRelays).map(url => ({
+          url,
+          status: result.publishedTo.includes(url) ? 'success' as const : 'failure' as const,
+          message: result.publishedTo.includes(url) ? 'Published' : 'Failed'
+        }));
+      } else if (result.success) {
+        // All succeeded - show briefly then hide
+        targets = result.publishedTo.map(url => ({
+          url,
+          status: 'success' as const,
+          message: 'Published'
+        }));
+        // Auto-hide after 1.5 seconds
+        setTimeout(() => {
+          targets = [];
+        }, 1500);
+      }
+
+      // Cache the event after publishing
+      if (result.success && result.publishedTo.length > 0) {
+        const { contentCache } = await import('$lib/contentCache');
+        const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                         event.kind === 30023 ? 'longform' :
+                         (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+        if (cacheType) {
+          await contentCache.storeEvents(cacheType, [{
+            event,
+            relays: result.publishedTo
+          }]);
+        }
+      }
 
       if (result.success) {
         setTimeout(() => {
@@ -118,9 +177,9 @@
       if (!editingJson) {
         // Prepare JSON from current data
         const eventTemplate: EventTemplate = {
-          kind: wikiKind,
-          tags: [['d', normalizeIdentifier(data.title)]],
-          content: data.content.trim(),
+          kind: originalKind,
+          tags: isBookIndex && data.tags ? [...data.tags] : [['d', normalizeIdentifier(data.title)]],
+          content: isBookIndex ? '' : data.content.trim(),
           created_at: Math.round(Date.now() / 1000)
         };
         if (data.title !== eventTemplate.tags[0][1]) eventTemplate.tags.push(['title', data.title]);
@@ -159,37 +218,6 @@
         Cancel
       </button>
       <button
-        onclick={() => {
-          try {
-            // Parse JSON
-            const eventTemplate = JSON.parse(jsonContent) as EventTemplate;
-            
-            // Validate required fields
-            if (!eventTemplate.kind || !eventTemplate.content || !eventTemplate.tags) {
-              error = 'Invalid event: missing required fields (kind, content, tags)';
-              return;
-            }
-            
-            // Update data from parsed JSON
-            data.title = getTagOr(eventTemplate, 'title') || getTagOr(eventTemplate, 'd') || '';
-            data.summary = getTagOr(eventTemplate, 'summary') || '';
-            data.content = eventTemplate.content || '';
-            data.image = getTagOr(eventTemplate, 'image') || '';
-            data.author = getTagOr(eventTemplate, 'author') || '';
-            
-            // Close JSON editor
-            editingJson = false;
-            error = undefined;
-          } catch (err) {
-            error = 'Invalid JSON: ' + String(err);
-          }
-        }}
-        class="cursor-pointer inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2"
-        style="font-family: {theme.typography.fontFamily};"
-      >
-        Save
-      </button>
-      <button
         onclick={async () => {
           if (!$account) return;
           
@@ -198,8 +226,14 @@
             const eventTemplate = JSON.parse(jsonContent) as EventTemplate;
             
             // Validate required fields
-            if (!eventTemplate.kind || !eventTemplate.content || !eventTemplate.tags) {
-              error = 'Invalid event: missing required fields (kind, content, tags)';
+            if (!eventTemplate.kind || !eventTemplate.tags) {
+              error = 'Invalid event: missing required fields (kind, tags)';
+              return;
+            }
+            
+            // For kind 30040, content is optional (book index has no content)
+            if (eventTemplate.kind !== 30040 && !eventTemplate.content) {
+              error = 'Invalid event: missing required field (content)';
               return;
             }
             
@@ -234,12 +268,40 @@
               false
             );
             
-            // Update targets with results
-            targets = result.publishedTo.concat(result.failedRelays).map(url => ({
-              url,
-              status: result.publishedTo.includes(url) ? 'success' as const : 'failure' as const,
-              message: result.publishedTo.includes(url) ? 'Published' : 'Failed'
-            }));
+            // Only show relay status if there are failures, or show briefly on success then auto-hide
+            if (result.failedRelays.length > 0) {
+              // Show failures - user should know about these
+              targets = result.publishedTo.concat(result.failedRelays).map(url => ({
+                url,
+                status: result.publishedTo.includes(url) ? 'success' as const : 'failure' as const,
+                message: result.publishedTo.includes(url) ? 'Published' : 'Failed'
+              }));
+            } else if (result.success) {
+              // All succeeded - show briefly then hide
+              targets = result.publishedTo.map(url => ({
+                url,
+                status: 'success' as const,
+                message: 'Published'
+              }));
+              // Auto-hide after 1.5 seconds
+              setTimeout(() => {
+                targets = [];
+              }, 1500);
+            }
+            
+            // Cache the event after publishing
+            if (result.success && result.publishedTo.length > 0) {
+              const { contentCache } = await import('$lib/contentCache');
+              const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                               event.kind === 30023 ? 'longform' :
+                               (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
+              if (cacheType) {
+                await contentCache.storeEvents(cacheType, [{
+                  event,
+                  relays: result.publishedTo
+                }]);
+              }
+            }
             
             if (result.success) {
               setTimeout(() => {
@@ -257,9 +319,11 @@
                 // Update data from event
                 data.title = getTagOr(event, 'title') || getTagOr(event, 'd') || '';
                 data.summary = getTagOr(event, 'summary') || '';
-                data.content = event.content;
+                data.content = event.content || '';
                 data.image = getTagOr(event, 'image') || '';
                 data.author = getTagOr(event, 'author') || '';
+                data.kind = event.kind;
+                data.tags = event.tags ? [...event.tags.map(t => [...t])] : undefined;
                 
                 replaceSelf({
                   id: next(),
@@ -283,21 +347,105 @@
     </div>
   </div>
 {:else if data}
-  <div class="mt-2">
-    <label class="flex items-center"
-      >Title
-      <input
-        placeholder="example: Greek alphabet"
-        bind:value={data.title}
-        class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md ml-2"
-      /></label
-    >
-  </div>
-  <div class="mt-2">
-    <!-- svelte-ignore a11y_label_has_associated_control -->
-    <label>
-      Article
-      {#if previewing}
+  {#if isBookIndex}
+    <!-- Special form for kind 30040 (book index) - no content, just tags -->
+    <div class="mt-2">
+      <label class="flex items-center"
+        >Title
+        <input
+          placeholder="example: Book Title"
+          bind:value={data.title}
+          class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md ml-2"
+        /></label
+      >
+    </div>
+    <div class="mt-2">
+      <label class="block mb-2">
+        <span class="text-sm font-semibold">Event References (a-tags or e-tags)</span>
+        <textarea
+          placeholder="One per line, format: 30041:pubkey:d-tag or event-id"
+          value={(() => {
+            if (!data.tags) return '';
+            const aTags = data.tags.filter(t => t[0] === 'a' || t[0] === 'A').map(t => t[1] || '').filter(Boolean);
+            const eTags = data.tags.filter(t => t[0] === 'e' || t[0] === 'E').map(t => t[1] || '').filter(Boolean);
+            return [...aTags, ...eTags].join('\n');
+          })()}
+          oninput={(e) => {
+            const lines = (e.target as HTMLTextAreaElement).value.split('\n').filter(l => l.trim());
+            const newTags: string[][] = [['d', normalizeIdentifier(data.title)]];
+            lines.forEach(line => {
+              const trimmed = line.trim();
+              if (trimmed.match(/^\d+:[a-f0-9]{64}:/)) {
+                // a-tag format: kind:pubkey:d-tag
+                newTags.push(['a', trimmed]);
+              } else if (trimmed.match(/^[a-f0-9]{64}$/)) {
+                // e-tag format: event-id
+                newTags.push(['e', trimmed]);
+              }
+            });
+            // Preserve other tags (title, summary, image, author, etc.)
+            if (data.tags) {
+              data.tags.forEach(tag => {
+                if (tag[0] !== 'a' && tag[0] !== 'A' && tag[0] !== 'e' && tag[0] !== 'E' && tag[0] !== 'd') {
+                  newTags.push(tag);
+                }
+              });
+            }
+            data.tags = newTags;
+          }}
+          class="h-80 shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md font-mono"
+        ></textarea>
+      </label>
+    </div>
+    <div class="mt-2">
+      <details>
+        <summary>Metadata</summary>
+        <div class="mt-2 space-y-2">
+          <label class="flex items-center"
+            >Summary
+            <input
+              bind:value={data.summary}
+              placeholder="Optional summary"
+              class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md ml-2"
+            /></label
+          >
+          <label class="flex items-center"
+            >Image (URL)
+            <input
+              type="url"
+              bind:value={data.image}
+              placeholder="https://example.com/image.jpg"
+              class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md ml-2"
+            /></label
+          >
+          <label class="flex items-center"
+            >Author
+            <input
+              bind:value={data.author}
+              placeholder="Author name"
+              class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md ml-2"
+            /></label
+          >
+        </div>
+      </details>
+    </div>
+  {:else}
+    <!-- Regular form for content-based events -->
+    <div class="mt-2">
+      <label class="flex items-center"
+        >Title
+        <input
+          placeholder="example: Greek alphabet"
+          bind:value={data.title}
+          class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md ml-2"
+        /></label
+      >
+    </div>
+    <div class="mt-2">
+      <!-- svelte-ignore a11y_label_has_associated_control -->
+      <label>
+        Article
+        {#if previewing}
         <div class="prose prose-p:my-0 prose-li:my-0">
           {#if jsonContent && jsonContent.trim()}
             {@const parsed = (() => {
@@ -313,7 +461,7 @@
                   content: parsed.content || data.content, 
                   pubkey: $account?.pubkey || '', 
                   created_at: parsed.created_at || Math.floor(Date.now() / 1000),
-                  kind: parsed.kind || 30023,
+                  kind: parsed.kind || originalKind,
                   tags: parsed.tags || [],
                   id: '',
                   sig: ''
@@ -329,8 +477,8 @@
                 content: data.content, 
                 pubkey: $account?.pubkey || '', 
                 created_at: Math.floor(Date.now() / 1000),
-                kind: 30023,
-                tags: [],
+                kind: originalKind,
+                tags: data.tags || [],
                 id: '',
                 sig: ''
               } as any}
@@ -392,6 +540,7 @@
       /></label
     >
   </div>
+  {/if}
 {/if}
 
 <!-- Submit -->

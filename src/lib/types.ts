@@ -7,6 +7,8 @@ export type EditorData = {
   image?: string;
   author?: string;
   previous: ArticleCard | undefined;
+  kind?: number; // Original event kind (for edit/fork operations)
+  tags?: string[][]; // Original event tags (for kind 30040 which has no content)
 };
 
 export type Card =
