@@ -44,6 +44,25 @@
     return getReferenceKey(ref);
   }
 
+  // Helper to get preview, trying both versioned and non-versioned keys
+  function getRefPreview(ref: BookReference, refKey: string): { title?: string; description?: string; image?: string } | null {
+    // First try the exact key
+    let preview = referenceOgPreviews.get(refKey);
+    if (preview) return preview;
+    
+    // If no version was used in the key, try versioned keys
+    if (!version && getReferenceKeyWithVersion && parsedQuery) {
+      const versions = parsedQuery.versions || (parsedQuery.version ? [parsedQuery.version] : []);
+      for (const v of versions) {
+        const versionedKey = getReferenceKeyWithVersion(ref, v);
+        preview = referenceOgPreviews.get(versionedKey);
+        if (preview) return preview;
+      }
+    }
+    
+    return null;
+  }
+
   function getRefVersion(ref: BookReference): string | undefined {
     return version || parsedQuery?.versions?.[0] || parsedQuery?.version;
   }
@@ -85,10 +104,10 @@
       {#each parsedQuery.references as ref}
         {@const refKey = getRefKey(ref)}
         {@const refServiceUrl = generateUrlForReference(ref, getRefVersion(ref))}
-        {@const refPreview = referenceOgPreviews.get(refKey) || null}
+        {@const refPreview = getRefPreview(ref, refKey)}
         {@const refLoading = referenceOgLoading.get(refKey) || false}
         {@const refError = referenceOgErrors.get(refKey) || null}
-        {@const hasAttemptedLoad = referenceOgPreviews.has(refKey) || referenceOgErrors.has(refKey) || referenceOgLoading.has(refKey)}
+        {@const hasAttemptedLoad = referenceOgPreviews.has(refKey) || referenceOgErrors.has(refKey) || referenceOgLoading.has(refKey) || !!refPreview}
         
         <!-- Service passage card -->
         <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
@@ -176,10 +195,10 @@
         {#each parsedQuery.references as ref}
           {@const refKey = getRefKey(ref)}
           {@const refServiceUrl = generateUrlForReference(ref, getRefVersion(ref))}
-          {@const refPreview = referenceOgPreviews.get(refKey) || null}
+          {@const refPreview = getRefPreview(ref, refKey)}
           {@const refLoading = referenceOgLoading.get(refKey) || false}
           {@const refError = referenceOgErrors.get(refKey) || null}
-          {@const hasAttemptedLoad = referenceOgPreviews.has(refKey) || referenceOgErrors.has(refKey) || referenceOgLoading.has(refKey)}
+          {@const hasAttemptedLoad = referenceOgPreviews.has(refKey) || referenceOgErrors.has(refKey) || referenceOgLoading.has(refKey) || !!refPreview}
           
           <!-- Service passage card -->
           <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">

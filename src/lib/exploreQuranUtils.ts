@@ -145,17 +145,25 @@ function getFirstAyah(ayah: string): number | null {
  * Format:
  * - Surah only: https://explorequran.org/index2.php?surah={number}
  * - Surah with ayah: https://explorequran.org/index2.php?surah={number}&ayah={number}
+ * 
+ * Supports both:
+ * - Numbered surahs: "18" -> surah 18
+ * - Named surahs: "Al-Kahf" -> surah 18
+ * 
+ * For verse ranges (e.g., "1-10"), uses the first verse in the range.
  */
 function generateSingleReferenceUrl(ref: BookReference): string | null {
   if (!ref.book) return null;
   
   // First, check if the book name is already a number (1-114)
+  // This handles numbered surahs like "18" or "1"
   let surahNumber: number | undefined;
   const bookAsNumber = parseInt(ref.book.trim(), 10);
   if (!isNaN(bookAsNumber) && bookAsNumber >= 1 && bookAsNumber <= 114) {
-    // Book name is a surah number
+    // Book name is a surah number (e.g., "18" -> 18)
     surahNumber = bookAsNumber;
   } else {
+    // Book name is a surah name (e.g., "Al-Kahf" -> 18)
     // Get surah number from book name - case-insensitive lookup with multiple fallbacks
     // The parser normalizes book names, so we need flexible matching
     surahNumber = surahNameToNumber[ref.book];
@@ -211,15 +219,17 @@ function generateSingleReferenceUrl(ref: BookReference): string | null {
   
   // In Quran, "chapter" is actually the surah number, and "verse" is the ayah
   // But our system uses chapter/verse, so we need to handle this
-  // If we have a verse, use it as ayah
+  // ExploreQuran only supports single verses, not ranges
+  // If we have a verse, extract the first ayah (for ranges, use the first verse)
   if (ref.verse) {
+    // Extract the first ayah number (handles ranges by taking the first number)
     const firstAyah = getFirstAyah(ref.verse);
     if (firstAyah === null) {
       // Invalid ayah, fall back to surah only
       return `https://explorequran.org/index2.php?surah=${surahNumber}`;
     }
     
-    // Surah with ayah
+    // Surah with single ayah (use first ayah for ranges)
     return `https://explorequran.org/index2.php?surah=${surahNumber}&ayah=${firstAyah}`;
   }
   
@@ -278,6 +288,7 @@ function buildProxyUrl(target: string): string {
  */
 export async function fetchExploreQuranOg(url: string): Promise<{ title?: string; description?: string; image?: string }> {
   const proxied = buildProxyUrl(url);
+  console.log('ExploreQuran: Proxy URL constructed:', proxied, 'from target:', url);
   
   let response: Response;
   try {

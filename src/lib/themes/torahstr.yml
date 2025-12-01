@@ -37,6 +37,12 @@ searchHelpText: |
 
   You can also use `book::` prefix (without brackets) in the search bar to search for book passages.
 
+  **Torah Examples:**
+
+  • `[[book::torah | Genesis 1:1 | JPS]]` or `[[book::torah | Exodus 3:16 | TANAKH]]`
+  • `[[book::torah | Deuteronomy 6:4-5 | JPS]]` or `[[book::torah | Leviticus 19:18 | TANAKH]]`
+  • Search bar: `book::torah | Genesis 1:1 | JPS` or `book::torah | Deuteronomy 6:4-5`
+
   **Compare content with diff:**
 
   • diff::article1 | article2

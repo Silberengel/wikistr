@@ -118,6 +118,7 @@ function buildProxyUrl(target: string): string {
  */
 export async function fetchSefariaOg(url: string): Promise<{ title?: string; description?: string; image?: string }> {
   const proxied = buildProxyUrl(url);
+  console.log('Sefaria: Proxy URL constructed:', proxied, 'from target:', url);
   
   let response: Response;
   try {
