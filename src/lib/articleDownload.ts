@@ -873,7 +873,9 @@ export async function combineBookEvents(
     
     if (sectionTitle) {
       // For PDF, add page break before each top-level chapter (except the first one)
-      if (exportFormat === 'pdf' && actualLevel === 2 && !isFirst) {
+      // BUT: PDF doesn't support page breaks on sections with nested children
+      // Only add page break if this section has no nested children
+      if (exportFormat === 'pdf' && actualLevel === 2 && !isFirst && node.children.length === 0) {
         doc += `[page-break]\n`;
       }
       
