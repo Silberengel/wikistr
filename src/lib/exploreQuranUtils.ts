@@ -121,7 +121,8 @@ const surahNameToNumber: Record<string, number> = {
 
 /**
  * Get the first ayah number from an ayah string (handles ranges and lists)
- * Since ExploreQuran doesn't support ranges, we always use the first ayah requested
+ * Since quran.com doesn't support ranges in the URL, we use the first ayah as startingVerse
+ * Users can scroll down from there to see the rest of the range
  */
 function getFirstAyah(ayah: string): number | null {
   if (!ayah) return null;
@@ -141,118 +142,120 @@ function getFirstAyah(ayah: string): number | null {
 }
 
 /**
- * Generate ExploreQuran URL for a single reference
+ * Generate quran.com URL for a single reference
  * Format:
- * - Surah only: https://explorequran.org/index2.php?surah={number}
- * - Surah with ayah: https://explorequran.org/index2.php?surah={number}&ayah={number}
+ * - Surah only: https://quran.com/{number}
+ * - Surah with starting verse: https://quran.com/{number}?startingVerse={number}
  * 
  * Supports both:
  * - Numbered surahs: "18" -> surah 18
  * - Named surahs: "Al-Kahf" -> surah 18
  * 
- * For verse ranges (e.g., "1-10"), uses the first verse in the range.
+ * For verse ranges (e.g., "5-10"), uses the first verse as startingVerse.
+ * Users can scroll down from there to see the rest of the range.
  */
 function generateSingleReferenceUrl(ref: BookReference): string | null {
   if (!ref.book) return null;
   
-  // First, check if the book name is already a number (1-114)
-  // This handles numbered surahs like "18" or "1"
+  // For Quran, "chapter" is actually the surah number
+  // If ref.chapter exists and is a valid surah number (1-114), use it directly
   let surahNumber: number | undefined;
-  const bookAsNumber = parseInt(ref.book.trim(), 10);
-  if (!isNaN(bookAsNumber) && bookAsNumber >= 1 && bookAsNumber <= 114) {
-    // Book name is a surah number (e.g., "18" -> 18)
-    surahNumber = bookAsNumber;
+  if (ref.chapter && typeof ref.chapter === 'number' && ref.chapter >= 1 && ref.chapter <= 114) {
+    surahNumber = ref.chapter;
   } else {
-    // Book name is a surah name (e.g., "Al-Kahf" -> 18)
-    // Get surah number from book name - case-insensitive lookup with multiple fallbacks
-    // The parser normalizes book names, so we need flexible matching
-    surahNumber = surahNameToNumber[ref.book];
-  
-    if (!surahNumber) {
-      // Try case-insensitive lookup (handles "al-kahf" -> "Al-Kahf")
-      const normalizedBook = ref.book.trim();
-      const matchingKey = Object.keys(surahNameToNumber).find(
-        key => key.toLowerCase() === normalizedBook.toLowerCase()
-      );
-      if (matchingKey) {
-        surahNumber = surahNameToNumber[matchingKey];
+    // Fall back to book name lookup
+    // First, check if the book name is already a number (1-114)
+    // This handles numbered surahs like "18" or "1"
+    const bookAsNumber = parseInt(ref.book.trim(), 10);
+    if (!isNaN(bookAsNumber) && bookAsNumber >= 1 && bookAsNumber <= 114) {
+      // Book name is a surah number (e.g., "18" -> 18)
+      surahNumber = bookAsNumber;
+    } else {
+      // Book name is a surah name (e.g., "Al-Kahf" -> 18)
+      // Get surah number from book name - case-insensitive lookup with multiple fallbacks
+      // The parser normalizes book names, so we need flexible matching
+      surahNumber = surahNameToNumber[ref.book];
+    
+      if (!surahNumber) {
+        // Try case-insensitive lookup (handles "al-kahf" -> "Al-Kahf")
+        const normalizedBook = ref.book.trim();
+        const matchingKey = Object.keys(surahNameToNumber).find(
+          key => key.toLowerCase() === normalizedBook.toLowerCase()
+        );
+        if (matchingKey) {
+          surahNumber = surahNameToNumber[matchingKey];
+        }
       }
-    }
-  
-    // Also try matching against normalized versions (remove hyphens, spaces, etc.)
-    // This handles cases where "al-kahf" needs to match "Al-Kahf"
-    if (!surahNumber) {
-      const normalizedBook = ref.book.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-      const matchingKey = Object.keys(surahNameToNumber).find(key => {
-        const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
-        return normalizedKey === normalizedBook;
-      });
-      if (matchingKey) {
-        surahNumber = surahNameToNumber[matchingKey];
+    
+      // Also try matching against normalized versions (remove hyphens, spaces, etc.)
+      // This handles cases where "al-kahf" needs to match "Al-Kahf"
+      if (!surahNumber) {
+        const normalizedBook = ref.book.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        const matchingKey = Object.keys(surahNameToNumber).find(key => {
+          const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return normalizedKey === normalizedBook;
+        });
+        if (matchingKey) {
+          surahNumber = surahNameToNumber[matchingKey];
+        }
       }
-    }
-  
-    // If still not found, try partial matching (e.g., "kahf" matches "Al-Kahf")
-    if (!surahNumber) {
-      const normalizedBook = ref.book.trim().toLowerCase();
-      const matchingKey = Object.keys(surahNameToNumber).find(key => {
-        const normalizedKey = key.toLowerCase();
-        // Check if the normalized book name is contained in the key or vice versa
-        return normalizedKey.includes(normalizedBook) || normalizedBook.includes(normalizedKey);
-      });
-      if (matchingKey) {
-        surahNumber = surahNameToNumber[matchingKey];
+    
+      // If still not found, try partial matching (e.g., "kahf" matches "Al-Kahf")
+      if (!surahNumber) {
+        const normalizedBook = ref.book.trim().toLowerCase();
+        const matchingKey = Object.keys(surahNameToNumber).find(key => {
+          const normalizedKey = key.toLowerCase();
+          // Check if the normalized book name is contained in the key or vice versa
+          return normalizedKey.includes(normalizedBook) || normalizedBook.includes(normalizedKey);
+        });
+        if (matchingKey) {
+          surahNumber = surahNameToNumber[matchingKey];
+        }
       }
     }
   }
   
   if (!surahNumber) {
-    console.warn('ExploreQuran: Unknown surah name:', ref.book, '(tried number, exact, case-insensitive, normalized, and partial matching)');
-    console.warn('ExploreQuran: Available surah names:', Object.keys(surahNameToNumber).slice(0, 10).join(', '), '...');
+    console.warn('Quran.com: Unknown surah name:', ref.book, '(tried chapter, number, exact, case-insensitive, normalized, and partial matching)');
+    console.warn('Quran.com: Available surah names:', Object.keys(surahNameToNumber).slice(0, 10).join(', '), '...');
     return null;
   }
   
-  if (!ref.chapter) {
-    // Surah only (though in Quran, chapter is the same as surah, so this shouldn't happen)
-    return `https://explorequran.org/index2.php?surah=${surahNumber}`;
-  }
-  
-  // In Quran, "chapter" is actually the surah number, and "verse" is the ayah
-  // But our system uses chapter/verse, so we need to handle this
-  // ExploreQuran only supports single verses, not ranges
-  // If we have a verse, extract the first ayah (for ranges, use the first verse)
+  // In Quran, "verse" is the ayah
+  // quran.com uses startingVerse parameter to jump to a specific verse
+  // For ranges, we use the first ayah as startingVerse (users can scroll down)
   if (ref.verse) {
     // Extract the first ayah number (handles ranges by taking the first number)
     const firstAyah = getFirstAyah(ref.verse);
     if (firstAyah === null) {
       // Invalid ayah, fall back to surah only
-      return `https://explorequran.org/index2.php?surah=${surahNumber}`;
+      return `https://quran.com/${surahNumber}`;
     }
     
-    // Surah with single ayah (use first ayah for ranges)
-    return `https://explorequran.org/index2.php?surah=${surahNumber}&ayah=${firstAyah}`;
+    // Surah with starting verse (use first ayah for ranges)
+    return `https://quran.com/${surahNumber}?startingVerse=${firstAyah}`;
   }
   
   // Surah only (no ayah specified)
-  return `https://explorequran.org/index2.php?surah=${surahNumber}`;
+  return `https://quran.com/${surahNumber}`;
 }
 
 /**
- * Generate ExploreQuran URL from parsed query
+ * Generate quran.com URL from parsed query
  * For multiple references, we generate a URL for the first reference
- * (ExploreQuran doesn't support multiple references in one URL)
+ * (quran.com doesn't support multiple references in one URL)
  */
 export function generateExploreQuranUrl(
   parsedQuery: { references: BookReference[]; version?: string; versions?: string[] } | null
 ): string | null {
   if (!parsedQuery || parsedQuery.references.length === 0) return null;
   
-  // ExploreQuran doesn't support multiple references, so use the first one
+  // quran.com doesn't support multiple references, so use the first one
   return generateSingleReferenceUrl(parsedQuery.references[0]);
 }
 
 /**
- * Generate ExploreQuran URL for a single book reference (for individual cards)
+ * Generate quran.com URL for a single book reference (for individual cards)
  */
 export function generateExploreQuranUrlForReference(
   ref: BookReference
@@ -284,11 +287,11 @@ function buildProxyUrl(target: string): string {
 }
 
 /**
- * Fetch OG metadata from ExploreQuran via proxy
+ * Fetch OG metadata from quran.com via proxy
  */
 export async function fetchExploreQuranOg(url: string): Promise<{ title?: string; description?: string; image?: string }> {
   const proxied = buildProxyUrl(url);
-  console.log('ExploreQuran: Proxy URL constructed:', proxied, 'from target:', url);
+  console.log('Quran.com: Proxy URL constructed:', proxied, 'from target:', url);
   
   let response: Response;
   try {
@@ -303,35 +306,35 @@ export async function fetchExploreQuranOg(url: string): Promise<{ title?: string
     if (!response.ok) {
       // For 502/504 errors, provide more context
       if (response.status === 502 || response.status === 504) {
-        console.warn('ExploreQuran OG fetch failed: Proxy server error', response.status, response.statusText, 'for', url);
-        throw new Error('Proxy server error - ExploreQuran may be temporarily unavailable');
+        console.warn('Quran.com OG fetch failed: Proxy server error', response.status, response.statusText, 'for', url);
+        throw new Error('Proxy server error - quran.com may be temporarily unavailable');
       }
-      console.warn('ExploreQuran OG fetch failed:', response.status, response.statusText, 'for', url);
+      console.warn('Quran.com OG fetch failed:', response.status, response.statusText, 'for', url);
       throw new Error('Preview unavailable');
     }
   } catch (error: any) {
     // Handle timeout and network errors
     if (error.name === 'TimeoutError' || error.name === 'AbortError') {
-      console.warn('ExploreQuran OG fetch timeout for', url);
-      throw new Error('Request timeout - ExploreQuran took too long to respond');
+      console.warn('Quran.com OG fetch timeout for', url);
+      throw new Error('Request timeout - quran.com took too long to respond');
     }
     if (error.message?.includes('Proxy server error')) {
       throw error; // Re-throw our custom error
     }
-    console.warn('ExploreQuran OG fetch error:', error.message || error, 'for', url);
+    console.warn('Quran.com OG fetch error:', error.message || error, 'for', url);
     throw new Error('Preview unavailable');
   }
   
   // Check content type
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
-    console.warn('ExploreQuran OG fetch: unexpected content type', contentType, 'for', url);
+    console.warn('Quran.com OG fetch: unexpected content type', contentType, 'for', url);
   }
   
   const html = await response.text();
   
   if (!html || html.trim().length === 0) {
-    console.warn('ExploreQuran OG fetch: empty response for', url);
+    console.warn('Quran.com OG fetch: empty response for', url);
     throw new Error('Preview unavailable');
   }
   
