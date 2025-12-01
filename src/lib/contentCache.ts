@@ -63,6 +63,19 @@ class ContentCacheManager {
   };
 
   private loaded = false;
+  private initializationPromise: Promise<void> | null = null;
+
+  /**
+   * Ensure cache is initialized (waits if already initializing)
+   */
+  async ensureInitialized(): Promise<void> {
+    if (this.loaded) return;
+    if (this.initializationPromise) {
+      return this.initializationPromise;
+    }
+    this.initializationPromise = this.initialize();
+    return this.initializationPromise;
+  }
 
   /**
    * Initialize cache by loading from IndexedDB
@@ -115,6 +128,14 @@ class ContentCacheManager {
    * Events with d-tags (articles/publications) never expire and are always returned
    */
   getEvents(contentType: keyof ContentCache): CachedEvent[] {
+    // Ensure cache is initialized (non-blocking check)
+    if (!this.loaded && !this.initializationPromise) {
+      this.ensureInitialized().catch(console.error);
+    }
+    // Safety check: ensure cache map exists
+    if (!this.cache[contentType]) {
+      this.cache[contentType] = new Map();
+    }
     const cachedEvents = Array.from(this.cache[contentType].values());
     
     // Filter out expired events, but preserve events with d-tags (articles/publications)
@@ -159,6 +180,12 @@ class ContentCacheManager {
     contentType: keyof ContentCache,
     events: { event: Event; relays: string[] }[]
   ): Promise<void> {
+    // Ensure cache is initialized before storing
+    await this.ensureInitialized();
+    // Safety check: ensure cache map exists
+    if (!this.cache[contentType]) {
+      this.cache[contentType] = new Map();
+    }
     try {
       const now = Date.now();
       
@@ -267,6 +294,14 @@ class ContentCacheManager {
    * - Regular/Ephemeral: event.id
    */
   getEvent(contentType: keyof ContentCache, eventId: string): CachedEvent | undefined {
+    // Ensure cache is initialized (non-blocking check)
+    if (!this.loaded && !this.initializationPromise) {
+      this.ensureInitialized().catch(console.error);
+    }
+    // Safety check: ensure cache map exists
+    if (!this.cache[contentType]) {
+      this.cache[contentType] = new Map();
+    }
     // First try direct lookup (works for event.id or cache keys)
     const direct = this.cache[contentType].get(eventId);
     if (direct) return direct;

@@ -514,7 +514,7 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
           }
         }
 
-        const foundIndexEvent = indexResult.events.find(evt => evt.id);
+        const foundIndexEvent = indexResult.events.find((evt: NostrEvent) => evt.id);
         if (foundIndexEvent) {
           const order = extractIndexOrder(foundIndexEvent as BookEvent);
           if (order.length > 0) {
