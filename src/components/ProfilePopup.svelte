@@ -5,7 +5,6 @@
   import { account, signer } from '$lib/nostr';
   import { fetchLNURLPay } from '$lib/zaps';
   import UserBadge from './UserBadge.svelte';
-  import ProfileWebsiteOG from './ProfileWebsiteOG.svelte';
   import LinkOGCard from './LinkOGCard.svelte';
   import LinkFallback from './LinkFallback.svelte';
   import { isStandaloneLink, extractNostrIdentifier } from '$lib/ogUtils';
@@ -1782,7 +1781,7 @@
               <h4 class="font-semibold mb-2" style="color: var(--text-primary);">Website{userData.websites.length > 1 ? 's' : ''}</h4>
               <div class="space-y-2">
                 {#each userData.websites as website}
-                  <ProfileWebsiteOG url={website} />
+                  <LinkFallback url={website} horizontal={true} />
                 {/each}
               </div>
             </div>

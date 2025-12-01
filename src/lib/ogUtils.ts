@@ -249,65 +249,90 @@ export function extractNostrIdentifier(url: string): {
     return { type, value: bech32 };
   }
   
-  // Pattern 3: pubkey/d-tag or d-tag/pubkey (in URL path)
-  // First check if we have a hex pubkey in the URL
-  const hexPattern = /[0-9a-fA-F]{64}/;
-  const hexMatch = url.match(hexPattern);
+  // Step 1: Identify hex ID first (64 chars, no prefix, no hyphen)
+  const urlParts = url.split('/');
+  let hexId: string | null = null;
+  let hexIndex = -1;
   
-  if (hexMatch) {
-    const pubkey = hexMatch[0];
-    const urlParts = url.split('/');
-    const pubkeyIndex = urlParts.findIndex(part => part.includes(pubkey));
+  for (let i = 0; i < urlParts.length; i++) {
+    const segment = urlParts[i];
+    if (!segment || segment.trim() === '') continue;
     
-    if (pubkeyIndex >= 0) {
-      // Check if there's a d-tag after the pubkey (e.g., /pubkey/d-tag)
-      if (pubkeyIndex < urlParts.length - 1) {
-        const nextSegment = urlParts[pubkeyIndex + 1];
-        if (nextSegment && nextSegment.trim() !== '') {
-          // Skip hex strings and common URL parts
-          if (!nextSegment.match(/^[0-9a-fA-F]{64}$/) && 
-              !nextSegment.match(/^(https?:|www\.|http|https)$/i) &&
-              !nextSegment.includes('.')) {
-            const dTagCandidate = nextSegment.split('*')[0];
-            if (dTagCandidate && dTagCandidate.length > 0 && 
-                !dTagCandidate.match(/^[0-9a-fA-F]{64}$/) &&
-                dTagCandidate.match(/^[a-zA-Z0-9-]+$/)) { // Only alphanumeric and hyphens
-              // This looks like pubkey/d-tag pattern
-              return { type: 'pubkey-dtag', value: `${pubkey}:${dTagCandidate}`, pubkey, dTag: dTagCandidate };
-            }
-          }
-        }
+    // Remove query params and hash
+    const cleanSegment = segment.split('?')[0].split('#')[0];
+    
+    // Check if it's a pure hex ID: exactly 64 hex characters, no prefix, no hyphen
+    if (cleanSegment.length === 64 && 
+        cleanSegment.match(/^[0-9a-fA-F]{64}$/) &&
+        !cleanSegment.includes('-') &&
+        !cleanSegment.includes('*')) {
+      hexId = cleanSegment;
+      hexIndex = i;
+      break; // Take the first hex ID found
+    }
+  }
+  
+  // Step 2: If we found a hex ID, look for d-tag candidates nearby
+  if (hexId && hexIndex >= 0) {
+    // Common URL path segments that are not d-tags
+    const commonPathSegments = new Set(['notes', 'note', 'article', 'articles', 'event', 'events', 'post', 'posts', 'user', 'users', 'profile', 'profiles', 'p', 'e', 'n', 'd']);
+    
+    // Helper function to check if a segment is a valid d-tag candidate
+    const isValidDTag = (seg: string): string | null => {
+      if (!seg || seg.trim() === '') return null;
+      const clean = seg.split('?')[0].split('#')[0].split('*')[0];
+      // Skip hex strings, domains, common URL parts, and common path segments
+      if (clean.match(/^[0-9a-fA-F]{64}$/)) return null;
+      if (clean.match(/^(https?:|www\.|http|https)$/i)) return null;
+      if (clean.includes('.') && !clean.includes('*')) return null;
+      // Skip common path segments like "notes", "article", etc.
+      if (commonPathSegments.has(clean.toLowerCase())) return null;
+      // Must be alphanumeric with hyphens
+      if (clean.match(/^[a-zA-Z0-9-]+$/) && clean.length > 0) {
+        return clean;
       }
-      
-      // Check if there's a d-tag before the pubkey (e.g., /d-tag/pubkey)
-      if (pubkeyIndex > 0) {
-        for (let i = pubkeyIndex - 1; i >= 0; i--) {
-          const segment = urlParts[i];
-          if (!segment || segment.trim() === '') continue;
-          
-          // Skip common URL path segments that aren't d-tags
-          if (segment.match(/^(https?:|www\.|http|https)$/i)) continue;
-          
-          // Skip hex strings
-          if (segment.match(/^[0-9a-fA-F]{64}$/)) continue;
-          
-          // Skip segments that are just domains
-          if (segment.includes('.') && !segment.includes('*')) continue;
-          
-          const dTagCandidate = segment.split('*')[0];
-          if (dTagCandidate && dTagCandidate.length > 0 && 
-              !dTagCandidate.match(/^[0-9a-fA-F]{64}$/) &&
-              dTagCandidate.match(/^[a-zA-Z0-9-]+$/)) { // Only alphanumeric and hyphens
-            // This looks like d-tag/pubkey pattern
-            return { type: 'pubkey-dtag', value: `${pubkey}:${dTagCandidate}`, pubkey, dTag: dTagCandidate };
-          }
+      return null;
+    };
+    
+    // Try various hex+d-tag combinations
+    
+    // Pattern 1: hex/d-tag (e.g., /hex/d-tag)
+    if (hexIndex < urlParts.length - 1) {
+      const nextSegment = urlParts[hexIndex + 1];
+      const dTag = isValidDTag(nextSegment);
+      if (dTag) {
+        return { type: 'pubkey-dtag', value: `${hexId}:${dTag}`, pubkey: hexId, dTag };
+      }
+    }
+    
+    // Pattern 2: d-tag/hex (e.g., /d-tag/hex)
+    if (hexIndex > 0) {
+      for (let i = hexIndex - 1; i >= 0; i--) {
+        const segment = urlParts[i];
+        if (!segment || segment.trim() === '') continue;
+        
+        // Skip common URL path segments that aren't d-tags
+        if (segment.match(/^(https?:|www\.|http|https)$/i)) continue;
+        
+        // Skip segments that are just domains
+        if (segment.includes('.') && !segment.includes('*')) continue;
+        
+        const dTag = isValidDTag(segment);
+        if (dTag) {
+          return { type: 'pubkey-dtag', value: `${hexId}:${dTag}`, pubkey: hexId, dTag };
         }
       }
     }
     
-    // If no d-tag found, return as plain hex (event ID or pubkey)
-    return { type: 'hex', value: hexMatch[0] };
+    // Pattern 3: Check for npub-dtag pattern (if hex could be decoded as npub)
+    // This would require bech32 encoding, but we can check if there's a d-tag nearby
+    // and let LinkFallback handle the npub decoding if needed
+    
+    // Step 3: If no hex+d-tag combination found, return hex alone
+    return { type: 'hex', value: hexId };
   }
+  
+  // Step 4: If no hex found, try d-tag alone patterns
   
   // Try to extract nip-05 identifiers (user@domain.com format)
   const nip05Pattern = /([a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/;
@@ -319,7 +344,6 @@ export function extractNostrIdentifier(url: string): {
   
   // Try to extract d-tag only patterns (e.g., /article/d/Paradox-Of-Tolerance-4owm05 or /d/Paradox-Of-Tolerance-4owm05)
   // Look for URL patterns like /d/... or /article/d/... where the last segment is a d-tag
-  const urlParts = url.split('/');
   // Check if URL contains /d/ or /article/d/ pattern
   const dIndex = urlParts.findIndex((part, idx) => 
     (part === 'd' || part === 'article') && 

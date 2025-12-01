@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { nip19 } from '@nostr/tools';
   import { relayService } from '$lib/relayService';
-  import { extractNostrIdentifier } from '$lib/ogUtils';
+  import { extractNostrIdentifier, fetchOGMetadata, type OGMetadata } from '$lib/ogUtils';
   import { getTagOr } from '$lib/utils';
   import type { NostrEvent } from '@nostr/tools/pure';
   import UserBadge from './UserBadge.svelte';
@@ -12,9 +12,10 @@
 
   interface Props {
     url: string;
+    horizontal?: boolean;
   }
 
-  let { url }: Props = $props();
+  let { url, horizontal = false }: Props = $props();
   
   let nostrId = $state<{ type: 'npub' | 'nprofile' | 'nevent' | 'note' | 'naddr' | 'hex' | 'nip05' | 'pubkey-dtag' | 'npub-dtag' | 'dtag-only' | null; value: string; pubkey?: string; dTag?: string } | null>(null);
   let event = $state<NostrEvent | null>(null);
@@ -22,12 +23,24 @@
   let loading = $state(true);
   let contentPreview = $state<string>('');
   let contentPreviewHtml = $state<string>('');
+  let contentTruncated = $state(false);
+  let ogData = $state<OGMetadata | null>(null);
+  let ogError = $state(false);
+  let hasNostrId = $state(false);
   
+  // Helper function to set content preview and track truncation
+  function setContentPreview(content: string) {
+    contentTruncated = content.length > 1000;
+    contentPreview = content.substring(0, 1000);
+  }
+
   // Render content preview (markdown or asciidoc)
   function renderContentPreview(content: string, kind: number): string {
     if (!content) return '';
     
-    const preview = content.substring(0, 500);
+    // Track if content was truncated
+    contentTruncated = content.length > 1000;
+    const preview = content.substring(0, 1000);
     
     // Determine if it's markdown or asciidoc
     // 30040 is an index, so it has not content
@@ -74,7 +87,22 @@
       // Extract Nostr identifier from URL
       nostrId = extractNostrIdentifier(url);
       
-      if (!nostrId) {
+      if (nostrId) {
+        hasNostrId = true;
+      } else if (horizontal) {
+        // For horizontal layout, try to fetch OG metadata if no Nostr ID
+        try {
+          const data = await fetchOGMetadata(url);
+          ogData = data;
+          ogError = !data;
+        } catch (e) {
+          console.error('Failed to fetch OG data:', e);
+          ogError = true;
+        } finally {
+          loading = false;
+          return;
+        }
+      } else {
         loading = false;
         return;
       }
@@ -102,7 +130,7 @@
           if (foundEvent) {
             event = foundEvent;
             const content = foundEvent.content || '';
-            contentPreview = content.substring(0, 500);
+            setContentPreview(content);
             contentPreviewHtml = renderContentPreview(content, foundEvent.kind);
           } else {
             // Try each kind until we find a match (query without authors to search across all)
@@ -117,7 +145,7 @@
               if (result.events.length > 0) {
                 event = result.events[0];
                 const content = event.content || '';
-                contentPreview = content.substring(0, 500);
+                setContentPreview(content);
                 contentPreviewHtml = renderContentPreview(content, event.kind);
                 
                 // Store in cache
@@ -307,7 +335,7 @@
             event = foundEvent;
             // Generate content preview
             const content = foundEvent.content || '';
-            contentPreview = content.substring(0, 500);
+            setContentPreview(content);
             contentPreviewHtml = renderContentPreview(content, foundEvent.kind);
           } else {
             const result = await relayService.queryEvents(
@@ -320,7 +348,7 @@
               event = result.events[0];
               // Generate content preview
               const content = event.content || '';
-              contentPreview = content.substring(0, 500);
+              setContentPreview(content);
               contentPreviewHtml = renderContentPreview(content, event.kind);
               // Store in cache
               const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
@@ -360,7 +388,7 @@
           if (foundEvent) {
             event = foundEvent;
             const content = foundEvent.content || '';
-            contentPreview = content.substring(0, 500);
+            setContentPreview(content);
             contentPreviewHtml = renderContentPreview(content, foundEvent.kind);
           } else {
             // Try each kind until we find a match
@@ -375,7 +403,7 @@
               if (result.events.length > 0) {
                 event = result.events[0];
                 const content = event.content || '';
-                contentPreview = content.substring(0, 500);
+                setContentPreview(content);
                 contentPreviewHtml = renderContentPreview(content, event.kind);
                 
                 // Store in cache
@@ -421,7 +449,7 @@
             if (foundEvent) {
               event = foundEvent;
               const content = foundEvent.content || '';
-              contentPreview = content.substring(0, 500);
+              setContentPreview(content);
               contentPreviewHtml = renderContentPreview(content, foundEvent.kind);
             } else {
               // Try each kind until we find a match
@@ -436,7 +464,7 @@
                 if (result.events.length > 0) {
                   event = result.events[0];
                   const content = event.content || '';
-                  contentPreview = content.substring(0, 500);
+                  setContentPreview(content);
                   contentPreviewHtml = renderContentPreview(content, event.kind);
                   
                   // Store in cache
@@ -495,7 +523,7 @@
               event = foundEvent;
               // Generate content preview
               const content = foundEvent.content || '';
-              contentPreview = content.substring(0, 500);
+              setContentPreview(content);
               contentPreviewHtml = renderContentPreview(content, foundEvent.kind);
             } else {
               const result = await relayService.queryEvents(
@@ -508,7 +536,7 @@
                 event = result.events[0];
                 // Generate content preview
                 const content = event.content || '';
-                contentPreview = content.substring(0, 500);
+                setContentPreview(content);
                 contentPreviewHtml = renderContentPreview(content, event.kind);
                 // Store in cache
                 const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
@@ -530,7 +558,7 @@
               event = foundEvent;
               // Generate content preview
               const content = foundEvent.content || '';
-              contentPreview = content.substring(0, 500);
+              setContentPreview(content);
               contentPreviewHtml = renderContentPreview(content, foundEvent.kind);
             } else {
               const result = await relayService.queryEvents(
@@ -543,7 +571,7 @@
                 event = result.events[0];
                 // Generate content preview
                 const content = event.content || '';
-                contentPreview = content.substring(0, 500);
+                setContentPreview(content);
                 contentPreviewHtml = renderContentPreview(content, event.kind);
                 // Store in cache
                 const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
@@ -568,10 +596,98 @@
 </script>
 
 {#if loading}
-  <div class="rounded-lg border p-4" style="background-color: var(--bg-secondary); border-color: var(--border);">
-    <div class="h-4 rounded mb-2" style="background-color: var(--bg-tertiary); width: 60%;"></div>
-    <div class="h-3 rounded" style="background-color: var(--bg-tertiary); width: 80%;"></div>
-  </div>
+  {#if horizontal}
+    <div class="flex items-center space-x-3 p-3 rounded border" style="background-color: var(--bg-secondary); border-color: var(--border);">
+      <div class="w-16 h-16 rounded flex-shrink-0" style="background-color: var(--bg-tertiary);"></div>
+      <div class="flex-1 min-w-0">
+        <div class="h-4 rounded mb-2" style="background-color: var(--bg-tertiary); width: 60%;"></div>
+        <div class="h-3 rounded" style="background-color: var(--bg-tertiary); width: 80%;"></div>
+      </div>
+    </div>
+  {:else}
+    <div class="rounded-lg border p-4" style="background-color: var(--bg-secondary); border-color: var(--border);">
+      <div class="h-4 rounded mb-2" style="background-color: var(--bg-tertiary); width: 60%;"></div>
+      <div class="h-3 rounded" style="background-color: var(--bg-tertiary); width: 80%;"></div>
+    </div>
+  {/if}
+{:else if horizontal && ogData && !ogError}
+  <!-- Horizontal OG card -->
+  <a
+    href={url}
+    target="_blank"
+    rel="noopener noreferrer"
+    class="flex items-center space-x-3 p-3 rounded border transition-colors hover:opacity-80"
+    style="background-color: var(--bg-secondary); border-color: var(--border); text-decoration: none;"
+  >
+    {#if ogData.image}
+      <img
+        src={ogData.image}
+        alt={ogData.title || 'Preview'}
+        class="w-16 h-16 rounded object-cover flex-shrink-0"
+        style="min-width: 64px;"
+        onerror={(e) => {
+          const target = e.target as HTMLImageElement;
+          if (target) target.style.display = 'none';
+        }}
+      />
+    {/if}
+    <div class="flex-1 min-w-0">
+      <div class="font-semibold text-sm mb-1 truncate" style="color: var(--text-primary);">
+        {ogData.title}
+      </div>
+      {#if ogData.description}
+        <div class="text-xs line-clamp-2" style="color: var(--text-secondary);">
+          {ogData.description}
+        </div>
+      {/if}
+      {#if true}
+        {@const urlObj = (() => {
+          try {
+            return new URL(url);
+          } catch {
+            return null;
+          }
+        })()}
+        {@const websiteName = urlObj ? urlObj.hostname.replace(/^www\./, '') : (ogData.siteName || 'External Link')}
+        {@const shortUrl = url.length > 60 ? url.substring(0, 57) + '...' : url}
+        <div class="text-xs mt-2 pt-2 border-t" style="border-color: var(--border);">
+          <div class="font-medium mb-1" style="color: var(--text-primary);">
+            {websiteName}
+          </div>
+          <div class="text-xs truncate underline" style="color: var(--accent);">
+            {shortUrl}
+          </div>
+        </div>
+      {/if}
+    </div>
+  </a>
+{:else if horizontal && !hasNostrId}
+  <!-- Horizontal generic fallback -->
+  {#if true}
+    {@const urlObj = (() => {
+      try {
+        return new URL(url);
+      } catch {
+        return null;
+      }
+    })()}
+    {@const websiteName = urlObj ? urlObj.hostname.replace(/^www\./, '') : 'External Link'}
+    {@const shortUrl = url.length > 60 ? url.substring(0, 57) + '...' : url}
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      class="block p-3 rounded border transition-colors hover:opacity-80"
+      style="background-color: var(--bg-secondary); border-color: var(--border); text-decoration: none;"
+    >
+      <div class="font-semibold mb-1" style="color: var(--text-primary);">
+        {websiteName}
+      </div>
+      <div class="text-sm break-all underline" style="color: var(--accent);">
+        {shortUrl}
+      </div>
+    </a>
+  {/if}
 {:else if profileData}
   <!-- Profile fallback -->
   <a
@@ -649,14 +765,17 @@
         </div>
       {/if}
       
-      <!-- Content Preview (first 500 chars) -->
+      <!-- Content Preview (first 1000 chars) -->
       {#if contentPreviewHtml}
-        <div class="text-sm mb-2 line-clamp-4 prose prose-sm max-w-none" style="color: var(--text-secondary);">
+        <div class="text-sm mb-2 prose prose-sm max-w-none" style="color: var(--text-secondary);">
           {@html contentPreviewHtml}
+          {#if contentTruncated}
+            <span style="color: var(--text-secondary);">...</span>
+          {/if}
         </div>
       {:else if contentPreview}
-        <div class="text-sm mb-2 line-clamp-4 whitespace-pre-wrap" style="color: var(--text-secondary);">
-          {contentPreview}
+        <div class="text-sm mb-2 whitespace-pre-wrap" style="color: var(--text-secondary);">
+          {contentPreview}{#if contentTruncated}...{/if}
         </div>
       {/if}
       
@@ -676,36 +795,27 @@
             {/each}
           </div>
         {/if}
-        
-        <!-- Hashtags and T tags (topics) -->
-        {@const hashtags = (() => {
-          // Extract hashtags from content (words starting with #)
-          const content = event.content || '';
-          const hashtagMatches = content.match(/#[a-zA-Z0-9_-]+/g) || [];
-          return [...new Set(hashtagMatches.map(h => h.substring(1).toLowerCase()))];
+      {/if}
+      
+      <!-- Website name and URL -->
+      {#if true}
+        {@const urlObj = (() => {
+          try {
+            return new URL(url);
+          } catch {
+            return null;
+          }
         })()}
-        {@const tTags = event.tags.filter(([t]) => t === 't' || t === 'T').map(([, v]) => v).filter(Boolean)}
-        {@const tTagsNotInHashtags = tTags.filter(t => !hashtags.includes(t.toLowerCase()))}
-        
-        {#if hashtags.length > 0}
-          <div class="flex flex-wrap gap-2 mb-2">
-            {#each hashtags as hashtag}
-              <span class="text-xs px-2 py-1 rounded" style="background-color: var(--bg-tertiary); color: var(--text-secondary);">
-                #{hashtag}
-              </span>
-            {/each}
+        {@const websiteName = urlObj ? urlObj.hostname.replace(/^www\./, '') : 'External Link'}
+        {@const shortUrl = url.length > 60 ? url.substring(0, 57) + '...' : url}
+        <div class="mt-3 pt-3 border-t" style="border-color: var(--border);">
+          <div class="text-xs font-medium mb-1" style="color: var(--text-primary);">
+            {websiteName}
           </div>
-        {/if}
-        
-        {#if tTagsNotInHashtags.length > 0}
-          <div class="flex flex-wrap gap-2 mb-2">
-            {#each tTagsNotInHashtags as topic}
-              <span class="text-xs px-2 py-1 rounded" style="background-color: var(--bg-tertiary); color: var(--text-secondary);">
-                #{topic}
-              </span>
-            {/each}
+          <div class="text-xs break-all underline" style="color: var(--accent);">
+            {shortUrl}
           </div>
-        {/if}
+        </div>
       {/if}
       
       <!-- Author -->
@@ -724,28 +834,30 @@
   </a>
 {:else}
   <!-- Generic fallback -->
-  {@const urlObj = (() => {
-    try {
-      return new URL(url);
-    } catch {
-      return null;
-    }
-  })()}
-  {@const shortUrl = url.length > 60 ? url.substring(0, 57) + '...' : url}
-  {@const websiteName = urlObj ? urlObj.hostname.replace(/^www\./, '') : 'External Link'}
-  <a
-    href={url}
-    target="_blank"
-    rel="noopener noreferrer"
-    class="block rounded-lg border p-4 transition-all hover:opacity-90"
-    style="background-color: var(--bg-secondary); border-color: var(--border); text-decoration: none;"
-  >
-    <div class="font-semibold mb-1" style="color: var(--text-primary);">
-      {websiteName}
-    </div>
-    <div class="text-sm break-all" style="color: var(--text-secondary);">
-      {shortUrl}
-    </div>
-  </a>
+  {#if true}
+    {@const urlObj = (() => {
+      try {
+        return new URL(url);
+      } catch {
+        return null;
+      }
+    })()}
+    {@const shortUrl = url.length > 60 ? url.substring(0, 57) + '...' : url}
+    {@const websiteName = urlObj ? urlObj.hostname.replace(/^www\./, '') : 'External Link'}
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      class="block rounded-lg border p-4 transition-all hover:opacity-90"
+      style="background-color: var(--bg-secondary); border-color: var(--border); text-decoration: none;"
+    >
+      <div class="font-semibold mb-1" style="color: var(--text-primary);">
+        {websiteName}
+      </div>
+      <div class="text-sm break-all underline" style="color: var(--accent);">
+        {shortUrl}
+      </div>
+    </a>
+  {/if}
 {/if}
 
