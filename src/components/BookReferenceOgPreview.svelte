@@ -50,7 +50,7 @@
       </div>
     </div>
   {:else if ogError}
-    <div class="text-xs text-rose-500">{ogError}</div>
+    <div class="text-xs text-gray-500">OpenGraph data could not be fetched. Use the button below to view on BibleGateway.</div>
   {:else if !bibleGatewayUrl}
     <div class="text-xs text-amber-600">Could not generate BibleGateway URL for {formatReference(reference)}</div>
   {:else}

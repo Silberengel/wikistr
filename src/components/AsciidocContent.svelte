@@ -170,6 +170,14 @@
       // Skip if already processed
       if (link.dataset.ogProcessed === 'true') return;
       
+      // Skip book:: links - they should be handled by book search, not as generic hyperlinks
+      const href = link.href;
+      const dataBook = link.dataset.book;
+      if (href.includes('book::') || dataBook || href.startsWith('wikilink:book::')) {
+        link.dataset.ogProcessed = 'true';
+        return;
+      }
+      
       // Check if this is a standalone link
       if (isStandaloneLink(link)) {
         const url = link.href;

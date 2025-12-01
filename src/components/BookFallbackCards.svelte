@@ -109,7 +109,7 @@
               </div>
             </div>
           {:else if refError}
-            <div class="text-xs text-rose-500">{refError}</div>
+            <div class="text-xs text-gray-500">OpenGraph data could not be fetched. Use the button below to view on BibleGateway.</div>
           {:else if !refBgUrl}
             <div class="text-xs text-amber-600">Could not generate BibleGateway URL for {formatReference(ref)}</div>
           {:else}
@@ -200,7 +200,7 @@
                 </div>
               </div>
             {:else if refError}
-              <div class="text-xs text-rose-500">{refError}</div>
+              <div class="text-xs text-gray-500">OpenGraph data could not be fetched. Use the button below to view on BibleGateway.</div>
             {:else if !refBgUrl}
               <div class="text-xs text-amber-600">Could not generate BibleGateway URL for {formatReference(ref)}</div>
             {:else}

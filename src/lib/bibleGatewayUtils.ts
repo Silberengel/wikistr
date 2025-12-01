@@ -233,8 +233,8 @@ export async function fetchBibleGatewayOg(url: string): Promise<{ title?: string
       headers: {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
       },
-      // Add timeout to prevent hanging (35 seconds - proxy has 30s, add buffer for network latency)
-      signal: AbortSignal.timeout(35000)
+      // Add timeout to prevent hanging (5 seconds - should be quick, fallback to link if slow)
+      signal: AbortSignal.timeout(5000)
     });
     
     if (!response.ok) {
