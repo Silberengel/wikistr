@@ -470,6 +470,9 @@
   let initialized = false;
   let backgroundInterval: ReturnType<typeof setInterval> | null = null;
   
+  // Listen for cache updates from editor
+  let cacheUpdateHandler: (() => Promise<void>) | null = null;
+  
   $effect(() => {
     if (!initialized) {
       initialized = true;
@@ -501,12 +504,22 @@
           backgroundCacheUpdate().catch(console.error);
         }
       }, 5 * 60 * 1000); // 5 minutes
+      
+      // Listen for cache updates from editor
+      cacheUpdateHandler = async () => {
+        await buildFeedFromCache();
+      };
+      window.addEventListener('wikistr:cache-updated', cacheUpdateHandler);
     }
     
     return () => {
       if (backgroundInterval) {
         clearInterval(backgroundInterval);
         backgroundInterval = null;
+      }
+      if (cacheUpdateHandler) {
+        window.removeEventListener('wikistr:cache-updated', cacheUpdateHandler);
+        cacheUpdateHandler = null;
       }
     };
   });

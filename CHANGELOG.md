@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [5.1.1] - 2025-12-01
 
+### Changed
+- Article editor can handle all article and publication kinds
+
 ### Fixed
 - Cache browser responsive to mobile layout
 - Payment methods can be updated

@@ -80,13 +80,23 @@
       };
     }
     
-    // Add metadata tags
+    // Add metadata tags (trim values)
     if (data.title && data.title !== getTagOr({ tags: eventTemplate.tags } as any, 'd')) {
-      eventTemplate.tags.push(['title', data.title]);
+      eventTemplate.tags.push(['title', data.title.trim()]);
     }
-    if (data.summary) eventTemplate.tags.push(['summary', data.summary]);
-    if (data.image) eventTemplate.tags.push(['image', data.image]);
-    if (data.author) eventTemplate.tags.push(['author', data.author]);
+    if (data.summary) eventTemplate.tags.push(['summary', data.summary.trim()]);
+    if (data.image) eventTemplate.tags.push(['image', data.image.trim()]);
+    if (data.author) eventTemplate.tags.push(['author', data.author.trim()]);
+    
+    // Trim all tag values (except d-tag which is already normalized)
+    eventTemplate.tags = eventTemplate.tags.map(tag => {
+      if (!Array.isArray(tag) || tag.length < 2) return tag;
+      if (tag[0] === 'd') return tag; // d-tag already normalized
+      if (typeof tag[1] === 'string') {
+        return [tag[0], tag[1].trim()];
+      }
+      return tag;
+    });
 
     try {
       let event = await signer.signEvent(eventTemplate);
@@ -131,6 +141,9 @@
             event,
             relays: result.publishedTo
           }]);
+          
+          // Trigger welcome panel refresh
+          window.dispatchEvent(new CustomEvent('wikistr:cache-updated', { detail: { event } }));
         }
       }
 
@@ -175,17 +188,39 @@
   <button
     onclick={() => {
       if (!editingJson) {
-        // Prepare JSON from current data
-        const eventTemplate: EventTemplate = {
-          kind: originalKind,
-          tags: isBookIndex && data.tags ? [...data.tags] : [['d', normalizeIdentifier(data.title)]],
-          content: isBookIndex ? '' : data.content.trim(),
-          created_at: Math.round(Date.now() / 1000)
-        };
-        if (data.title !== eventTemplate.tags[0][1]) eventTemplate.tags.push(['title', data.title]);
+        // Prepare JSON from current data - handle all kinds properly
+        let eventTemplate: EventTemplate;
+        
+        if (isBookIndex) {
+          // For kind 30040, use tags from data.tags (includes a-tags/e-tags)
+          eventTemplate = {
+            kind: originalKind,
+            tags: data.tags ? [...data.tags.map(t => [...t])] : [['d', normalizeIdentifier(data.title)]],
+            content: '', // Kind 30040 has no content
+            created_at: Math.round(Date.now() / 1000)
+          };
+          // Ensure d-tag exists
+          if (!eventTemplate.tags.find(t => t[0] === 'd')) {
+            eventTemplate.tags.unshift(['d', normalizeIdentifier(data.title)]);
+          }
+        } else {
+          // Regular content-based event
+          eventTemplate = {
+            kind: originalKind,
+            tags: [['d', normalizeIdentifier(data.title)]],
+            content: data.content.trim(),
+            created_at: Math.round(Date.now() / 1000)
+          };
+        }
+        
+        // Add metadata tags
+        if (data.title && data.title !== getTagOr({ tags: eventTemplate.tags } as any, 'd')) {
+          eventTemplate.tags.push(['title', data.title]);
+        }
         if (data.summary) eventTemplate.tags.push(['summary', data.summary]);
         if (data.image) eventTemplate.tags.push(['image', data.image]);
         if (data.author) eventTemplate.tags.push(['author', data.author]);
+        
         jsonContent = JSON.stringify(eventTemplate, null, 2);
       }
       editingJson = !editingJson;
@@ -201,12 +236,67 @@
   <div class="mt-4">
     <label class="block mb-2">
       <span class="text-sm font-semibold">Raw JSON Event</span>
+      {#if previewing && jsonContent && jsonContent.trim()}
+        {@const parsed = (() => {
+          try {
+            const parsed = JSON.parse(jsonContent) as EventTemplate;
+            // Only show preview for content-based events (not kind 30040)
+            if (parsed.kind === 30040) return null;
+            return parsed;
+          } catch {
+            return null;
+          }
+        })()}
+        {#if parsed}
+          <div class="prose prose-p:my-0 prose-li:my-0 border rounded p-4 mb-2" style="border-color: var(--border);">
+            <AsciidocContent 
+              event={{ 
+                content: parsed.content || '', 
+                pubkey: $account?.pubkey || '', 
+                created_at: parsed.created_at || Math.floor(Date.now() / 1000),
+                kind: parsed.kind,
+                tags: parsed.tags || [],
+                id: '',
+                sig: ''
+              } as any}
+              createChild={() => {}}
+            />
+          </div>
+        {:else if jsonContent && jsonContent.trim()}
+          <div class="text-red-600 mb-2">Invalid JSON - cannot preview</div>
+        {/if}
+      {/if}
       <textarea
         bind:value={jsonContent}
         class="h-96 font-mono text-sm shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full border-gray-300 rounded-md mt-1"
         style="font-family: monospace;"
-      ></textarea>
+      >      </textarea>
     </label>
+    {#if targets.length > 0}
+      <div class="mt-2">
+        Publishing to:
+        {#each targets as target}
+          <div class="flex items-center mt-1">
+            <div
+              class="p-1 rounded"
+              class:bg-sky-100={target.status === 'pending'}
+              class:bg-red-200={target.status === 'failure'}
+              class:bg-emerald-200={target.status === 'success'}
+            >
+              {urlWithoutScheme(target.url)}
+            </div>
+            <div class="ml-1 text-xs uppercase font-mono">{target.status}</div>
+            <div class="ml-1 text-sm">{target.message || ''}</div>
+          </div>
+        {/each}
+      </div>
+    {/if}
+    {#if error}
+      <div class="mt-2 bg-red-200 px-2 py-1 rounded">
+        <span class="font-bold">ERROR:</span>
+        {error}
+      </div>
+    {/if}
     <div class="mt-2 flex justify-between">
       <button
         onclick={() => {
@@ -217,48 +307,92 @@
       >
         Cancel
       </button>
+      {#if jsonContent && jsonContent.trim()}
+        {@const parsed = (() => {
+          try {
+            const parsed = JSON.parse(jsonContent) as EventTemplate;
+            // Only show preview button for content-based events (not kind 30040)
+            return parsed.kind !== 30040 ? parsed : null;
+          } catch {
+            return null;
+          }
+        })()}
+        {#if parsed}
+          <button
+            onclick={() => {
+              previewing = !previewing;
+            }}
+            class="cursor-pointer inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2"
+            style="font-family: {theme.typography.fontFamily};"
+          >
+            {#if previewing}Hide Preview{:else}Preview{/if}
+          </button>
+        {/if}
+      {/if}
       <button
         onclick={async () => {
           if (!$account) return;
           
           try {
             // Parse JSON
-            const eventTemplate = JSON.parse(jsonContent) as EventTemplate;
+            const parsed = JSON.parse(jsonContent) as any;
             
-            // Validate required fields
-            if (!eventTemplate.kind || !eventTemplate.tags) {
-              error = 'Invalid event: missing required fields (kind, tags)';
+            // Remove fields that should be regenerated: sig, pubkey, created_at, kind, id
+            const { sig, pubkey, created_at, kind, id, ...cleanData } = parsed;
+            
+            // Create event template with only the allowed fields
+            const eventTemplate: EventTemplate = {
+              kind: originalKind, // Use the original kind from editor data
+              tags: cleanData.tags || [],
+              content: cleanData.content || '',
+              created_at: Math.round(Date.now() / 1000) // Set current timestamp
+            };
+            
+            // Validate required tags: d-tag and title tag
+            if (!eventTemplate.tags || !Array.isArray(eventTemplate.tags)) {
+              error = 'Invalid event: missing required field (tags)';
+              return;
+            }
+            
+            // Check for d-tag
+            const dTag = eventTemplate.tags.find(tag => tag[0] === 'd' && tag[1]);
+            if (!dTag) {
+              error = 'Invalid event: missing required d-tag';
+              return;
+            }
+            
+            // Check for title tag
+            const titleTag = eventTemplate.tags.find(tag => tag[0] === 'title' && tag[1]);
+            if (!titleTag) {
+              error = 'Invalid event: missing required title tag';
               return;
             }
             
             // For kind 30040, content is optional (book index has no content)
-            if (eventTemplate.kind !== 30040 && !eventTemplate.content) {
+            if (eventTemplate.kind !== 30040 && eventTemplate.content === undefined) {
               error = 'Invalid event: missing required field (content)';
               return;
             }
             
-            // Normalize d-tags according to NIP-54
-            if (eventTemplate.tags) {
-              eventTemplate.tags = eventTemplate.tags.map(tag => {
-                if (tag[0] === 'd' && tag[1]) {
-                  return ['d', normalizeIdentifier(tag[1])];
-                }
-                return tag;
-              });
-            }
-            
-            // Sign the event
-            let event = await signer.signEvent(eventTemplate);
-            
-            // Update event id, signature, and created_at
-            event.created_at = Math.round(Date.now() / 1000);
-            // Re-sign with new timestamp
-            event = await signer.signEvent({
-              kind: event.kind,
-              tags: event.tags,
-              content: event.content,
-              created_at: event.created_at
+            // Normalize and trim tags
+            eventTemplate.tags = eventTemplate.tags.map(tag => {
+              if (!Array.isArray(tag) || tag.length === 0) return tag;
+              
+              const tagKey = tag[0];
+              const tagValue = tag[1];
+              
+              // Trim tag values (except for d-tag which gets normalized)
+              if (tagKey === 'd' && tagValue) {
+                return ['d', normalizeIdentifier(tagValue)];
+              } else if (tagValue && typeof tagValue === 'string') {
+                return [tagKey, tagValue.trim()];
+              }
+              
+              return tag;
             });
+            
+            // Sign the event (this will generate id, pubkey, and sig)
+            let event = await signer.signEvent(eventTemplate);
             
             // Use relay service for publishing
             const result = await relayService.publishEvent(
@@ -300,6 +434,9 @@
                   event,
                   relays: result.publishedTo
                 }]);
+                
+                // Trigger welcome panel refresh
+                window.dispatchEvent(new CustomEvent('wikistr:cache-updated', { detail: { event } }));
               }
             }
             
@@ -415,7 +552,8 @@
               type="url"
               bind:value={data.image}
               placeholder="https://example.com/image.jpg"
-              class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md ml-2"
+              class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm rounded-md ml-2"
+              style="border-color: var(--border); background-color: var(--bg-primary); color: var(--text-primary);"
             /></label
           >
           <label class="flex items-center"
@@ -430,7 +568,7 @@
       </details>
     </div>
   {:else}
-    <!-- Regular form for content-based events -->
+    <!-- Regular form for content-based events (30023, 30817, 30818, 30041) -->
     <div class="mt-2">
       <label class="flex items-center"
         >Title
@@ -515,7 +653,8 @@
         type="url"
         placeholder="https://example.com/image.jpg"
         bind:value={data.image}
-        class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-gray-300 rounded-md ml-2"
+        class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm rounded-md ml-2"
+        style="border-color: var(--border); background-color: var(--bg-primary); color: var(--text-primary);"
         onblur={(e) => {
           const url = (e.target as HTMLInputElement).value.trim();
           if (url) {
@@ -543,44 +682,49 @@
   {/if}
 {/if}
 
-<!-- Submit -->
-{#if targets.length > 0}
-  <div class="mt-2">
-    Publishing to:
-    {#each targets as target}
-      <div class="flex items-center mt-1">
-        <div
-          class="p-1 rounded"
-          class:bg-sky-100={target.status === 'pending'}
-          class:bg-red-200={target.status === 'failure'}
-          class:bg-emerald-200={target.status === 'success'}
-        >
-          {urlWithoutScheme(target.url)}
+<!-- Submit (only shown when NOT in JSON edit mode) -->
+{#if !editingJson}
+  {#if targets.length > 0}
+    <div class="mt-2">
+      Publishing to:
+      {#each targets as target}
+        <div class="flex items-center mt-1">
+          <div
+            class="p-1 rounded"
+            class:bg-sky-100={target.status === 'pending'}
+            class:bg-red-200={target.status === 'failure'}
+            class:bg-emerald-200={target.status === 'success'}
+          >
+            {urlWithoutScheme(target.url)}
+          </div>
+          <div class="ml-1 text-xs uppercase font-mono">{target.status}</div>
+          <div class="ml-1 text-sm">{target.message || ''}</div>
         </div>
-        <div class="ml-1 text-xs uppercase font-mono">{target.status}</div>
-        <div class="ml-1 text-sm">{target.message || ''}</div>
+      {/each}
+    </div>
+  {:else}
+    {#if error}
+      <div class="mt-2 bg-red-200 px-2 py-1 rounded">
+        <span class="font-bold">ERROR:</span>
+        {error}
       </div>
-    {/each}
-  </div>
-{:else}
-  {#if error}
-    <div class="mt-2 bg-red-200 px-2 py-1 rounded">
-      <span class="font-bold">ERROR:</span>
-      {error}
+    {/if}
+    <div class="mt-2 flex justify-between">
+      <button
+        onclick={publish}
+        class="cursor-pointer inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2"
+        style="font-family: {theme.typography.fontFamily}; background-color: var(--accent); color: white;"
+        >Publish</button>
+      {#if !isBookIndex}
+        <!-- Preview button only shown for content-based events (not kind 30040) -->
+        <button
+          onclick={() => {
+            previewing = !previewing;
+          }}
+          class="cursor-pointer inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2"
+          style="font-family: {theme.typography.fontFamily};"
+          >{#if previewing}Edit{:else}Preview{/if}</button>
+      {/if}
     </div>
   {/if}
-  <div class="mt-2 flex justify-between">
-    <button
-      onclick={publish}
-      class="cursor-pointer inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2"
-      style="font-family: {theme.typography.fontFamily};"
-      >Save</button>
-    <button
-      onclick={() => {
-        previewing = !previewing;
-      }}
-      class="cursor-pointer inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2"
-      style="font-family: {theme.typography.fontFamily};"
-      >{#if previewing}Edit{:else}Preview{/if}</button>
-  </div>
 {/if}
