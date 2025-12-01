@@ -37,6 +37,7 @@ nginx.conf
 # Documentation
 README.md
 *.md
+!CHANGELOG.md
 
 # Testing
 coverage

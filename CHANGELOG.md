@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Downloads of all types for all article events should be more stable
 - Deep refactor of downloading
 - Share button uses correct naddr, regardless of kind
+- Made version display in Settings modal more automated
 
 ## [5.0.0] - 2025-11-28
 

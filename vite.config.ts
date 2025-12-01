@@ -78,10 +78,10 @@ function parseChangelogForVersion(changelogText: string, version: string): { add
   return result;
 }
 
-// Read and parse changelog
+// Read and parse changelog from static folder
 let changelogData: string = 'null';
 try {
-  const changelogText = readFileSync('./public/CHANGELOG.md', 'utf-8');
+  const changelogText = readFileSync('./static/CHANGELOG.md', 'utf-8');
   const changelogEntry = parseChangelogForVersion(changelogText, packageJson.version);
   changelogData = changelogEntry ? JSON.stringify(changelogEntry) : 'null';
 } catch (error) {
