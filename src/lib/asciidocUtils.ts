@@ -183,6 +183,12 @@ export function buildBaseAsciiDocAttributes(
         doc += `:revdate: ${revdateISO}\n`;
       }
     }
+    
+    // For EPUB, explicitly set stylesheet to prevent default epub3.css lookup
+    // This tells Asciidoctor to use epub-classic.css (set by server) instead of looking for epub3.css
+    if (exportFormat === 'epub') {
+      doc += `:stylesheet: epub-classic.css\n`; // Explicitly set to prevent default epub3.css lookup
+    }
   } else {
     // For other formats, only set if values exist
     if (version) {
