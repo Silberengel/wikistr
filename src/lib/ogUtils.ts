@@ -20,10 +20,11 @@ function buildProxyUrl(url: string): string {
   // Use query parameter instead of encoding in path
   const encoded = encodeURIComponent(url);
   
-  // If OG_PROXY_URL is a full URL, use it directly
+  // If OG_PROXY_URL is a full URL, preserve trailing slash if present
   if (OG_PROXY_URL.startsWith('http://') || OG_PROXY_URL.startsWith('https://')) {
-    const sanitizedProxy = OG_PROXY_URL.replace(/\/$/, '');
-    return `${sanitizedProxy}?url=${encoded}`;
+    // Keep trailing slash if it exists (proxy may require it)
+    const proxyUrl = OG_PROXY_URL.endsWith('/') ? OG_PROXY_URL : `${OG_PROXY_URL}/`;
+    return `${proxyUrl}?url=${encoded}`;
   }
   
   // Otherwise, treat as relative path - ensure it ends with / for query param usage

@@ -98,17 +98,53 @@ function formatSections(sections: string[]): string {
 }
 
 function formatBookReferenceDisplay(ref: ParsedBookReference): string {
-  const titlePart = ref.title ? humanizeBookSegment(ref.title) : '';
+  const collection = ref.collection?.toLowerCase();
+  const isQuran = collection === 'quran';
+  const isTorah = collection === 'torah';
+  const isBible = collection === 'bible' || !collection; // Default to bible if no collection
+  
+  // For Quran: handle numbered surahs (1-114) vs named surahs
+  let titlePart = '';
+  if (ref.title) {
+    if (isQuran) {
+      // Check if title is a number (1-114) - surah number
+      const titleAsNumber = parseInt(ref.title.trim(), 10);
+      if (!isNaN(titleAsNumber) && titleAsNumber >= 1 && titleAsNumber <= 114) {
+        // It's a numbered surah - display as "Surah 1" or just the number
+        titlePart = `Surah ${titleAsNumber}`;
+      } else {
+        // It's a named surah - humanize it
+        titlePart = humanizeBookSegment(ref.title);
+      }
+    } else {
+      // For Bible/Torah, humanize normally
+      titlePart = humanizeBookSegment(ref.title);
+    }
+  }
+  
   const collectionPart = ref.collection ? humanizeBookSegment(ref.collection) : '';
 
   let display = titlePart;
   if (ref.chapter) {
-    display = display ? `${display} ${ref.chapter}` : ref.chapter;
+    // For Quran: if title is a surah number and chapter is provided, format as "Surah 1:1" (surah:ayah)
+    // For Bible/Torah: format as "Book 1" or "Book 1:1"
+    if (isQuran && titlePart.startsWith('Surah ')) {
+      // Title is already "Surah X", chapter is the ayah number
+      display = `${titlePart}:${ref.chapter}`;
+    } else {
+      display = display ? `${display} ${ref.chapter}` : ref.chapter;
+    }
   }
 
   if (ref.section && ref.section.length > 0) {
     const sectionText = formatSections(ref.section);
-    display += `${display && !display.endsWith(':') ? ':' : ''}${sectionText}`;
+    // For Quran with numbered surahs, we already have the colon from chapter, so check
+    if (isQuran && titlePart.startsWith('Surah ') && ref.chapter) {
+      // Already formatted as "Surah 1:1", sections are additional ayahs
+      display += `,${sectionText}`;
+    } else {
+      display += `${display && !display.endsWith(':') ? ':' : ''}${sectionText}`;
+    }
   }
 
   if (!display && collectionPart) {

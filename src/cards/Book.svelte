@@ -353,9 +353,26 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
       versionNotFound 
     });
     
+    // Only load OG preview if bookType is set and matches the service
+    // This prevents loading Bible Gateway for torah/quran queries
     const shouldLoadBible = query && ogLoadedQuery !== query && !ogLoading && bookCard.bookType === 'bible' && tried && (results.length === 0 || versionNotFound);
     const shouldLoadSefaria = query && ogLoadedQuery !== query && !ogLoading && bookCard.bookType === 'torah' && tried && (results.length === 0 || versionNotFound);
     const shouldLoadExploreQuran = query && ogLoadedQuery !== query && !ogLoading && bookCard.bookType === 'quran' && tried && (results.length === 0 || versionNotFound);
+    
+    // Debug logging
+    if (query && tried && (results.length === 0 || versionNotFound)) {
+      console.log('Book: OG preview effect', { 
+        query, 
+        bookType: bookCard.bookType, 
+        shouldLoadBible, 
+        shouldLoadSefaria, 
+        shouldLoadExploreQuran,
+        ogLoadedQuery,
+        ogLoading,
+        resultsLength: results.length,
+        versionNotFound
+      });
+    }
     console.log('Book: OG preview effect - shouldLoadBible:', shouldLoadBible, 'shouldLoadSefaria:', shouldLoadSefaria, 'shouldLoadExploreQuran:', shouldLoadExploreQuran);
     
     if (shouldLoadBible) {
@@ -921,16 +938,26 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
         let matchedCount = 0;
         let rejectedCount = 0;
         
-        // Step 1: Filter by collection (C tag) if specified
+        // Step 1: Filter by collection (C tag for NKBIP-08, type tag for legacy) if specified
         if (bookCard.bookType) {
           const before = filtered.length;
+          const normalizedQueryCollection = normalizeIdentifier(bookCard.bookType!).toLowerCase();
           filtered = filtered.filter(cached => {
             const evt = cached.event as BookEvent;
+            // Check NKBIP-08 format (C tag)
             const collectionTag = evt.tags.find(([tag]) => tag === 'C');
-            if (!collectionTag) return false;
-            const normalizedCollection = normalizeIdentifier(collectionTag[1]).toLowerCase();
-            const normalizedQueryCollection = normalizeIdentifier(bookCard.bookType!).toLowerCase();
-            return normalizedCollection === normalizedQueryCollection;
+            if (collectionTag) {
+              const normalizedCollection = normalizeIdentifier(collectionTag[1]).toLowerCase();
+              return normalizedCollection === normalizedQueryCollection;
+            }
+            // Check legacy format (type tag)
+            const typeTag = evt.tags.find(([tag]) => tag === 'type');
+            if (typeTag) {
+              const normalizedType = normalizeIdentifier(typeTag[1]).toLowerCase();
+              return normalizedType === normalizedQueryCollection;
+            }
+            // No collection/type tag - reject (prevents cross-collection results)
+            return false;
           });
           console.log(`Book: After collection filter (${bookCard.bookType}): ${filtered.length} of ${before} events`);
         }
@@ -1212,11 +1239,24 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
         console.log('Book: IMMEDIATE CHECK - hasNoResults:', hasNoResults, 'bookType:', bookCard.bookType, 'query:', query);
         
         // After search completes, check if we need to load OG preview
-        if (tried && hasNoResults && bookCard.bookType === 'bible' && query) {
-          console.log('Book: IMMEDIATELY Triggering OG preview load - all conditions met!');
-          loadBibleGatewayPreview().catch(err => {
-            console.error('Book: Failed to load OG preview:', err);
-          });
+        // Only load the appropriate service based on bookType
+        if (tried && hasNoResults && query) {
+          if (bookCard.bookType === 'bible') {
+            console.log('Book: IMMEDIATELY Triggering Bible Gateway OG preview load');
+            loadBibleGatewayPreview().catch(err => {
+              console.error('Book: Failed to load OG preview:', err);
+            });
+          } else if (bookCard.bookType === 'torah') {
+            console.log('Book: IMMEDIATELY Triggering Sefaria OG preview load');
+            loadSefariaPreview().catch(err => {
+              console.error('Book: Failed to load OG preview:', err);
+            });
+          } else if (bookCard.bookType === 'quran') {
+            console.log('Book: IMMEDIATELY Triggering ExploreQuran OG preview load');
+            loadExploreQuranPreview().catch(err => {
+              console.error('Book: Failed to load OG preview:', err);
+            });
+          }
         }
       } catch (error) {
         // Some relays may reject filters with certain tags - this is expected
@@ -1240,10 +1280,18 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
           bookCard.seenCache = seenCache;
           refreshIndexOrders();
           
-          // Load OG preview if no results found
-          if (results.length === 0 && bookCard.bookType === 'bible' && query) {
-            console.log('Book: Triggering OG preview load after eosed (no results)');
-            loadBibleGatewayPreview();
+          // Load OG preview if no results found - use correct service based on bookType
+          if (results.length === 0 && query) {
+            if (bookCard.bookType === 'bible') {
+              console.log('Book: Triggering Bible Gateway OG preview load after eosed (no results)');
+              loadBibleGatewayPreview();
+            } else if (bookCard.bookType === 'torah') {
+              console.log('Book: Triggering Sefaria OG preview load after eosed (no results)');
+              loadSefariaPreview();
+            } else if (bookCard.bookType === 'quran') {
+              console.log('Book: Triggering ExploreQuran OG preview load after eosed (no results)');
+              loadExploreQuranPreview();
+            }
           }
         }
       }
@@ -1502,9 +1550,20 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
           references,
           versions: parsed.references[0]?.version || []
         };
-        // Extract bookType from first reference if available
+        // Extract bookType from first reference if available - CRITICAL for collection filtering
         if (parsed.references[0]?.collection) {
           bookCard.bookType = parsed.references[0].collection;
+          console.log('Book: Set bookType from collection:', bookCard.bookType);
+        } else {
+          // If no collection in parsed result, try to extract from query string
+          // Format: book::collection | title
+          const collectionMatch = queryStr.match(/^book::([a-zA-Z0-9_-]+)\s*\|/);
+          if (collectionMatch) {
+            bookCard.bookType = collectionMatch[1].toLowerCase();
+            console.log('Book: Extracted bookType from query string:', bookCard.bookType);
+          } else {
+            console.warn('Book: No collection found in query, bookType will be undefined:', queryStr);
+          }
         }
         return true;
       }
@@ -1544,7 +1603,11 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
   const debouncedPerformBookSearch = debounce(performBookSearch, 400);
 
   // Get the display name for the book type
-  const bookTypeDisplayName = BOOK_TYPES[bookCard.bookType || 'bible']?.displayName || (bookCard.bookType || 'bible').charAt(0).toUpperCase() + (bookCard.bookType || 'bible').slice(1);
+  // Use the actual bookType from the card, or fallback to 'bible' only if truly undefined
+  // This ensures torah/quran show correct names, not "bible"
+  const bookTypeDisplayName = bookCard.bookType 
+    ? (BOOK_TYPES[bookCard.bookType]?.displayName || bookCard.bookType.charAt(0).toUpperCase() + bookCard.bookType.slice(1))
+    : 'book'; // Generic fallback instead of defaulting to 'bible'
 
   function formatReferenceForHeader(ref: DisplayReference): string {
     const book = ref.book ? capitalizeWords(ref.book) : '';

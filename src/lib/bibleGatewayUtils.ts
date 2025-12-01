@@ -16,20 +16,30 @@ const versionMap: Record<string, string> = {
 // Get proxy URL from environment variable, default to relative path
 const OG_PROXY_URL = (import.meta.env.VITE_OG_PROXY_URL as string | undefined)?.trim() || '/sites/';
 
+/**
+ * Capitalize words - handles case-insensitive input
+ * "genesis" -> "Genesis", "EXODUS" -> "Exodus", "john 3" -> "John 3"
+ */
 function capitalizeWords(text: string): string {
-  return text.split(' ').map(word => 
-    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-  ).join(' ');
+  if (!text) return text;
+  return text
+    .split(' ')
+    .map(word => {
+      if (!word) return word;
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
 }
 
 function buildProxyUrl(target: string): string {
   // Use query parameter instead of encoding in path
   const encoded = encodeURIComponent(target);
   
-  // If OG_PROXY_URL is a full URL, use it directly
+  // If OG_PROXY_URL is a full URL, preserve trailing slash if present
   if (OG_PROXY_URL.startsWith('http://') || OG_PROXY_URL.startsWith('https://')) {
-    const sanitizedProxy = OG_PROXY_URL.replace(/\/$/, '');
-    return `${sanitizedProxy}?url=${encoded}`;
+    // Keep trailing slash if it exists (proxy may require it)
+    const proxyUrl = OG_PROXY_URL.endsWith('/') ? OG_PROXY_URL : `${OG_PROXY_URL}/`;
+    return `${proxyUrl}?url=${encoded}`;
   }
   
   // Otherwise, treat it as a relative path - ensure it ends with / for query param usage

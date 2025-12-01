@@ -766,23 +766,30 @@ export function isBookEvent(event: BookEvent, bookType?: string): boolean {
   const verseTag = event.tags.find(([tag]) => tag === 'verse');
   const versionTag = event.tags.find(([tag]) => tag === 'version');
   
-  // If bookType is specified, check if collection/type matches
+  // If bookType is specified, STRICTLY require matching collection/type tag
+  // This ensures torah queries don't return bible results, quran doesn't return bible, etc.
   if (bookType) {
-    // Check NKBIP-08 format
-    if (collectionTag && collectionTag[1] !== bookType) {
-      return false;
-    }
-    // Check legacy format
-    if (typeTag && typeTag[1] !== bookType) {
-      return false;
-    }
-    // If no collection/type tag but bookType specified, check if we have book tag (legacy) or collection tag (NKBIP-08)
-    if (!collectionTag && !typeTag) {
-      // If we have a book tag, it might still be a book event (legacy format)
-      // But if bookType is specified and doesn't match, we need collection/type tag
-      if (!bookTag) {
-        return false;
+    // Normalize bookType for comparison (lowercase)
+    const normalizedBookType = bookType.toLowerCase();
+    
+    // Check NKBIP-08 format (C tag)
+    if (collectionTag) {
+      const normalizedCollection = collectionTag[1].toLowerCase();
+      if (normalizedCollection !== normalizedBookType) {
+        return false; // Collection doesn't match
       }
+    }
+    // Check legacy format (type tag)
+    else if (typeTag) {
+      const normalizedType = typeTag[1].toLowerCase();
+      if (normalizedType !== normalizedBookType) {
+        return false; // Type doesn't match
+      }
+    }
+    // If bookType is specified but event has NO collection/type tag, reject it
+    // This prevents events from other collections (like bible) from being returned for torah/quran queries
+    else {
+      return false; // No collection/type tag means it doesn't belong to the specified collection
     }
   }
   

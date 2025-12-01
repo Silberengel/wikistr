@@ -248,9 +248,30 @@ function parseSingleBookReference(
     const titleCollectionMatch = titlePart.match(/^([a-zA-Z0-9_-]+)\s+\|\s+(.+)$/);
     if (titleCollectionMatch && !collection) {
       collection = normalizeNip54(titleCollectionMatch[1]);
-      title = recognizeBookName(titleCollectionMatch[2].trim());
+      const titleInput = titleCollectionMatch[2].trim();
+      // For Quran: if title is a number (1-114), don't use recognizeBookName (Bible book map)
+      if (collection === 'quran') {
+        const titleAsNumber = parseInt(titleInput, 10);
+        if (!isNaN(titleAsNumber) && titleAsNumber >= 1 && titleAsNumber <= 114) {
+          title = titleInput; // Keep as number for Quran surahs
+        } else {
+          title = recognizeBookName(titleInput);
+        }
+      } else {
+        title = recognizeBookName(titleInput);
+      }
     } else {
-      title = recognizeBookName(titlePart);
+      // For Quran: if title is a number (1-114), don't use recognizeBookName (Bible book map)
+      if (collection === 'quran') {
+        const titleAsNumber = parseInt(titlePart, 10);
+        if (!isNaN(titleAsNumber) && titleAsNumber >= 1 && titleAsNumber <= 114) {
+          title = titlePart; // Keep as number for Quran surahs
+        } else {
+          title = recognizeBookName(titlePart);
+        }
+      } else {
+        title = recognizeBookName(titlePart);
+      }
     }
     
     chapter = normalizeNip54(chapterPart);
@@ -271,9 +292,30 @@ function parseSingleBookReference(
     const titleCollectionMatch = mainContent.match(/^([a-zA-Z0-9_-]+)\s+\|\s+(.+)$/);
     if (titleCollectionMatch && !collection) {
       collection = normalizeNip54(titleCollectionMatch[1]);
-      title = recognizeBookName(titleCollectionMatch[2].trim());
+      const titleInput = titleCollectionMatch[2].trim();
+      // For Quran: if title is a number (1-114), don't use recognizeBookName (Bible book map)
+      if (collection === 'quran') {
+        const titleAsNumber = parseInt(titleInput, 10);
+        if (!isNaN(titleAsNumber) && titleAsNumber >= 1 && titleAsNumber <= 114) {
+          title = titleInput; // Keep as number for Quran surahs
+        } else {
+          title = recognizeBookName(titleInput);
+        }
+      } else {
+        title = recognizeBookName(titleInput);
+      }
     } else {
-      title = recognizeBookName(mainContent);
+      // For Quran: if title is a number (1-114), don't use recognizeBookName (Bible book map)
+      if (collection === 'quran') {
+        const titleAsNumber = parseInt(mainContent, 10);
+        if (!isNaN(titleAsNumber) && titleAsNumber >= 1 && titleAsNumber <= 114) {
+          title = mainContent; // Keep as number for Quran surahs
+        } else {
+          title = recognizeBookName(mainContent);
+        }
+      } else {
+        title = recognizeBookName(mainContent);
+      }
     }
   }
   

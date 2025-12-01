@@ -25,6 +25,17 @@ function getFirstVerse(verse: string): number | null {
 }
 
 /**
+ * Normalize book name to Sefaria format (capitalize first letter of each word)
+ * Handles case-insensitive input: "genesis" -> "Genesis", "EXODUS" -> "Exodus"
+ */
+function normalizeSefariaBookName(bookName: string): string {
+  return bookName
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/**
  * Generate Sefaria URL for a single reference
  * Format:
  * - Book only: https://www.sefaria.org/{BookName}?tab=contents
@@ -35,7 +46,8 @@ function generateSingleReferenceUrl(ref: BookReference): string | null {
   if (!ref.book) return null;
   
   // Sefaria uses exact book names: Genesis, Exodus, Leviticus, Numbers, Deuteronomy
-  const bookName = ref.book;
+  // Normalize to proper case (capitalize first letter of each word)
+  const bookName = normalizeSefariaBookName(ref.book);
   
   if (!ref.chapter) {
     // Book only
@@ -85,15 +97,20 @@ function buildProxyUrl(target: string): string {
   // Use query parameter instead of encoding in path
   const encoded = encodeURIComponent(target);
   
-  // If OG_PROXY_URL is a full URL, use it directly
+  // Always ensure trailing slash before query parameter
+  let baseUrl: string;
   if (OG_PROXY_URL.startsWith('http://') || OG_PROXY_URL.startsWith('https://')) {
-    const sanitizedProxy = OG_PROXY_URL.replace(/\/$/, '');
-    return `${sanitizedProxy}?url=${encoded}`;
+    // Full URL - ensure trailing slash
+    baseUrl = OG_PROXY_URL.endsWith('/') ? OG_PROXY_URL : `${OG_PROXY_URL}/`;
+  } else {
+    // Relative path - ensure trailing slash
+    baseUrl = OG_PROXY_URL.endsWith('/') ? OG_PROXY_URL : (OG_PROXY_URL || '/sites/');
+    if (!baseUrl.endsWith('/')) {
+      baseUrl = `${baseUrl}/`;
+    }
   }
   
-  // Otherwise, treat it as a relative path - ensure it ends with / for query param usage
-  const basePath = OG_PROXY_URL.endsWith('/') ? OG_PROXY_URL : (OG_PROXY_URL || '/sites/');
-  return `${basePath}?url=${encoded}`;
+  return `${baseUrl}?url=${encoded}`;
 }
 
 /**

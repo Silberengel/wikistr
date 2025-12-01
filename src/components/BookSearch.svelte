@@ -500,10 +500,21 @@
         let result: { events: NostrEvent[]; relays: string[] };
         
         // First, try to get book events from cache
+        // Filter by collection: check both NKBIP-08 C tag and legacy type tag
         const cachedBooks = await contentCache.getEvents('publications');
-        const filteredBooks = cachedBooks.filter(cached => 
-          cached.event.tags.some(tag => tag[0] === 'type' && tag[1] === bookType)
-        );
+        const normalizedBookType = bookType.toLowerCase();
+        const filteredBooks = cachedBooks.filter(cached => {
+          const collectionTag = cached.event.tags.find(tag => tag[0] === 'C');
+          const typeTag = cached.event.tags.find(tag => tag[0] === 'type');
+          // Must have matching collection/type tag
+          if (collectionTag) {
+            return collectionTag[1].toLowerCase() === normalizedBookType;
+          }
+          if (typeTag) {
+            return typeTag[1].toLowerCase() === normalizedBookType;
+          }
+          return false; // No collection/type tag - reject
+        });
         
         if (filteredBooks.length > 0) {
           result = {
@@ -511,15 +522,30 @@
             relays: [...new Set(filteredBooks.flatMap(cached => cached.relays))]
           };
         } else {
-          result = await relayService.queryEvents(
+          // Query with both #type (legacy) and #C (NKBIP-08) tags to ensure we get all matching events
+          // Use OR logic: events matching either tag format
+          const filters = [
+            { kinds: [30041], '#type': [bookType], limit: 25 },
+            { kinds: [30041], '#C': [bookType], limit: 25 }
+          ];
+          const result1 = await relayService.queryEvents(
             'anonymous',
             'social-read',
-            [{ kinds: [30041], '#type': [bookType], limit: 25 }],
+            filters,
             {
               excludeUserContent: false,
               currentUserPubkey: undefined
             }
           );
+          // Deduplicate by event ID
+          const eventMap = new Map<string, NostrEvent>();
+          for (const evt of result1.events) {
+            eventMap.set(evt.id, evt);
+          }
+          result = {
+            events: Array.from(eventMap.values()),
+            relays: result1.relays
+          };
           
           // Store in cache
           if (result.events.length > 0) {
@@ -544,11 +570,26 @@
       let searchResult: { events: NostrEvent[]; relays: string[] };
       
       // First, try to get book events from cache using search
+      // IMPORTANT: Also filter by collection to prevent cross-collection results
       const cachedBooks = await contentCache.getEvents('publications');
-      const searchFilteredBooks = cachedBooks.filter(cached => 
-        cached.event.content.toLowerCase().includes(query.toLowerCase()) ||
-        cached.event.tags.some(tag => tag[1]?.toLowerCase().includes(query.toLowerCase()))
-      );
+      const normalizedBookType = bookType.toLowerCase();
+      const searchFilteredBooks = cachedBooks.filter(cached => {
+        // First check collection/type matches
+        const collectionTag = cached.event.tags.find(tag => tag[0] === 'C');
+        const typeTag = cached.event.tags.find(tag => tag[0] === 'type');
+        let matchesCollection = false;
+        if (collectionTag) {
+          matchesCollection = collectionTag[1].toLowerCase() === normalizedBookType;
+        } else if (typeTag) {
+          matchesCollection = typeTag[1].toLowerCase() === normalizedBookType;
+        }
+        if (!matchesCollection) {
+          return false; // Collection doesn't match - reject
+        }
+        // Then check if content/tags match the query
+        return cached.event.content.toLowerCase().includes(query.toLowerCase()) ||
+               cached.event.tags.some(tag => tag[1]?.toLowerCase().includes(query.toLowerCase()));
+      });
       
       if (searchFilteredBooks.length > 0) {
         searchResult = {
@@ -556,15 +597,29 @@
           relays: [...new Set(searchFilteredBooks.flatMap(cached => cached.relays))]
         };
       } else {
-        searchResult = await relayService.queryEvents(
+        // General search - but still filter by collection using both #type and #C tags
+        const searchFilters = [
+          { kinds: [30041], search: query, '#type': [bookType], limit: 10 },
+          { kinds: [30041], search: query, '#C': [bookType], limit: 10 }
+        ];
+        const searchResult1 = await relayService.queryEvents(
           'anonymous',
           'social-read',
-          [{ kinds: [30041], search: query, limit: 10 }],
+          searchFilters,
           {
             excludeUserContent: false,
             currentUserPubkey: undefined
           }
         );
+        // Deduplicate by event ID
+        const eventMap = new Map<string, NostrEvent>();
+        for (const evt of searchResult1.events) {
+          eventMap.set(evt.id, evt);
+        }
+        searchResult = {
+          events: Array.from(eventMap.values()),
+          relays: searchResult1.relays
+        };
         
         // Store in cache
         if (searchResult.events.length > 0) {
@@ -623,16 +678,30 @@
     }, 500);
 
     // Use relayService for fallback search
+    // Still filter by collection to prevent cross-collection results
     try {
-      const fallbackResult = await relayService.queryEvents(
+      const fallbackFilters = [
+        { kinds: [30041], '#type': [bookType], limit: 25 },
+        { kinds: [30041], '#C': [bookType], limit: 25 }
+      ];
+      const fallbackResult1 = await relayService.queryEvents(
         'anonymous',
         'social-read',
-        [{ kinds: [30041], '#type': [bookType], limit: 25 }],
+        fallbackFilters,
         {
           excludeUserContent: false,
           currentUserPubkey: undefined
         }
       );
+      // Deduplicate by event ID
+      const eventMap = new Map<string, NostrEvent>();
+      for (const evt of fallbackResult1.events) {
+        eventMap.set(evt.id, evt);
+      }
+      const fallbackResult = {
+        events: Array.from(eventMap.values()),
+        relays: fallbackResult1.relays
+      };
       
       // Store in cache
       if (fallbackResult.events.length > 0) {
@@ -702,8 +771,10 @@
   }
 
   // Get the display name for the book type
-  // Default to "book" for bible (default bookType), otherwise use the specific book type display name
-  const bookTypeDisplayName = bookType === 'bible' ? 'book' : (BOOK_TYPES[bookType]?.displayName || 'book');
+  // Use the actual bookType, or fallback to generic 'book' (not 'bible')
+  const bookTypeDisplayName = bookType 
+    ? (BOOK_TYPES[bookType]?.displayName || bookType.charAt(0).toUpperCase() + bookType.slice(1))
+    : 'book'; // Generic fallback instead of defaulting to 'bible'
 </script>
 
 <div class="book-search-results">

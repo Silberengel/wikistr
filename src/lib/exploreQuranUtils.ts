@@ -143,22 +143,70 @@ function getFirstAyah(ayah: string): number | null {
 /**
  * Generate ExploreQuran URL for a single reference
  * Format:
- * - Surah only: https://www.explorequran.org/index2.php?surah={number}
- * - Surah with ayah: https://www.explorequran.org/index2.php?surah={number}&ayah={number}
+ * - Surah only: https://explorequran.org/index2.php?surah={number}
+ * - Surah with ayah: https://explorequran.org/index2.php?surah={number}&ayah={number}
  */
 function generateSingleReferenceUrl(ref: BookReference): string | null {
   if (!ref.book) return null;
   
-  // Get surah number from book name
-  const surahNumber = surahNameToNumber[ref.book];
+  // First, check if the book name is already a number (1-114)
+  let surahNumber: number | undefined;
+  const bookAsNumber = parseInt(ref.book.trim(), 10);
+  if (!isNaN(bookAsNumber) && bookAsNumber >= 1 && bookAsNumber <= 114) {
+    // Book name is a surah number
+    surahNumber = bookAsNumber;
+  } else {
+    // Get surah number from book name - case-insensitive lookup with multiple fallbacks
+    // The parser normalizes book names, so we need flexible matching
+    surahNumber = surahNameToNumber[ref.book];
+  
+    if (!surahNumber) {
+      // Try case-insensitive lookup (handles "al-kahf" -> "Al-Kahf")
+      const normalizedBook = ref.book.trim();
+      const matchingKey = Object.keys(surahNameToNumber).find(
+        key => key.toLowerCase() === normalizedBook.toLowerCase()
+      );
+      if (matchingKey) {
+        surahNumber = surahNameToNumber[matchingKey];
+      }
+    }
+  
+    // Also try matching against normalized versions (remove hyphens, spaces, etc.)
+    // This handles cases where "al-kahf" needs to match "Al-Kahf"
+    if (!surahNumber) {
+      const normalizedBook = ref.book.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+      const matchingKey = Object.keys(surahNameToNumber).find(key => {
+        const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return normalizedKey === normalizedBook;
+      });
+      if (matchingKey) {
+        surahNumber = surahNameToNumber[matchingKey];
+      }
+    }
+  
+    // If still not found, try partial matching (e.g., "kahf" matches "Al-Kahf")
+    if (!surahNumber) {
+      const normalizedBook = ref.book.trim().toLowerCase();
+      const matchingKey = Object.keys(surahNameToNumber).find(key => {
+        const normalizedKey = key.toLowerCase();
+        // Check if the normalized book name is contained in the key or vice versa
+        return normalizedKey.includes(normalizedBook) || normalizedBook.includes(normalizedKey);
+      });
+      if (matchingKey) {
+        surahNumber = surahNameToNumber[matchingKey];
+      }
+    }
+  }
+  
   if (!surahNumber) {
-    console.warn('ExploreQuran: Unknown surah name:', ref.book);
+    console.warn('ExploreQuran: Unknown surah name:', ref.book, '(tried number, exact, case-insensitive, normalized, and partial matching)');
+    console.warn('ExploreQuran: Available surah names:', Object.keys(surahNameToNumber).slice(0, 10).join(', '), '...');
     return null;
   }
   
   if (!ref.chapter) {
     // Surah only (though in Quran, chapter is the same as surah, so this shouldn't happen)
-    return `https://www.explorequran.org/index2.php?surah=${surahNumber}`;
+    return `https://explorequran.org/index2.php?surah=${surahNumber}`;
   }
   
   // In Quran, "chapter" is actually the surah number, and "verse" is the ayah
@@ -168,15 +216,15 @@ function generateSingleReferenceUrl(ref: BookReference): string | null {
     const firstAyah = getFirstAyah(ref.verse);
     if (firstAyah === null) {
       // Invalid ayah, fall back to surah only
-      return `https://www.explorequran.org/index2.php?surah=${surahNumber}`;
+      return `https://explorequran.org/index2.php?surah=${surahNumber}`;
     }
     
     // Surah with ayah
-    return `https://www.explorequran.org/index2.php?surah=${surahNumber}&ayah=${firstAyah}`;
+    return `https://explorequran.org/index2.php?surah=${surahNumber}&ayah=${firstAyah}`;
   }
   
   // Surah only (no ayah specified)
-  return `https://www.explorequran.org/index2.php?surah=${surahNumber}`;
+  return `https://explorequran.org/index2.php?surah=${surahNumber}`;
 }
 
 /**
@@ -209,15 +257,20 @@ function buildProxyUrl(target: string): string {
   // Use query parameter instead of encoding in path
   const encoded = encodeURIComponent(target);
   
-  // If OG_PROXY_URL is a full URL, use it directly
+  // Always ensure trailing slash before query parameter
+  let baseUrl: string;
   if (OG_PROXY_URL.startsWith('http://') || OG_PROXY_URL.startsWith('https://')) {
-    const sanitizedProxy = OG_PROXY_URL.replace(/\/$/, '');
-    return `${sanitizedProxy}?url=${encoded}`;
+    // Full URL - ensure trailing slash
+    baseUrl = OG_PROXY_URL.endsWith('/') ? OG_PROXY_URL : `${OG_PROXY_URL}/`;
+  } else {
+    // Relative path - ensure trailing slash
+    baseUrl = OG_PROXY_URL.endsWith('/') ? OG_PROXY_URL : (OG_PROXY_URL || '/sites/');
+    if (!baseUrl.endsWith('/')) {
+      baseUrl = `${baseUrl}/`;
+    }
   }
   
-  // Otherwise, treat it as a relative path - ensure it ends with / for query param usage
-  const basePath = OG_PROXY_URL.endsWith('/') ? OG_PROXY_URL : (OG_PROXY_URL || '/sites/');
-  return `${basePath}?url=${encoded}`;
+  return `${baseUrl}?url=${encoded}`;
 }
 
 /**

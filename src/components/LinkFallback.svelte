@@ -648,12 +648,8 @@
             return null;
           }
         })()}
-        {@const websiteName = urlObj ? urlObj.hostname.replace(/^www\./, '') : (ogData.siteName || 'External Link')}
         {@const shortUrl = url.length > 60 ? url.substring(0, 57) + '...' : url}
         <div class="text-xs mt-2 pt-2 border-t" style="border-color: var(--border);">
-          <div class="font-medium mb-1" style="color: var(--text-primary);">
-            {websiteName}
-          </div>
           <div class="text-xs truncate underline" style="color: var(--accent);">
             {shortUrl}
           </div>
@@ -671,7 +667,6 @@
         return null;
       }
     })()}
-    {@const websiteName = urlObj ? urlObj.hostname.replace(/^www\./, '') : 'External Link'}
     {@const shortUrl = url.length > 60 ? url.substring(0, 57) + '...' : url}
     <a
       href={url}
@@ -680,9 +675,6 @@
       class="block p-3 rounded border transition-colors hover:opacity-80"
       style="background-color: var(--bg-secondary); border-color: var(--border); text-decoration: none;"
     >
-      <div class="font-semibold mb-1" style="color: var(--text-primary);">
-        {websiteName}
-      </div>
       <div class="text-sm break-all underline" style="color: var(--accent);">
         {shortUrl}
       </div>
@@ -806,12 +798,8 @@
             return null;
           }
         })()}
-        {@const websiteName = urlObj ? urlObj.hostname.replace(/^www\./, '') : 'External Link'}
         {@const shortUrl = url.length > 60 ? url.substring(0, 57) + '...' : url}
         <div class="mt-3 pt-3 border-t" style="border-color: var(--border);">
-          <div class="text-xs font-medium mb-1" style="color: var(--text-primary);">
-            {websiteName}
-          </div>
           <div class="text-xs break-all underline" style="color: var(--accent);">
             {shortUrl}
           </div>
