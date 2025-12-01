@@ -79,7 +79,7 @@ function convertMarkdownToAsciiDoc(content: string): string {
 }
 
 /**
- * Limit image sizes in AsciiDoc content to 500px max (except cover images)
+ * Limit image sizes in AsciiDoc content to 300px max (except cover images)
  */
 function limitImageSizes(content: string): string {
   if (!content) return content;
@@ -97,11 +97,11 @@ function limitImageSizes(content: string): string {
       return match;
     }
     
-    // Add maxwidth=500px to the attributes
+    // Add maxwidth=300px to the attributes
     const parts = altAndAttrs.split(',');
     const alt = parts[0] || '';
     const attrs = parts.slice(1).join(',');
-    const newAttrs = attrs ? `${attrs},maxwidth=500px` : 'maxwidth=500px';
+    const newAttrs = attrs ? `${attrs},maxwidth=300px` : 'maxwidth=300px';
     return `image::${url}[${alt},${newAttrs}]`;
   });
   
@@ -118,11 +118,11 @@ function limitImageSizes(content: string): string {
       return match;
     }
     
-    // Add maxwidth=500px to the attributes
+    // Add maxwidth=300px to the attributes
     const parts = altAndAttrs.split(',');
     const alt = parts[0] || '';
     const attrs = parts.slice(1).join(',');
-    const newAttrs = attrs ? `${attrs},maxwidth=500px` : 'maxwidth=500px';
+    const newAttrs = attrs ? `${attrs},maxwidth=300px` : 'maxwidth=300px';
     return `image:${url}[${alt},${newAttrs}]`;
   });
   
@@ -384,7 +384,7 @@ export async function prepareAsciiDocContent(
     content = convertMarkdownToAsciiDoc(event.content);
   }
   
-  // Limit image sizes to 500px max (except cover images)
+  // Limit image sizes to 300px max (except cover images)
   content = limitImageSizes(content);
   
   if (includeMetadata) {
@@ -895,7 +895,7 @@ export async function combineBookEvents(
       eventContent = convertMarkdownToAsciiDoc(eventContent);
     }
     
-    // Limit image sizes to 500px max (except cover images)
+    // Limit image sizes to 300px max (except cover images)
     eventContent = limitImageSizes(eventContent);
     
     // Log content length for debugging

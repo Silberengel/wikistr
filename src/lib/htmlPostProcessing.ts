@@ -177,7 +177,7 @@ export function getTitlePageStyles(): string {
       .cover-page img {
         margin: 0 auto 0.5em auto;
         display: block;
-        max-width: 500px;
+        max-width: 300px;
         width: 100%;
         height: auto;
       }
@@ -257,7 +257,7 @@ export function getTitlePageStyles(): string {
       .book-metadata img {
         margin: 2em auto;
         display: block;
-        max-width: 500px;
+        max-width: 300px;
         height: auto;
       }
       
@@ -315,7 +315,7 @@ export function getTitlePageStyles(): string {
       .article-metadata img {
         margin: 2em auto;
         display: block;
-        max-width: 500px;
+        max-width: 300px;
         height: auto;
       }
       

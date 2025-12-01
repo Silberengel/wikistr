@@ -308,14 +308,14 @@ export function buildArticleMetadataSection(
     doc += `[.book-title]\n${cleanTitle}\n\n`;
   }
   
-  // Show image for all formats (limit size to 500px for metadata images)
+  // Show image for all formats (limit size to 300px for metadata images)
   if (image) {
     if (exportFormat === 'html') {
       // For HTML, use width attribute (more reliable than maxwidth in HTML)
-      doc += `image::${image}[Cover Image,width=500px]\n\n`;
+      doc += `image::${image}[Cover Image,width=300px]\n\n`;
     } else {
       // For EPUB/PDF/AsciiDoc, use maxwidth (same as book metadata)
-      doc += `image::${image}[Cover Image,maxwidth=500px]\n\n`;
+      doc += `image::${image}[Cover Image,maxwidth=300px]\n\n`;
     }
   }
   
@@ -390,10 +390,10 @@ export function buildBookMetadataSection(
     doc += `[.book-title]\n${cleanTitle}\n\n`;
   }
   
-  // Show image for all formats (limit size to 500px for metadata images)
+  // Show image for all formats (limit size to 300px for metadata images)
   if (options.image) {
-    // For all formats, show image in metadata but limit size to 500px
-    doc += `image::${options.image}[Cover Image,maxwidth=500px]\n\n`;
+    // For all formats, show image in metadata but limit size to 300px
+    doc += `image::${options.image}[Cover Image,maxwidth=300px]\n\n`;
   }
   
   for (const field of metadataFields) {
