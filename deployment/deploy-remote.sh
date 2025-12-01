@@ -3,8 +3,9 @@
 # Remote server deployment script for Wikistr
 # This script should be run on your remote server
 # Usage: ./deploy-remote.sh [theme|all] [port]
-# Example: ./deploy-remote.sh wikistr 3000
-# Example: ./deploy-remote.sh all  # Deploy all themes (uses default ports from REMOTE_SERVER_DEPLOYMENT.md)
+# Example: ./deploy-remote.sh  # Deploy all themes (default)
+# Example: ./deploy-remote.sh wikistr 3000  # Deploy single theme
+# Example: ./deploy-remote.sh all  # Deploy all themes (explicit)
 # Default ports: wikistr=3000, biblestr=4000, quranstr=4050, torahstr=4080
 
 set -e
@@ -17,7 +18,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 VERSION="v5.1.0"
-THEME_ARG="${1:-wikistr}"
+THEME_ARG="${1:-all}"
 PORT_ARG="${2:-}"
 
 # All available themes
