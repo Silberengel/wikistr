@@ -20,7 +20,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-VERSION="v5.0.0"
+VERSION="v5.1.0"
 
 # All available services
 ALL_SERVICES=("wikistr" "biblestr" "quranstr" "torahstr" "og-proxy" "asciidoctor")

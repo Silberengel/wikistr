@@ -13,7 +13,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-VERSION="v5.0.0"
+VERSION="v5.1.0"
 
 echo -e "${GREEN}🚀 Deploying all Wikistr applications version ${VERSION}${NC}"
 echo

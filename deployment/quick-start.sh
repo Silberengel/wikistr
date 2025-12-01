@@ -73,7 +73,7 @@ case $choice in
         echo -e "  docker run -p 8090:8090 -v \$(pwd)/..:/app:ro -w /app node:20-alpine node deployment/proxy-server.js"
         echo
         echo -e "  # AsciiDoctor Server"
-        echo -e "  docker run -p 8091:8091 -v \$(pwd)/..:/app:ro -w /app ruby:3.2-slim sh -c 'bundle install --gemfile=deployment/Gemfile && bundle exec ruby deployment/asciidoctor.rb'"
+        echo -e "  docker run -p 8091:8091 -v \$(pwd)/..:/app:ro -w /app ruby:3.2-slim sh -c 'bundle install --gemfile=deployment/Gemfile && bundle exec ruby deployment/asciidoctor-server.rb'"
         echo
         echo -e "${YELLOW}Access URLs:${NC}"
         echo -e "  - Wikistr: http://localhost:3000"

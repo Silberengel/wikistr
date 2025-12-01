@@ -29,12 +29,12 @@ This will install:
 
 ### Option 1: Using the start script
 ```bash
-./asciidoctor.sh
+./asciidoctor-server.sh
 ```
 
 ### Option 2: Direct Ruby execution
 ```bash
-bundle exec ruby asciidoctor.rb
+bundle exec ruby asciidoctor-server.rb
 ```
 
 ### Environment Variables
@@ -44,7 +44,7 @@ bundle exec ruby asciidoctor.rb
 
 Example:
 ```bash
-ASCIIDOCTOR_PORT=8091 ASCIIDOCTOR_ALLOW_ORIGIN=http://localhost:8080 bundle exec ruby asciidoctor.rb
+ASCIIDOCTOR_PORT=8091 ASCIIDOCTOR_ALLOW_ORIGIN=http://localhost:8080 bundle exec ruby asciidoctor-server.rb
 ```
 
 ## API Endpoints
@@ -158,11 +158,11 @@ WORKDIR /app
 COPY deployment/Gemfile deployment/Gemfile.lock ./
 RUN bundle install
 
-COPY deployment/asciidoctor.rb ./
+COPY deployment/asciidoctor-server.rb ./
 
 EXPOSE 8091
 
-CMD ["bundle", "exec", "ruby", "asciidoctor.rb"]
+CMD ["bundle", "exec", "ruby", "asciidoctor-server.rb"]
 ```
 
 ## Troubleshooting

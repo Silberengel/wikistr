@@ -22,5 +22,5 @@ fi
 
 # Start the server
 echo "Starting AsciiDoctor server on port $ASCIIDOCTOR_PORT..."
-bundle exec ruby asciidoctor.rb
+bundle exec ruby asciidoctor-server.rb
 

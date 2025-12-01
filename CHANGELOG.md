@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.0] - 2025-12-01
+
+### Added
+- Console log in Settings modal
+
+### Changed
+- Made Download modal logs more explicit
+- Made d-tag suppression less strict
+
+### Fixed
+- Downloads of all types for all article events should be more stable
+- Deep refactor of downloading
+- Share button uses correct naddr, regardless of kind
+
 ## [5.0.0] - 2025-11-28
 
 ### Added
