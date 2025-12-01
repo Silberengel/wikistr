@@ -63,12 +63,6 @@
           if (target) target.style.display = 'none';
         }}
       />
-    {:else}
-      <div class="w-16 h-16 rounded flex-shrink-0 flex items-center justify-center" style="background-color: var(--bg-tertiary); min-width: 64px;">
-        <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20" style="color: var(--text-secondary);">
-          <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"/>
-        </svg>
-      </div>
     {/if}
     <div class="flex-1 min-w-0">
       <div class="font-semibold text-sm mb-1 truncate" style="color: var(--text-primary);">
