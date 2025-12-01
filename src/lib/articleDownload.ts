@@ -337,13 +337,12 @@ async function buildAsciiDocWithMetadata(
     event
   });
   
-  // Calculate formatted dates for metadata display (for PDF/EPUB)
+  // Calculate formatted dates for metadata display
+  // Calculate for all formats so revdate appears in metadata section
   let publishedOnFormatted: string | undefined;
   let revdateISO: string | undefined;
-  if (exportFormat === 'pdf' || exportFormat === 'epub') {
-    revdateISO = getRevdateValue(event, publishedOn);
-    publishedOnFormatted = getRevdateDisplayValue(event, publishedOn);
-  }
+  revdateISO = getRevdateValue(event, publishedOn);
+  publishedOnFormatted = getRevdateDisplayValue(event, publishedOn);
   
   // Add abstract section using shared utility
   doc += addAbstractSection(description, summary);

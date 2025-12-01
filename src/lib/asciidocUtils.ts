@@ -154,6 +154,7 @@ export function buildBaseAsciiDocAttributes(
   }
   
   doc += `:toc:\n`;
+  doc += `:toclevels: 1\n`; // Only show top-level chapters (level 2 headings) in TOC
   doc += `:stem:\n`;
   doc += `:page-break-mode: auto\n`;
   
@@ -293,6 +294,7 @@ export function buildArticleMetadataSection(
   
   let doc = '\n';
   
+  // Use the same pattern as book metadata - keep the class for all formats
   doc += '[.article-metadata]\n== Article Information\n\n';
   
   // Display the title in a classic title style within the section
@@ -308,11 +310,11 @@ export function buildArticleMetadataSection(
   
   // Show image for all formats (limit size to 500px for metadata images)
   if (image) {
-    if (exportFormat === 'epub' || exportFormat === 'pdf') {
-      // For EPUB/PDF, still show image in metadata but limit size
-      doc += `image::${image}[Cover Image,maxwidth=500px]\n\n`;
+    if (exportFormat === 'html') {
+      // For HTML, use width attribute (more reliable than maxwidth in HTML)
+      doc += `image::${image}[Cover Image,width=500px]\n\n`;
     } else {
-      // For HTML/AsciiDoc, limit size to 500px
+      // For EPUB/PDF/AsciiDoc, use maxwidth (same as book metadata)
       doc += `image::${image}[Cover Image,maxwidth=500px]\n\n`;
     }
   }
