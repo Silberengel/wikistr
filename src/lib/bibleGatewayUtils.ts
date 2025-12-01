@@ -32,8 +32,8 @@ function buildProxyUrl(target: string): string {
     return `${sanitizedProxy}?url=${encoded}`;
   }
   
-  // Otherwise, treat it as a relative path - remove trailing slash for query param usage
-  const basePath = OG_PROXY_URL.replace(/\/$/, '') || '/sites';
+  // Otherwise, treat it as a relative path - ensure it ends with / for query param usage
+  const basePath = OG_PROXY_URL.endsWith('/') ? OG_PROXY_URL : (OG_PROXY_URL || '/sites/');
   return `${basePath}?url=${encoded}`;
 }
 

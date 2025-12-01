@@ -188,13 +188,17 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
       return;
     }
 
-    // Skip if already loading or already has preview
+    // Skip if already loading, already has preview, or already has an error (prevent infinite retries)
     if (referenceOgLoading.get(refKey)) {
       console.log('Book: Skipping OG load - already loading', { refKey });
       return;
     }
     if (referenceOgPreviews.has(refKey)) {
       console.log('Book: Skipping OG load - already has preview', { refKey });
+      return;
+    }
+    if (referenceOgErrors.has(refKey)) {
+      console.log('Book: Skipping OG load - already has error (preventing retry)', { refKey });
       return;
     }
 
@@ -272,7 +276,8 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
       if (!hasResults && parsedQuery.references) {
         for (const ref of parsedQuery.references) {
           const refKey = getReferenceKeyWithVersion(ref, versionKey);
-          if (!referenceOgPreviews.has(refKey) && !referenceOgLoading.get(refKey)) {
+          // Don't retry if we already have an error (prevent infinite retries)
+          if (!referenceOgPreviews.has(refKey) && !referenceOgLoading.get(refKey) && !referenceOgErrors.has(refKey)) {
             console.log('Book: Loading reference OG preview for empty version:', { versionKey, ref });
             loadReferenceOgPreview(ref, versionKey).catch(err => console.error('Failed to load reference OG:', err));
           }
@@ -289,7 +294,8 @@ import { openOrCreateArticleCard } from '$lib/articleLauncher';
     // Load OG preview for each reference (including single references)
     for (const ref of parsedQuery.references) {
       const refKey = getReferenceKey(ref);
-      if (!referenceOgPreviews.has(refKey) && !referenceOgLoading.get(refKey)) {
+      // Don't retry if we already have an error (prevent infinite retries)
+      if (!referenceOgPreviews.has(refKey) && !referenceOgLoading.get(refKey) && !referenceOgErrors.has(refKey)) {
         loadReferenceOgPreview(ref).catch(err => console.error('Failed to load reference OG:', err));
       }
     }
