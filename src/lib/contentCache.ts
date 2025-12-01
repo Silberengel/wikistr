@@ -173,6 +173,22 @@ class ContentCacheManager {
   }
 
   /**
+   * Serialize an event to ensure it's IndexedDB-compatible
+   * Extracts only the serializable properties from the event
+   */
+  private serializeEvent(event: Event): Event {
+    return {
+      id: event.id,
+      kind: event.kind,
+      pubkey: event.pubkey,
+      created_at: event.created_at,
+      tags: event.tags ? event.tags.map(tag => [...tag]) : [],
+      content: event.content || '',
+      sig: event.sig
+    };
+  }
+
+  /**
    * Store events in cache
    * For replaceable events (publications, longform, wikis, etc.), deduplicate by a-tag (kind:pubkey:d-tag) and keep only the newest
    */
@@ -198,9 +214,11 @@ class ContentCacheManager {
       
       // Merge new events with existing cache, preventing duplicates
       events.forEach(({ event, relays }) => {
-        let cacheKey = event.id;
+        // Serialize event to ensure it's IndexedDB-compatible
+        const serializedEvent = this.serializeEvent(event);
+        let cacheKey = serializedEvent.id;
         
-        const kind = event.kind;
+        const kind = serializedEvent.kind;
         
         // Determine event type based on NIP specification
         const isRegular = (kind >= 1000 && kind < 10000) || (kind >= 4 && kind < 45) || kind === 2;
@@ -211,16 +229,16 @@ class ContentCacheManager {
         if (isReplaceableKind) {
           // Replaceable events: use kind:pubkey as key
           // Only the latest event for each (kind, pubkey) combination is kept
-          cacheKey = `${kind}:${event.pubkey}`;
+          cacheKey = `${kind}:${serializedEvent.pubkey}`;
           
           // Check if we already have a version of this replaceable event
           const existing = this.cache[contentType].get(cacheKey);
           if (existing) {
             // Keep only the newest version (by created_at)
-            if (event.created_at > existing.event.created_at) {
+            if (serializedEvent.created_at > existing.event.created_at) {
               // Newer version - replace it
               this.cache[contentType].set(cacheKey, {
-                event,
+                event: serializedEvent,
                 relays,
                 cachedAt: now
               });
@@ -234,18 +252,18 @@ class ContentCacheManager {
         } else if (isAddressable) {
           // Addressable events: use kind:pubkey:d-tag as key
           // Only the latest event for each (kind, pubkey, d-tag) combination is kept
-          const dTag = event.tags.find(([t]) => t === 'd')?.[1];
+          const dTag = serializedEvent.tags.find(([t]) => t === 'd')?.[1];
           if (dTag) {
-            cacheKey = `${kind}:${event.pubkey}:${dTag}`;
+            cacheKey = `${kind}:${serializedEvent.pubkey}:${dTag}`;
             
             // Check if we already have a version of this addressable event
             const existing = this.cache[contentType].get(cacheKey);
             if (existing) {
               // Keep only the newest version (by created_at)
-              if (event.created_at > existing.event.created_at) {
+              if (serializedEvent.created_at > existing.event.created_at) {
                 // Newer version - replace it
                 this.cache[contentType].set(cacheKey, {
-                  event,
+                  event: serializedEvent,
                   relays,
                   cachedAt: now
                 });
@@ -270,7 +288,7 @@ class ContentCacheManager {
         } else {
           // Store new event
           this.cache[contentType].set(cacheKey, {
-            event,
+            event: serializedEvent,
             relays,
             cachedAt: now
           });
