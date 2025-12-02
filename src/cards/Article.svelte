@@ -31,6 +31,7 @@
     downloadBookOverview
   } from '$lib/articleDownload';
   import { addBookmark, removeBookmark, isBookmarked, isBookmarkableKind } from '$lib/bookmarks';
+  import { createDeletionEvent } from '$lib/deletion';
 
   interface Props {
     card: Card;
@@ -77,6 +78,7 @@
   let errorDialogOpen = $state(false);
   let errorDialogMessage = $state('');
   let errorCopied = $state(false);
+  let isDeleting = $state(false);
 
   const articleCard = card as ArticleCard;
   const dTag = articleCard.data[0];
@@ -896,39 +898,14 @@
     isVoting = true; // Set voting state
 
     try {
-      // Create deletion event (kind 5) for the reaction
-      let deletionTemplate: EventTemplate = {
-        kind: 5,
-        tags: [
-          ['e', reaction.id],
-          ['k', reactionKind.toString()]
-        ],
-        content: 'Vote removed',
-        created_at: Math.round(Date.now() / 1000)
-      };
-
-      let deletion: NostrEvent;
-      try {
-        deletion = await signer.signEvent(deletionTemplate);
-      } catch (err) {
-        console.warn('failed to create deletion event', err);
-        return;
-      }
-
-      // Use relay service for social event publishing
-      const result = await relayService.publishEvent($account.pubkey, 'social-write', deletion);
+      // Use the general deletion utility
+      const deletion = await createDeletionEvent(
+        [reaction.id],
+        [reactionKind],
+        'Vote removed'
+      );
       
-      // Cache the deletion event after publishing (kind 5)
-      if (result.success && result.publishedTo.length > 0) {
-        const { contentCache } = await import('$lib/contentCache');
-        // Deletions are ephemeral, but we can cache them briefly
-        await contentCache.storeEvents('reactions', [{
-          event: deletion,
-          relays: result.publishedTo
-        }]);
-      }
-      
-      if (result.success) {
+      if (deletion) {
         // Update local state only if publish succeeded
         userReaction = null;
         likeStatus = 'none';
@@ -941,6 +918,47 @@
       }
     } finally {
       isVoting = false; // Reset voting state
+    }
+  }
+
+  async function deleteArticle() {
+    if (!event) return;
+    if (!$account) return;
+    if (isDeleting) return; // Prevent multiple operations
+    if (event.pubkey !== $account.pubkey) {
+      alert('You can only delete your own articles.');
+      return;
+    }
+
+    // Confirm deletion
+    if (!confirm('Are you sure you want to delete this article? This action cannot be undone.')) {
+      return;
+    }
+
+    isDeleting = true;
+    showDownloadMenu = false; // Close the menu
+
+    try {
+      // Use the general deletion utility
+      const deletion = await createDeletionEvent(
+        [event.id],
+        [event.kind],
+        'Article deleted'
+      );
+      
+      if (deletion) {
+        // Show success message
+        alert('Article deletion request published. The article will be hidden from other users.');
+        // Optionally navigate back or close the card
+        back();
+      } else {
+        alert('Failed to publish deletion request. Please try again.');
+      }
+    } catch (error) {
+      console.error('Failed to delete article:', error);
+      alert('Failed to delete article. Please try again.');
+    } finally {
+      isDeleting = false;
     }
   }
 
@@ -1265,6 +1283,21 @@
                   onclick={(e) => e.stopPropagation()}
                 >
                   <div class="py-1">
+                    {#if event && event.pubkey === $account?.pubkey}
+                      <button
+                        onclick={deleteArticle}
+                        disabled={isDeleting}
+                        class="w-full text-left px-4 py-2 text-sm hover:bg-red-100 dark:hover:bg-red-900 transition-colors disabled:opacity-50"
+                        style="color: var(--text-primary);"
+                      >
+                        {#if isDeleting}
+                          Deleting...
+                        {:else}
+                          🗑️ Delete
+                        {/if}
+                      </button>
+                      <div class="border-t my-1" style="border-color: var(--border);"></div>
+                    {/if}
                     <div class="px-4 py-2 text-xs font-semibold" style="color: var(--text-secondary);">
                       Download:
                     </div>

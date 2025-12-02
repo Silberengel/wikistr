@@ -20,7 +20,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-VERSION="v5.2.0"
+VERSION="v5.2.1"
 
 # All available services
 ALL_SERVICES=("wikistr" "biblestr" "quranstr" "torahstr" "og-proxy" "asciidoctor")
@@ -119,18 +119,22 @@ for arg in "$@"; do
     fi
 done
 
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DOCKER_COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yml"
+
 # Build only the specified services
 if [ ${#SERVICES_TO_BUILD[@]} -eq ${#ALL_SERVICES[@]} ]; then
     # Building all services
     echo -e "${BLUE}Building all services: ${ALL_SERVICES[*]}${NC}"
-    if ! docker-compose -f docker-compose.yml build ${NO_CACHE_FLAG}; then
+    if ! docker-compose -f "${DOCKER_COMPOSE_FILE}" build ${NO_CACHE_FLAG}; then
         echo -e "${RED}❌ Build failed!${NC}"
         exit 1
     fi
 else
     # Building subset of services
     echo -e "${BLUE}Building services: ${SERVICES_TO_BUILD[*]}${NC}"
-    if ! docker-compose -f docker-compose.yml build ${NO_CACHE_FLAG} "${SERVICES_TO_BUILD[@]}"; then
+    if ! docker-compose -f "${DOCKER_COMPOSE_FILE}" build ${NO_CACHE_FLAG} "${SERVICES_TO_BUILD[@]}"; then
         echo -e "${RED}❌ Build failed!${NC}"
         exit 1
     fi

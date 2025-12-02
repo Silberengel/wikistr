@@ -14,11 +14,12 @@ const CACHE_KEYS = {
   publications: 'wikistr:cache:publications',  // 30040, 30041
   longform: 'wikistr:cache:longform',        // 30023
   wikis: 'wikistr:cache:wikis',             // 30817, 30818
-  reactions: 'wikistr:cache:reactions', 
+  reactions: 'wikistr:cache:reactions',      // Reactions (kind 7) and deletions (kind 5)
   kind1111: 'wikistr:cache:kind1111',
   kind10002: 'wikistr:cache:kind10002',
   kind10432: 'wikistr:cache:kind10432',
-  profile: 'wikistr:cache:profile'  // Profile metadata (kind 0, 10133)
+  profile: 'wikistr:cache:profile',  // Profile metadata (kind 0, 10133)
+  deletions: 'wikistr:cache:deletions'  // Deletion events (kind 5) - persistent
 } as const;
 
 // Cache expiration times (in milliseconds)
@@ -30,7 +31,8 @@ const CACHE_EXPIRY = {
   kind1111: 5 * 60 * 1000,    // 5 minutes
   kind10002: 60 * 60 * 1000,  // 1 hour (relay lists change infrequently)
   kind10432: 60 * 60 * 1000,  // 1 hour (cache relay lists change infrequently)
-  profile: 30 * 60 * 1000    // 30 minutes (profile metadata: kind 0, 10133)
+  profile: 30 * 60 * 1000,    // 30 minutes (profile metadata: kind 0, 10133)
+  deletions: Infinity  // Deletion events never expire (persistent)
 } as const;
 
 interface CachedEvent {
@@ -48,6 +50,7 @@ interface ContentCache {
   kind10002: Map<string, CachedEvent>;
   kind10432: Map<string, CachedEvent>;
   profile: Map<string, CachedEvent>;  // Profile metadata (kind 0, 10133)
+  deletions: Map<string, CachedEvent>;  // Deletion events (kind 5) - persistent
 }
 
 class ContentCacheManager {
@@ -59,7 +62,8 @@ class ContentCacheManager {
     kind1111: new Map(),
     kind10002: new Map(),
     kind10432: new Map(),
-    profile: new Map()  // Profile metadata (kind 0, 10133)
+    profile: new Map(),  // Profile metadata (kind 0, 10133)
+    deletions: new Map()  // Deletion events (kind 5) - persistent
   };
 
   private loaded = false;
@@ -93,7 +97,8 @@ class ContentCacheManager {
         kind1111Data,
         kind10002Data,
         kind10432Data,
-        profileData
+        profileData,
+        deletionsData
       ] = await Promise.all([
         idbkv.get(CACHE_KEYS.publications, store),
         idbkv.get(CACHE_KEYS.longform, store),
@@ -102,7 +107,8 @@ class ContentCacheManager {
         idbkv.get(CACHE_KEYS.kind1111, store),
         idbkv.get(CACHE_KEYS.kind10002, store),
         idbkv.get(CACHE_KEYS.kind10432, store),
-        idbkv.get(CACHE_KEYS.profile, store)
+        idbkv.get(CACHE_KEYS.profile, store),
+        idbkv.get(CACHE_KEYS.deletions, store)
       ]);
 
       // Restore Maps from serialized data
@@ -114,12 +120,91 @@ class ContentCacheManager {
       this.cache.kind10002 = new Map(kind10002Data || []);
       this.cache.kind10432 = new Map(kind10432Data || []);
       this.cache.profile = new Map(profileData || []);
+      this.cache.deletions = new Map(deletionsData || []);
+      
+      // After loading, remove events that have deletion requests
+      await this.removeDeletedEvents();
 
       this.loaded = true;
 
     } catch (error) {
       console.error('❌ Failed to load content cache:', error);
       this.loaded = true; // Mark as loaded to prevent retries
+    }
+  }
+
+  /**
+   * Remove events that have deletion requests (kind 5 events)
+   * This is called on startup to ensure deleted events are removed from cache
+   */
+  async removeDeletedEvents(): Promise<void> {
+    try {
+      // Get all deletion events (kind 5) from the deletions cache and reactions cache
+      const deletionEvents: NostrEvent[] = [];
+      
+      // Check deletions cache
+      for (const cached of this.cache.deletions.values()) {
+        if (cached.event.kind === 5) {
+          deletionEvents.push(cached.event as NostrEvent);
+        }
+      }
+      
+      // Also check reactions cache for deletion events (for backward compatibility)
+      for (const cached of this.cache.reactions.values()) {
+        if (cached.event.kind === 5) {
+          deletionEvents.push(cached.event as NostrEvent);
+        }
+      }
+      
+      if (deletionEvents.length === 0) {
+        return; // No deletion events found
+      }
+      
+      // Collect all deleted event IDs from 'e' tags in deletion events
+      const deletedEventIds = new Set<string>();
+      deletionEvents.forEach(deletionEvent => {
+        deletionEvent.tags.forEach(([tag, value]) => {
+          if (tag === 'e' && value) {
+            deletedEventIds.add(value);
+          }
+        });
+      });
+      
+      if (deletedEventIds.size === 0) {
+        return; // No event IDs to remove
+      }
+      
+      let totalRemoved = 0;
+      
+      // Remove deleted events from all caches
+      const cacheTypes: Array<keyof ContentCache> = [
+        'publications', 'longform', 'wikis', 'reactions', 
+        'kind1111', 'kind10002', 'kind10432', 'profile'
+      ];
+      
+      for (const contentType of cacheTypes) {
+        const originalSize = this.cache[contentType].size;
+        
+        // Check each cached event
+        for (const [id, cached] of this.cache[contentType].entries()) {
+          // Check if this event ID is in the deleted set
+          if (deletedEventIds.has(cached.event.id)) {
+            this.cache[contentType].delete(id);
+            totalRemoved++;
+          }
+        }
+        
+        // Persist changes if any were made
+        if (this.cache[contentType].size < originalSize) {
+          await idbkv.set(CACHE_KEYS[contentType], Array.from(this.cache[contentType].entries()), store);
+        }
+      }
+      
+      if (totalRemoved > 0) {
+        console.log(`🗑️ Removed ${totalRemoved} deleted events from cache on startup`);
+      }
+    } catch (error) {
+      console.error('❌ Failed to remove deleted events from cache:', error);
     }
   }
 
@@ -143,6 +228,10 @@ class ContentCacheManager {
     const expiry = CACHE_EXPIRY[contentType];
     
     return cachedEvents.filter(cached => {
+      // Deletion events (kind 5) never expire
+      if (cached.event.kind === 5) {
+        return true;
+      }
       // Events with d-tags never expire
       const dTag = cached.event.tags.find(([k]) => k === 'd')?.[1];
       if (dTag) {
@@ -297,7 +386,23 @@ class ContentCacheManager {
 
       // Persist to IndexedDB
       await idbkv.set(CACHE_KEYS[contentType], Array.from(this.cache[contentType].entries()), store);
-
+      
+      // If storing a deletion event (kind 5), also store it in the deletions cache
+      events.forEach(({ event }) => {
+        if (event.kind === 5) {
+          const deletionKey = event.id;
+          this.cache.deletions.set(deletionKey, {
+            event: this.serializeEvent(event),
+            relays: events.find(e => e.event.id === event.id)?.relays || [],
+            cachedAt: now
+          });
+        }
+      });
+      
+      // Persist deletions cache if we added any
+      if (events.some(({ event }) => event.kind === 5)) {
+        await idbkv.set(CACHE_KEYS.deletions, Array.from(this.cache.deletions.entries()), store);
+      }
 
     } catch (error) {
       console.error(`❌ Failed to cache ${contentType} events:`, error);
@@ -391,7 +496,8 @@ class ContentCacheManager {
         idbkv.del(CACHE_KEYS.kind1111, store),
         idbkv.del(CACHE_KEYS.kind10002, store),
         idbkv.del(CACHE_KEYS.kind10432, store),
-        idbkv.del(CACHE_KEYS.profile, store)
+        idbkv.del(CACHE_KEYS.profile, store),
+        idbkv.del(CACHE_KEYS.deletions, store)
       ]);
 
       console.log('🗑️ Cleared all content caches');
