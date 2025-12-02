@@ -87,21 +87,20 @@
         }
       }
       
-      // Initialize book configurations
-      console.log('[layout] Initializing book configurations');
-      try {
-        await initializeBookConfigurations();
-        console.log('[layout] ✓ Book configurations initialized');
-      } catch (bookConfigError) {
-        console.error('[layout] ✗ Failed to initialize book configurations:', bookConfigError);
+      initialized = true;
+      
+      // Initialize book configurations in background (non-blocking)
+      console.log('[layout] Starting book configurations initialization in background...');
+      initializeBookConfigurations().then(() => {
+        console.log('[layout] ✓ Book configurations initialized (background)');
+      }).catch(bookConfigError => {
+        console.error('[layout] ✗ Failed to initialize book configurations (background):', bookConfigError);
         console.error('[layout] Error details:', {
           message: bookConfigError instanceof Error ? bookConfigError.message : String(bookConfigError),
           stack: bookConfigError instanceof Error ? bookConfigError.stack : undefined
         });
         // Continue anyway - app should work without custom book configs
-      }
-      
-      initialized = true;
+      });
       console.log('[layout] ✓ Initialization complete, initialized set to true');
       
     } catch (error) {

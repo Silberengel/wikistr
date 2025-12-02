@@ -45,6 +45,7 @@
   let replyText = $state('');
   let commentText = $state('');
   let isSubmitting = $state(false);
+  let isLoadingComments = $state(false);
   let copiedNevent = $state<Set<string>>(new Set());
   let copiedNeventMessage = $state<Set<string>>(new Set());
   let publishStatus = $state({ show: false, title: '', attempts: [] as Array<{ status: 'pending' | 'success' | 'failure', message?: string }> });
@@ -357,16 +358,36 @@
 
 
   function processComments(commentEvents: NostrEvent[]) {
-    // Client-side filtering for our specific wiki article
-    // NIP-22: Use uppercase 'A' for root scope
-    const filteredComments = commentEvents.filter(commentEvent => {
-      const aTag = commentEvent.tags.find(([k]) => k === 'A'); // Root scope
-      const kTag = commentEvent.tags.find(([k]) => k === 'K'); // Root kind
+    // Optimized filtering: deduplicate and filter efficiently
+    // Use Map for deduplication by event ID, then filter
+    const uniqueComments = new Map<string, NostrEvent>();
+    const articleCoord = articleCoordinate; // Cache for faster access
+    const eventKindStr = event.kind.toString(); // Cache for faster access
+    
+    // First pass: deduplicate by event ID
+    for (const commentEvent of commentEvents) {
+      if (commentEvent.kind !== 1111) continue; // Skip non-comments
+      uniqueComments.set(commentEvent.id, commentEvent);
+    }
+    
+    // Second pass: filter for our article (optimized)
+    const filteredComments: NostrEvent[] = [];
+    for (const commentEvent of uniqueComments.values()) {
+      // Find A tag (root scope) - most comments have this early in tags
+      const aTagIndex = commentEvent.tags.findIndex(([k]) => k === 'A');
+      if (aTagIndex === -1) continue;
       
-      // Check if this comment references our wiki article
-      return aTag && aTag[1] === articleCoordinate && 
-             kTag && kTag[1] === event.kind.toString();
-    });
+      const aTag = commentEvent.tags[aTagIndex];
+      
+      // Quick check: coordinate match first (most specific)
+      if (aTag[1] !== articleCoord) continue;
+      
+      // Optional: check K tag for extra validation (skip if not present)
+      const kTag = commentEvent.tags.find(([k]) => k === 'K');
+      if (kTag && kTag[1] !== eventKindStr) continue;
+      
+      filteredComments.push(commentEvent);
+    }
 
     comments = filteredComments;
   }
@@ -374,58 +395,73 @@
   async function fetchComments(forceRefresh = false) {
     if (!browser) return;
     
+    isLoadingComments = true;
+    
     try {
       // Check cache first before making relay queries (unless forcing refresh)
       if (!forceRefresh) {
-        // Use synchronous cache access for faster retrieval
+        // Optimize: Get all cached comments once, then filter efficiently
+        // Use early exit if no cached comments exist
         const allCachedComments = contentCache.getEvents('kind1111');
         
-        // Filter cached comments to only show replies to the current article
-        // NIP-22: Use uppercase 'A' for root scope
-        // Optimize: use a more efficient filter that checks the A tag first
-        const cachedComments = allCachedComments.filter(cached => {
-          const event = cached.event;
-          // Quick check: find A tag first (most comments will have it)
-          const aTag = event.tags.find(tag => tag[0] === 'A');
-          return aTag && aTag[1] === articleCoordinate;
-        });
-        
-        if (cachedComments.length > 0) {
-          // Display cached results immediately
-          const cachedEvents = cachedComments.map(cached => cached.event);
-          processComments(cachedEvents);
+        if (allCachedComments.length > 0) {
+          // Optimized filter: check A tag first (most comments have it), then coordinate match
+          // Use for...of loop which is faster than filter for early exits
+          const cachedComments: typeof allCachedComments = [];
+          const articleCoord = articleCoordinate; // Cache for faster access
           
-          // Fetch fresh comments in background to update cache
-          // Don't await - let it run in background
-          relayService.queryEvents(
-            $account?.pubkey || 'anonymous',
-            'social-read',
-            [
+          for (const cached of allCachedComments) {
+            const event = cached.event;
+            // Quick check: skip if not kind 1111 (shouldn't happen, but safety check)
+            if (event.kind !== 1111) continue;
+            
+            // Find A tag (root scope) - most comments have this early in tags
+            const aTagIndex = event.tags.findIndex(tag => tag[0] === 'A');
+            if (aTagIndex === -1) continue;
+            
+            // Check if it matches our article coordinate
+            if (event.tags[aTagIndex][1] === articleCoord) {
+              cachedComments.push(cached);
+            }
+          }
+          
+          if (cachedComments.length > 0) {
+            // Display cached results immediately (convert to events array)
+            const cachedEvents = cachedComments.map(cached => cached.event);
+            processComments(cachedEvents);
+            isLoadingComments = false; // Cached results loaded, stop showing spinner
+            
+            // Fetch fresh comments in background to update cache (non-blocking)
+            relayService.queryEvents(
+              $account?.pubkey || 'anonymous',
+              'social-read',
+              [
+                {
+                  kinds: [1111],
+                  '#A': [articleCoordinate], // NIP-22: Use uppercase #A for root scope
+                  limit: 200
+                }
+              ],
               {
-                kinds: [1111],
-                '#A': [articleCoordinate], // NIP-22: Use uppercase #A for root scope
-                limit: 200
+                excludeUserContent: false,
+                currentUserPubkey: $account?.pubkey
               }
-            ],
-            {
-              excludeUserContent: false,
-              currentUserPubkey: $account?.pubkey
-            }
-          ).then(async (freshResult) => {
-            // Update cache with fresh results
-            if (freshResult.events.length > 0) {
-              await contentCache.storeEvents('kind1111', 
-                freshResult.events.map(event => ({ event, relays: freshResult.relays }))
-              );
-              // Update comments if we got new ones
-              processComments(freshResult.events);
-            }
-          }).catch(err => {
-            // Silently fail background refresh
-            console.debug('Background comment refresh failed:', err);
-          });
-          
-          return;
+            ).then(async (freshResult) => {
+              // Update cache with fresh results
+              if (freshResult.events.length > 0) {
+                await contentCache.storeEvents('kind1111', 
+                  freshResult.events.map(event => ({ event, relays: freshResult.relays }))
+                );
+                // Update comments if we got new ones (merge with existing)
+                processComments([...cachedEvents, ...freshResult.events]);
+              }
+            }).catch(err => {
+              // Silently fail background refresh
+              console.debug('Background comment refresh failed:', err);
+            });
+            
+            return; // Exit early - cached comments displayed
+          }
         }
       }
       
@@ -457,6 +493,8 @@
       processComments(freshResult.events);
     } catch (error) {
       console.error('Error fetching comments:', error);
+    } finally {
+      isLoadingComments = false;
     }
   }
 
@@ -503,7 +541,12 @@
     </div>
   {/if}
   
-  {#if comments.length === 0}
+  {#if isLoadingComments}
+    <div class="flex items-center justify-center py-8">
+      <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2" style="border-color: var(--accent);"></div>
+      <span class="ml-3" style="color: var(--text-secondary);">Loading comments...</span>
+    </div>
+  {:else if comments.length === 0}
     <p class="text-center py-8" style="color: var(--text-secondary);">No comments yet. Be the first to comment!</p>
   {:else}
     <div class="space-y-4">

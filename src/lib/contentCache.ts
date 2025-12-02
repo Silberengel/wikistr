@@ -123,8 +123,11 @@ class ContentCacheManager {
       this.cache.profile = new Map(profileData || []);
       this.cache.deletions = new Map(deletionsData || []);
       
-      // After loading, remove events that have deletion requests
-      await this.removeDeletedEvents();
+      // After loading, remove events that have deletion requests (run in background, don't block)
+      console.log('📦 Starting removeDeletedEvents() in background from initialize()...');
+      this.removeDeletedEvents().catch(error => {
+        console.error('❌ Background deletion cleanup failed:', error);
+      });
 
       this.loaded = true;
 
@@ -233,44 +236,74 @@ class ContentCacheManager {
    *    for deletion events from the event's author
    * 3. Remove events that have deletion events found in their publishing relays
    */
+  private removeDeletedEventsPromise: Promise<void> | null = null;
+
   async removeDeletedEvents(): Promise<void> {
+    // Prevent concurrent executions
+    if (this.removeDeletedEventsPromise) {
+      console.log('🧹 removeDeletedEvents already running, waiting for existing execution...');
+      return this.removeDeletedEventsPromise;
+    }
+    
+    this.removeDeletedEventsPromise = this._removeDeletedEvents();
+    
+    try {
+      await this.removeDeletedEventsPromise;
+    } finally {
+      this.removeDeletedEventsPromise = null;
+    }
+  }
+
+  async _removeDeletedEvents(): Promise<void> {
+    console.log('🧹🧹🧹 REMOVE DELETED EVENTS STARTING 🧹🧹🧹');
     try {
       const deletedEventIds = new Set<string>();
+      console.log('🧹 Step 1: Checking cached deletion events...');
       
-      // Step 1: Get all deletion events from cache (fast path)
-      const cachedDeletionEvents: NostrEvent[] = [];
+      // Step 1: Get all deletion events from cache (fast path) - deduplicated
+      const cachedDeletionEvents = new Map<string, NostrEvent>(); // Use Map to deduplicate by event ID
       
       // Check deletions cache
       for (const cached of this.cache.deletions.values()) {
         if (cached.event.kind === 5) {
-          cachedDeletionEvents.push(cached.event as NostrEvent);
+          cachedDeletionEvents.set(cached.event.id, cached.event as NostrEvent);
         }
       }
       
       // Also check reactions cache for deletion events (for backward compatibility)
       for (const cached of this.cache.reactions.values()) {
         if (cached.event.kind === 5) {
-          cachedDeletionEvents.push(cached.event as NostrEvent);
+          cachedDeletionEvents.set(cached.event.id, cached.event as NostrEvent);
         }
       }
       
-      // Extract deleted event IDs from cached deletion events
-      cachedDeletionEvents.forEach(deletionEvent => {
+      // Extract deleted event IDs from cached deletion events (Set automatically deduplicates)
+      const extractedIds: string[] = [];
+      Array.from(cachedDeletionEvents.values()).forEach(deletionEvent => {
         deletionEvent.tags.forEach(([tag, value]) => {
           if (tag === 'e' && value) {
             deletedEventIds.add(value);
+            extractedIds.push(value);
           }
         });
       });
       
-      // Step 2: Query deletion events from relays where cached events were published
-      // Collect all unique relays where ANY cached events were published (from any author)
-      const allRelays = new Set<string>();
+      if (cachedDeletionEvents.size > 0) {
+        console.log(`   Found ${cachedDeletionEvents.size} unique cached deletion event(s), extracted ${deletedEventIds.size} deleted event ID(s)`);
+        if (extractedIds.length > 0) {
+          console.log(`   Deleted event IDs from cache:`, extractedIds.slice(0, 5).map(id => id.slice(0, 16) + '...'));
+        }
+      }
       
+      // Step 2: Build deduplicated list of cached event IDs and relays
       const cacheTypes: Array<keyof ContentCache> = [
         'publications', 'longform', 'wikis', 'reactions', 
         'kind1111', 'kind10002', 'kind10432', 'profile'
       ];
+      
+      // Collect all unique cached event IDs (deduplicated)
+      const cachedEventIds = new Set<string>();
+      const allRelays = new Set<string>();
       
       for (const contentType of cacheTypes) {
         for (const [, cached] of this.cache[contentType].entries()) {
@@ -279,34 +312,37 @@ class ContentCacheManager {
             continue;
           }
           
-          // Only check events that have relay information
-          if (!cached.relays || cached.relays.length === 0) {
-            continue;
-          }
+          // Add to cached event IDs set (deduplicated)
+          cachedEventIds.add(cached.event.id);
           
-          // Collect all unique relays where cached events were published (from any author)
-          for (const relay of cached.relays) {
-            // Skip invalid relays
-            if (relay && relay !== 'undefined' && relay !== 'null') {
-              allRelays.add(relay);
+          // Collect unique relays where cached events were published
+          if (cached.relays && cached.relays.length > 0) {
+            for (const relay of cached.relays) {
+              // Skip invalid relays
+              if (relay && relay !== 'undefined' && relay !== 'null') {
+                allRelays.add(relay);
+              }
             }
           }
         }
       }
       
-      // Step 3: Query ALL deletion events from these relays (from ANY author)
-      // Deletion events can delete events from any author, so we need to check all deletion events
-      if (allRelays.size > 0) {
-        const relayArray = Array.from(allRelays);
-        console.log(`🔍 Querying deletion events from ${relayArray.length} relay(s) (checking all authors)...`);
+      console.log(`   Collected ${cachedEventIds.size} unique cached event IDs from ${allRelays.size} unique relays`);
+      
+      // Step 3: Query deletion events from these relays (only if we have cached events)
+      if (allRelays.size > 0 && cachedEventIds.size > 0) {
+        const relayArray = Array.from(allRelays); // Already deduplicated
+        
+        console.log(`🔍 Querying deletion events from ${relayArray.length} relay(s) (will filter to ${cachedEventIds.size} cached event IDs)...`);
+        console.log(`   Relays:`, relayArray.slice(0, 5).map(r => r.replace(/^wss?:\/\//, '').replace(/\/$/, '')).join(', '), relayArray.length > 5 ? '...' : '');
         
         try {
-          // Query ALL deletion events (kind 5) from ALL authors on these relays
-          // We use 'anonymous' as the user since we want deletion events from anyone
-          const result = await relayService.queryEvents(
+          console.log(`   [1/5] Starting deletion query (will filter to events referencing our ${cachedEventIds.size} cached events)...`);
+          // Query deletion events (kind 5) - we'll filter them after to only process ones that reference our cached events
+          const queryPromise = relayService.queryEvents(
             'anonymous',
             'social-read', // Use social-read for deletion events
-            [{ kinds: [5], limit: 500 }], // Query deletion events from any author, limit 500
+            [{ kinds: [5], limit: 200 }], // Reduced limit since we'll filter to relevant ones
             {
               excludeUserContent: false,
               currentUserPubkey: undefined,
@@ -314,34 +350,82 @@ class ContentCacheManager {
             }
           );
           
-          if (result.events.length > 0) {
-            // Cache the deletion events we found
-            await this.storeEvents('deletions', result.events.map(event => ({ event, relays: result.relays })));
+          console.log('   [2/5] Query promise created, waiting for results (max 30s)...');
+          
+          // Add timeout to prevent hanging
+          const timeoutPromise = new Promise<never>((_, reject) => 
+            setTimeout(() => {
+              console.error('   [TIMEOUT] Deletion query took longer than 30 seconds!');
+              reject(new Error('Deletion query timeout after 30 seconds'));
+            }, 30000)
+          );
+          
+          console.log('   [3/5] Racing query against timeout...');
+          const result = await Promise.race([queryPromise, timeoutPromise]);
+          console.log(`   [4/5] Query completed! Got ${result?.events?.length || 0} event(s) from ${result?.relays?.length || 0} relay(s)`);
+          console.log(`   [5/5] Processing results... (result exists: ${!!result}, events exists: ${!!result?.events}, events.length: ${result?.events?.length || 0})`);
+          
+          if (result && result.events && result.events.length > 0) {
+            // Step 3a: Deduplicate deletion events by event ID (combined results from all relays)
+            const uniqueDeletionEvents = new Map<string, typeof result.events[0]>();
+            const uniqueRelays = new Set<string>(result.relays || []);
             
-            // Extract deleted event IDs from the deletion events
-            const foundDeletedIds: string[] = [];
-            result.events.forEach(deletionEvent => {
-              if (deletionEvent.kind === 5) {
-                deletionEvent.tags.forEach(([tag, value]) => {
-                  if (tag === 'e' && value) {
-                    deletedEventIds.add(value);
-                    foundDeletedIds.push(value);
-                  }
-                });
+            result.events.forEach(event => {
+              if (event.kind === 5) {
+                uniqueDeletionEvents.set(event.id, event);
               }
             });
             
-            console.log(`Found ${result.events.length} deletion event(s) from ${relayArray.length} relay(s)`);
-            if (foundDeletedIds.length > 0) {
-              console.log(`📋 Deleted event IDs found:`, foundDeletedIds.slice(0, 10).map(id => id.slice(0, 8) + '...'));
+            console.log(`   [Process] Deduplicated to ${uniqueDeletionEvents.size} unique deletion events from ${uniqueRelays.size} relays`);
+            
+            // Step 3b: Filter to only deletion events that reference our cached events (process once, combined)
+            const relevantDeletionEvents: typeof result.events = [];
+            const foundDeletedIds: string[] = [];
+            
+            uniqueDeletionEvents.forEach((deletionEvent) => {
+              let hasRelevantEvent = false;
+              
+              deletionEvent.tags.forEach(([tag, value]) => {
+                if (tag === 'e' && value && cachedEventIds.has(value)) {
+                  hasRelevantEvent = true;
+                  deletedEventIds.add(value); // Add to our deleted set (Set automatically deduplicates)
+                  foundDeletedIds.push(value);
+                }
+              });
+              
+              if (hasRelevantEvent) {
+                relevantDeletionEvents.push(deletionEvent);
+              }
+            });
+            
+            console.log(`   [Process] Filtered to ${relevantDeletionEvents.length} relevant deletion events (found ${foundDeletedIds.length} unique deleted event IDs)`);
+            
+            // Step 3c: Cache only relevant deletion events (non-blocking, in background)
+            if (relevantDeletionEvents.length > 0) {
+              this.storeEvents('deletions', relevantDeletionEvents.map(event => ({ 
+                event, 
+                relays: Array.from(uniqueRelays) 
+              }))).catch(error => {
+                console.error(`   [Cache Error] Failed to cache deletion events:`, error);
+              });
+              
+              if (foundDeletedIds.length > 0) {
+                console.log(`   [Process] Sample deleted IDs:`, foundDeletedIds.slice(0, 5).map(id => id.slice(0, 8) + '...'));
+              }
             }
           } else {
-            console.log(`ℹ️ No deletion events found on ${relayArray.length} relay(s)`);
+            console.log(`   [Query] No deletion events found`);
           }
         } catch (error) {
           // Log but don't fail - relays might be unavailable
-          console.warn(`Failed to query deletion events from relays:`, error);
+          console.error(`❌ Failed to query deletion events from relays:`, error);
+          if (error instanceof Error) {
+            console.error(`   Error message: ${error.message}`);
+            console.error(`   Error stack:`, error.stack);
+          }
         }
+      } else {
+        console.log('ℹ️ No relays found in cached events, skipping deletion query');
       }
       
       if (deletedEventIds.size === 0) {
@@ -356,7 +440,30 @@ class ContentCacheManager {
       let totalRemoved = 0;
       
       // Log what we're looking for
-      console.log(`🔍 Looking for ${deletedEventIds.size} deleted event ID(s):`, Array.from(deletedEventIds).slice(0, 5).map(id => id.slice(0, 8) + '...'));
+      const deletedIdsArray = Array.from(deletedEventIds);
+      console.log(`🔍 Looking for ${deletedEventIds.size} deleted event ID(s):`, deletedIdsArray.slice(0, 5).map(id => id.slice(0, 8) + '...'));
+      if (deletedIdsArray.length > 0) {
+        console.log(`   Full deleted IDs:`, deletedIdsArray);
+      }
+      
+      // Build a map of all cached event IDs for comparison
+      const allCachedEventIds = new Set<string>();
+      for (const contentType of cacheTypes) {
+        for (const [, cached] of this.cache[contentType].entries()) {
+          allCachedEventIds.add(cached.event.id);
+        }
+      }
+      console.log(`   Total cached event IDs across all types: ${allCachedEventIds.size}`);
+      
+      // Check if any deleted IDs are in the cache at all
+      const foundInCache = deletedIdsArray.filter(id => allCachedEventIds.has(id));
+      const notFoundInCache = deletedIdsArray.filter(id => !allCachedEventIds.has(id));
+      if (foundInCache.length > 0) {
+        console.log(`   ✅ ${foundInCache.length} deleted ID(s) found in cache:`, foundInCache);
+      }
+      if (notFoundInCache.length > 0) {
+        console.log(`   ⚠️ ${notFoundInCache.length} deleted ID(s) NOT found in cache:`, notFoundInCache);
+      }
       
       for (const contentType of cacheTypes) {
         const originalSize = this.cache[contentType].size;
@@ -365,16 +472,18 @@ class ContentCacheManager {
         
         // Collect keys to remove first (can't modify map while iterating)
         for (const [cacheKey, cached] of this.cache[contentType].entries()) {
+          const eventId = cached.event.id;
+          
           // Check if this event ID is in the deleted set
-          if (deletedEventIds.has(cached.event.id)) {
+          if (deletedEventIds.has(eventId)) {
             keysToRemove.push(cacheKey);
-            eventsFound.push(`${cached.event.id.slice(0, 8)}... (key: ${cacheKey})`);
+            eventsFound.push(`${eventId.slice(0, 8)}... (key: ${cacheKey}, kind: ${cached.event.kind})`);
             totalRemoved++;
           }
         }
         
         if (eventsFound.length > 0) {
-          console.log(`Found ${eventsFound.length} deleted event(s) in ${contentType}:`, eventsFound.slice(0, 3));
+          console.log(`✅ Found ${eventsFound.length} deleted event(s) in ${contentType}:`, eventsFound.slice(0, 5));
         }
         
         // Remove collected keys
@@ -414,8 +523,14 @@ class ContentCacheManager {
           console.log('ℹ️ Sample cached event IDs:', sampleEventIds);
         }
       }
+      
+      console.log('🧹 Finished removeDeletedEvents cleanup');
     } catch (error) {
       console.error('❌ Failed to remove deleted events from cache:', error);
+      if (error instanceof Error) {
+        console.error(`   Error message: ${error.message}`);
+        console.error(`   Error stack:`, error.stack);
+      }
     }
   }
 
@@ -827,9 +942,9 @@ class ContentCacheManager {
 // Export singleton instance
 export const contentCache = new ContentCacheManager();
 
-// Initialize cache on import
+// Initialize cache on import (non-blocking)
 contentCache.initialize().then(() => {
-  // Clean up expired events after initialization
+  // Clean up expired events after initialization (background, non-blocking)
   // This removes expired entries from IndexedDB on app startup
   contentCache.cleanup().catch(console.error);
 }).catch(console.error);
