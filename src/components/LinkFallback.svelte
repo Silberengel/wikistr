@@ -718,6 +718,23 @@
         {/if}
       </div>
     </div>
+    
+    <!-- URL -->
+    {#if true}
+      {@const urlObj = (() => {
+        try {
+          return new URL(url);
+        } catch {
+          return null;
+        }
+      })()}
+      {@const shortUrl = url.length > 60 ? url.substring(0, 57) + '...' : url}
+      <div class="mt-3 pt-3 border-t" style="border-color: var(--border);">
+        <div class="text-xs break-all underline" style="color: var(--accent);">
+          {shortUrl}
+        </div>
+      </div>
+    {/if}
   </a>
 {:else if event}
   <!-- Event fallback -->
