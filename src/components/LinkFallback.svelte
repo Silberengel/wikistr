@@ -30,8 +30,8 @@
   
   // Helper function to set content preview and track truncation
   function setContentPreview(content: string) {
-    contentTruncated = content.length > 1000;
-    contentPreview = content.substring(0, 1000);
+    contentTruncated = content.length > 300;
+    contentPreview = content.substring(0, 300);
   }
 
   // Render content preview (markdown or asciidoc)
@@ -39,8 +39,8 @@
     if (!content) return '';
     
     // Track if content was truncated
-    contentTruncated = content.length > 1000;
-    const preview = content.substring(0, 1000);
+    contentTruncated = content.length > 300;
+    const preview = content.substring(0, 300);
     
     // Determine if it's markdown or asciidoc
     // 30040 is an index, so it has not content
@@ -747,26 +747,26 @@
     {/if}
     <div class="p-4">
       {#if getTagOr(event, 'title')}
-        <div class="font-semibold text-lg mb-2" style="color: var(--text-primary);">
+        <div class="font-medium text-xs mb-1" style="color: var(--text-secondary);">
           {getTagOr(event, 'title')}
         </div>
       {/if}
       {#if getTagOr(event, 'summary')}
-        <div class="text-sm mb-2 line-clamp-3" style="color: var(--text-secondary);">
+        <div class="text-xs mb-2 line-clamp-2" style="color: var(--text-secondary); opacity: 0.8;">
           {getTagOr(event, 'summary')}
         </div>
       {/if}
       
       <!-- Content Preview (first 1000 chars) -->
       {#if contentPreviewHtml}
-        <div class="text-sm mb-2 prose prose-sm max-w-none" style="color: var(--text-secondary);">
+        <div class="text-xs mb-2 prose prose-sm max-w-none line-clamp-3" style="color: var(--text-secondary); opacity: 0.8;">
           {@html contentPreviewHtml}
           {#if contentTruncated}
             <span style="color: var(--text-secondary);">...</span>
           {/if}
         </div>
       {:else if contentPreview}
-        <div class="text-sm mb-2 whitespace-pre-wrap" style="color: var(--text-secondary);">
+        <div class="text-xs mb-2 whitespace-pre-wrap line-clamp-3" style="color: var(--text-secondary); opacity: 0.8;">
           {contentPreview}{#if contentTruncated}...{/if}
         </div>
       {/if}
@@ -809,10 +809,10 @@
       <!-- Author -->
       <div class="flex items-center space-x-2 mt-2">
         {#if getTagOr(event, 'author')}
-          <span class="text-xs font-medium" style="color: var(--text-primary);">
+          <span class="text-xs font-normal" style="color: var(--text-secondary); opacity: 0.8;">
             {getTagOr(event, 'author')}
           </span>
-          <span class="text-xs" style="color: var(--text-secondary);">
+          <span class="text-xs" style="color: var(--text-secondary); opacity: 0.7;">
             via
           </span>
         {/if}
