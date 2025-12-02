@@ -319,17 +319,24 @@ class ContentCacheManager {
             await this.storeEvents('deletions', result.events.map(event => ({ event, relays: result.relays })));
             
             // Extract deleted event IDs from the deletion events
+            const foundDeletedIds: string[] = [];
             result.events.forEach(deletionEvent => {
               if (deletionEvent.kind === 5) {
                 deletionEvent.tags.forEach(([tag, value]) => {
                   if (tag === 'e' && value) {
                     deletedEventIds.add(value);
+                    foundDeletedIds.push(value);
                   }
                 });
               }
             });
             
             console.log(`Found ${result.events.length} deletion event(s) from ${relayArray.length} relay(s)`);
+            if (foundDeletedIds.length > 0) {
+              console.log(`📋 Deleted event IDs found:`, foundDeletedIds.slice(0, 10).map(id => id.slice(0, 8) + '...'));
+            }
+          } else {
+            console.log(`ℹ️ No deletion events found on ${relayArray.length} relay(s)`);
           }
         } catch (error) {
           // Log but don't fail - relays might be unavailable
@@ -345,19 +352,29 @@ class ContentCacheManager {
       console.log(`🗑️ Found ${deletedEventIds.size} deleted event ID(s) to remove from cache`);
       
       // Step 4: Remove deleted events from all caches
+      // We need to check both by event ID and by cache keys (since addressable events use different keys)
       let totalRemoved = 0;
+      
+      // Log what we're looking for
+      console.log(`🔍 Looking for ${deletedEventIds.size} deleted event ID(s):`, Array.from(deletedEventIds).slice(0, 5).map(id => id.slice(0, 8) + '...'));
       
       for (const contentType of cacheTypes) {
         const originalSize = this.cache[contentType].size;
         const keysToRemove: string[] = [];
+        const eventsFound: string[] = [];
         
         // Collect keys to remove first (can't modify map while iterating)
-        for (const [id, cached] of this.cache[contentType].entries()) {
+        for (const [cacheKey, cached] of this.cache[contentType].entries()) {
           // Check if this event ID is in the deleted set
           if (deletedEventIds.has(cached.event.id)) {
-            keysToRemove.push(id);
+            keysToRemove.push(cacheKey);
+            eventsFound.push(`${cached.event.id.slice(0, 8)}... (key: ${cacheKey})`);
             totalRemoved++;
           }
+        }
+        
+        if (eventsFound.length > 0) {
+          console.log(`Found ${eventsFound.length} deleted event(s) in ${contentType}:`, eventsFound.slice(0, 3));
         }
         
         // Remove collected keys
@@ -370,7 +387,7 @@ class ContentCacheManager {
           try {
             const entries = Array.from(this.cache[contentType].entries());
             await idbkv.set(CACHE_KEYS[contentType], entries, store);
-            console.log(`Persisted ${contentType} cache: removed ${keysToRemove.length} deleted events, ${entries.length} remaining`);
+            console.log(`✅ Persisted ${contentType} cache: removed ${keysToRemove.length} deleted events, ${entries.length} remaining`);
           } catch (error) {
             console.error(`Failed to persist ${contentType} cache after removing deleted events:`, error);
           }
@@ -379,8 +396,23 @@ class ContentCacheManager {
       
       if (totalRemoved > 0) {
         console.log(`✅ Removed ${totalRemoved} deleted event(s) from cache on startup`);
+        
+        // Dispatch event to trigger feed refresh in Welcome card and Cache Browser
+        window.dispatchEvent(new CustomEvent('wikistr:cache-updated', { 
+          detail: { deletedEventIds: Array.from(deletedEventIds) } 
+        }));
       } else {
         console.log('ℹ️ No cached events matched the deleted event IDs');
+        // Debug: show some cached event IDs to compare
+        const sampleEventIds: string[] = [];
+        for (const contentType of cacheTypes) {
+          for (const [, cached] of Array.from(this.cache[contentType].entries()).slice(0, 3)) {
+            sampleEventIds.push(cached.event.id.slice(0, 8) + '...');
+          }
+        }
+        if (sampleEventIds.length > 0) {
+          console.log('ℹ️ Sample cached event IDs:', sampleEventIds);
+        }
       }
     } catch (error) {
       console.error('❌ Failed to remove deleted events from cache:', error);

@@ -134,29 +134,24 @@
       return;
     }
     try {
-      // Find which content type this event belongs to and remove it
-      type ContentType = 'publications' | 'longform' | 'wikis' | 'kind1111' | 
-                         'kind10002' | 'kind10432' | 'profile';
-      const contentTypes: ContentType[] = [
-        'publications', 'longform', 'wikis', 'kind1111', 'kind10002', 'kind10432', 'profile'
-      ];
+      // Get the d-tag for addressable events (for proper cache key removal)
+      const dTag = event.tags.find(([t]) => t === 'd')?.[1];
       
-      for (const contentType of contentTypes) {
-        const cached = contentCache.getEvent(contentType, event.id);
-        if (cached) {
-          // Get all events for this content type
-          const allCached = contentCache.getEvents(contentType);
-          const filtered = allCached.filter(c => c.event.id !== event.id);
-          
-          // Rebuild the cache without this event
-          // Note: This is a workaround since contentCache doesn't have a direct delete method
-          // We'd need to clear and re-add, but for now just reload
-          await loadEvents();
-          return;
-        }
-      }
+      // Use the removeEventById method which handles all cache key formats
+      await contentCache.removeEventById(
+        event.id,
+        event.kind,
+        event.pubkey,
+        dTag
+      );
       
+      // Reload events to reflect the change
       await loadEvents();
+      
+      // Dispatch event to trigger feed refresh
+      window.dispatchEvent(new CustomEvent('wikistr:cache-updated', { 
+        detail: { deletedEventIds: [event.id] } 
+      }));
     } catch (error) {
       console.error('Failed to delete event from cache:', error);
       alert('Failed to delete event from cache');
