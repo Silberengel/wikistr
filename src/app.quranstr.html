@@ -5,10 +5,118 @@
     <link rel="icon" href="%sveltekit.assets%/favicon.svg" type="image/svg+xml" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="Quranstr - A decentralized Quran study and wiki system built on Nostr" />
+    <!-- Basic OG tags (fallback for crawlers that don't execute JS) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Quranstr" />
+    <meta property="og:description" content="A decentralized Quran study and wiki system built on Nostr" />
+    <meta property="og:image" content="https://quranstr.imwald.eu/favicon.svg" />
+    <meta property="twitter:card" content="summary" />
+    <meta property="twitter:site" content="Quranstr" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Scheherazade+New:wght@400;700&family=Amiri:ital,wght@0,400;0,700;1,400&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0tAv4ct0nTaAbDJwPJzDEaqSD1odI+WdtXRGWt2kTvGFasHpSy3SV" crossorigin="anonymous">
+    <!-- Inject OG tags immediately based on URL (before SvelteKit loads) -->
+    <script>
+      (function() {
+        // Theme-specific values for Quranstr
+        const siteName = 'Quranstr';
+        const defaultTitle = 'Quranstr';
+        const defaultDescription = 'A decentralized Quran study and wiki system built on Nostr';
+        
+        // Parse URL to extract article info
+        const pathname = window.location.pathname;
+        const pathParts = pathname.split('/').filter(str => str !== '');
+        
+        let articleInfo = null;
+        for (const pathPart of pathParts) {
+          if (pathPart.includes('*')) {
+            const parts = pathPart.split('*');
+            if (parts.length === 2 && parts[1].match(/^[a-f0-9]{64}$/i)) {
+              let dTag = parts[0];
+              try {
+                dTag = decodeURIComponent(dTag);
+              } catch (e) {
+                // Already decoded or invalid
+              }
+              articleInfo = { dTag: dTag.toLowerCase(), pubkey: parts[1] };
+              break;
+            }
+          }
+          if (pathPart.startsWith('naddr1')) {
+            articleInfo = { naddr: pathPart };
+            break;
+          }
+        }
+        
+        // Generate OG tags
+        const baseUrl = window.location.origin;
+        const fullUrl = window.location.href;
+        const faviconUrl = baseUrl + '/favicon.svg';
+        
+        let title = defaultTitle;
+        let description = defaultDescription;
+        let type = 'website';
+        
+        if (articleInfo && articleInfo.dTag) {
+          title = articleInfo.dTag
+            .split(/[-_]/)
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join(' ');
+          description = 'A Nostr article: ' + title;
+          type = 'article';
+        }
+        
+        // Helper function to set or create meta tag
+        function setMetaTag(property, content) {
+          if (!content) return;
+          let tag = document.querySelector(`meta[property="${property}"]`) || 
+                   document.querySelector(`meta[name="${property}"]`);
+          if (!tag) {
+            tag = document.createElement('meta');
+            tag.setAttribute('property', property);
+            document.head.appendChild(tag);
+          }
+          tag.setAttribute('content', content);
+        }
+        
+        function setMetaName(name, content) {
+          if (!content) return;
+          let tag = document.querySelector(`meta[name="${name}"]`);
+          if (!tag) {
+            tag = document.createElement('meta');
+            tag.setAttribute('name', name);
+            document.head.appendChild(tag);
+          }
+          tag.setAttribute('content', content);
+        }
+        
+        // Set title
+        if (document.title !== title) {
+          document.title = title;
+        }
+        
+        // Primary meta tags
+        setMetaName('title', title);
+        setMetaName('description', description);
+        
+        // Open Graph tags
+        setMetaTag('og:type', type);
+        setMetaTag('og:url', fullUrl);
+        setMetaTag('og:title', title);
+        setMetaTag('og:description', description);
+        setMetaTag('og:image', faviconUrl);
+        setMetaTag('og:site_name', siteName);
+        
+        // Twitter tags
+        setMetaTag('twitter:card', 'summary_large_image');
+        setMetaTag('twitter:url', fullUrl);
+        setMetaTag('twitter:title', title);
+        setMetaTag('twitter:description', description);
+        setMetaTag('twitter:image', faviconUrl);
+        setMetaTag('twitter:site', siteName);
+      })();
+    </script>
     %sveltekit.head%
   </head>
 
