@@ -5,6 +5,7 @@
 
 import * as idbkv from 'idb-keyval';
 import type { Event, NostrEvent } from '@nostr/tools/pure';
+import { relayService } from './relayService';
 
 // Create a custom store for better visibility in browser dev tools
 const store = idbkv.createStore('wikistr-cache', 'content-store');
@@ -225,33 +226,36 @@ class ContentCacheManager {
   /**
    * Remove events that have deletion requests (kind 5 events)
    * This is called on startup to ensure deleted events are removed from cache
+   * 
+   * Strategy:
+   * 1. First, check cached deletion events (fast path)
+   * 2. Then, for each cached event, query the relays where it was published
+   *    for deletion events from the event's author
+   * 3. Remove events that have deletion events found in their publishing relays
    */
   async removeDeletedEvents(): Promise<void> {
     try {
-      // Get all deletion events (kind 5) from the deletions cache and reactions cache
-      const deletionEvents: NostrEvent[] = [];
+      const deletedEventIds = new Set<string>();
+      
+      // Step 1: Get all deletion events from cache (fast path)
+      const cachedDeletionEvents: NostrEvent[] = [];
       
       // Check deletions cache
       for (const cached of this.cache.deletions.values()) {
         if (cached.event.kind === 5) {
-          deletionEvents.push(cached.event as NostrEvent);
+          cachedDeletionEvents.push(cached.event as NostrEvent);
         }
       }
       
       // Also check reactions cache for deletion events (for backward compatibility)
       for (const cached of this.cache.reactions.values()) {
         if (cached.event.kind === 5) {
-          deletionEvents.push(cached.event as NostrEvent);
+          cachedDeletionEvents.push(cached.event as NostrEvent);
         }
       }
       
-      if (deletionEvents.length === 0) {
-        return; // No deletion events found
-      }
-      
-      // Collect all deleted event IDs from 'e' tags in deletion events
-      const deletedEventIds = new Set<string>();
-      deletionEvents.forEach(deletionEvent => {
+      // Extract deleted event IDs from cached deletion events
+      cachedDeletionEvents.forEach(deletionEvent => {
         deletionEvent.tags.forEach(([tag, value]) => {
           if (tag === 'e' && value) {
             deletedEventIds.add(value);
@@ -259,17 +263,89 @@ class ContentCacheManager {
         });
       });
       
-      if (deletedEventIds.size === 0) {
-        return; // No event IDs to remove
-      }
+      // Step 2: Query deletion events from relays where cached events were published
+      // Collect all unique relays where ANY cached events were published (from any author)
+      const allRelays = new Set<string>();
       
-      let totalRemoved = 0;
-      
-      // Remove deleted events from all caches
       const cacheTypes: Array<keyof ContentCache> = [
         'publications', 'longform', 'wikis', 'reactions', 
         'kind1111', 'kind10002', 'kind10432', 'profile'
       ];
+      
+      for (const contentType of cacheTypes) {
+        for (const [, cached] of this.cache[contentType].entries()) {
+          // Skip if already marked as deleted
+          if (deletedEventIds.has(cached.event.id)) {
+            continue;
+          }
+          
+          // Only check events that have relay information
+          if (!cached.relays || cached.relays.length === 0) {
+            continue;
+          }
+          
+          // Collect all unique relays where cached events were published (from any author)
+          for (const relay of cached.relays) {
+            // Skip invalid relays
+            if (relay && relay !== 'undefined' && relay !== 'null') {
+              allRelays.add(relay);
+            }
+          }
+        }
+      }
+      
+      // Step 3: Query ALL deletion events from these relays (from ANY author)
+      // Deletion events can delete events from any author, so we need to check all deletion events
+      if (allRelays.size > 0) {
+        const relayArray = Array.from(allRelays);
+        console.log(`🔍 Querying deletion events from ${relayArray.length} relay(s) (checking all authors)...`);
+        
+        try {
+          // Query ALL deletion events (kind 5) from ALL authors on these relays
+          // We use 'anonymous' as the user since we want deletion events from anyone
+          const result = await relayService.queryEvents(
+            'anonymous',
+            'social-read', // Use social-read for deletion events
+            [{ kinds: [5], limit: 500 }], // Query deletion events from any author, limit 500
+            {
+              excludeUserContent: false,
+              currentUserPubkey: undefined,
+              customRelays: relayArray // Query only the relays where cached events were published
+            }
+          );
+          
+          if (result.events.length > 0) {
+            // Cache the deletion events we found
+            await this.storeEvents('deletions', result.events.map(event => ({ event, relays: result.relays })));
+            
+            // Extract deleted event IDs from the deletion events
+            result.events.forEach(deletionEvent => {
+              if (deletionEvent.kind === 5) {
+                deletionEvent.tags.forEach(([tag, value]) => {
+                  if (tag === 'e' && value) {
+                    deletedEventIds.add(value);
+                  }
+                });
+              }
+            });
+            
+            console.log(`Found ${result.events.length} deletion event(s) from ${relayArray.length} relay(s)`);
+          }
+        } catch (error) {
+          // Log but don't fail - relays might be unavailable
+          console.warn(`Failed to query deletion events from relays:`, error);
+        }
+      }
+      
+      if (deletedEventIds.size === 0) {
+        console.log('✅ No deleted events found in cache or relays');
+        return; // No event IDs to remove
+      }
+      
+      console.log(`🗑️ Found ${deletedEventIds.size} deleted event ID(s) to remove from cache`);
+      
+      // Step 4: Remove deleted events from all caches
+      let totalRemoved = 0;
       
       for (const contentType of cacheTypes) {
         const originalSize = this.cache[contentType].size;
@@ -302,7 +378,9 @@ class ContentCacheManager {
       }
       
       if (totalRemoved > 0) {
-        console.log(`🗑️ Removed ${totalRemoved} deleted events from cache on startup`);
+        console.log(`✅ Removed ${totalRemoved} deleted event(s) from cache on startup`);
+      } else {
+        console.log('ℹ️ No cached events matched the deleted event IDs');
       }
     } catch (error) {
       console.error('❌ Failed to remove deleted events from cache:', error);
