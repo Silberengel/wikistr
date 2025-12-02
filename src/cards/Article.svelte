@@ -32,6 +32,7 @@
   } from '$lib/articleDownload';
   import { addBookmark, removeBookmark, isBookmarked, isBookmarkableKind } from '$lib/bookmarks';
   import { createDeletionEvent } from '$lib/deletion';
+  import { showToast } from '$lib/toast';
 
   interface Props {
     card: Card;
@@ -899,13 +900,13 @@
 
     try {
       // Use the general deletion utility
-      const deletion = await createDeletionEvent(
+      const deletionResult = await createDeletionEvent(
         [reaction.id],
         [reactionKind],
         'Vote removed'
       );
       
-      if (deletion) {
+      if (deletionResult) {
         // Update local state only if publish succeeded
         userReaction = null;
         likeStatus = 'none';
@@ -922,41 +923,99 @@
   }
 
   async function deleteArticle() {
-    if (!event) return;
-    if (!$account) return;
-    if (isDeleting) return; // Prevent multiple operations
+    console.log('deleteArticle called', { event: event?.id, account: $account?.pubkey, isDeleting });
+    if (!event) {
+      console.warn('deleteArticle: No event');
+      return;
+    }
+    if (!$account) {
+      console.warn('deleteArticle: No account');
+      return;
+    }
+    if (isDeleting) {
+      console.warn('deleteArticle: Already deleting');
+      return; // Prevent multiple operations
+    }
     if (event.pubkey !== $account.pubkey) {
-      alert('You can only delete your own articles.');
+      console.warn('deleteArticle: Pubkey mismatch', { eventPubkey: event.pubkey, accountPubkey: $account.pubkey });
+      showToast({
+        type: 'error',
+        title: 'Cannot Delete',
+        message: 'You can only delete your own articles.',
+        duration: 4000
+      });
       return;
     }
 
-    // Confirm deletion
-    if (!confirm('Are you sure you want to delete this article? This action cannot be undone.')) {
-      return;
-    }
-
+    // Close the menu
+    showDownloadMenu = false;
+    
+    console.log('deleteArticle: Starting deletion process');
     isDeleting = true;
-    showDownloadMenu = false; // Close the menu
 
     try {
+      console.log(`deleteArticle: Deleting article: ${event.id} (${event.kind})`);
+      
       // Use the general deletion utility
+      console.log('deleteArticle: Calling createDeletionEvent...');
       const deletion = await createDeletionEvent(
         [event.id],
         [event.kind],
         'Article deleted'
       );
+      console.log('deleteArticle: createDeletionEvent returned', deletion ? 'success' : 'null');
       
       if (deletion) {
-        // Show success message
-        alert('Article deletion request published. The article will be hidden from other users.');
-        // Optionally navigate back or close the card
-        back();
+        console.log('deleteArticle: Deletion event created and published successfully', {
+          publishedTo: deletion.publishedTo.length,
+          failedRelays: deletion.failedRelays.length
+        });
+        
+        // Show success toast with relay count
+        const relayCount = deletion.publishedTo.length;
+        const relayText = relayCount === 1 ? 'relay' : 'relays';
+        const failedCount = deletion.failedRelays.length;
+        
+        let message = `Deletion request published successfully to ${relayCount} ${relayText}.`;
+        if (failedCount > 0) {
+          message += ` ${failedCount} relay(s) failed.`;
+        }
+        
+        showToast({
+          type: relayCount > 0 ? 'success' : 'warning',
+          title: relayCount > 0 ? 'Article Deleted' : 'Deletion Partially Failed',
+          message,
+          duration: 6000
+        });
+        
+        // Cache removal and cache-updated event dispatch are handled in createDeletionEvent
+        // Close the article pane - use requestAnimationFrame to ensure UI updates complete first
+        requestAnimationFrame(() => {
+          // Try to go back, but if card.back doesn't exist, replace with welcome card
+          if (card.back) {
+            back();
+          } else {
+            // If no back card, replace with a welcome card
+            replaceSelf({ id: next(), type: 'welcome' } as Card);
+          }
+        });
       } else {
-        alert('Failed to publish deletion request. Please try again.');
+        console.error('Failed to create deletion event');
+        showToast({
+          type: 'error',
+          title: 'Deletion Failed',
+          message: 'Failed to publish deletion request. Please check the console for details.',
+          duration: 6000
+        });
       }
     } catch (error) {
       console.error('Failed to delete article:', error);
-      alert('Failed to delete article. Please try again.');
+      showToast({
+        type: 'error',
+        title: 'Deletion Failed',
+        message: `Failed to delete article: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        duration: 6000
+      });
     } finally {
       isDeleting = false;
     }
@@ -1280,20 +1339,36 @@
                 <div
                   class="absolute right-0 mt-2 w-56 rounded-lg shadow-lg z-50"
                   style="background-color: var(--bg-primary); border: 1px solid var(--border);"
-                  onclick={(e) => e.stopPropagation()}
+                  onclick={(e) => {
+                    console.log('Menu clicked', e.target);
+                    e.stopPropagation();
+                  }}
                 >
                   <div class="py-1">
                     {#if event && event.pubkey === $account?.pubkey}
                       <button
-                        onclick={deleteArticle}
+                        onclick={(e) => {
+                          console.log('Delete button clicked!', e);
+                          e.stopPropagation();
+                          e.preventDefault();
+                          console.log('About to call deleteArticle');
+                          deleteArticle().catch(err => {
+                            console.error('Error in deleteArticle:', err);
+                          });
+                        }}
+                        onmousedown={(e) => {
+                          console.log('Delete button mousedown!', e);
+                          e.stopPropagation();
+                        }}
                         disabled={isDeleting}
-                        class="w-full text-left px-4 py-2 text-sm hover:bg-red-100 dark:hover:bg-red-900 transition-colors disabled:opacity-50"
-                        style="color: var(--text-primary);"
+                        class="w-full text-left px-4 py-2 text-sm hover:bg-red-100 dark:hover:bg-red-900 transition-colors disabled:opacity-50 cursor-pointer"
+                        style="color: var(--text-primary); pointer-events: auto;"
+                        type="button"
                       >
                         {#if isDeleting}
-                          Deleting...
+                          Requesting deletion...
                         {:else}
-                          🗑️ Delete
+                          Request deletion
                         {/if}
                       </button>
                       <div class="border-t my-1" style="border-color: var(--border);"></div>
@@ -1576,6 +1651,7 @@
     onclick={() => showDownloadMenu = false}
     onkeydown={(e) => e.key === 'Escape' && (showDownloadMenu = false)}
     aria-label="Close menu"
+    style="z-index: 40;"
   ></div>
 {/if}
 

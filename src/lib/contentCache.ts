@@ -134,6 +134,95 @@ class ContentCacheManager {
   }
 
   /**
+   * Remove a specific event by ID from all caches
+   * Also handles cache keys for addressable/replaceable events
+   */
+  async removeEventById(eventId: string, eventKind?: number, eventPubkey?: string, dTag?: string): Promise<void> {
+    try {
+      await this.ensureInitialized();
+      
+      const cacheTypes: Array<keyof ContentCache> = [
+        'publications', 'longform', 'wikis', 'reactions', 
+        'kind1111', 'kind10002', 'kind10432', 'profile'
+      ];
+      
+      let removed = false;
+      
+      for (const contentType of cacheTypes) {
+        // First, try to find the event by ID in all entries
+        let foundKey: string | null = null;
+        for (const [id, cached] of this.cache[contentType].entries()) {
+          if (cached.event.id === eventId) {
+            foundKey = id;
+            break;
+          }
+        }
+        
+        // If not found by ID and we have event metadata, try cache key formats
+        if (!foundKey && eventKind !== undefined && eventPubkey) {
+          const kind = eventKind;
+          const isAddressable = kind >= 30000 && kind < 40000;
+          const isReplaceable = (kind >= 10000 && kind < 20000) || kind === 0 || kind === 3;
+          
+          if (isAddressable && dTag) {
+            // Try addressable cache key: kind:pubkey:d-tag
+            const cacheKey = `${kind}:${eventPubkey}:${dTag}`;
+            if (this.cache[contentType].has(cacheKey)) {
+              const cached = this.cache[contentType].get(cacheKey);
+              if (cached && cached.event.id === eventId) {
+                foundKey = cacheKey;
+              }
+            }
+          } else if (isReplaceable) {
+            // Try replaceable cache key: kind:pubkey
+            const cacheKey = `${kind}:${eventPubkey}`;
+            if (this.cache[contentType].has(cacheKey)) {
+              const cached = this.cache[contentType].get(cacheKey);
+              if (cached && cached.event.id === eventId) {
+                foundKey = cacheKey;
+              }
+            }
+          }
+        }
+        
+        // If found, remove it
+        if (foundKey) {
+          this.cache[contentType].delete(foundKey);
+          removed = true;
+          // Persist changes to IndexedDB
+          try {
+            const entries = Array.from(this.cache[contentType].entries());
+            await idbkv.set(CACHE_KEYS[contentType], entries, store);
+            console.log(`Removed event ${eventId.slice(0, 8)}... from ${contentType} cache (key: ${foundKey}), persisted ${entries.length} remaining entries to IndexedDB`);
+            
+            // Verify persistence by reading back
+            const verify = await idbkv.get(CACHE_KEYS[contentType], store);
+            if (verify) {
+              const verifyMap = new Map(verify);
+              if (verifyMap.has(foundKey)) {
+                console.warn(`⚠️ Event ${eventId.slice(0, 8)}... still found in IndexedDB after removal!`);
+              } else {
+                console.log(`✅ Verified: Event ${eventId.slice(0, 8)}... removed from IndexedDB`);
+              }
+            }
+          } catch (persistError) {
+            console.error(`Failed to persist cache removal for ${contentType}:`, persistError);
+            throw persistError; // Re-throw to ensure we know about persistence failures
+          }
+        }
+      }
+      
+      if (removed) {
+        console.log(`Successfully removed event ${eventId.slice(0, 8)}... from cache`);
+      } else {
+        console.log(`Event ${eventId.slice(0, 8)}... not found in cache (may have been already removed or stored under different key)`);
+      }
+    } catch (error) {
+      console.error('Failed to remove event from cache:', error);
+    }
+  }
+
+  /**
    * Remove events that have deletion requests (kind 5 events)
    * This is called on startup to ensure deleted events are removed from cache
    */
@@ -184,19 +273,31 @@ class ContentCacheManager {
       
       for (const contentType of cacheTypes) {
         const originalSize = this.cache[contentType].size;
+        const keysToRemove: string[] = [];
         
-        // Check each cached event
+        // Collect keys to remove first (can't modify map while iterating)
         for (const [id, cached] of this.cache[contentType].entries()) {
           // Check if this event ID is in the deleted set
           if (deletedEventIds.has(cached.event.id)) {
-            this.cache[contentType].delete(id);
+            keysToRemove.push(id);
             totalRemoved++;
           }
         }
         
+        // Remove collected keys
+        for (const key of keysToRemove) {
+          this.cache[contentType].delete(key);
+        }
+        
         // Persist changes if any were made
-        if (this.cache[contentType].size < originalSize) {
-          await idbkv.set(CACHE_KEYS[contentType], Array.from(this.cache[contentType].entries()), store);
+        if (keysToRemove.length > 0) {
+          try {
+            const entries = Array.from(this.cache[contentType].entries());
+            await idbkv.set(CACHE_KEYS[contentType], entries, store);
+            console.log(`Persisted ${contentType} cache: removed ${keysToRemove.length} deleted events, ${entries.length} remaining`);
+          } catch (error) {
+            console.error(`Failed to persist ${contentType} cache after removing deleted events:`, error);
+          }
         }
       }
       

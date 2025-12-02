@@ -38,6 +38,16 @@
 
   onMount(async () => {
     await loadEvents();
+    
+    // Listen for cache updates and refresh
+    const handleCacheUpdate = () => {
+      loadEvents();
+    };
+    window.addEventListener('wikistr:cache-updated', handleCacheUpdate);
+    
+    return () => {
+      window.removeEventListener('wikistr:cache-updated', handleCacheUpdate);
+    };
   });
 
   async function loadEvents() {
