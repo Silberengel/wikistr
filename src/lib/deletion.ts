@@ -76,77 +76,15 @@ export async function createDeletionEvent(
     if (result.success) {
       console.log(`Deletion event published successfully to ${result.publishedTo.length} relay(s):`, result.publishedTo);
       
-      // Cache the deletion event after publishing
+      // Tombstone all deleted event IDs to prevent them from being re-added
       if (result.publishedTo.length > 0) {
-        console.log(`Storing deletion event ${deletion.id.slice(0, 8)}... in deletions cache`);
+        console.log(`🗿 Tombstoning ${eventIds.length} deleted event ID(s)...`);
         
-        // Store deletion events in the deletions cache (persistent)
-        await contentCache.storeEvents('deletions', [{
-          event: deletion,
-          relays: result.publishedTo
-        }]);
-        
-        // Verify deletion event was stored
-        const storedDeletions = contentCache.getEvents('deletions');
-        const storedDeletion = storedDeletions.find(c => c.event.id === deletion.id);
-        if (storedDeletion) {
-          console.log(`✅ Deletion event ${deletion.id.slice(0, 8)}... stored in deletions cache`);
-        } else {
-          console.warn(`⚠️ Deletion event ${deletion.id.slice(0, 8)}... not found in deletions cache after storing`);
-        }
-        
-        // Also store in reactions cache for backward compatibility
-        await contentCache.storeEvents('reactions', [{
-          event: deletion,
-          relays: result.publishedTo
-        }]);
-        
-        // Immediately remove the deleted events from cache
-        // We need to find the events first to get their metadata (for addressable events)
         for (const eventId of eventIds) {
-          console.log(`Removing event ${eventId.slice(0, 8)}... from cache`);
-          
-          // Try to find the event in cache to get its metadata
-          let foundEvent: { event: any; kind?: number; pubkey?: string; dTag?: string } | null = null;
-          
-          // Check all relevant caches
-          const cacheTypes: Array<'publications' | 'longform' | 'wikis'> = ['publications', 'longform', 'wikis'];
-          for (const cacheType of cacheTypes) {
-            const cachedEvents = contentCache.getEvents(cacheType);
-            const cached = cachedEvents.find(c => c.event.id === eventId);
-            if (cached) {
-              foundEvent = {
-                event: cached.event,
-                kind: cached.event.kind,
-                pubkey: cached.event.pubkey,
-                dTag: cached.event.tags.find(([t]) => t === 'd')?.[1]
-              };
-              console.log(`Found event ${eventId.slice(0, 8)}... in ${cacheType} cache (kind: ${foundEvent.kind}, pubkey: ${foundEvent.pubkey?.slice(0, 8)}..., dTag: ${foundEvent.dTag || 'none'})`);
-              break;
-            }
-          }
-          
-          // Remove with metadata if found, otherwise try without
-          if (foundEvent) {
-            await contentCache.removeEventById(
-              eventId,
-              foundEvent.kind,
-              foundEvent.pubkey,
-              foundEvent.dTag
-            );
-          } else {
-            console.log(`Event ${eventId.slice(0, 8)}... not found in cache, trying with provided metadata`);
-            // Fallback: try with provided metadata
-            await contentCache.removeEventById(
-              eventId,
-              eventKinds?.[0],
-              currentAccount.pubkey
-            );
-          }
+          await contentCache.tombstoneEvent(eventId);
         }
         
-        // Also run the general cleanup to ensure everything is removed
-        await contentCache.removeDeletedEvents();
+        console.log(`✅ Tombstoned ${eventIds.length} event ID(s) (events removed from cache and prevented from being re-added)`);
         
         // Dispatch event to trigger feed refresh in Welcome card and Cache Browser
         // This ensures all UI components that display cached events are updated

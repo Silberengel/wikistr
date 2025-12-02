@@ -103,28 +103,14 @@
       ...contentCache.getEvents('wikis')
     ];
     
-    // Get all deletion events to filter out deleted events
-    const deletionEvents = contentCache.getEvents('deletions');
-    const deletedEventIds = new Set<string>();
-    deletionEvents.forEach(cached => {
-      if (cached.event.kind === 5) {
-        // Extract event IDs from 'e' tags in deletion events
-        cached.event.tags.forEach(([tag, value]) => {
-          if (tag === 'e' && value) {
-            deletedEventIds.add(value);
-          }
-        });
-      }
-    });
-    
     // Deduplicate replaceable events by a-tag, keeping only the newest
     const deduplicated = new Map<string, Event>();
     
     for (const cached of allCachedEvents) {
       const event = cached.event;
       
-      // Skip deleted events
-      if (deletedEventIds.has(event.id)) {
+      // Skip tombstoned events
+      if (contentCache.isTombstoned(event.id)) {
         continue;
       }
       

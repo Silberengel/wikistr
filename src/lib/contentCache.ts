@@ -20,7 +20,7 @@ const CACHE_KEYS = {
   kind10002: 'wikistr:cache:kind10002',
   kind10432: 'wikistr:cache:kind10432',
   profile: 'wikistr:cache:profile',  // Profile metadata (kind 0, 10133)
-  deletions: 'wikistr:cache:deletions'  // Deletion events (kind 5) - persistent
+  tombstone: 'wikistr:cache:tombstone'  // Tombstoned event IDs (permanent deletions for moderation)
 } as const;
 
 // Cache expiration times (in milliseconds)
@@ -33,7 +33,6 @@ const CACHE_EXPIRY = {
   kind10002: 60 * 60 * 1000,  // 1 hour (relay lists change infrequently)
   kind10432: 60 * 60 * 1000,  // 1 hour (cache relay lists change infrequently)
   profile: 30 * 60 * 1000,    // 30 minutes (profile metadata: kind 0, 10133)
-  deletions: Infinity  // Deletion events never expire (persistent)
 } as const;
 
 interface CachedEvent {
@@ -51,7 +50,6 @@ interface ContentCache {
   kind10002: Map<string, CachedEvent>;
   kind10432: Map<string, CachedEvent>;
   profile: Map<string, CachedEvent>;  // Profile metadata (kind 0, 10133)
-  deletions: Map<string, CachedEvent>;  // Deletion events (kind 5) - persistent
 }
 
 class ContentCacheManager {
@@ -63,10 +61,10 @@ class ContentCacheManager {
     kind1111: new Map(),
     kind10002: new Map(),
     kind10432: new Map(),
-    profile: new Map(),  // Profile metadata (kind 0, 10133)
-    deletions: new Map()  // Deletion events (kind 5) - persistent
+    profile: new Map()  // Profile metadata (kind 0, 10133)
   };
 
+  private tombstoneSet: Set<string> = new Set();  // Tombstoned event IDs (permanent deletions)
   private loaded = false;
   private initializationPromise: Promise<void> | null = null;
 
@@ -99,7 +97,7 @@ class ContentCacheManager {
         kind10002Data,
         kind10432Data,
         profileData,
-        deletionsData
+        tombstoneData
       ] = await Promise.all([
         idbkv.get(CACHE_KEYS.publications, store),
         idbkv.get(CACHE_KEYS.longform, store),
@@ -109,7 +107,7 @@ class ContentCacheManager {
         idbkv.get(CACHE_KEYS.kind10002, store),
         idbkv.get(CACHE_KEYS.kind10432, store),
         idbkv.get(CACHE_KEYS.profile, store),
-        idbkv.get(CACHE_KEYS.deletions, store)
+        idbkv.get(CACHE_KEYS.tombstone, store)
       ]);
 
       // Restore Maps from serialized data
@@ -121,7 +119,13 @@ class ContentCacheManager {
       this.cache.kind10002 = new Map(kind10002Data || []);
       this.cache.kind10432 = new Map(kind10432Data || []);
       this.cache.profile = new Map(profileData || []);
-      this.cache.deletions = new Map(deletionsData || []);
+      
+      // Load tombstone list (array of event IDs)
+      const tombstoneArray: string[] = tombstoneData || [];
+      this.tombstoneSet = new Set(tombstoneArray);
+      if (this.tombstoneSet.size > 0) {
+        console.log(`🗿 Loaded ${this.tombstoneSet.size} tombstoned event ID(s) from IndexedDB`);
+      }
       
       // After loading, remove events that have deletion requests (run in background, don't block)
       console.log('📦 Starting removeDeletedEvents() in background from initialize()...');
@@ -258,42 +262,6 @@ class ContentCacheManager {
     console.log('🧹🧹🧹 REMOVE DELETED EVENTS STARTING 🧹🧹🧹');
     try {
       const deletedEventIds = new Set<string>();
-      console.log('🧹 Step 1: Checking cached deletion events...');
-      
-      // Step 1: Get all deletion events from cache (fast path) - deduplicated
-      const cachedDeletionEvents = new Map<string, NostrEvent>(); // Use Map to deduplicate by event ID
-      
-      // Check deletions cache
-      for (const cached of this.cache.deletions.values()) {
-        if (cached.event.kind === 5) {
-          cachedDeletionEvents.set(cached.event.id, cached.event as NostrEvent);
-        }
-      }
-      
-      // Also check reactions cache for deletion events (for backward compatibility)
-      for (const cached of this.cache.reactions.values()) {
-        if (cached.event.kind === 5) {
-          cachedDeletionEvents.set(cached.event.id, cached.event as NostrEvent);
-        }
-      }
-      
-      // Extract deleted event IDs from cached deletion events (Set automatically deduplicates)
-      const extractedIds: string[] = [];
-      Array.from(cachedDeletionEvents.values()).forEach(deletionEvent => {
-        deletionEvent.tags.forEach(([tag, value]) => {
-          if (tag === 'e' && value) {
-            deletedEventIds.add(value);
-            extractedIds.push(value);
-          }
-        });
-      });
-      
-      if (cachedDeletionEvents.size > 0) {
-        console.log(`   Found ${cachedDeletionEvents.size} unique cached deletion event(s), extracted ${deletedEventIds.size} deleted event ID(s)`);
-        if (extractedIds.length > 0) {
-          console.log(`   Deleted event IDs from cache:`, extractedIds.slice(0, 5).map(id => id.slice(0, 16) + '...'));
-        }
-      }
       
       // Step 2: Build deduplicated list of cached event IDs and relays
       const cacheTypes: Array<keyof ContentCache> = [
@@ -400,18 +368,8 @@ class ContentCacheManager {
             
             console.log(`   [Process] Filtered to ${relevantDeletionEvents.length} relevant deletion events (found ${foundDeletedIds.length} unique deleted event IDs)`);
             
-            // Step 3c: Cache only relevant deletion events (non-blocking, in background)
-            if (relevantDeletionEvents.length > 0) {
-              this.storeEvents('deletions', relevantDeletionEvents.map(event => ({ 
-                event, 
-                relays: Array.from(uniqueRelays) 
-              }))).catch(error => {
-                console.error(`   [Cache Error] Failed to cache deletion events:`, error);
-              });
-              
-              if (foundDeletedIds.length > 0) {
-                console.log(`   [Process] Sample deleted IDs:`, foundDeletedIds.slice(0, 5).map(id => id.slice(0, 8) + '...'));
-              }
+            if (foundDeletedIds.length > 0) {
+              console.log(`   [Process] Sample deleted IDs:`, foundDeletedIds.slice(0, 5).map(id => id.slice(0, 8) + '...'));
             }
           } else {
             console.log(`   [Query] No deletion events found`);
@@ -505,6 +463,17 @@ class ContentCacheManager {
       
       if (totalRemoved > 0) {
         console.log(`✅ Removed ${totalRemoved} deleted event(s) from cache on startup`);
+        
+        // Tombstone all deleted events to prevent them from being re-added
+        for (const eventId of deletedEventIds) {
+          if (!this.tombstoneSet.has(eventId)) {
+            this.tombstoneSet.add(eventId);
+            console.log(`🗿 Tombstoned deleted event ${eventId.slice(0, 8)}...`);
+          }
+        }
+        
+        // Persist tombstone list
+        await this.persistTombstoneList();
         
         // Dispatch event to trigger feed refresh in Welcome card and Cache Browser
         window.dispatchEvent(new CustomEvent('wikistr:cache-updated', { 
@@ -618,6 +587,20 @@ class ContentCacheManager {
       this.cache[contentType] = new Map();
     }
     try {
+      // Filter out tombstoned events before storing
+      events = events.filter(({ event }) => {
+        // Skip if tombstoned (permanent deletion for moderation)
+        if (this.tombstoneSet.has(event.id)) {
+          console.log(`🗿 Skipping tombstoned event ${event.id.slice(0, 8)}...`);
+          return false;
+        }
+        return true;
+      });
+      
+      if (events.length === 0) {
+        return; // All events were deleted/tombstoned, nothing to store
+      }
+      
       const now = Date.now();
       
       // Cache key logic based on NIP specification:
@@ -712,23 +695,6 @@ class ContentCacheManager {
 
       // Persist to IndexedDB
       await idbkv.set(CACHE_KEYS[contentType], Array.from(this.cache[contentType].entries()), store);
-      
-      // If storing a deletion event (kind 5), also store it in the deletions cache
-      events.forEach(({ event }) => {
-        if (event.kind === 5) {
-          const deletionKey = event.id;
-          this.cache.deletions.set(deletionKey, {
-            event: this.serializeEvent(event),
-            relays: events.find(e => e.event.id === event.id)?.relays || [],
-            cachedAt: now
-          });
-        }
-      });
-      
-      // Persist deletions cache if we added any
-      if (events.some(({ event }) => event.kind === 5)) {
-        await idbkv.set(CACHE_KEYS.deletions, Array.from(this.cache.deletions.entries()), store);
-      }
 
     } catch (error) {
       console.error(`❌ Failed to cache ${contentType} events:`, error);
@@ -823,13 +789,117 @@ class ContentCacheManager {
         idbkv.del(CACHE_KEYS.kind10002, store),
         idbkv.del(CACHE_KEYS.kind10432, store),
         idbkv.del(CACHE_KEYS.profile, store),
-        idbkv.del(CACHE_KEYS.deletions, store)
+        idbkv.del(CACHE_KEYS.tombstone, store)
       ]);
+      
+      // Clear tombstone set
+      this.tombstoneSet.clear();
 
       console.log('🗑️ Cleared all content caches');
     } catch (error) {
       console.error('❌ Failed to clear caches:', error);
     }
+  }
+
+  /**
+   * Persist tombstone list to IndexedDB
+   */
+  private async persistTombstoneList(): Promise<void> {
+    try {
+      const tombstoneArray = Array.from(this.tombstoneSet);
+      await idbkv.set(CACHE_KEYS.tombstone, tombstoneArray, store);
+    } catch (error) {
+      console.error('❌ Failed to persist tombstone list:', error);
+    }
+  }
+
+  /**
+   * Tombstone an event ID (permanent deletion for moderation)
+   * Removes the event from cache and prevents it from being re-added
+   */
+  async tombstoneEvent(eventId: string): Promise<void> {
+    await this.ensureInitialized();
+    
+    if (this.tombstoneSet.has(eventId)) {
+      console.log(`🗿 Event ${eventId.slice(0, 8)}... is already tombstoned`);
+      return;
+    }
+    
+    // Add to tombstone set
+    this.tombstoneSet.add(eventId);
+    console.log(`🗿 Tombstoned event ${eventId.slice(0, 8)}...`);
+    
+    // Remove from all caches
+    const cacheTypes: Array<keyof ContentCache> = [
+      'publications', 'longform', 'wikis', 'reactions',
+      'kind1111', 'kind10002', 'kind10432', 'profile'
+    ];
+    
+    let removed = false;
+    for (const contentType of cacheTypes) {
+      let foundKey: string | null = null;
+      for (const [cacheKey, cached] of this.cache[contentType].entries()) {
+        if (cached.event.id === eventId) {
+          foundKey = cacheKey;
+          break;
+        }
+      }
+      
+      if (foundKey) {
+        this.cache[contentType].delete(foundKey);
+        removed = true;
+        // Persist changes
+        try {
+          const entries = Array.from(this.cache[contentType].entries());
+          await idbkv.set(CACHE_KEYS[contentType], entries, store);
+        } catch (error) {
+          console.error(`Failed to persist ${contentType} cache after tombstoning:`, error);
+        }
+      }
+    }
+    
+    // Persist tombstone list
+    await this.persistTombstoneList();
+    
+    if (removed) {
+      console.log(`✅ Removed tombstoned event ${eventId.slice(0, 8)}... from cache`);
+      // Dispatch event to trigger UI refresh
+      window.dispatchEvent(new CustomEvent('wikistr:cache-updated', {
+        detail: { deletedEventIds: [eventId] }
+      }));
+    }
+  }
+
+  /**
+   * Remove an event ID from tombstone list (allow it to be cached again)
+   */
+  async untombstoneEvent(eventId: string): Promise<void> {
+    await this.ensureInitialized();
+    
+    if (!this.tombstoneSet.has(eventId)) {
+      console.log(`🗿 Event ${eventId.slice(0, 8)}... is not tombstoned`);
+      return;
+    }
+    
+    this.tombstoneSet.delete(eventId);
+    console.log(`🗿 Removed tombstone for event ${eventId.slice(0, 8)}...`);
+    
+    // Persist tombstone list
+    await this.persistTombstoneList();
+  }
+
+  /**
+   * Check if an event is tombstoned
+   */
+  isTombstoned(eventId: string): boolean {
+    return this.tombstoneSet.has(eventId);
+  }
+
+  /**
+   * Get all tombstoned event IDs
+   */
+  getTombstonedEventIds(): string[] {
+    return Array.from(this.tombstoneSet);
   }
 
   /**

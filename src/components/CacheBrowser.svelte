@@ -11,11 +11,13 @@
   let { onClose }: Props = $props();
 
   let cachedEvents = $state<NostrEvent[]>([]);
+  let tombstonedEventIds = $state<string[]>([]);
   let isLoading = $state(false);
   let searchQuery = $state('');
   let selectedKind = $state<string>('all');
   let selectedEvent: NostrEvent | null = $state(null);
   let isClearing = $state(false);
+  let showTombstoned = $state(false);
 
   const kindOptions = [
     { value: 'all', label: 'All Kinds' },
@@ -36,12 +38,14 @@
   // Metadata kinds category
   const metadataKinds = [0, 10002, 10003, 10133];
 
-  onMount(async () => {
-    await loadEvents();
+  onMount(() => {
+    loadEvents();
     
     // Listen for cache updates and refresh
-    const handleCacheUpdate = () => {
-      loadEvents();
+    const handleCacheUpdate = async () => {
+      // Small delay to ensure IndexedDB persistence has completed
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await loadEvents();
     };
     window.addEventListener('wikistr:cache-updated', handleCacheUpdate);
     
@@ -53,6 +57,9 @@
   async function loadEvents() {
     isLoading = true;
     try {
+      // Ensure cache is fully initialized before reading
+      await contentCache.ensureInitialized();
+      
       // Get all cached events from all content types
       const allCached = [
         ...contentCache.getEvents('publications'), // 30040, 30041
@@ -63,7 +70,23 @@
         ...contentCache.getEvents('kind10432'),
         ...contentCache.getEvents('profile')
       ];
-      cachedEvents = allCached.map(cached => cached.event);
+      
+      // Filter out tombstoned events
+      const tombstonedCount = allCached.filter(cached => contentCache.isTombstoned(cached.event.id)).length;
+      cachedEvents = allCached
+        .filter(cached => {
+          // Skip if tombstoned
+          if (contentCache.isTombstoned(cached.event.id)) {
+            return false;
+          }
+          return true;
+        })
+        .map(cached => cached.event);
+        
+      console.log(`[CacheBrowser] Loaded ${cachedEvents.length} events (filtered out ${tombstonedCount} tombstoned events)`);
+      
+      // Load tombstoned event IDs
+      tombstonedEventIds = contentCache.getTombstonedEventIds();
     } catch (error) {
       console.error('Failed to load cached events:', error);
     } finally {
@@ -74,6 +97,9 @@
   async function search() {
     isLoading = true;
     try {
+      // Ensure cache is fully initialized before reading
+      await contentCache.ensureInitialized();
+      
       // Get all cached events first
       const allCached = [
         ...contentCache.getEvents('publications'), // 30040, 30041
@@ -84,7 +110,17 @@
         ...contentCache.getEvents('kind10432'),
         ...contentCache.getEvents('profile')
       ];
-      let all = allCached.map(cached => cached.event);
+      
+      // Filter out tombstoned events
+      let all = allCached
+        .filter(cached => {
+          // Skip if tombstoned
+          if (contentCache.isTombstoned(cached.event.id)) {
+            return false;
+          }
+          return true;
+        })
+        .map(cached => cached.event);
       
       // Filter by kind if selected
       if (selectedKind !== 'all') {
@@ -129,21 +165,12 @@
     return JSON.stringify(event, null, 2);
   }
 
-  async function deleteEvent(event: NostrEvent) {
-    if (!confirm('Are you sure you want to delete this event from cache?')) {
+  async function tombstoneEvent(event: NostrEvent) {
+    if (!confirm(`Are you sure you want to TOMBSTONE this event?\n\nThis will permanently delete it from cache and prevent it from being re-added, even if relays send it again.\n\nEvent: ${getEventTitle(event)}\nID: ${event.id.slice(0, 16)}...`)) {
       return;
     }
     try {
-      // Get the d-tag for addressable events (for proper cache key removal)
-      const dTag = event.tags.find(([t]) => t === 'd')?.[1];
-      
-      // Use the removeEventById method which handles all cache key formats
-      await contentCache.removeEventById(
-        event.id,
-        event.kind,
-        event.pubkey,
-        dTag
-      );
+      await contentCache.tombstoneEvent(event.id);
       
       // Reload events to reflect the change
       await loadEvents();
@@ -152,9 +179,35 @@
       window.dispatchEvent(new CustomEvent('wikistr:cache-updated', { 
         detail: { deletedEventIds: [event.id] } 
       }));
+      
+      alert('Event has been tombstoned and will not reappear in cache.');
     } catch (error) {
-      console.error('Failed to delete event from cache:', error);
-      alert('Failed to delete event from cache');
+      console.error('Failed to tombstone event:', error);
+      alert('Failed to tombstone event');
+    }
+  }
+
+  function isTombstoned(eventId: string): boolean {
+    return contentCache.isTombstoned(eventId);
+  }
+
+  async function untombstoneEvent(eventId: string) {
+    if (!confirm(`Are you sure you want to remove this event from the tombstone list?\n\nThis will allow the event to be cached again if relays send it.\n\nEvent ID: ${eventId.slice(0, 16)}...`)) {
+      return;
+    }
+    try {
+      await contentCache.untombstoneEvent(eventId);
+      
+      // Reload events and tombstone list to reflect the change
+      await loadEvents();
+      
+      // Dispatch event to trigger feed refresh
+      window.dispatchEvent(new CustomEvent('wikistr:cache-updated', { 
+        detail: { deletedEventIds: [eventId] } 
+      }));
+    } catch (error) {
+      console.error('Failed to untombstone event:', error);
+      alert('Failed to remove event from tombstone list');
     }
   }
 
@@ -241,6 +294,14 @@
           >
             {isClearing ? 'Clearing...' : 'Clear Cache'}
           </button>
+          <button
+            onclick={() => { showTombstoned = !showTombstoned; }}
+            class="px-4 py-2 text-white rounded-md hover:opacity-90 min-h-[44px] flex-1 md:flex-none"
+            style="background-color: #7c3aed;"
+            title="View/manage tombstoned events"
+          >
+            {showTombstoned ? 'Hide' : 'Show'} Tombstoned ({tombstonedEventIds.length})
+          </button>
         </div>
       </div>
     </div>
@@ -249,6 +310,42 @@
     <div class="flex-1 overflow-auto p-4">
       {#if isLoading}
         <div class="text-center py-8" style="color: var(--text-primary);">Loading...</div>
+      {:else if showTombstoned}
+        <!-- Tombstoned Events Section -->
+        <div class="space-y-2">
+          <h3 class="text-lg font-semibold mb-4" style="color: var(--text-primary);">
+            Tombstoned Events ({tombstonedEventIds.length})
+          </h3>
+          {#if tombstonedEventIds.length === 0}
+            <div class="text-center py-8" style="color: var(--text-secondary);">No tombstoned events</div>
+          {:else}
+            {#each tombstonedEventIds as eventId (eventId)}
+              <div
+                class="cache-event-item p-3 border rounded-md min-h-[60px]"
+                style="background-color: var(--bg-secondary); border-color: var(--border);"
+              >
+                <div class="flex items-center justify-between gap-2">
+                  <div class="flex-1 min-w-0">
+                    <div class="font-mono text-sm break-all" style="color: var(--text-primary);">
+                      {eventId}
+                    </div>
+                    <div class="text-xs mt-1" style="color: var(--text-secondary);">
+                      Tombstoned (permanently deleted from cache)
+                    </div>
+                  </div>
+                  <button
+                    onclick={() => untombstoneEvent(eventId)}
+                    class="hover:opacity-80 min-h-[44px] px-3 py-2 rounded flex-shrink-0"
+                    style="color: #10b981; background-color: rgba(16, 185, 129, 0.1);"
+                    title="Remove from tombstone list (allow event to be cached again)"
+                  >
+                    ✓ Untombstone
+                  </button>
+                </div>
+              </div>
+            {/each}
+          {/if}
+        </div>
       {:else if cachedEvents.length === 0}
         <div class="text-center py-8" style="color: var(--text-secondary);">No cached events found</div>
       {:else}
@@ -269,13 +366,27 @@
                     Kind {event.kind} • {new Date(event.created_at * 1000).toLocaleString()}
                   </div>
                 </div>
-                <button
-                  onclick={(e) => { e.stopPropagation(); deleteEvent(event); }}
-                  class="ml-2 hover:opacity-80 flex-shrink-0 min-h-[44px] px-3 py-2 rounded"
-                  style="color: #dc2626;"
-                >
-                  Delete
-                </button>
+                <div class="flex gap-2 flex-shrink-0">
+                  {#if isTombstoned(event.id)}
+                    <button
+                      onclick={(e) => { e.stopPropagation(); untombstoneEvent(event.id); }}
+                      class="hover:opacity-80 min-h-[44px] px-3 py-2 rounded"
+                      style="color: #10b981; background-color: rgba(16, 185, 129, 0.1);"
+                      title="Remove from tombstone list (allow event to be cached again)"
+                    >
+                      ✓ Untombstone
+                    </button>
+                  {:else}
+                    <button
+                      onclick={(e) => { e.stopPropagation(); tombstoneEvent(event); }}
+                      class="hover:opacity-80 min-h-[44px] px-3 py-2 rounded"
+                      style="color: #7c3aed;"
+                      title="Tombstone event (permanent deletion, prevents reappearing)"
+                    >
+                      🗿 Tombstone
+                    </button>
+                  {/if}
+                </div>
               </div>
               {#if selectedEvent?.id === event.id}
                 <div class="mt-3 p-3 rounded text-xs font-mono overflow-x-auto max-h-96" style="background-color: #1e1e1e; color: #d4d4d4;">
@@ -321,4 +432,5 @@
     }
   }
 </style>
+
 

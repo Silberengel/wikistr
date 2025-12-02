@@ -49,7 +49,7 @@
   }
   
   // Get version from package.json (injected at build time via vite.config.ts)
-  const appVersion = (typeof __VERSION__ !== 'undefined' ? String(__VERSION__) : '5.2.1').trim();
+  const appVersion = (typeof __VERSION__ !== 'undefined' ? String(__VERSION__) : '5.3.0').trim();
   
   // Get changelog from build-time injection (parsed at build time)
   // __CHANGELOG__ is injected as a JSON string by Vite, so we parse it
