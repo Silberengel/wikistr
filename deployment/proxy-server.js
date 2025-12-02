@@ -74,10 +74,11 @@ function needsJavaScriptExecution(url) {
     const parsed = new URL(url);
     const hostname = parsed.hostname.toLowerCase();
     // Check for wikistr domains or paths with article patterns
-    return hostname.includes('wikistr') || 
-           hostname.includes('imwald.eu') ||
-           parsed.pathname.includes('*') || // dTag*pubkey format
-           parsed.pathname.includes('naddr1'); // naddr format
+    return hostname.includes('imwald.eu') ||
+           hostname.includes('gitcitadel.eu') ||
+           hostname.includes('gitcitadel.com') ||
+           hostname.includes('jumble.social') ||
+           hostname.includes('decentnewsroom.com')
   } catch {
     return false;
   }

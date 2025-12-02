@@ -38,6 +38,7 @@ function buildProxyUrl(url: string): string {
 export async function fetchOGMetadata(url: string): Promise<OGMetadata | null> {
   try {
     const proxied = buildProxyUrl(url);
+    console.log(`[OG fetch] Requesting OG metadata via proxy: ${proxied} for URL: ${url}`);
     
     // Add timeout to prevent hanging when proxy is down (35 seconds - proxy has 30s, add buffer for network latency)
     const controller = new AbortController();
@@ -73,6 +74,17 @@ export async function fetchOGMetadata(url: string): Promise<OGMetadata | null> {
       return null;
     }
     
+    // Debug: Check if OG tags are in the raw HTML
+    const hasOgTitle = html.includes('og:title') || html.includes('property="og:title"');
+    const hasTitle = html.includes('<title>');
+    console.log(`[OG fetch] HTML check for ${url}:`, { 
+      htmlLength: html.length, 
+      hasOgTitle, 
+      hasTitle,
+      hasOgDescription: html.includes('og:description'),
+      hasOgImage: html.includes('og:image')
+    });
+    
     // Remove script tags to prevent them from being executed
     // This prevents module loading errors when parsing HTML with DOMParser
     html = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
@@ -101,9 +113,35 @@ export async function fetchOGMetadata(url: string): Promise<OGMetadata | null> {
       return meta?.getAttribute('content')?.trim() || undefined;
     };
     
-    const title = getMetaContent('og:title') || 
-                  doc.querySelector('title')?.textContent?.trim() || 
-                  undefined;
+    // Try multiple sources for title
+    let title = getMetaContent('og:title');
+    if (!title) {
+      title = doc.querySelector('title')?.textContent?.trim() || undefined;
+    }
+    if (!title) {
+      // Try h1 as fallback
+      title = doc.querySelector('h1')?.textContent?.trim() || undefined;
+    }
+    if (!title) {
+      // Try to extract from URL as last resort
+      try {
+        const urlObj = new URL(url);
+        const pathParts = urlObj.pathname.split('/').filter(p => p);
+        if (pathParts.length > 0) {
+          // Use last path segment, decode and format
+          const lastPart = decodeURIComponent(pathParts[pathParts.length - 1]);
+          title = lastPart.split(/[-_]/).map(word => 
+            word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+          ).join(' ') || undefined;
+        }
+        if (!title) {
+          // Use hostname as fallback
+          title = urlObj.hostname.replace(/^www\./, '');
+        }
+      } catch (e) {
+        // URL parsing failed, skip
+      }
+    }
     
     const description = getMetaContent('og:description') || 
                        getMetaContent('description') || 
@@ -116,14 +154,90 @@ export async function fetchOGMetadata(url: string): Promise<OGMetadata | null> {
       image = undefined;
     }
     
+    // Convert relative image URLs to absolute
+    if (image && !image.startsWith('http://') && !image.startsWith('https://') && !image.startsWith('data:')) {
+      try {
+        const baseUrl = new URL(url);
+        // Handle both absolute paths (starting with /) and relative paths
+        if (image.startsWith('/')) {
+          image = `${baseUrl.origin}${image}`;
+        } else {
+          // Relative path - resolve against the URL
+          image = new URL(image, baseUrl).toString();
+        }
+      } catch (e) {
+        console.warn('OG fetch: Failed to resolve relative image URL:', image, e);
+        // Keep original if resolution fails
+      }
+    }
+    
     const urlFromOG = !!getMetaContent('og:url');
-    const urlMeta = getMetaContent('og:url') || url;
+    let urlMeta = getMetaContent('og:url') || url;
+    
+    // Convert relative og:url to absolute
+    if (urlMeta && urlMeta !== url && !urlMeta.startsWith('http://') && !urlMeta.startsWith('https://')) {
+      try {
+        const baseUrl = new URL(url);
+        if (urlMeta.startsWith('/')) {
+          urlMeta = `${baseUrl.origin}${urlMeta}`;
+        } else {
+          urlMeta = new URL(urlMeta, baseUrl).toString();
+        }
+      } catch (e) {
+        console.warn('OG fetch: Failed to resolve relative og:url:', urlMeta, e);
+        urlMeta = url; // Fallback to original URL
+      }
+    }
     
     const siteName = getMetaContent('og:site_name') || undefined;
     
     // Only return if we have at least a title
     if (!title) {
-      console.warn('OG fetch: no title found for', url);
+      console.warn('OG fetch: no title found for', url, '- checked og:title, <title>, h1, and URL');
+      // Debug: log what we did find
+      const foundTitle = doc.querySelector('title')?.textContent?.trim();
+      const foundH1 = doc.querySelector('h1')?.textContent?.trim();
+      const foundOgTitle = getMetaContent('og:title');
+      // Try to find any heading
+      const foundH2 = doc.querySelector('h2')?.textContent?.trim();
+      const foundH3 = doc.querySelector('h3')?.textContent?.trim();
+      // Check for meta description
+      const foundMetaDesc = doc.querySelector('meta[name="description"]')?.getAttribute('content');
+      // Sample first 500 chars of body text
+      const bodyText = doc.body?.textContent?.trim().substring(0, 500);
+      console.warn('OG fetch debug:', { 
+        foundTitle, 
+        foundH1, 
+        foundH2,
+        foundH3,
+        foundOgTitle, 
+        foundMetaDesc,
+        htmlLength: html.length,
+        bodyTextSample: bodyText
+      });
+      // Even if no title, try to return something useful from URL
+      try {
+        const urlObj = new URL(url);
+        const pathParts = urlObj.pathname.split('/').filter(p => p);
+        if (pathParts.length > 0) {
+          const lastPart = decodeURIComponent(pathParts[pathParts.length - 1]);
+          const urlTitle = lastPart.split(/[-_]/).map(word => 
+            word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+          ).join(' ') || urlObj.hostname.replace(/^www\./, '');
+          
+          // Return minimal OG data with URL-derived title
+          return {
+            title: urlTitle,
+            description: foundMetaDesc || foundH1 || foundH2 || undefined,
+            image: undefined,
+            url: urlMeta,
+            siteName: urlObj.hostname.replace(/^www\./, ''),
+            urlFromOG: false
+          };
+        }
+      } catch (e) {
+        // URL parsing failed
+      }
       return null;
     }
     

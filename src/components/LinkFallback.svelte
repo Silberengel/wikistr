@@ -84,27 +84,63 @@
 
   onMount(async () => {
     try {
-      // Extract Nostr identifier from URL
+      // Extract Nostr identifier from URL (checks path)
       nostrId = extractNostrIdentifier(url);
+      
+      // Also check query parameters for Nostr identifiers (e.g., ?id=npub... or ?id=naddr...)
+      // BUT skip if the URL path suggests it's an event/page URL (like /events, /event, /page, etc.)
+      // In those cases, we want to show the fallback card for the page, not fetch the Nostr profile
+      if (!nostrId) {
+        try {
+          const urlObj = new URL(url);
+          const pathname = urlObj.pathname.toLowerCase();
+          // Check if path suggests it's a page/event URL (not a direct Nostr link)
+          const isPageUrl = pathname.includes('/events') || 
+                           pathname.includes('/event') || 
+                           pathname.includes('/page') ||
+                           pathname.includes('/article') ||
+                           pathname.includes('/post');
+          
+          // Only check query params if it's NOT a page URL
+          if (!isPageUrl) {
+            const idParam = urlObj.searchParams.get('id');
+            if (idParam) {
+              // Check if the id parameter is a Nostr identifier
+              const queryNostrId = extractNostrIdentifier(idParam);
+              if (queryNostrId) {
+                nostrId = queryNostrId;
+              } else {
+                // Also check if it's a bech32 identifier directly
+                const bech32Pattern = /^(npub1|nprofile1|nevent1|note1|naddr1)[a-zA-Z0-9]{58,}/;
+                if (bech32Pattern.test(idParam)) {
+                  const type = idParam.substring(0, idParam.indexOf('1')) as 'npub' | 'nprofile' | 'nevent' | 'note' | 'naddr';
+                  nostrId = { type, value: idParam };
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // URL parsing failed, continue with path-based extraction
+        }
+      }
       
       if (nostrId) {
         hasNostrId = true;
-      } else if (horizontal) {
-        // For horizontal layout, try to fetch OG metadata if no Nostr ID
+      } else {
+        // For any layout, try to fetch OG metadata if no Nostr ID
         try {
+          console.log('[LinkFallback] Fetching OG metadata for:', url);
           const data = await fetchOGMetadata(url);
+          console.log('[LinkFallback] OG metadata result:', data);
           ogData = data;
           ogError = !data;
         } catch (e) {
-          console.error('Failed to fetch OG data:', e);
+          console.error('[LinkFallback] Failed to fetch OG data:', e);
           ogError = true;
         } finally {
           loading = false;
           return;
         }
-      } else {
-        loading = false;
-        return;
       }
 
       // Handle dtag-only - query events by d-tag across all authors
@@ -233,6 +269,18 @@
               } else {
                 profileData = { pubkey };
               }
+              
+              // If URL is a regular HTTP/HTTPS URL (not nostr:), try to fetch OG metadata
+              if (url.startsWith('http://') || url.startsWith('https://')) {
+                try {
+                  const data = await fetchOGMetadata(url);
+                  if (data) {
+                    ogData = data;
+                  }
+                } catch (e) {
+                  // Silently fail - OG metadata is optional
+                }
+              }
             }
           }
         } catch (e) {
@@ -315,6 +363,18 @@
             };
           } else {
             profileData = { pubkey };
+          }
+          
+          // If URL is a regular HTTP/HTTPS URL (not nostr:), try to fetch OG metadata
+          if (url.startsWith('http://') || url.startsWith('https://')) {
+            try {
+              const data = await fetchOGMetadata(url);
+              if (data) {
+                ogData = data;
+              }
+            } catch (e) {
+              // Silently fail - OG metadata is optional
+            }
           }
         } catch (e) {
           console.error('Failed to decode/fetch profile:', e);
@@ -610,7 +670,7 @@
       <div class="h-3 rounded" style="background-color: var(--bg-tertiary); width: 80%;"></div>
     </div>
   {/if}
-{:else if horizontal && ogData && !ogError}
+{:else if horizontal && ogData}
   <!-- Horizontal OG card -->
   <a
     href={url}
@@ -657,6 +717,67 @@
       {/if}
     </div>
   </a>
+{:else if !horizontal && ogData}
+  <!-- Non-horizontal OG card -->
+  <a
+    href={url}
+    target="_blank"
+    rel="noopener noreferrer"
+    class="block rounded-lg border overflow-hidden transition-all hover:opacity-90"
+    style="background-color: var(--bg-secondary); border-color: var(--border); text-decoration: none;"
+  >
+    {#if ogData.image}
+      <div class="w-full h-48 overflow-hidden" style="background-color: var(--bg-tertiary);">
+        <img
+          src={ogData.image}
+          alt={ogData.title || 'Preview'}
+          class="w-full h-full object-cover"
+          onerror={(e) => {
+            const target = e.target as HTMLImageElement;
+            if (target) {
+              target.style.display = 'none';
+              const parent = target.parentElement;
+              if (parent) parent.style.display = 'none';
+            }
+          }}
+        />
+      </div>
+    {/if}
+    <div class="p-4">
+      {#if ogData.title}
+        <div class="font-medium text-xs mb-1" style="color: var(--text-secondary);">
+          {ogData.title}
+        </div>
+      {/if}
+      {#if ogData.description}
+        <div class="text-xs mb-2 line-clamp-2" style="color: var(--text-secondary); opacity: 0.8;">
+          {ogData.description}
+        </div>
+      {/if}
+      {#if ogData.siteName}
+        <div class="text-xs mb-2" style="color: var(--text-secondary); opacity: 0.8;">
+          {ogData.siteName}
+        </div>
+      {/if}
+      
+      <!-- URL -->
+      {#if true}
+        {@const urlObj = (() => {
+          try {
+            return new URL(url);
+          } catch {
+            return null;
+          }
+        })()}
+        {@const shortUrl = url.length > 60 ? url.substring(0, 57) + '...' : url}
+        <div class="mt-3 pt-3 border-t" style="border-color: var(--border);">
+          <div class="text-xs break-all underline" style="color: var(--accent);">
+            {shortUrl}
+          </div>
+        </div>
+      {/if}
+    </div>
+  </a>
 {:else if horizontal && !hasNostrId}
   <!-- Horizontal generic fallback -->
   {#if true}
@@ -686,55 +807,92 @@
     href={url}
     target="_blank"
     rel="noopener noreferrer"
-    class="block rounded-lg border p-4 transition-all hover:opacity-90"
+    class="block rounded-lg border overflow-hidden transition-all hover:opacity-90"
     style="background-color: var(--bg-secondary); border-color: var(--border); text-decoration: none;"
   >
-    <div class="flex items-center space-x-3">
-      {#if profileData.picture}
+    {#if ogData?.image}
+      <div class="w-full h-48 overflow-hidden" style="background-color: var(--bg-tertiary);">
         <img
-          src={profileData.picture}
-          alt={profileData.display_name || profileData.name || 'Profile'}
-          class="w-12 h-12 rounded-full object-cover flex-shrink-0"
+          src={ogData.image}
+          alt={ogData.title || 'Preview'}
+          class="w-full h-full object-cover"
           onerror={(e) => {
             const target = e.target as HTMLImageElement;
-            if (target) target.style.display = 'none';
+            if (target) {
+              target.style.display = 'none';
+              const parent = target.parentElement;
+              if (parent) parent.style.display = 'none';
+            }
           }}
         />
-      {:else}
-        <div class="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0" style="background-color: var(--bg-tertiary);">
-          <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20" style="color: var(--text-secondary);">
-            <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
-          </svg>
-        </div>
-      {/if}
-      <div class="flex-1 min-w-0">
-        <div class="font-semibold" style="color: var(--text-primary);">
-          {profileData.display_name || profileData.name || `npub1${profileData.pubkey.slice(0, 8)}...`}
-        </div>
-        {#if profileData.name && profileData.name !== profileData.display_name}
-          <div class="text-sm" style="color: var(--text-secondary);">
-            @{profileData.name}
-          </div>
-        {/if}
-      </div>
-    </div>
-    
-    <!-- URL -->
-    {#if true}
-      {@const urlObj = (() => {
-        try {
-          return new URL(url);
-        } catch {
-          return null;
-        }
-      })()}
-      {@const shortUrl = url.length > 60 ? url.substring(0, 57) + '...' : url}
-      <div class="mt-3 pt-3 border-t" style="border-color: var(--border);">
-        <div class="text-xs break-all underline" style="color: var(--accent);">
-          {shortUrl}
-        </div>
       </div>
     {/if}
+    <div class="p-4">
+      {#if ogData?.title}
+        <div class="font-medium text-xs mb-1" style="color: var(--text-secondary);">
+          {ogData.title}
+        </div>
+      {:else}
+        <div class="flex items-center space-x-3 mb-2">
+          {#if profileData.picture}
+            <img
+              src={profileData.picture}
+              alt={profileData.display_name || profileData.name || 'Profile'}
+              class="w-12 h-12 rounded-full object-cover flex-shrink-0"
+              onerror={(e) => {
+                const target = e.target as HTMLImageElement;
+                if (target) target.style.display = 'none';
+              }}
+            />
+          {:else}
+            <div class="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0" style="background-color: var(--bg-tertiary);">
+              <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20" style="color: var(--text-secondary);">
+                <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
+              </svg>
+            </div>
+          {/if}
+          <div class="flex-1 min-w-0">
+            <div class="font-semibold" style="color: var(--text-primary);">
+              {profileData.display_name || profileData.name || `npub1${profileData.pubkey.slice(0, 8)}...`}
+            </div>
+            {#if profileData.name && profileData.name !== profileData.display_name}
+              <div class="text-sm" style="color: var(--text-secondary);">
+                @{profileData.name}
+              </div>
+            {/if}
+          </div>
+        </div>
+      {/if}
+      
+      {#if ogData?.description}
+        <div class="text-xs mb-2 line-clamp-2" style="color: var(--text-secondary); opacity: 0.8;">
+          {ogData.description}
+        </div>
+      {/if}
+      
+      {#if ogData?.siteName}
+        <div class="text-xs mb-2" style="color: var(--text-secondary); opacity: 0.8;">
+          {ogData.siteName}
+        </div>
+      {/if}
+      
+      <!-- URL -->
+      {#if true}
+        {@const urlObj = (() => {
+          try {
+            return new URL(url);
+          } catch {
+            return null;
+          }
+        })()}
+        {@const shortUrl = url.length > 60 ? url.substring(0, 57) + '...' : url}
+        <div class="mt-3 pt-3 border-t" style="border-color: var(--border);">
+          <div class="text-xs break-all underline" style="color: var(--accent);">
+            {shortUrl}
+          </div>
+        </div>
+      {/if}
+    </div>
   </a>
 {:else if event}
   <!-- Event fallback -->
