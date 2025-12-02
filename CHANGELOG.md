@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Add the ability to delete articles persistently
 - Use tombstoning instead of caching deletion events
+- Updated wikistr OG data and made it theme-specific
 
 
 ## [5.2.0] - 2025-12-01
