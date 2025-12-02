@@ -169,7 +169,7 @@ async function proxyRequestWithPuppeteer(targetUrl, res) {
     
     // Wait a bit more for any late-executing scripts (like our OG tag injection)
     console.log(`[proxy] Waiting for JavaScript execution on ${targetUrl}...`);
-    await page.waitForTimeout(1000);
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
     // Get the HTML after JavaScript execution
     const html = await page.content();
@@ -392,6 +392,16 @@ const server = http.createServer(handleRequest);
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Proxy server listening on http://0.0.0.0:${PORT}/sites/?url=...`);
+  // Try to load Puppeteer at startup to verify it's available
+  loadPuppeteer().then((p) => {
+    if (p) {
+      console.log('[proxy] ✓ Puppeteer is available and ready for JavaScript execution');
+    } else {
+      console.log('[proxy] ⚠ Puppeteer not available - will use simple fetch for all requests');
+    }
+  }).catch((err) => {
+    console.log('[proxy] ⚠ Puppeteer check failed:', err.message);
+  });
 });
 
 server.on('error', (err) => {
