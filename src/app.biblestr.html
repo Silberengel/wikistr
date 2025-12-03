@@ -9,7 +9,7 @@
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Biblestr" />
     <meta property="og:description" content="A decentralized Bible study and wiki system built on Nostr" />
-    <meta property="og:image" content="https://biblestr.imwald.eu/favicon.svg" />
+    <meta property="og:image" content="https://biblestr.imwald.eu/og-image-biblestr.svg" />
     <meta property="twitter:card" content="summary" />
     <meta property="twitter:site" content="Biblestr" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -53,6 +53,7 @@
         const baseUrl = window.location.origin;
         const fullUrl = window.location.href;
         const faviconUrl = baseUrl + '/favicon.svg';
+        const ogImageUrl = baseUrl + '/og-image-biblestr.svg';
         
         let title = defaultTitle;
         let description = defaultDescription;
@@ -105,7 +106,7 @@
         setMetaTag('og:url', fullUrl);
         setMetaTag('og:title', title);
         setMetaTag('og:description', description);
-        setMetaTag('og:image', faviconUrl);
+        setMetaTag('og:image', ogImageUrl);
         setMetaTag('og:site_name', siteName);
         
         // Twitter tags
@@ -113,7 +114,7 @@
         setMetaTag('twitter:url', fullUrl);
         setMetaTag('twitter:title', title);
         setMetaTag('twitter:description', description);
-        setMetaTag('twitter:image', faviconUrl);
+        setMetaTag('twitter:image', ogImageUrl);
         setMetaTag('twitter:site', siteName);
       })();
     </script>

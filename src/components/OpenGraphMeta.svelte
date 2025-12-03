@@ -142,13 +142,17 @@
 
       // Default favicon/icon URL
       const faviconUrl = `${baseUrl}/favicon.svg`;
+      // Use larger og-image for better social media display
+      // Use theme-specific og-image if available, otherwise fall back to generic
+      const themeName = theme.name || 'wikistr';
+      const ogImageUrl = `${baseUrl}/og-image-${themeName}.svg`;
 
       if (!event) {
         // Default OG tags for the homepage
         return {
           title: theme.tagline || 'Wikistr',
           description: theme.description || theme.tagline || 'A decentralized wiki system built on Nostr',
-          image: faviconUrl,
+          image: ogImageUrl,
           url: fullUrl,
           type: 'website',
           naddr: null,
@@ -180,9 +184,9 @@
         description = 'A Nostr article';
       }
       
-      // Get image: event image tag -> author picture -> favicon
+      // Get image: event image tag -> author picture -> og-image -> favicon
       const imageTag = event.tags.find(([k]) => k === 'image');
-      const image = imageTag?.[1] || author?.picture || faviconUrl;
+      const image = imageTag?.[1] || author?.picture || ogImageUrl;
 
       // Generate naddr for the event
       let naddr = '';
@@ -221,7 +225,7 @@
       return {
         title: theme.tagline || 'Wikistr',
         description: theme.description || theme.tagline || 'A decentralized wiki system built on Nostr',
-        image: `${baseUrl}/favicon.svg`,
+        image: `${baseUrl}/og-image.svg`,
         url: `${baseUrl}${currentPath}`,
         type: 'website',
         naddr: null,

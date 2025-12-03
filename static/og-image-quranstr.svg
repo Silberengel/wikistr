@@ -1,0 +1,60 @@
+<svg width="750" height="450" viewBox="0 0 750 450" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background with gradient -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f8fafc;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#e2e8f0;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="750" height="450" fill="url(#bgGradient)"/>
+  
+  <!-- Main content container - horizontal layout (RTL) -->
+  <g transform="translate(650, 129)">
+    <!-- Logo on the right (RTL layout) -->
+    <g transform="translate(-96, -80)">
+      <!-- Background circle with antique feel -->
+      <circle cx="80" cy="80" r="75" fill="#78350f" stroke="#451a03" stroke-width="4"/>
+      
+      <!-- Open book icon -->
+      <path d="M40 50 L80 30 L120 50 L120 110 L80 130 L40 110 Z" fill="#fbbf24" stroke="#d97706" stroke-width="2"/>
+      
+      <!-- Book pages -->
+      <path d="M50 60 L70 50 L70 100 L50 110 Z" fill="#fffbeb"/>
+      <path d="M90 50 L110 60 L110 110 L90 100 Z" fill="#fffbeb"/>
+      
+      <!-- Central spine -->
+      <line x1="80" y1="30" x2="80" y2="130" stroke="#b45309" stroke-width="4"/>
+      
+      <!-- Text lines on pages -->
+      <line x1="55" y1="65" x2="65" y2="65" stroke="#78350f" stroke-width="1.5"/>
+      <line x1="55" y1="75" x2="65" y2="75" stroke="#78350f" stroke-width="1.5"/>
+      <line x1="55" y1="85" x2="65" y2="85" stroke="#78350f" stroke-width="1.5"/>
+      
+      <line x1="95" y1="65" x2="105" y2="65" stroke="#78350f" stroke-width="1.5"/>
+      <line x1="95" y1="75" x2="105" y2="75" stroke="#78350f" stroke-width="1.5"/>
+      <line x1="95" y1="85" x2="105" y2="85" stroke="#78350f" stroke-width="1.5"/>
+    </g>
+    
+    <!-- Theme name and tagline text - to the left of logo (RTL) -->
+    <g transform="translate(-280, 0)">
+      <!-- Theme name -->
+      <text x="0" y="0" font-family="Scheherazade New, Amiri, Traditional Arabic, Arabic Typesetting, Times New Roman, Times, serif" font-size="80" font-weight="700" fill="#1a1a1a" letter-spacing="-0.02em" text-anchor="end">
+        Quranstr
+      </text>
+      
+      <!-- Tagline (Arabic) -->
+      <text x="40" y="90" font-family="Scheherazade New, Amiri, Traditional Arabic, Arabic Typesetting, Times New Roman, Times, serif" font-size="32" font-weight="500" fill="#475569" letter-spacing="0.02em" text-anchor="start" direction="rtl">
+        <tspan x="40" dy="0">ٱقْرَأْ بِٱسْمِ رَبِّكَ ٱلَّذِى خَلَقَ</tspan>
+        <tspan x="40" dy="40">خَلَقَ ٱلْإِنسَـٰنَ مِنْ عَلَقٍ</tspan>
+        <tspan x="40" dy="40">ٱقْرَأْ وَرَبُّكَ ٱلْأَكْرَمُ</tspan>
+      </text>
+      
+      <!-- Description -->
+      <text x="192" y="230" font-family="Scheherazade New, Amiri, Traditional Arabic, Arabic Typesetting, Times New Roman, Times, serif" font-size="22" font-weight="400" fill="#64748b" text-anchor="end">
+        A decentralized Quran study and wiki system built on Nostr
+      </text>
+    </g>
+  </g>
+</svg>

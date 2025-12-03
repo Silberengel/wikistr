@@ -9,7 +9,7 @@
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Wikistr" />
     <meta property="og:description" content="A decentralized wiki system built on Nostr" />
-    <meta property="og:image" content="https://wikistr.imwald.eu/favicon.svg" />
+    <meta property="og:image" content="https://wikistr.imwald.eu/og-image.svg" />
     <meta property="twitter:card" content="summary" />
     <meta property="twitter:site" content="Wikistr" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -50,6 +50,7 @@
         const baseUrl = window.location.origin;
         const fullUrl = window.location.href;
         const faviconUrl = baseUrl + '/favicon.svg';
+        const ogImageUrl = baseUrl + '/og-image.svg';
         
         let title = 'Wikistr';
         let description = 'A decentralized wiki system built on Nostr';
@@ -103,7 +104,7 @@
         setMetaTag('og:url', fullUrl);
         setMetaTag('og:title', title);
         setMetaTag('og:description', description);
-        setMetaTag('og:image', faviconUrl);
+        setMetaTag('og:image', ogImageUrl);
         setMetaTag('og:site_name', 'Wikistr');
         
         // Twitter tags
@@ -111,7 +112,7 @@
         setMetaTag('twitter:url', fullUrl);
         setMetaTag('twitter:title', title);
         setMetaTag('twitter:description', description);
-        setMetaTag('twitter:image', faviconUrl);
+        setMetaTag('twitter:image', ogImageUrl);
         setMetaTag('twitter:site', 'Wikistr');
       })();
     </script>
