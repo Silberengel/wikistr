@@ -96,6 +96,33 @@ services:
       - wikistr-network
     restart: always
 
+  alexandria-catalogue:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile.alexandria-catalogue
+    image: silberengel/wikistr:latest-alexandria-catalogue
+    volumes:
+      # Mount only the server script for easy updates without rebuild
+      - ../deployment/epub-download-server.js:/app/deployment/epub-download-server.js:ro
+    working_dir: /app/deployment
+    ports:
+      - "127.0.0.1:8092:8092"
+    environment:
+      EPUB_DOWNLOAD_PORT: 8092
+      ASCIIDOCTOR_SERVER_URL: http://asciidoctor:8091
+    depends_on:
+      - asciidoctor
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8092/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    networks:
+      - default
+      - wikistr-network
+    restart: unless-stopped
+
 networks:
   wikistr-network:
     external: true

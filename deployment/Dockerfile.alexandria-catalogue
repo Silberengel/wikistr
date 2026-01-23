@@ -1,0 +1,44 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install curl for healthcheck
+RUN apk add --no-cache curl
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy the server script
+COPY deployment/epub-download-server.js ./deployment/
+
+# Make the script executable
+RUN chmod +x /app/deployment/epub-download-server.js
+
+# Expose port
+EXPOSE 8092
+
+# Set environment variables
+ENV EPUB_DOWNLOAD_PORT=8092
+ENV ASCIIDOCTOR_SERVER_URL=http://asciidoctor:8091
+
+# Verify Node.js installation and that the script can be parsed
+RUN node --version && \
+    node --check /app/deployment/epub-download-server.js && \
+    echo "Node.js and epub-download-server.js verified successfully"
+
+# Create a startup script
+RUN printf '#!/bin/sh\n\
+set -e\n\
+echo "=== Alexandria Catalogue Server Startup ==="\n\
+echo "Verifying Node.js installation..."\n\
+node --version || { echo "ERROR: Node.js not found"; exit 1; }\n\
+echo "Verifying epub-download-server.js syntax..."\n\
+node --check /app/deployment/epub-download-server.js || { echo "ERROR: epub-download-server.js syntax error"; exit 1; }\n\
+echo "All dependencies verified. Starting Alexandria Catalogue server..."\n\
+exec node /app/deployment/epub-download-server.js\n' > /app/start.sh && chmod +x /app/start.sh
+
+# Use the startup script
+CMD ["/app/start.sh"]

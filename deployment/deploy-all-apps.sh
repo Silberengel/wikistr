@@ -26,7 +26,7 @@ fi
 
 # Stop and remove existing containers if they exist
 echo -e "${BLUE}🧹 Cleaning up existing containers...${NC}"
-for container in wikistr biblestr quranstr torahstr og-proxy asciidoctor; do
+for container in wikistr biblestr quranstr torahstr og-proxy asciidoctor alexandria-catalogue; do
     if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
         echo -e "  Stopping and removing ${container}..."
         docker stop "${container}" > /dev/null 2>&1 || true
@@ -34,14 +34,14 @@ for container in wikistr biblestr quranstr torahstr og-proxy asciidoctor; do
     fi
 done
 # Also clean up docker-compose containers (they have different names like deployment_og-proxy_1)
-for container in deployment_og-proxy_1 deployment_asciidoctor_1; do
+for container in deployment_og-proxy_1 deployment_asciidoctor_1 deployment_alexandria-catalogue_1; do
     if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
         echo -e "  Stopping and removing ${container}..."
         docker stop "${container}" > /dev/null 2>&1 || true
         docker rm "${container}" > /dev/null 2>&1 || true
     fi
 done
-# Also check for any container using port 8090 or 8091
+# Also check for any container using port 8090, 8091, or 8092
 if docker ps --format '{{.Names}}\t{{.Ports}}' | grep -q ":8090->"; then
     CONTAINER_8090=$(docker ps --format '{{.Names}}\t{{.Ports}}' | grep ":8090->" | awk '{print $1}' | head -1)
     if [ -n "$CONTAINER_8090" ] && [ "$CONTAINER_8090" != "og-proxy" ]; then
@@ -56,6 +56,14 @@ if docker ps --format '{{.Names}}\t{{.Ports}}' | grep -q ":8091->"; then
         echo -e "  Stopping container using port 8091: ${CONTAINER_8091}..."
         docker stop "${CONTAINER_8091}" > /dev/null 2>&1 || true
         docker rm "${CONTAINER_8091}" > /dev/null 2>&1 || true
+    fi
+fi
+if docker ps --format '{{.Names}}\t{{.Ports}}' | grep -q ":8092->"; then
+    CONTAINER_8092=$(docker ps --format '{{.Names}}\t{{.Ports}}' | grep ":8092->" | awk '{print $1}' | head -1)
+    if [ -n "$CONTAINER_8092" ] && [ "$CONTAINER_8092" != "alexandria-catalogue" ]; then
+        echo -e "  Stopping container using port 8092: ${CONTAINER_8092}..."
+        docker stop "${CONTAINER_8092}" > /dev/null 2>&1 || true
+        docker rm "${CONTAINER_8092}" > /dev/null 2>&1 || true
     fi
 fi
 
@@ -137,6 +145,34 @@ docker run -d \
   silberengel/wikistr:latest-asciidoctor
 echo -e "  ${GREEN}✓${NC} asciidoctor running on http://localhost:8091"
 
+# Alexandria Catalogue on port 8092
+echo -e "  Deploying alexandria-catalogue on port 8092..."
+# Check if image exists, if not build it
+if ! docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "silberengel/wikistr:latest-alexandria-catalogue"; then
+    echo -e "    Building alexandria-catalogue image..."
+    docker build -f "${PARENT_DIR}/deployment/Dockerfile.alexandria-catalogue" -t silberengel/wikistr:latest-alexandria-catalogue "${PARENT_DIR}"
+fi
+# Check if port 8092 is already in use and stop any container using it
+if docker ps --format '{{.Names}}\t{{.Ports}}' | grep -q ":8092->"; then
+    CONTAINER_USING_PORT=$(docker ps --format '{{.Names}}\t{{.Ports}}' | grep ":8092->" | awk '{print $1}' | head -1)
+    if [ -n "$CONTAINER_USING_PORT" ]; then
+        echo -e "    Stopping existing container using port 8092: ${CONTAINER_USING_PORT}..."
+        docker stop "${CONTAINER_USING_PORT}" > /dev/null 2>&1 || true
+        docker rm "${CONTAINER_USING_PORT}" > /dev/null 2>&1 || true
+    fi
+fi
+docker run -d \
+  --name alexandria-catalogue \
+  --restart always \
+  --network ${NETWORK_NAME} \
+  -p 127.0.0.1:8092:8092 \
+  -v "${PARENT_DIR}/deployment/epub-download-server.js:/app/deployment/epub-download-server.js:ro" \
+  -w /app/deployment \
+  -e EPUB_DOWNLOAD_PORT=8092 \
+  -e ASCIIDOCTOR_SERVER_URL=http://asciidoctor:8091 \
+  silberengel/wikistr:latest-alexandria-catalogue
+echo -e "  ${GREEN}✓${NC} alexandria-catalogue running on http://localhost:8092"
+
 # Wikistr on port 8080
 echo -e "  Deploying wikistr on port 8080..."
 docker run -d --name wikistr --network ${NETWORK_NAME} -p 8080:80 silberengel/wikistr:latest-wikistr
@@ -194,6 +230,7 @@ services=(
     "http://localhost:8083|Torahstr"
     "http://localhost:8090|OG Proxy"
     "http://localhost:8091/healthz|AsciiDoctor"
+    "http://localhost:8092|Alexandria Catalogue"
 )
 
 all_healthy=true
@@ -223,6 +260,7 @@ echo -e "  • Quranstr: http://localhost:8082"
 echo -e "  • Torahstr: http://localhost:8083"
 echo -e "  • OG Proxy: http://localhost:8090"
 echo -e "  • AsciiDoctor: http://localhost:8091"
+echo -e "  • Alexandria Catalogue: http://localhost:8092"
 echo
 echo -e "${BLUE}💡 Management commands:${NC}"
 echo -e "  # View logs"
@@ -232,12 +270,13 @@ echo -e "  docker logs -f quranstr"
 echo -e "  docker logs -f torahstr"
 echo -e "  docker logs -f og-proxy"
 echo -e "  docker logs -f asciidoctor"
+echo -e "  docker logs -f alexandria-catalogue"
 echo
 echo -e "  # Stop all"
-echo -e "  docker stop wikistr biblestr quranstr torahstr og-proxy asciidoctor"
+echo -e "  docker stop wikistr biblestr quranstr torahstr og-proxy asciidoctor alexandria-catalogue"
 echo
 echo -e "  # Remove all"
-echo -e "  docker rm wikistr biblestr quranstr torahstr og-proxy asciidoctor"
+echo -e "  docker rm wikistr biblestr quranstr torahstr og-proxy asciidoctor alexandria-catalogue"
 echo
 echo -e "${GREEN}🎉 Deployment complete!${NC}"
 

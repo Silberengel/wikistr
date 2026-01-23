@@ -1,14 +1,14 @@
 #!/bin/bash
 
 # Build script for Wikistr applications
-# Builds and tags applications (wikistr, biblestr, quranstr, torahstr, og-proxy, asciidoctor)
+# Builds and tags applications (wikistr, biblestr, quranstr, torahstr, og-proxy, asciidoctor, alexandria-catalogue)
 # Version: v4.2
 #
 # Usage:
 #   ./build-all-apps.sh                           # Build all applications
 #   ./build-all-apps.sh wikistr                   # Build only wikistr
 #   ./build-all-apps.sh wikistr biblestr         # Build wikistr and biblestr
-#   ./build-all-apps.sh og-proxy asciidoctor      # Build og-proxy and asciidoctor
+#   ./build-all-apps.sh og-proxy asciidoctor alexandria-catalogue      # Build supporting services
 #   ./build-all-apps.sh asciidoctor --no-cache    # Build asciidoctor without cache
 
 set -e
@@ -23,13 +23,13 @@ NC='\033[0m' # No Color
 VERSION="v5.3.0"
 
 # All available services
-ALL_SERVICES=("wikistr" "biblestr" "quranstr" "torahstr" "og-proxy" "asciidoctor")
+ALL_SERVICES=("wikistr" "biblestr" "quranstr" "torahstr" "og-proxy" "asciidoctor" "alexandria-catalogue")
 
 # Services that use version tags (themes)
 THEME_SERVICES=("wikistr" "biblestr" "quranstr" "torahstr")
 
 # Services that use latest tags only
-LATEST_ONLY_SERVICES=("og-proxy" "asciidoctor")
+LATEST_ONLY_SERVICES=("og-proxy" "asciidoctor" "alexandria-catalogue")
 
 # Parse command-line arguments
 SERVICES_TO_BUILD=()
@@ -323,6 +323,7 @@ echo -e "  docker run -d --name quranstr -p 8082:80 silberengel/wikistr:latest-q
 echo -e "  docker run -d --name torahstr -p 8083:80 silberengel/wikistr:latest-torahstr"
 echo -e "  docker run -d --name og-proxy -p 8090:8090 silberengel/wikistr:latest-og-proxy"
 echo -e "  docker run -d --name asciidoctor -p 8091:4567 silberengel/wikistr:latest-asciidoctor"
+echo -e "  docker run -d --name alexandria-catalogue -p 8092:8092 silberengel/wikistr:latest-alexandria-catalogue"
 echo
 echo -e "  # Deploy on cloud server"
 echo -e "  docker run -d --name wikistr -p 3000:80 silberengel/wikistr:${VERSION}-wikistr"

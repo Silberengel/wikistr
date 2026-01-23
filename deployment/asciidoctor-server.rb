@@ -98,6 +98,22 @@ options '*' do
   ''
 end
 
+# Helper function to safely change directory before cleanup
+# Prevents getcwd errors when temp directories are removed
+def safe_chdir_before_cleanup
+  begin
+    script_dir = __dir__ || File.dirname(__FILE__) || '/app/deployment'
+    if File.directory?(script_dir)
+      Dir.chdir(script_dir)
+    elsif File.directory?('/tmp')
+      Dir.chdir('/tmp')
+    end
+  rescue => e
+    # Ignore errors when changing directory - we'll still try to clean up
+    puts "Warning: Could not change directory before cleanup: #{e.message}"
+  end
+end
+
 # Helper function to set CORS headers
 def set_cors_headers
   origin = request.env['HTTP_ORIGIN']
@@ -336,7 +352,8 @@ post '/convert/epub' do
         'imagesdir' => '.',
         'allow-uri-read' => '',  # Enable remote image downloading
         'toc' => '',  # Enable table of contents
-        'stem' => ''  # Enable LaTeX math support
+        'stem' => '',  # Enable LaTeX math support
+        'epub3-stylesheet' => ''  # Explicitly disable stylesheet to prevent gem from looking for default CSS
       }
       
       # Check for HTTP proxy environment variables and log them
@@ -354,12 +371,20 @@ post '/convert/epub' do
       end
       
       # Add stylesheet if available
+      # IMPORTANT: Only set stylesheet attributes if we have a custom stylesheet
+      # If we don't set these, the gem will use its built-in defaults without trying
+      # to access external CSS files that might not exist in the container
       stylesheet_attempted = false
       if stylesheet_name && File.exist?(stylesheet_path)
         # Use the deployment directory where the stylesheet was found
         epub_attributes['epub3-stylesdir'] = deployment_dir
         epub_attributes['stylesheet'] = stylesheet_name
         stylesheet_attempted = true
+        puts "[EPUB] Using custom stylesheet: #{stylesheet_name}"
+      else
+        # Don't set any stylesheet attributes - let the gem use its built-in defaults
+        # This avoids errors when the gem's data files aren't accessible
+        puts "[EPUB] No custom stylesheet found, using gem's built-in defaults"
       end
       
       # Scan content for images before conversion and download remote images
@@ -536,23 +561,62 @@ post '/convert/epub' do
           treeprocessor image_processor
         end
         
-        # Wrap conversion in timeout to prevent stuck conversions
-        result = Timeout.timeout(CONVERSION_TIMEOUT) do
-          Asciidoctor.convert_file(
-            temp_adoc.path,
-            backend: 'epub3',
-            safe: 'unsafe',
-            to_file: epub_file,
-            attributes: epub_attributes,
-            extension_registry: extension_registry
-          )
+        # Try conversion - if it fails due to stylesheet issues, we'll retry without stylesheet
+        begin
+          # Wrap conversion in timeout to prevent stuck conversions
+          result = Timeout.timeout(CONVERSION_TIMEOUT) do
+            Asciidoctor.convert_file(
+              temp_adoc.path,
+              backend: 'epub3',
+              safe: 'unsafe',
+              to_file: epub_file,
+              attributes: epub_attributes,
+              extension_registry: extension_registry
+            )
+          end
+          puts "[EPUB] Conversion completed, result: #{result.inspect}"
+          # Check if file was created before setting conversion_succeeded
+        rescue => initial_error
+          # Check if this is a stylesheet error before the main error handler
+          is_stylesheet_error = initial_error.message.include?('stylesheet') || 
+                                initial_error.message.include?('css') || 
+                                initial_error.message.include?('style') ||
+                                initial_error.message.include?('epub3.css') ||
+                                initial_error.message.include?('No such file or directory') ||
+                                (initial_error.message.include?('rb_sysopen') && initial_error.message.include?('.css'))
+          
+          if is_stylesheet_error
+            puts "[EPUB] Initial conversion failed with stylesheet error, retrying without stylesheet..."
+            # Remove all stylesheet-related attributes
+            retry_attributes = epub_attributes.dup
+            retry_attributes.delete('epub3-stylesdir')
+            retry_attributes.delete('stylesheet')
+            retry_attributes.delete('epub3-stylesheet')
+            
+            # Try again without any stylesheet configuration
+            result = Timeout.timeout(CONVERSION_TIMEOUT) do
+              Asciidoctor.convert_file(
+                temp_adoc.path,
+                backend: 'epub3',
+                safe: 'unsafe',
+                to_file: epub_file,
+                attributes: retry_attributes,
+                extension_registry: extension_registry
+              )
+            end
+            puts "[EPUB] Conversion completed without stylesheet, result: #{result.inspect}"
+            # Don't set conversion_succeeded here - check if file exists first
+          else
+            # Not a stylesheet error, re-raise for main error handler
+            raise initial_error
+          end
         end
-        puts "[EPUB] Conversion completed, result: #{result.inspect}"
         
         # Check if EPUB file was created and its size
-        if File.exist?(epub_file)
+        if File.exist?(epub_file) && File.size(epub_file) > 0
           epub_size = File.size(epub_file)
           puts "[EPUB] EPUB file created: #{epub_file}, size: #{epub_size} bytes"
+          conversion_succeeded = true
           
           # Try to inspect EPUB contents for images (EPUB is a ZIP file)
           begin
@@ -575,10 +639,9 @@ post '/convert/epub' do
             puts "[EPUB] Could not inspect EPUB contents: #{zip_error.message}"
           end
         else
-          puts "[EPUB] ERROR: EPUB file was not created at #{epub_file}"
+          puts "[EPUB] ERROR: EPUB file was not created at #{epub_file} or is empty"
+          conversion_succeeded = false
         end
-        
-        conversion_succeeded = true
       rescue Timeout::Error => e
         puts "[EPUB] Conversion timed out after #{CONVERSION_TIMEOUT} seconds"
         error_details = {
@@ -592,17 +655,36 @@ post '/convert/epub' do
         return error_details.to_json
       rescue => e
         puts "[EPUB] Conversion error: #{e.class.name}: #{e.message}"
-        puts "[EPUB] Backtrace: #{e.backtrace.first(5).join("\n")}"
+        puts "[EPUB] Backtrace: #{e.backtrace.first(10).join("\n")}"
         
-        # If this is a stylesheet error and we tried to use a stylesheet, retry without it
-        if stylesheet_attempted && (e.message.include?('stylesheet') || e.message.include?('css') || e.message.include?('style'))
-          puts "[EPUB] Stylesheet error detected, retrying without custom stylesheet"
-          # Remove stylesheet attributes and retry
+        # If this is a stylesheet error (including gem's default CSS file not found), retry without stylesheet
+        is_stylesheet_error = e.message.include?('stylesheet') || 
+                              e.message.include?('css') || 
+                              e.message.include?('style') ||
+                              e.message.include?('epub3.css') ||
+                              e.message.include?('No such file or directory') ||
+                              (e.message.include?('rb_sysopen') && e.message.include?('.css')) ||
+                              e.message.include?('ENOENT')
+        
+        if is_stylesheet_error && !conversion_succeeded
+          puts "[EPUB] Stylesheet error detected (#{e.message}), retrying without any stylesheet configuration"
+          # Remove all stylesheet-related attributes and retry
           retry_attributes = epub_attributes.dup
           retry_attributes.delete('epub3-stylesdir')
           retry_attributes.delete('stylesheet')
+          retry_attributes.delete('epub3-stylesheet')
+          
+          # Also remove from content if present
+          content_without_stylesheet = content.dup
+          content_without_stylesheet.gsub!(/^:epub3-stylesheet:.*$/i, '')
+          content_without_stylesheet.gsub!(/^:stylesheet:.*$/i, '')
+          content_without_stylesheet.gsub!(/^:epub3-stylesdir:.*$/i, '')
+          
+          # Write updated content
+          File.write(temp_adoc.path, content_without_stylesheet)
           
           begin
+            puts "[EPUB] Retrying conversion with all stylesheet attributes removed"
             result = Timeout.timeout(CONVERSION_TIMEOUT) do
               Asciidoctor.convert_file(
                 temp_adoc.path,
@@ -613,7 +695,13 @@ post '/convert/epub' do
               )
             end
             puts "[EPUB] Conversion completed without stylesheet, result: #{result.inspect}"
-            conversion_succeeded = true
+            
+            # Verify file was created
+            if File.exist?(epub_file) && File.size(epub_file) > 0
+              conversion_succeeded = true
+            else
+              puts "[EPUB] Retry completed but no EPUB file was created"
+            end
           rescue Timeout::Error => retry_error
             puts "[EPUB] Retry conversion timed out after #{CONVERSION_TIMEOUT} seconds"
             error_details = {
@@ -627,6 +715,7 @@ post '/convert/epub' do
             return error_details.to_json
           rescue => retry_error
             puts "[EPUB] Retry also failed: #{retry_error.class.name}: #{retry_error.message}"
+            puts "[EPUB] Retry backtrace: #{retry_error.backtrace.first(5).join("\n")}"
             # Fall through to error handling below
             e = retry_error
           end
@@ -717,7 +806,10 @@ post '/convert/epub' do
       
       epub_content
     ensure
-      # Cleanup
+      # Cleanup - change out of temp directory before removing it to prevent getcwd errors
+      safe_chdir_before_cleanup
+      
+      # Now safe to remove temp directory
       temp_adoc.unlink if temp_adoc
       FileUtils.rm_rf(temp_dir) if temp_dir && Dir.exist?(temp_dir)
     end
@@ -786,17 +878,107 @@ post '/convert/html5' do
     temp_adoc.close
     
     begin
+      # Scan content for images before conversion and download remote images
+      # First, scan for image macros (image:: and image:)
+      image_urls = content.scan(/image::?([^\s\[\]]+)/i).flatten
+      
+      # Also scan for inline image macros with attributes
+      inline_images = content.scan(/image::?([^\[]+)\[/i).flatten.map { |url| url.strip }
+      image_urls = (image_urls + inline_images).uniq
+      
+      # Also scan for cover image attributes
+      cover_image_attrs = content.scan(/^:(?:front-cover-image|epub-cover-image):\s*(.+)$/i).flatten
+      cover_image_urls = cover_image_attrs.map { |attr| attr.strip }.reject(&:empty?)
+      
+      # Combine all image URLs
+      all_image_urls = (image_urls + cover_image_urls).uniq
+      downloaded_images = {}
+      
+      if all_image_urls.any?
+        puts "[HTML5] Found #{all_image_urls.length} image reference(s) in content"
+        
+        # Create images directory
+        temp_dir = File.dirname(temp_adoc.path)
+        images_dir = File.join(temp_dir, 'images')
+        FileUtils.mkdir_p(images_dir)
+        
+        all_image_urls.each_with_index do |url, idx|
+          puts "[HTML5]   Image #{idx + 1}: #{url}"
+          if url.match?(/^https?:\/\//)
+            puts "[HTML5]     -> Remote URL detected, downloading..."
+            begin
+              require 'open-uri'
+              require 'uri'
+              
+              uri = URI.parse(url)
+              filename = File.basename(uri.path)
+              if filename.empty? || !filename.match?(/\.(jpg|jpeg|png|gif|svg|webp)$/i)
+                filename = "image_#{url.hash.abs}.jpg"
+              end
+              
+              local_path = File.join(images_dir, filename)
+              
+              puts "[HTML5]     -> Downloading to: #{local_path}"
+              URI.open(url, 'rb') do |remote_file|
+                File.open(local_path, 'wb') do |local_file|
+                  local_file.write(remote_file.read)
+                end
+              end
+              
+              puts "[HTML5]     -> Successfully downloaded (#{File.size(local_path)} bytes)"
+              downloaded_images[url] = filename
+            rescue => download_error
+              puts "[HTML5]     -> WARNING: Failed to download image: #{download_error.message}"
+            end
+          end
+        end
+        
+        # Replace remote URLs in content with local filenames
+        if downloaded_images.any?
+          puts "[HTML5] Replacing remote image URLs with local paths in content"
+          downloaded_images.each do |remote_url, local_filename|
+            old_content = content.dup
+            content = content.gsub(/image::?#{Regexp.escape(remote_url)}(\[[^\]]*\])?/i) do |match|
+              attributes = $1 || ''
+              "image::#{local_filename}#{attributes}"
+            end
+            if content != old_content
+              puts "[HTML5]   Replaced image macro: #{remote_url} -> #{local_filename}"
+            end
+            
+            # Replace in cover image attributes
+            docdir = File.dirname(temp_adoc.path)
+            relative_image_path = Pathname.new(File.join(images_dir, local_filename)).relative_path_from(Pathname.new(docdir)).to_s
+            old_content = content.dup
+            content = content.gsub(/^:(?:front-cover-image|epub-cover-image):\s*#{Regexp.escape(remote_url)}\s*$/i, ":front-cover-image: #{relative_image_path}")
+            if content != old_content
+              puts "[HTML5]   Replaced cover image attribute: #{remote_url} -> #{relative_image_path}"
+            end
+          end
+          
+          # Write updated content back to temp file
+          File.write(temp_adoc.path, content)
+          puts "[HTML5] Updated AsciiDoc file with local image paths"
+        end
+      end
+      
       puts "[HTML5] Conversion timeout: #{CONVERSION_TIMEOUT} seconds"
+      # Read the updated content (with local image paths) for cover image extraction
+      updated_content = File.read(temp_adoc.path)
+      
       # Convert to HTML5 with standalone document
+      # Read file content and use convert (not convert_file) to get HTML string directly
+      # convert_file returns a Document object, but convert returns the HTML string
       html_content = Timeout.timeout(CONVERSION_TIMEOUT) do
-        Asciidoctor.convert content,
+        Asciidoctor.convert(
+          updated_content,
           backend: 'html5',
           safe: 'unsafe',
           attributes: {
             'title' => title,
             'author' => author,
-            'doctype' => 'article',
-            'imagesdir' => '.',
+            'doctype' => 'book',
+            'imagesdir' => all_image_urls.any? ? 'images' : '.',
             'allow-uri-read' => '',
             'stylesheet' => 'default',
             'linkcss' => '',
@@ -805,6 +987,63 @@ post '/convert/html5' do
             'noheader' => '',
             'nofooter' => ''
           }
+        )
+      end
+      
+      # Embed downloaded images as base64 data URIs for standalone HTML
+      if downloaded_images.any? && images_dir && File.directory?(images_dir)
+        puts "[HTML5] Embedding images as base64 data URIs"
+        require 'base64'
+        downloaded_images.each do |remote_url, local_filename|
+          local_path = File.join(images_dir, local_filename)
+          if File.exist?(local_path)
+            begin
+              image_data = File.binread(local_path)
+              base64_data = Base64.strict_encode64(image_data)
+              
+              # Determine MIME type from extension
+              ext = File.extname(local_filename).downcase
+              mime_type = case ext
+                          when '.jpg', '.jpeg' then 'image/jpeg'
+                          when '.png' then 'image/png'
+                          when '.gif' then 'image/gif'
+                          when '.svg' then 'image/svg+xml'
+                          when '.webp' then 'image/webp'
+                          else 'image/jpeg'
+                          end
+              
+              data_uri = "data:#{mime_type};base64,#{base64_data}"
+              
+              # Replace image src attributes with data URIs
+              # Match both <img src="..."> and image references in AsciiDoc-generated HTML
+              old_html = html_content.dup
+              html_content = html_content.gsub(/src=["']([^"']*#{Regexp.escape(local_filename)}[^"']*)["']/i, "src=\"#{data_uri}\"")
+              if html_content != old_html
+                puts "[HTML5]   Embedded image: #{local_filename} (#{image_data.bytesize} bytes)"
+              end
+            rescue => embed_error
+              puts "[HTML5]   WARNING: Failed to embed image #{local_filename}: #{embed_error.message}"
+            end
+          end
+        end
+      end
+      
+      # Extract cover image from updated content if present
+      cover_image_path = nil
+      cover_image_match = updated_content.match(/^:front-cover-image:\s*(.+)$/i)
+      if cover_image_match
+        cover_image_path = cover_image_match[1].strip
+        puts "[HTML5] Found cover image attribute: #{cover_image_path}"
+        
+        # Check if this cover image was downloaded
+        # The path might be a relative path like "images/filename.jpg" or just "filename.jpg"
+        cover_image_basename = File.basename(cover_image_path)
+        cover_image_local_filename = downloaded_images.values.find { |filename| filename == cover_image_basename }
+        
+        if cover_image_local_filename
+          puts "[HTML5] Cover image was downloaded as: #{cover_image_local_filename}"
+          cover_image_path = cover_image_local_filename
+        end
       end
       
       # Ensure we have a complete HTML document
@@ -812,39 +1051,115 @@ post '/convert/html5' do
         html_content = "<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<title>#{title}</title>\n</head>\n<body>\n#{html_content}\n</body>\n</html>"
       end
       
-      # Inject custom CSS to prevent source blocks and verbatim elements from overflowing
+      # Add cover image to HTML if present (HTML5 doesn't automatically render :front-cover-image:)
+      if cover_image_path
+        # Try to find the image in downloaded images or use the path directly
+        cover_image_data_uri = nil
+        
+        # Check if we downloaded this image
+        if downloaded_images.any? && images_dir && File.directory?(images_dir)
+          # Find the local filename
+          local_filename = nil
+          downloaded_images.each do |url, filename|
+            if filename == File.basename(cover_image_path) || cover_image_path.include?(filename)
+              local_filename = filename
+              break
+            end
+          end
+          
+          if local_filename
+            local_path = File.join(images_dir, local_filename)
+            if File.exist?(local_path)
+              begin
+                require 'base64'
+                image_data = File.binread(local_path)
+                base64_data = Base64.strict_encode64(image_data)
+                
+                ext = File.extname(local_filename).downcase
+                mime_type = case ext
+                            when '.jpg', '.jpeg' then 'image/jpeg'
+                            when '.png' then 'image/png'
+                            when '.gif' then 'image/gif'
+                            when '.svg' then 'image/svg+xml'
+                            when '.webp' then 'image/webp'
+                            else 'image/jpeg'
+                            end
+                
+                cover_image_data_uri = "data:#{mime_type};base64,#{base64_data}"
+                puts "[HTML5] Cover image embedded as base64 data URI (#{image_data.bytesize} bytes)"
+              rescue => embed_error
+                puts "[HTML5] WARNING: Failed to embed cover image: #{embed_error.message}"
+              end
+            end
+          end
+        end
+        
+        # Insert cover image at the beginning of the body
+        cover_image_html = if cover_image_data_uri
+          "<div style=\"text-align: center; margin: 2em 0;\"><img src=\"#{cover_image_data_uri}\" alt=\"Cover Image\" style=\"max-width: 100%; height: auto; max-width: 500px;\"></div>"
+        elsif cover_image_path
+          # Use the path directly (might be a relative path)
+          "<div style=\"text-align: center; margin: 2em 0;\"><img src=\"#{cover_image_path}\" alt=\"Cover Image\" style=\"max-width: 100%; height: auto; max-width: 500px;\"></div>"
+        end
+        
+        if cover_image_html
+          # Insert after <body> tag or at the beginning of body content
+          if html_content.include?('<body>')
+            html_content = html_content.sub('<body>', "<body>\n#{cover_image_html}")
+          elsif html_content.include?('<body')
+            # Handle <body with attributes>
+            html_content = html_content.sub(/<body[^>]*>/, "\\0\n#{cover_image_html}")
+          else
+            # No body tag, prepend to content
+            html_content = cover_image_html + "\n" + html_content
+          end
+          puts "[HTML5] Cover image added to HTML"
+        end
+      end
+      
+      # Inject custom CSS optimized for e-paper readers (Kindle, Tolino, etc.)
+      # E-paper readers have limited CSS support and cannot scroll horizontally
       source_block_css = <<~CSS
         <style>
-          /* Prevent horizontal overflow on body and containers */
+          /* E-paper reader friendly styles */
           body {
             max-width: 100%;
-            overflow-x: auto;
-            box-sizing: border-box;
+            margin: 0;
+            padding: 1em;
+            font-family: serif;
+            line-height: 1.6;
           }
           
-          /* All code and source blocks */
+          /* Images - ensure they fit on e-paper screens */
+          img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 1em auto;
+          }
+          
+          /* All code and source blocks - wrap text, no horizontal scroll */
           pre, pre code, .listingblock pre, .literalblock pre, .sourceblock pre {
             max-width: 100%;
-            overflow-x: auto;
             overflow-wrap: break-word;
             word-wrap: break-word;
-            box-sizing: border-box;
+            white-space: pre-wrap;
+            word-break: break-all;
           }
           
-          /* Ensure code blocks scroll instead of overflow */
+          /* Code blocks - wrap instead of scroll */
           pre code {
             display: block;
             max-width: 100%;
-            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
           }
           
-          /* Blockquotes and quotes - can contain long lines */
+          /* Blockquotes and quotes - wrap long lines */
           blockquote, .quoteblock, .quote-block {
             max-width: 100%;
-            overflow-x: auto;
             overflow-wrap: break-word;
             word-wrap: break-word;
-            box-sizing: border-box;
           }
           
           blockquote p, .quoteblock p, .quote-block p,
@@ -854,46 +1169,61 @@ post '/convert/html5' do
             word-wrap: break-word;
           }
           
-          /* Verse blocks (poetry) */
+          /* Verse blocks (poetry) - wrap text */
           .verseblock, .verse-block {
             max-width: 100%;
-            overflow-x: auto;
             overflow-wrap: break-word;
             word-wrap: break-word;
-            box-sizing: border-box;
           }
           
           .verseblock pre, .verse-block pre {
             max-width: 100%;
-            overflow-x: auto;
             overflow-wrap: break-word;
             word-wrap: break-word;
+            white-space: pre-wrap;
           }
           
-          /* Any element with pre-formatted content */
+          /* Any element with pre-formatted content - wrap */
           [class*="literal"], [class*="listing"], [class*="source"] {
             max-width: 100%;
-            overflow-x: auto;
-            box-sizing: border-box;
+            overflow-wrap: break-word;
+            word-wrap: break-word;
+            white-space: pre-wrap;
           }
           
-          /* Tables - can also get wide */
+          /* Tables - make them fit by wrapping or making scrollable if needed */
           table {
             max-width: 100%;
-            overflow-x: auto;
-            display: block;
-            box-sizing: border-box;
+            border-collapse: collapse;
+          }
+          
+          table td, table th {
+            overflow-wrap: break-word;
+            word-wrap: break-word;
+            max-width: 50%;
           }
           
           /* Container constraints */
           .content, #content, [role="main"], main, article, section {
             max-width: 100%;
-            overflow-x: auto;
-            box-sizing: border-box;
           }
           
           /* Ensure inline code doesn't break layout */
           code:not(pre code) {
+            overflow-wrap: break-word;
+            word-wrap: break-word;
+          }
+          
+          /* Headings - ensure they fit */
+          h1, h2, h3, h4, h5, h6 {
+            max-width: 100%;
+            overflow-wrap: break-word;
+            word-wrap: break-word;
+          }
+          
+          /* Paragraphs */
+          p {
+            max-width: 100%;
             overflow-wrap: break-word;
             word-wrap: break-word;
           }
@@ -916,7 +1246,9 @@ post '/convert/html5' do
       
       html_content
     ensure
-      temp_adoc.unlink
+      # Change directory before cleanup to prevent getcwd errors
+      safe_chdir_before_cleanup
+      temp_adoc.unlink if temp_adoc
     end
   rescue JSON::ParserError => e
     status 400
@@ -1274,7 +1606,8 @@ post '/convert/pdf' do
       puts "[PDF] Headers set, returning PDF content..."
       pdf_content
     ensure
-      # Cleanup
+      # Cleanup - change directory before cleanup to prevent getcwd errors
+      safe_chdir_before_cleanup
       temp_adoc.unlink if temp_adoc
       temp_pdf.unlink if temp_pdf
     end
