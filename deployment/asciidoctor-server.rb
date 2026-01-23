@@ -19,6 +19,21 @@ set :port, ENV.fetch('ASCIIDOCTOR_PORT', 8091).to_i
 set :bind, '0.0.0.0'  # Bind to all interfaces so it can be accessed from Docker network
 set :server, 'puma'
 set :protection, false  # Disable CSRF protection for API (not needed for REST API)
+set :public_folder, false  # Disable static file serving - this is a REST API only
+set :static, false  # Explicitly disable static file serving to prevent getcwd errors
+
+# Ensure working directory is always valid
+# This prevents getcwd errors when temp directories are cleaned up
+begin
+  # Get the script's directory as a safe fallback
+  script_dir = __dir__ || File.dirname(__FILE__)
+  # Ensure we're in a valid directory
+  Dir.chdir(script_dir) if File.directory?(script_dir)
+rescue => e
+  puts "Warning: Could not set working directory: #{e.message}"
+  # Try to use /tmp as a last resort
+  Dir.chdir('/tmp') if File.directory?('/tmp')
+end
 
 # Conversion timeout in seconds (default: 10 minutes for large books)
 # Can be overridden with ASCIIDOCTOR_CONVERSION_TIMEOUT environment variable
@@ -35,6 +50,26 @@ configure do
   set :server_settings, 
     max_threads: 5, 
     min_threads: 2
+end
+
+# Ensure working directory is valid before each request
+# This prevents getcwd errors when temp directories are cleaned up
+before do
+  # Ensure we're in a valid directory
+  begin
+    # Try to get current directory - if it fails, change to a safe location
+    Dir.pwd
+  rescue Errno::ENOENT => e
+    # Current directory is invalid, change to script directory or /tmp
+    script_dir = __dir__ || File.dirname(__FILE__) || '/app/deployment'
+    if File.directory?(script_dir)
+      Dir.chdir(script_dir)
+      puts "Warning: Working directory was invalid, changed to: #{script_dir}"
+    elsif File.directory?('/tmp')
+      Dir.chdir('/tmp')
+      puts "Warning: Working directory was invalid, changed to: /tmp"
+    end
+  end
 end
 
 # CORS configuration - always allow all origins for development
@@ -274,14 +309,20 @@ post '/convert/epub' do
     begin
       # EPUB - always use classic stylesheet
       # Determine deployment directory dynamically (where this script is located)
-      deployment_dir = __dir__ || Dir.pwd
+      # Use __dir__ first, fallback to script location, then /app/deployment
+      deployment_dir = __dir__ || File.dirname(__FILE__) || '/app/deployment'
       stylesheet_name = 'epub-classic.css'
       stylesheet_path = File.join(deployment_dir, stylesheet_name)
       
       # Verify stylesheet exists
       unless File.exist?(stylesheet_path)
         puts "[EPUB] Warning: Classic stylesheet not found at #{stylesheet_path}, proceeding without custom stylesheet"
-        puts "[EPUB] Debug: Current directory: #{Dir.pwd}, Script directory: #{__dir__}"
+        begin
+          current_dir = Dir.pwd rescue 'unknown'
+        rescue
+          current_dir = 'unknown (getcwd failed)'
+        end
+        puts "[EPUB] Debug: Current directory: #{current_dir}, Script directory: #{__dir__ || File.dirname(__FILE__)}"
         stylesheet_name = nil
       else
         puts "[EPUB] Using stylesheet: #{stylesheet_path}"
