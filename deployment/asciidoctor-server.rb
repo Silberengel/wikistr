@@ -98,6 +98,12 @@ options '*' do
   ''
 end
 
+# Helper function to get a safe temp directory
+# Always returns /tmp to avoid getcwd errors
+def safe_temp_dir
+  '/tmp'
+end
+
 # Helper function to safely change directory before cleanup
 # Prevents getcwd errors when temp directories are removed
 def safe_chdir_before_cleanup
@@ -112,6 +118,21 @@ def safe_chdir_before_cleanup
     # Ignore errors when changing directory - we'll still try to clean up
     puts "Warning: Could not change directory before cleanup: #{e.message}"
   end
+end
+
+# Helper function to create a temp file in a safe location
+# Uses explicit /tmp directory to avoid getcwd errors
+def safe_tempfile(prefix, suffix = '')
+  # Ensure we have a valid working directory first
+  begin
+    Dir.pwd
+  rescue Errno::ENOENT
+    # Current directory is invalid, change to /tmp
+    Dir.chdir('/tmp') if File.directory?('/tmp')
+  end
+  
+  # Create temp file with explicit directory
+  Tempfile.new([prefix, suffix], safe_temp_dir)
 end
 
 # Helper function to set CORS headers
@@ -313,13 +334,13 @@ post '/convert/epub' do
       return { error: 'Missing content or asciidoc field' }.to_json
     end
     
-    # Create temporary file for AsciiDoc content
-    temp_adoc = Tempfile.new(['document', '.adoc'])
+    # Create temporary file for AsciiDoc content in safe location
+    temp_adoc = safe_tempfile('document', '.adoc')
     temp_adoc.write(content)
     temp_adoc.close
     
-    # Create temporary directory for EPUB output
-    temp_dir = Dir.mktmpdir('epub-')
+    # Create temporary directory for EPUB output in safe location
+    temp_dir = Dir.mktmpdir('epub-', safe_temp_dir)
     epub_file = File.join(temp_dir, 'document.epub')
     
     begin
@@ -872,8 +893,8 @@ post '/convert/html5' do
       return { error: 'Missing content or asciidoc field' }.to_json
     end
     
-    # Create temporary file for AsciiDoc content
-    temp_adoc = Tempfile.new(['document', '.adoc'])
+    # Create temporary file for AsciiDoc content in safe location
+    temp_adoc = safe_tempfile('document', '.adoc')
     temp_adoc.write(content)
     temp_adoc.close
     
@@ -1291,13 +1312,13 @@ post '/convert/pdf' do
       return { error: 'Missing content or asciidoc field' }.to_json
     end
     
-    # Create temporary file for AsciiDoc content
-    temp_adoc = Tempfile.new(['document', '.adoc'])
+    # Create temporary file for AsciiDoc content in safe location
+    temp_adoc = safe_tempfile('document', '.adoc')
     temp_adoc.write(content)
     temp_adoc.close
     
-    # Create temporary file for PDF output
-    temp_pdf = Tempfile.new(['document', '.pdf'])
+    # Create temporary file for PDF output in safe location
+    temp_pdf = safe_tempfile('document', '.pdf')
     temp_pdf.close
     
     begin
