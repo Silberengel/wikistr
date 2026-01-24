@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -531,7 +533,8 @@ func (c *Converter) convert(ctx context.Context, req *ConvertRequest, backend, e
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp work directory: %w", err)
 	}
-	defer os.RemoveAll(workDir) // Clean up entire work directory
+	// Note: Don't clean up workDir here - the handler will clean up the output file
+	// The workDir will be cleaned up by the OS temp file cleaner eventually
 
 	// Create input file
 	inputPath := filepath.Join(workDir, "input.adoc")
@@ -540,43 +543,132 @@ func (c *Converter) convert(ctx context.Context, req *ConvertRequest, backend, e
 	}
 
 	// Determine output path
-	outputPath := filepath.Join(workDir, fmt.Sprintf("output.%s", extension))
+	// For epub3 backend, the output file should be named with .epub extension
+	var outputFileName string
+	if backend == "epub3" {
+		outputFileName = "output.epub"
+	} else {
+		outputFileName = fmt.Sprintf("output.%s", extension)
+	}
+	outputPath := filepath.Join(workDir, outputFileName)
 
 	// Build asciidoctor command
+	// For epub3 and pdf, use separate commands (asciidoctor-epub3, asciidoctor-pdf)
 	// If asciidoctorPath is "bundle", use bundle exec
 	var cmd *exec.Cmd
-	if c.asciidoctorPath == "bundle" {
-		bundlePath, err := exec.LookPath("bundle")
-		if err != nil {
-			return nil, fmt.Errorf("bundle command not found: %w", err)
+	if backend == "epub3" {
+		// Copy epub-classic.css to workDir so asciidoctor-epub3 can use it
+		epubCSSPath := "/app/deployment/epub-classic.css"
+		epubCSSDest := filepath.Join(workDir, "epub-classic.css")
+		if cssData, err := os.ReadFile(epubCSSPath); err == nil {
+			if err := os.WriteFile(epubCSSDest, cssData, FileModeFile); err != nil {
+				c.logger.Warn("converter", "Failed to copy epub-classic.css, EPUB will use default styles", map[string]interface{}{
+					"error": err.Error(),
+				})
+			}
+		} else {
+			c.logger.Warn("converter", "epub-classic.css not found, EPUB will use default styles", map[string]interface{}{
+				"error": err.Error(),
+			})
 		}
-		cmd = exec.CommandContext(ctx, bundlePath, "exec", "asciidoctor",
-			"-b", backend,
-			"-D", workDir,
-			"-o", filepath.Base(outputPath),
-			"-a", fmt.Sprintf("title=%s", req.Title),
-		)
-		// Set bundle environment
-		bundlePathEnv := os.Getenv("BUNDLE_PATH")
-		if bundlePathEnv == "" {
-			bundlePathEnv = "/app/deployment/vendor/bundle"
-		}
-		// Gemfile is at /app/deployment/Gemfile
-		gemfilePath := "/app/deployment/Gemfile"
-		if _, err := os.Stat(gemfilePath); err == nil {
-			cmd.Env = append(os.Environ(),
-				"BUNDLE_GEMFILE="+gemfilePath,
-				"BUNDLE_PATH="+bundlePathEnv,
+		
+		// EPUB3 requires asciidoctor-epub3 command
+		if c.asciidoctorPath == "bundle" {
+			bundlePath, err := exec.LookPath("bundle")
+			if err != nil {
+				return nil, fmt.Errorf("bundle command not found: %w", err)
+			}
+			cmd = exec.CommandContext(ctx, bundlePath, "exec", "asciidoctor-epub3",
+				"-D", workDir,
+				"-o", filepath.Base(outputPath),
+				"-a", fmt.Sprintf("title=%s", req.Title),
+				"-a", "stylesheet=epub-classic.css",
+			)
+			// Set bundle environment
+			if absGemfile, absErr := filepath.Abs(c.config.BundleGemfile); absErr == nil {
+				if _, statErr := os.Stat(absGemfile); statErr == nil {
+					cmd.Env = append(os.Environ(),
+						"BUNDLE_GEMFILE="+absGemfile,
+						"BUNDLE_PATH="+c.config.BundlePath,
+					)
+				}
+			}
+		} else {
+			// Try to find asciidoctor-epub3 in PATH or bundle
+			epub3Path, err := exec.LookPath("asciidoctor-epub3")
+			if err != nil {
+				return nil, fmt.Errorf("asciidoctor-epub3 command not found: %w", err)
+			}
+			cmd = exec.CommandContext(ctx, epub3Path,
+				"-D", workDir,
+				"-o", filepath.Base(outputPath),
+				"-a", fmt.Sprintf("title=%s", req.Title),
+				"-a", "stylesheet=epub-classic.css",
 			)
 		}
-		// Note: cmd.Dir will be set to workDir later for the conversion
+	} else if backend == "pdf" {
+		// PDF requires asciidoctor-pdf command
+		if c.asciidoctorPath == "bundle" {
+			bundlePath, err := exec.LookPath("bundle")
+			if err != nil {
+				return nil, fmt.Errorf("bundle command not found: %w", err)
+			}
+			cmd = exec.CommandContext(ctx, bundlePath, "exec", "asciidoctor-pdf",
+				"-D", workDir,
+				"-o", filepath.Base(outputPath),
+				"-a", fmt.Sprintf("title=%s", req.Title),
+			)
+			// Set bundle environment
+			if absGemfile, absErr := filepath.Abs(c.config.BundleGemfile); absErr == nil {
+				if _, statErr := os.Stat(absGemfile); statErr == nil {
+					cmd.Env = append(os.Environ(),
+						"BUNDLE_GEMFILE="+absGemfile,
+						"BUNDLE_PATH="+c.config.BundlePath,
+					)
+				}
+			}
+		} else {
+			// Try to find asciidoctor-pdf in PATH or bundle
+			pdfPath, err := exec.LookPath("asciidoctor-pdf")
+			if err != nil {
+				return nil, fmt.Errorf("asciidoctor-pdf command not found: %w", err)
+			}
+			cmd = exec.CommandContext(ctx, pdfPath,
+				"-D", workDir,
+				"-o", filepath.Base(outputPath),
+				"-a", fmt.Sprintf("title=%s", req.Title),
+			)
+		}
 	} else {
-		cmd = exec.CommandContext(ctx, c.asciidoctorPath,
-			"-b", backend,
-			"-D", workDir,
-			"-o", filepath.Base(outputPath),
-			"-a", fmt.Sprintf("title=%s", req.Title),
-		)
+		// For other backends, use regular asciidoctor
+		if c.asciidoctorPath == "bundle" {
+			bundlePath, err := exec.LookPath("bundle")
+			if err != nil {
+				return nil, fmt.Errorf("bundle command not found: %w", err)
+			}
+			cmd = exec.CommandContext(ctx, bundlePath, "exec", "asciidoctor",
+				"-b", backend,
+				"-D", workDir,
+				"-o", filepath.Base(outputPath),
+				"-a", fmt.Sprintf("title=%s", req.Title),
+			)
+			// Set bundle environment
+			if absGemfile, absErr := filepath.Abs(c.config.BundleGemfile); absErr == nil {
+				if _, statErr := os.Stat(absGemfile); statErr == nil {
+					cmd.Env = append(os.Environ(),
+						"BUNDLE_GEMFILE="+absGemfile,
+						"BUNDLE_PATH="+c.config.BundlePath,
+					)
+				}
+			}
+		} else {
+			cmd = exec.CommandContext(ctx, c.asciidoctorPath,
+				"-b", backend,
+				"-D", workDir,
+				"-o", filepath.Base(outputPath),
+				"-a", fmt.Sprintf("title=%s", req.Title),
+			)
+		}
 	}
 
 	// Add author(s) if provided - use authors array if available, otherwise fall back to single author
@@ -636,11 +728,19 @@ func (c *Converter) convert(ctx context.Context, req *ConvertRequest, backend, e
 		"-a", "allow-uri-read",
 	)
 
-	// Add input file (relative to workDir since we set Dir)
-	cmd.Args = append(cmd.Args, filepath.Base(inputPath))
-	
-	// Set working directory to workDir so relative paths work
-	cmd.Dir = workDir
+	// Add input file
+	// Use relative path from workDir for consistency
+	// BUNDLE_GEMFILE is set to absolute path, so bundle exec can find it even if cmd.Dir = workDir
+	if c.asciidoctorPath == "bundle" {
+		// For bundle exec, use relative path and set working directory to workDir
+		// BUNDLE_GEMFILE is already set to absolute path in cmd.Env
+		cmd.Args = append(cmd.Args, filepath.Base(inputPath))
+		cmd.Dir = workDir
+	} else {
+		// For direct asciidoctor, use relative path
+		cmd.Args = append(cmd.Args, filepath.Base(inputPath))
+		cmd.Dir = workDir
+	}
 
 	// Execute conversion with timeout
 	conversionCtx, cancel := context.WithTimeout(ctx, c.timeout)
@@ -731,7 +831,8 @@ func (c *Converter) convertHTML5(ctx context.Context, req *ConvertRequest) (*Con
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp work directory: %w", err)
 	}
-	defer os.RemoveAll(workDir) // Clean up entire work directory
+	// Note: Don't clean up workDir here - the handler will clean up the output file
+	// The workDir will be cleaned up by the OS temp file cleaner eventually
 
 	// Process images for HTML embedding (download temporarily, but don't modify AsciiDoc content)
 	imageHandler := NewImageHandler(c.logger, workDir)
@@ -979,10 +1080,25 @@ func (c *Converter) convertViaEPUB(ctx context.Context, req *ConvertRequest, kin
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp work directory: %w", err)
 	}
-	defer os.RemoveAll(workDir)
+	// Note: Don't clean up workDir here - the handler will clean it up after reading the file
+	// Only clean up on error paths
 
 	// Determine output path
 	outputPath := filepath.Join(workDir, fmt.Sprintf("output.%s", kindleFormat))
+
+	// Download cover image if provided, so we can explicitly pass it to Calibre
+	var coverImagePath string
+	if req.Image != "" {
+		coverImagePath, err = c.downloadCoverImage(ctx, req.Image, workDir)
+		if err != nil {
+			c.logger.Warn("converter", "Failed to download cover image, continuing without explicit cover", map[string]interface{}{
+				"error":      err.Error(),
+				"image_url":  req.Image,
+				"format":     kindleFormat,
+			})
+			// Continue without explicit cover - Calibre will use EPUB's cover
+		}
+	}
 
 	c.logger.Info("converter", fmt.Sprintf("Converting EPUB to %s", kindleFormat), map[string]interface{}{
 		"operation":      "kindle_conversion",
@@ -990,19 +1106,30 @@ func (c *Converter) convertViaEPUB(ctx context.Context, req *ConvertRequest, kin
 		"epub_file":      epubResult.FilePath,
 		"output_file":    outputPath,
 		"epub_size":      epubResult.Size,
+		"has_cover":      coverImagePath != "",
 	})
 
-	// Run ebook-convert: epub -> kindle format
-	cmd := exec.CommandContext(ctx, ebookConvertPath,
+	// Build ebook-convert command
+	cmdArgs := []string{
 		epubResult.FilePath,
 		outputPath,
-	)
+	}
+	
+	// Explicitly set cover image if we downloaded it
+	if coverImagePath != "" {
+		cmdArgs = append(cmdArgs, "--cover", coverImagePath)
+	}
+
+	// Run ebook-convert: epub -> kindle format
+	cmd := exec.CommandContext(ctx, ebookConvertPath, cmdArgs...)
 
 	startTime := time.Now()
 	output, err := cmd.CombinedOutput()
 	duration := time.Since(startTime)
 
 	if err != nil {
+		// Clean up workDir on error since handler won't get a chance to
+		os.RemoveAll(workDir)
 		c.logger.Error("converter", fmt.Sprintf("%s conversion failed", kindleFormat), err, map[string]interface{}{
 			"error_type":    "kindle_conversion_failed",
 			"component":     "converter",
@@ -1025,6 +1152,8 @@ func (c *Converter) convertViaEPUB(ctx context.Context, req *ConvertRequest, kin
 			fileList = append(fileList, f.Name())
 		}
 
+		// Clean up workDir on error since handler won't get a chance to
+		os.RemoveAll(workDir)
 		c.logger.Error("converter", fmt.Sprintf("%s output file not found", kindleFormat), err, map[string]interface{}{
 			"error_type":    "file_operation_error",
 			"component":     "converter",
@@ -1039,6 +1168,8 @@ func (c *Converter) convertViaEPUB(ctx context.Context, req *ConvertRequest, kin
 	}
 
 	if info.Size() == 0 {
+		// Clean up workDir on error since handler won't get a chance to
+		os.RemoveAll(workDir)
 		return nil, fmt.Errorf("output file is empty")
 	}
 
@@ -1058,6 +1189,86 @@ func (c *Converter) convertViaEPUB(ctx context.Context, req *ConvertRequest, kin
 		Size:     info.Size(),
 		MimeType: mimeType,
 	}, nil
+}
+
+// downloadCoverImage downloads the cover image to a temporary file for Calibre conversion
+func (c *Converter) downloadCoverImage(ctx context.Context, imageURL, workDir string) (string, error) {
+	c.logger.Info("converter", "Downloading cover image for Calibre conversion", map[string]interface{}{
+		"image_url": imageURL,
+		"work_dir":  workDir,
+	})
+
+	// Create HTTP request with context
+	req, err := http.NewRequestWithContext(ctx, "GET", imageURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to download image: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	// Determine file extension from URL or Content-Type
+	ext := ".jpg" // default
+	if contentType := resp.Header.Get("Content-Type"); contentType != "" {
+		if strings.Contains(contentType, "png") {
+			ext = ".png"
+		} else if strings.Contains(contentType, "gif") {
+			ext = ".gif"
+		} else if strings.Contains(contentType, "webp") {
+			ext = ".webp"
+		}
+	} else {
+		// Try to get extension from URL
+		if strings.HasSuffix(strings.ToLower(imageURL), ".png") {
+			ext = ".png"
+		} else if strings.HasSuffix(strings.ToLower(imageURL), ".gif") {
+			ext = ".gif"
+		} else if strings.HasSuffix(strings.ToLower(imageURL), ".webp") {
+			ext = ".webp"
+		}
+	}
+
+	// Create local file
+	coverPath := filepath.Join(workDir, "cover"+ext)
+	file, err := os.Create(coverPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to create cover file: %w", err)
+	}
+	defer file.Close()
+
+	// Copy image data
+	if _, err := io.Copy(file, resp.Body); err != nil {
+		return "", fmt.Errorf("failed to write cover file: %w", err)
+	}
+
+	// Verify file was created and has content
+	info, err := os.Stat(coverPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to stat cover file: %w", err)
+	}
+	if info.Size() == 0 {
+		return "", fmt.Errorf("downloaded cover image is empty")
+	}
+
+	c.logger.Info("converter", "Cover image downloaded successfully", map[string]interface{}{
+		"image_url":   imageURL,
+		"cover_path":  coverPath,
+		"cover_size":  info.Size(),
+	})
+
+	return coverPath, nil
 }
 
 func findEbookConvert() (string, error) {

@@ -1088,9 +1088,19 @@
       return;
     }
 
-    // Fetch all referenced events
+    // Fetch all referenced events - OPTIMIZED: batch fetch in parallel
     const referencedEvents: NostrEvent[] = [];
     const { contentCache } = await import('$lib/contentCache');
+    
+    // First pass: check cache for all events
+    const cachedEvents = [
+      ...contentCache.getEvents('publications'),
+      ...contentCache.getEvents('longform'),
+      ...contentCache.getEvents('wikis')
+    ];
+    
+    const eventMap = new Map<string, NostrEvent>(); // Map a-tag value to event
+    const eventsToFetch: Array<{aTagValue: string, kind: number, pubkey: string, dtag: string, eventId?: string}> = [];
     
     for (const aTag of aTags) {
       const aTagValue = aTag[1]; // Format: "kind:pubkey:dtag"
@@ -1098,75 +1108,98 @@
       
       let referencedEvent: NostrEvent | null = null;
       
-      // Try to get from cache first - check all relevant caches
+      // Try to get from cache first by event ID
       if (eventId) {
         const cached = contentCache.getEvent('publications', eventId) ||
                       contentCache.getEvent('longform', eventId) ||
                       contentCache.getEvent('wikis', eventId);
         if (cached) {
           referencedEvent = cached.event;
+          eventMap.set(aTagValue, referencedEvent);
         }
       }
       
-      // If not in cache, try to fetch by a-tag or event ID
+      // If not found by event ID, try cache by a-tag
       if (!referencedEvent) {
-        try {
-          // Parse a-tag: "kind:pubkey:dtag"
-          const [kindStr, pubkey, dtag] = aTagValue.split(':');
-          const kind = parseInt(kindStr, 10);
-          
-          // Try cache first by a-tag
-          const cachedEvents = [
-            ...contentCache.getEvents('publications'),
-            ...contentCache.getEvents('longform'),
-            ...contentCache.getEvents('wikis')
-          ];
-          const cached = cachedEvents.find(c => {
-            if (c.event.kind !== kind || c.event.pubkey !== pubkey) return false;
-            const eventDTag = c.event.tags.find(t => t[0] === 'd')?.[1];
-            return eventDTag === dtag;
+        const [kindStr, pubkey, dtag] = aTagValue.split(':');
+        const kind = parseInt(kindStr, 10);
+        
+        const cached = cachedEvents.find(c => {
+          if (c.event.kind !== kind || c.event.pubkey !== pubkey) return false;
+          const eventDTag = c.event.tags.find(t => t[0] === 'd')?.[1];
+          return eventDTag === dtag;
+        });
+        
+        if (cached) {
+          referencedEvent = cached.event;
+          eventMap.set(aTagValue, referencedEvent);
+        } else {
+          // Need to fetch from relay
+          eventsToFetch.push({ aTagValue, kind, pubkey, dtag, eventId });
+        }
+      }
+    }
+    
+    // Batch fetch all missing events in parallel
+    if (eventsToFetch.length > 0) {
+      try {
+        // Group by kind and author for more efficient queries
+        const filters: any[] = [];
+        const filterToATag = new Map<string, string>(); // Map filter key to a-tag value
+        
+        for (const { aTagValue, kind, pubkey, dtag } of eventsToFetch) {
+          const filterKey = `${kind}:${pubkey}:${dtag}`;
+          filters.push({
+            authors: [pubkey],
+            '#d': [dtag],
+            kinds: [kind],
+            limit: 1
           });
-          
-          if (cached) {
-            referencedEvent = cached.event;
-          } else {
-            // Fetch from relays
-            const result = await relayService.queryEvents(
-              'anonymous',
-              'wiki-read',
-              [
-                {
-                  authors: [pubkey],
-                  '#d': [dtag],
-                  kinds: [kind],
-                  limit: 1
-                }
-              ],
-              {
-                excludeUserContent: false,
-                currentUserPubkey: undefined
-              }
-            );
-            
-            if (result.events.length > 0) {
-              referencedEvent = result.events[0];
-              // Cache it in appropriate cache based on kind
-              const cacheType = referencedEvent.kind === 30040 || referencedEvent.kind === 30041 ? 'publications' :
-                               referencedEvent.kind === 30023 ? 'longform' :
-                               (referencedEvent.kind === 30817 || referencedEvent.kind === 30818) ? 'wikis' : null;
+          filterToATag.set(filterKey, aTagValue);
+        }
+        
+        // Single batch query for all missing events
+        const result = await relayService.queryEvents(
+          'anonymous',
+          'wiki-read',
+          filters,
+          {
+            excludeUserContent: false,
+            currentUserPubkey: undefined
+          }
+        );
+        
+        // Map fetched events back to their a-tags
+        for (const event of result.events) {
+          const dtag = event.tags.find(t => t[0] === 'd')?.[1];
+          if (dtag) {
+            const filterKey = `${event.kind}:${event.pubkey}:${dtag}`;
+            const aTagValue = filterToATag.get(filterKey);
+            if (aTagValue) {
+              eventMap.set(aTagValue, event);
+              
+              // Cache the event
+              const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                               event.kind === 30023 ? 'longform' :
+                               (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
               if (cacheType) {
                 await contentCache.storeEvents(cacheType, [{
-                  event: referencedEvent,
+                  event,
                   relays: result.relays
                 }]);
               }
             }
           }
-        } catch (error) {
-          console.warn('Failed to fetch referenced event:', aTagValue, error);
         }
+      } catch (error) {
+        console.warn('Failed to batch fetch referenced events:', error);
       }
-      
+    }
+    
+    // Build referencedEvents array in the same order as aTags
+    for (const aTag of aTags) {
+      const aTagValue = aTag[1];
+      const referencedEvent = eventMap.get(aTagValue);
       if (referencedEvent) {
         referencedEvents.push(referencedEvent);
       }
@@ -1290,10 +1323,24 @@
   }
   
   // Helper function to render nested publication indices
+  // OPTIMIZED: batch fetches events in parallel instead of sequentially
   async function renderNestedPublicationIndex(indexEvent: NostrEvent): Promise<string> {
     const aTags = indexEvent.tags.filter(tag => tag[0] === 'a');
     const { contentCache } = await import('$lib/contentCache');
-    let nestedContent = '';
+    
+    if (aTags.length === 0) {
+      return '';
+    }
+    
+    // First pass: check cache for all events
+    const cachedEvents = [
+      ...contentCache.getEvents('publications'),
+      ...contentCache.getEvents('longform'),
+      ...contentCache.getEvents('wikis')
+    ];
+    
+    const eventMap = new Map<string, NostrEvent>(); // Map a-tag value to event
+    const eventsToFetch: Array<{aTagValue: string, kind: number, pubkey: string, dtag: string, eventId?: string}> = [];
     
     for (const aTag of aTags) {
       const aTagValue = aTag[1];
@@ -1301,69 +1348,114 @@
       
       let referencedEvent: NostrEvent | null = null;
       
+      // Try cache by event ID first
       if (eventId) {
         const cached = contentCache.getEvent('publications', eventId) ||
                       contentCache.getEvent('longform', eventId) ||
                       contentCache.getEvent('wikis', eventId);
         if (cached) {
           referencedEvent = cached.event;
+          eventMap.set(aTagValue, referencedEvent);
         }
       }
       
+      // If not found, try cache by a-tag
       if (!referencedEvent) {
-        try {
-          const [kindStr, pubkey, dtag] = aTagValue.split(':');
-          const kind = parseInt(kindStr, 10);
-          
-          const cachedEvents = [
-            ...contentCache.getEvents('publications'),
-            ...contentCache.getEvents('longform'),
-            ...contentCache.getEvents('wikis')
-          ];
-          const cached = cachedEvents.find(c => {
-            if (c.event.kind !== kind || c.event.pubkey !== pubkey) return false;
-            const eventDTag = c.event.tags.find(t => t[0] === 'd')?.[1];
-            return eventDTag === dtag;
+        const [kindStr, pubkey, dtag] = aTagValue.split(':');
+        const kind = parseInt(kindStr, 10);
+        
+        const cached = cachedEvents.find(c => {
+          if (c.event.kind !== kind || c.event.pubkey !== pubkey) return false;
+          const eventDTag = c.event.tags.find(t => t[0] === 'd')?.[1];
+          return eventDTag === dtag;
+        });
+        
+        if (cached) {
+          referencedEvent = cached.event;
+          eventMap.set(aTagValue, referencedEvent);
+        } else {
+          // Need to fetch from relay
+          eventsToFetch.push({ aTagValue, kind, pubkey, dtag, eventId });
+        }
+      }
+    }
+    
+    // Batch fetch all missing events in parallel
+    if (eventsToFetch.length > 0) {
+      try {
+        const filters: any[] = [];
+        const filterToATag = new Map<string, string>(); // Map filter key to a-tag value
+        
+        for (const { aTagValue, kind, pubkey, dtag } of eventsToFetch) {
+          filters.push({
+            authors: [pubkey],
+            '#d': [dtag],
+            kinds: [kind],
+            limit: 1
           });
-          
-          if (cached) {
-            referencedEvent = cached.event;
-          } else {
-            const result = await relayService.queryEvents(
-              'anonymous',
-              'wiki-read',
-              [
-                {
-                  authors: [pubkey],
-                  '#d': [dtag],
-                  kinds: [kind],
-                  limit: 1
-                }
-              ],
-              {
-                excludeUserContent: false,
-                currentUserPubkey: undefined
-              }
-            );
-            
-            if (result.events.length > 0) {
-              referencedEvent = result.events[0];
-              // Cache it in appropriate cache based on kind
-              const cacheType = referencedEvent.kind === 30040 || referencedEvent.kind === 30041 ? 'publications' :
-                               referencedEvent.kind === 30023 ? 'longform' :
-                               (referencedEvent.kind === 30817 || referencedEvent.kind === 30818) ? 'wikis' : null;
+          const filterKey = `${kind}:${pubkey}:${dtag}`;
+          filterToATag.set(filterKey, aTagValue);
+        }
+        
+        // Single batch query for all missing events
+        const result = await relayService.queryEvents(
+          'anonymous',
+          'wiki-read',
+          filters,
+          {
+            excludeUserContent: false,
+            currentUserPubkey: undefined
+          }
+        );
+        
+        // Map fetched events back to their a-tags and cache them
+        const eventsToCache: Array<{event: NostrEvent, relays: string[], cacheType: string}> = [];
+        
+        for (const event of result.events) {
+          const dtag = event.tags.find(t => t[0] === 'd')?.[1];
+          if (dtag) {
+            const filterKey = `${event.kind}:${event.pubkey}:${dtag}`;
+            const aTagValue = filterToATag.get(filterKey);
+            if (aTagValue) {
+              eventMap.set(aTagValue, event);
+              
+              // Prepare for caching
+              const cacheType = event.kind === 30040 || event.kind === 30041 ? 'publications' :
+                               event.kind === 30023 ? 'longform' :
+                               (event.kind === 30817 || event.kind === 30818) ? 'wikis' : null;
               if (cacheType) {
-                await contentCache.storeEvents(cacheType, [{
-                  event: referencedEvent,
-                  relays: result.relays
-                }]);
+                eventsToCache.push({ event, relays: result.relays, cacheType });
               }
             }
           }
-        } catch (error) {
-          console.warn('Failed to fetch nested event:', aTagValue, error);
         }
+        
+        // Batch cache all fetched events
+        if (eventsToCache.length > 0) {
+          const cacheGroups = new Map<string, Array<{event: NostrEvent, relays: string[]}>>();
+          for (const { event, relays, cacheType } of eventsToCache) {
+            if (cacheType && !cacheGroups.has(cacheType)) {
+              cacheGroups.set(cacheType, []);
+            }
+            if (cacheType) {
+              cacheGroups.get(cacheType)!.push({ event, relays });
+            }
+          }
+          
+          for (const [cacheType, events] of cacheGroups) {
+            await contentCache.storeEvents(cacheType as 'publications' | 'longform' | 'wikis', events);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to batch fetch nested events:', error);
       }
+    }
+    
+    // Build nested content in the same order as aTags
+    let nestedContent = '';
+    for (const aTag of aTags) {
+      const aTagValue = aTag[1];
+      const referencedEvent = eventMap.get(aTagValue);
       
       if (referencedEvent) {
         const title = referencedEvent.tags.find(t => t[0] === 'title')?.[1] || 'Untitled';

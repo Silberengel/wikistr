@@ -36,6 +36,8 @@ const cache = {
   bookList: { data: null, timestamp: 0, limit: 0, showAll: false },
   topLevelBooks: { data: null, timestamp: 0, limit: 0 },
   bookDetails: new Map(), // naddr -> { data, timestamp }
+  bookHierarchy: new Map(), // naddr -> { data, timestamp }
+  bookComments: new Map(), // naddr -> { data, timestamp }
   searchResults: new Map(), // query -> { data, timestamp }
   generatedFiles: new Map() // naddr:format -> { buffer, mimeType, extension, timestamp }
 };
@@ -274,8 +276,22 @@ async function fetchBooksByDTag(dTag, customRelays = null) {
     // Close all subscriptions
     subscriptions.forEach(s => s.close());
     
-    console.log(`[Books] Found ${foundEvents.length} books with d tag: ${dTag}`);
-    return foundEvents;
+    // Deduplicate by d-tag: if multiple events have the same d-tag, keep only the newest one
+    const dTagMap = new Map(); // kind:pubkey:d -> event with highest created_at
+    for (const event of foundEvents) {
+      const eventDTag = event.tags.find(([k]) => k === 'd')?.[1];
+      if (eventDTag === dTag) {
+        const dTagKey = `${event.kind}:${event.pubkey}:${eventDTag}`;
+        const existing = dTagMap.get(dTagKey);
+        if (!existing || event.created_at > existing.created_at) {
+          dTagMap.set(dTagKey, event);
+        }
+      }
+    }
+    
+    const deduplicatedEvents = Array.from(dTagMap.values());
+    console.log(`[Books] Found ${foundEvents.length} books with d tag: ${dTag}, ${deduplicatedEvents.length} after d-tag deduplication`);
+    return deduplicatedEvents;
   } catch (error) {
     console.error('[Books] Error fetching books by d tag:', error);
     throw error;
@@ -728,15 +744,23 @@ async function buildBookEventHierarchy(indexEvent, visitedIds = new Set(), custo
         // Close all subscriptions
         subscriptions.forEach(s => s.close());
         
-        // Map events by their a-tag identifier
+        // Map events by their a-tag identifier, deduplicating by d-tag (keep newest)
+        const dTagMap = new Map(); // kind:pubkey:d -> event with highest created_at
         for (const event of foundEvents) {
           if (event.kind === 30040 || event.kind === 30041) {
             const dTag = event.tags.find(([k]) => k === 'd')?.[1];
             if (dTag) {
-              const aTagKey = `${event.kind}:${event.pubkey}:${dTag}`;
-              aTagEvents.set(aTagKey, event);
+              const dTagKey = `${event.kind}:${event.pubkey}:${dTag}`;
+              const existing = dTagMap.get(dTagKey);
+              if (!existing || event.created_at > existing.created_at) {
+                dTagMap.set(dTagKey, event);
+              }
             }
           }
+        }
+        // Convert dTagMap to aTagEvents format
+        for (const [dTagKey, event] of dTagMap.entries()) {
+          aTagEvents.set(dTagKey, event);
         }
       }
     } catch (error) {
@@ -953,22 +977,28 @@ function collectAllEventsFromHierarchy(indexEvent, hierarchy) {
 /**
  * Generate EPUB using AsciiDoctor server
  */
-async function generateEPUB(content, title, author) {
+async function generateEPUB(content, title, author, image = null) {
   const url = `${ASCIIDOCTOR_SERVER_URL}/convert/epub`;
   
   console.log(`[EPUB Download] Generating EPUB via ${url}`);
   console.log(`[EPUB Download] Content length: ${content.length} chars`);
+
+  const requestBody = {
+    content,
+    title,
+    author
+  };
+  
+  if (image) {
+    requestBody.image = image;
+  }
 
   const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({
-      content,
-      title,
-      author
-    })
+    body: JSON.stringify(requestBody)
   });
 
   if (!response.ok) {
@@ -1229,8 +1259,28 @@ async function fetchBooks(limit = 50, customRelays = null) {
     // Close all subscriptions
     subscriptions.forEach(sub => sub.close());
     
-    console.log(`[Books] Found ${foundEvents.length} books`);
-    return foundEvents;
+    // Deduplicate by d-tag: if multiple events have the same d-tag, keep only the newest one
+    const dTagMap = new Map(); // kind:pubkey:d -> event with highest created_at
+    for (const event of foundEvents) {
+      const dTag = event.tags.find(([k]) => k === 'd')?.[1];
+      if (dTag) {
+        const dTagKey = `${event.kind}:${event.pubkey}:${dTag}`;
+        const existing = dTagMap.get(dTagKey);
+        if (!existing || event.created_at > existing.created_at) {
+          dTagMap.set(dTagKey, event);
+        }
+      } else {
+        // Events without d-tag: deduplicate by event ID (shouldn't happen for 30040, but just in case)
+        const idKey = `id:${event.id}`;
+        if (!dTagMap.has(idKey)) {
+          dTagMap.set(idKey, event);
+        }
+      }
+    }
+    
+    const deduplicatedEvents = Array.from(dTagMap.values());
+    console.log(`[Books] Found ${foundEvents.length} books, ${deduplicatedEvents.length} after d-tag deduplication`);
+    return deduplicatedEvents;
   } catch (error) {
     console.error('[Books] Error fetching books:', error);
     throw error;
@@ -1238,34 +1288,162 @@ async function fetchBooks(limit = 50, customRelays = null) {
 }
 
 /**
- * Fetch comments (kind 1111) and highlights (kind 9802) for a book event
+ * Fetch user handle/name from kind 0 profile event
  */
-async function fetchComments(bookEvent) {
+async function fetchUserHandle(pubkey, customRelays = null) {
+  // Handle both null and undefined for customRelays
+  if (customRelays === undefined) {
+    customRelays = null;
+  }
   try {
-    // Build article coordinate: kind:pubkey:identifier
-    const identifier = bookEvent.tags.find(([k]) => k === 'd')?.[1] || bookEvent.id;
-    const articleCoordinate = `${bookEvent.kind}:${bookEvent.pubkey}:${identifier}`;
+    const relays = customRelays && customRelays.length > 0 ? customRelays : DEFAULT_RELAYS;
     
-    console.log(`[Comments] Fetching comments and highlights for coordinate: ${articleCoordinate}`);
+    const foundEvents = [];
+    const eventMap = new Map();
+    let eoseCount = 0;
+    const totalRelays = relays.length;
+    const subscriptions = [];
+    
+    const filter = {
+      kinds: [0],
+      authors: [pubkey],
+      limit: 1
+    };
+    
+    for (const relayUrl of relays) {
+      try {
+        const relay = await pool.ensureRelay(relayUrl);
+        const sub = relay.subscribe([filter], {
+          onevent: (event) => {
+            if (!eventMap.has(event.id)) {
+              eventMap.set(event.id, event);
+              foundEvents.push(event);
+            }
+          },
+          oneose: () => {
+            eoseCount++;
+          }
+        });
+        subscriptions.push(sub);
+      } catch (error) {
+        console.error(`[Profile] Error subscribing to ${relayUrl}:`, error);
+        eoseCount++;
+      }
+    }
+    
+    // Wait for response or timeout (shorter timeout for profile)
+    await new Promise((resolve) => {
+      const checkInterval = setInterval(() => {
+        if (eoseCount >= totalRelays || foundEvents.length > 0) {
+          clearInterval(checkInterval);
+          resolve();
+        }
+      }, 50);
+      
+      setTimeout(() => {
+        clearInterval(checkInterval);
+        resolve();
+      }, 3000); // 3 second timeout for profile
+    });
+    
+    subscriptions.forEach(s => s.close());
+    
+    if (foundEvents.length > 0) {
+      try {
+        const metadata = JSON.parse(foundEvents[0].content);
+        // Return name, display_name, or nip05 (in that order of preference)
+        return metadata.name || metadata.display_name || metadata.nip05 || null;
+      } catch (e) {
+        console.error('[Profile] Error parsing metadata:', e);
+        return null;
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('[Profile] Error fetching user handle:', error);
+    return null;
+  }
+}
+
+/**
+ * Fetch comments (kind 1111) and highlights (kind 9802) for a book event
+ * Comments are only fetched for the root 30040 event
+ * Highlights are fetched for all events in the hierarchy (root + all nested events)
+ */
+async function fetchComments(bookEvent, hierarchy = [], customRelays = null) {
+  try {
+    const relays = customRelays && customRelays.length > 0 ? customRelays : DEFAULT_RELAYS;
+    
+    // Build article coordinate for the root 30040 event (for comments only)
+    const identifier = bookEvent.tags.find(([k]) => k === 'd')?.[1] || bookEvent.id;
+    const rootCoordinate = `${bookEvent.kind}:${bookEvent.pubkey}:${identifier}`;
+    
+    // Collect all event coordinates from the hierarchy (for highlights)
+    const allEvents = collectAllEventsFromHierarchy(bookEvent, hierarchy);
+    const highlightCoordinates = [];
+    const coordinateSet = new Set(); // Deduplicate coordinates
+    
+    for (const event of allEvents) {
+      // For highlights, we need to use the d-tag (not event.id) to match the "a" tag format
+      const dTag = event.tags.find(([k]) => k === 'd')?.[1];
+      if (dTag) {
+        const coordinate = `${event.kind}:${event.pubkey}:${dTag}`;
+        if (!coordinateSet.has(coordinate)) {
+          coordinateSet.add(coordinate);
+          highlightCoordinates.push(coordinate);
+        }
+      } else {
+        // If no d-tag, use event.id as fallback (though highlights typically use d-tag format)
+        const coordinate = `${event.kind}:${event.pubkey}:${event.id}`;
+        if (!coordinateSet.has(coordinate)) {
+          coordinateSet.add(coordinate);
+          highlightCoordinates.push(coordinate);
+        }
+      }
+    }
+    
+    console.log(`[Comments] Fetching comments for root coordinate: ${rootCoordinate}`);
+    console.log(`[Comments] Fetching highlights for ${highlightCoordinates.length} events in hierarchy`);
+    if (highlightCoordinates.length > 0 && highlightCoordinates.length <= 10) {
+      console.log(`[Comments] Highlight coordinates:`, highlightCoordinates);
+    } else if (highlightCoordinates.length > 10) {
+      console.log(`[Comments] Highlight coordinates (first 10):`, highlightCoordinates.slice(0, 10));
+    }
+    
+    // Debug: Log all events in hierarchy to verify they have d-tags
+    console.log(`[Comments] All events in hierarchy:`, allEvents.map(e => ({
+      kind: e.kind,
+      id: e.id.substring(0, 16) + '...',
+      pubkey: e.pubkey.substring(0, 16) + '...',
+      dTag: e.tags.find(([k]) => k === 'd')?.[1] || 'NO D-TAG'
+    })));
     
     const foundEvents = [];
     const eventMap = new Map(); // Deduplicate by event ID
     let eoseCount = 0;
-    const totalRelays = DEFAULT_RELAYS.length;
+    const totalRelays = relays.length;
     const subscriptions = [];
     
-    // Fetch both kind 1111 (comments) and kind 9802 (highlights)
-    const filter = {
-      kinds: [1111, 9802],
-      '#A': [articleCoordinate], // NIP-22: uppercase A tag for root scope
+    // Fetch comments (kind 1111) only for the root 30040 event
+    const commentFilter = {
+      kinds: [1111],
+      '#A': [rootCoordinate], // NIP-22: uppercase A tag for root scope
       limit: 500
     };
     
-    // Subscribe to each relay individually
-    for (const relayUrl of DEFAULT_RELAYS) {
+    // Fetch highlights (kind 9802) for all events in the hierarchy
+    const highlightFilter = {
+      kinds: [9802],
+      '#A': highlightCoordinates, // All coordinates from the hierarchy
+      limit: 1000 // Higher limit since we're fetching from multiple events
+    };
+    
+    // Subscribe to each relay individually for comments
+    for (const relayUrl of relays) {
       try {
         const relay = await pool.ensureRelay(relayUrl);
-        const sub = relay.subscribe([filter], {
+        const sub = relay.subscribe([commentFilter], {
           onevent: (event) => {
             // Deduplicate events by ID
             if (!eventMap.has(event.id)) {
@@ -1279,15 +1457,43 @@ async function fetchComments(bookEvent) {
         });
         subscriptions.push(sub);
       } catch (error) {
-        console.error(`[Comments] Error subscribing to ${relayUrl}:`, error);
+        console.error(`[Comments] Error subscribing to ${relayUrl} for comments:`, error);
+        eoseCount++;
+      }
+    }
+    
+    // Subscribe to each relay individually for highlights
+    for (const relayUrl of relays) {
+      try {
+        const relay = await pool.ensureRelay(relayUrl);
+        const sub = relay.subscribe([highlightFilter], {
+          onevent: (event) => {
+            // Debug: Log received highlights
+            const aTag = event.tags.find(([k]) => k === 'a' || k === 'A')?.[1];
+            console.log(`[Comments] Received highlight ${event.id.substring(0, 16)}... with a-tag: ${aTag}`);
+            
+            // Deduplicate events by ID
+            if (!eventMap.has(event.id)) {
+              eventMap.set(event.id, event);
+              foundEvents.push(event);
+            }
+          },
+          oneose: () => {
+            eoseCount++;
+          }
+        });
+        subscriptions.push(sub);
+      } catch (error) {
+        console.error(`[Comments] Error subscribing to ${relayUrl} for highlights:`, error);
         eoseCount++;
       }
     }
     
     // Wait for all relays to respond or timeout
+    // Note: eoseCount will be 2x totalRelays since we have 2 subscriptions per relay
     await new Promise((resolve) => {
       const checkInterval = setInterval(() => {
-        if (eoseCount >= totalRelays) {
+        if (eoseCount >= totalRelays * 2) {
           clearInterval(checkInterval);
           resolve();
         }
@@ -1302,7 +1508,9 @@ async function fetchComments(bookEvent) {
     // Close all subscriptions
     subscriptions.forEach(s => s.close());
     
-    console.log(`[Comments] Found ${foundEvents.length} comments and highlights`);
+    const commentCount = foundEvents.filter(e => e.kind === 1111).length;
+    const highlightCount = foundEvents.filter(e => e.kind === 9802).length;
+    console.log(`[Comments] Found ${commentCount} comments and ${highlightCount} highlights`);
     return foundEvents;
   } catch (error) {
     console.error('[Comments] Error fetching comments:', error);
@@ -1387,139 +1595,7 @@ function generateEPUBViewerHTML(title, author, epubDataUri, naddr) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/png" href="/favicon_alex-catalogue.png">
   <title>${escapeHtml(title)} - EPUB Reader</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      background: #f5f5f5;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-    
-    .header {
-      background: white;
-      border-bottom: 1px solid #ddd;
-      padding: 1em;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-shrink: 0;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    
-    .header h1 {
-      font-size: 1.2em;
-      font-weight: 600;
-      color: #333;
-      margin: 0;
-    }
-    
-    .header .book-info {
-      color: #666;
-      font-size: 0.9em;
-    }
-    
-    .header .actions {
-      display: flex;
-      gap: 0.5em;
-    }
-    
-    .header .actions a {
-      padding: 0.5em 1em;
-      background: #007bff;
-      color: white;
-      text-decoration: none;
-      border-radius: 4px;
-      font-size: 0.9em;
-      transition: background 0.2s;
-    }
-    
-    /* Removed hover effects for e-paper readers */
-    
-    .viewer-container {
-      flex: 1;
-      overflow: hidden;
-      position: relative;
-      background: white;
-    }
-    
-    #viewer {
-      width: 100%;
-      height: 100%;
-      border: none;
-    }
-    
-    .loading {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      text-align: center;
-      color: #666;
-    }
-    
-    .loading-spinner {
-      border: 4px solid #f3f3f3;
-      border-top: 4px solid #007bff;
-      border-radius: 50%;
-      width: 40px;
-      height: 40px;
-      animation: spin 1s linear infinite;
-      margin: 0 auto 1em;
-    }
-    
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-    
-    .error {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      text-align: center;
-      color: #d32f2f;
-      padding: 2em;
-      background: #ffebee;
-      border-radius: 8px;
-      max-width: 500px;
-    }
-    
-    .error h2 {
-      margin-bottom: 0.5em;
-    }
-    
-    .error a {
-      color: #007bff;
-      text-decoration: none;
-      margin-top: 1em;
-      display: inline-block;
-    }
-    
-    @media (max-width: 768px) {
-      .header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 0.5em;
-      }
-      
-      .header .actions {
-        width: 100%;
-        flex-direction: column;
-      }
-      
-      .header .actions a {
-        text-align: center;
-      }
-    }
-  </style>
+  <style>${getEPUBViewerStyles()}</style>
 </head>
 <body>
   <div class="header">
@@ -1529,11 +1605,24 @@ function generateEPUBViewerHTML(title, author, epubDataUri, naddr) {
     </div>
     <div class="actions">
       <a href="/?naddr=${encodeURIComponent(naddr)}">Back to Book</a>
-      <a href="/download-epub?naddr=${encodeURIComponent(naddr)}">Download</a>
+      <a href="/view?naddr=${encodeURIComponent(naddr)}">View as HTML</a>
+      <a href="/download?naddr=${encodeURIComponent(naddr)}&format=epub3">Download EPUB</a>
     </div>
   </div>
   
   <div class="viewer-container">
+    <noscript>
+      <div class="error" style="position: relative; transform: none; top: auto; left: auto; margin: 2em auto; max-width: 500px;">
+        <h2>JavaScript Required</h2>
+        <p>The EPUB viewer requires JavaScript to function. Please enable JavaScript in your browser, or download the EPUB file directly:</p>
+        <p style="margin-top: 1em;">
+          <a href="/download?naddr=${encodeURIComponent(naddr)}&format=epub3" style="display: inline-block; padding: 0.5em 1em; background: #000000; color: #ffffff; text-decoration: none; border-radius: 4px; border: 2px solid #000000;">Download EPUB</a>
+        </p>
+        <p style="margin-top: 1em;">
+          <a href="/?naddr=${encodeURIComponent(naddr)}">← Back to Book</a>
+        </p>
+      </div>
+    </noscript>
     <div id="loading" class="loading">
       <div class="loading-spinner"></div>
       <div>Loading EPUB...</div>
@@ -1688,33 +1777,204 @@ function generateErrorPage(title, errorMessage, details = null, backUrl = '/') {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/png" href="/favicon_alex-catalogue.png">
   <title>${escapeHtml(title)}</title>
-  <style>
-    body { font-family: sans-serif; max-width: 800px; margin: 2em auto; padding: 1em; }
-    nav { margin-bottom: 2em; padding-bottom: 1em; border-bottom: 1px solid #ddd; }
-    nav a { margin-right: 1em; color: #007bff; text-decoration: none; }
-    .message-box { margin: 1em 0; padding: 1em; border-radius: 4px; border-left: 4px solid; }
-    .message-box.error { background: #fee; border-color: #d32f2f; color: #c62828; }
-    .message-box.warning { background: #fff3cd; border-color: #ff9800; color: #f57c00; }
-    .message-box.info { background: #e3f2fd; border-color: #2196f3; color: #1976d2; }
-    .message-box-header { display: flex; align-items: center; gap: 0.5em; margin-bottom: 0.5em; }
-    .message-box-icon { font-size: 1.2em; }
-    .message-box-title { font-size: 1.1em; }
-    .message-box-content p { margin: 0; }
-    .message-box-details { margin-top: 0.5em; }
-    .message-box-details summary { cursor: pointer; font-weight: bold; margin-bottom: 0.5em; }
-    .message-box-details pre { background: rgba(0,0,0,0.05); padding: 0.5em; border-radius: 3px; overflow-x: auto; font-size: 0.9em; }
-  </style>
+  <style>${getCommonStyles()}</style>
 </head>
 <body>
   <nav>
     <a href="/">Alexandria Catalogue</a>
     <a href="/books">Browse Library</a>
+    <a href="/status">Status</a>
   </nav>
   <h1>${escapeHtml(title)}</h1>
   ${generateMessageBox('error', errorMessage, details)}
   <p style="margin-top: 2em;"><a href="${escapeHtml(backUrl)}">← Go back</a></p>
 </body>
 </html>`;
+}
+
+/**
+ * Wrap HTML content with navigation header
+ */
+function wrapHTMLWithNavigation(htmlContent, title, author, naddr) {
+  // Extract body content if HTML is complete, otherwise use content as-is
+  let bodyContent = htmlContent;
+  
+  // Try to extract body content from complete HTML
+  const bodyMatch = htmlContent.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+  if (bodyMatch) {
+    bodyContent = bodyMatch[1];
+  } else {
+    // If no body tag, try to extract content after head
+    const headMatch = htmlContent.match(/<\/head>([\s\S]*)/i);
+    if (headMatch) {
+      bodyContent = headMatch[1];
+    }
+  }
+  
+  // Build navigation header
+  const navHeader = `
+    <div style="background: white; border-bottom: 1px solid #ddd; padding: 1em; margin-bottom: 1em;">
+      <div style="display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto;">
+        <div>
+          <h1 style="font-size: 1.2em; font-weight: 600; color: #000000; margin: 0;">${escapeHtml(title)}</h1>
+          <div style="color: #1a1a1a; font-size: 0.9em; margin-top: 0.25em;">${escapeHtml(author || 'Unknown Author')}</div>
+        </div>
+        <div style="display: flex; gap: 0.5em;">
+          <a href="/?naddr=${encodeURIComponent(naddr)}" style="padding: 0.5em 1em; background: #000000; color: #ffffff; text-decoration: none; border-radius: 4px; font-size: 0.9em; border: 2px solid #000000;">Back to Book</a>
+          <a href="/view-epub?naddr=${encodeURIComponent(naddr)}" style="padding: 0.5em 1em; background: #000000; color: #ffffff; text-decoration: none; border-radius: 4px; font-size: 0.9em; border: 2px solid #000000;">View as EPUB</a>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // If HTML already has a body, inject navigation at the start
+  if (htmlContent.match(/<body[^>]*>/i)) {
+    return htmlContent.replace(/(<body[^>]*>)/i, `$1${navHeader}`);
+  }
+  
+  // Otherwise, wrap in complete HTML structure
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" href="/favicon_alex-catalogue.png">
+  <title>${escapeHtml(title)} - HTML View</title>
+</head>
+<body>
+${navHeader}
+<div style="max-width: 1200px; margin: 0 auto; padding: 1em;">
+${bodyContent}
+</div>
+</body>
+</html>`;
+}
+
+/**
+ * Get consolidated CSS styles for all pages
+ */
+function getCommonStyles() {
+  return `
+    * { box-sizing: border-box; }
+    body { font-family: sans-serif; max-width: 800px; margin: 2em auto; padding: 1em; background: #ffffff; color: #000000; }
+    nav { margin-bottom: 2em; padding-bottom: 1em; border-bottom: 2px solid #000000; }
+    nav a { margin-right: 1em; color: #0066cc; text-decoration: underline; }
+    nav a:focus { outline: 3px solid #0066cc; outline-offset: 2px; }
+    a { color: #0066cc; text-decoration: underline; }
+    a:focus { outline: 3px solid #0066cc; outline-offset: 2px; }
+    h1, h2, h3 { color: #000000; }
+    button { padding: 0.5em 1em; font-size: 1em; background: #000000; color: #ffffff; border: 2px solid #000000; cursor: pointer; font-weight: bold; }
+    button:focus { outline: 3px solid #0066cc; outline-offset: 2px; }
+    input[type="text"] { padding: 0.5em; font-size: 1em; border: 2px solid #000000; border-radius: 4px; color: #000000; background: #ffffff; }
+    input[type="text"]:focus { outline: 3px solid #0066cc; outline-offset: 2px; }
+    textarea { padding: 0.5em; font-size: 0.9em; font-family: monospace; border: 2px solid #000000; border-radius: 4px; background: #ffffff; color: #000000; }
+    textarea:focus { outline: 3px solid #0066cc; outline-offset: 2px; }
+    select { padding: 0.5em; font-size: 1em; border: 2px solid #000000; border-radius: 4px; background: #ffffff; color: #000000; }
+    select:focus { outline: 3px solid #0066cc; outline-offset: 2px; }
+    .search-form { margin-bottom: 2em; padding: 1em; background: #ffffff; border: 2px solid #000000; border-radius: 4px; }
+    .book-result { margin: 1.5em 0; padding: 1em; border: 2px solid #000000; border-radius: 4px; background: #ffffff; }
+    .book-title { font-size: 1.2em; font-weight: bold; margin-bottom: 0.5em; }
+    .book-meta { color: #1a1a1a; font-size: 0.9em; margin: 0.5em 0; }
+    .book-actions { margin-top: 0.5em; display: flex; flex-wrap: wrap; gap: 1em; align-items: center; }
+    .book-header { margin-bottom: 2em; padding: 1em; background: #ffffff; border: 2px solid #000000; border-radius: 4px; }
+    .view-buttons { display: flex; gap: 0.5em; }
+    .view-buttons a { display: inline-block; padding: 0.5em 1em; color: #ffffff; background: #000000; text-decoration: none; border-radius: 4px; border: 2px solid #000000; }
+    .view-buttons a:focus { outline: 3px solid #0066cc; outline-offset: 2px; }
+    .download-section { display: flex; gap: 0.5em; align-items: center; }
+    .download-section label { font-weight: bold; color: #000000; }
+    .download-section button { padding: 0.5em 1em; color: #ffffff; background: #000000; border: 2px solid #000000; cursor: pointer; border-radius: 4px; font-weight: bold; }
+    .download-section button:focus { outline: 3px solid #0066cc; outline-offset: 2px; }
+    .message-box { margin: 1em 0; padding: 1em; border-radius: 4px; border-left: 4px solid; }
+    .message-box.error { background: #ffffff; border-color: #cc0000; color: #000000; border: 2px solid #cc0000; }
+    .message-box.warning { background: #ffffff; border-color: #cc6600; color: #000000; border: 2px solid #cc6600; }
+    .message-box.info { background: #ffffff; border-color: #0066cc; color: #000000; border: 2px solid #0066cc; }
+    .message-box-header { display: flex; align-items: center; gap: 0.5em; margin-bottom: 0.5em; }
+    .message-box-icon { font-size: 1.2em; }
+    .message-box-title { font-size: 1.1em; font-weight: bold; }
+    .message-box-content p { margin: 0; color: #000000; }
+    .message-box-details { margin-top: 0.5em; }
+    .message-box-details summary { cursor: pointer; font-weight: bold; margin-bottom: 0.5em; color: #000000; }
+    .message-box-details summary:focus { outline: 3px solid #0066cc; outline-offset: 2px; }
+    .message-box-details pre { background: #f0f0f0; border: 1px solid #000000; padding: 0.5em; border-radius: 3px; overflow-x: auto; font-size: 0.9em; color: #000000; }
+    .error { color: #000000; margin: 1em 0; padding: 1em; background: #ffffff; border: 2px solid #cc0000; }
+    .no-results { color: #1a1a1a; font-style: italic; margin: 2em 0; text-align: center; }
+    .no-comments { color: #1a1a1a; font-style: italic; margin: 1em 0; }
+    .info { color: #1a1a1a; margin: 1em 0; }
+    .comment, .highlight { margin: 1.5em 0; padding: 1em; border-left: 4px solid #000000; background: #ffffff; border: 1px solid #000000; }
+    .highlight { border-left-color: #cc6600; border-color: #cc6600; }
+    .comment-author, .highlight-author { font-weight: bold; color: #000000; margin-bottom: 0.5em; }
+    .comment-date, .highlight-date { color: #1a1a1a; font-size: 0.85em; }
+    .comment-content, .highlight-content { margin-top: 0.5em; white-space: pre-wrap; word-wrap: break-word; color: #000000; }
+    .comment-type.comment { background: #ffffff; border: 2px solid #0066cc; color: #000000; }
+    .comment-type.highlight { background: #ffffff; border: 2px solid #cc6600; color: #000000; }
+    .comment-type { display: inline-block; padding: 0.2em 0.5em; font-size: 0.75em; border-radius: 3px; margin-left: 0.5em; }
+    .thread-reply { margin-left: 2em; margin-top: 1em; border-left: 2px solid #ccc; padding-left: 1em; }
+    .thread-reply .comment, .thread-reply .highlight { border-left-width: 2px; }
+    .comments-section { margin-top: 2em; }
+    .status-section { margin: 1em 0; padding: 1em; background: #ffffff; border: 2px solid #000000; border-radius: 4px; }
+    .status-section h2 { margin-top: 0; color: #000000; }
+    .status-item { margin: 0.5em 0; color: #000000; }
+    .status-label { font-weight: bold; display: inline-block; width: 200px; }
+    .results-header { margin: 1.5em 0; }
+  `;
+}
+
+/**
+ * Get table-specific styles
+ */
+function getTableStyles() {
+  return `
+    table { width: 100%; border-collapse: collapse; margin-top: 1em; border: 2px solid #000000; }
+    th, td { padding: 0.75em; text-align: left; border-bottom: 1px solid #000000; border-right: 1px solid #000000; }
+    th { background: #000000; color: #ffffff; font-weight: bold; }
+    th a { color: #ffffff; text-decoration: underline; }
+    th a:focus { outline: 3px solid #0066cc; outline-offset: 2px; }
+    td { background: #ffffff; color: #000000; }
+    .book-link { color: #0066cc; text-decoration: underline; }
+    .book-link:focus { outline: 3px solid #0066cc; outline-offset: 2px; }
+    .book-author { color: #1a1a1a; font-size: 0.9em; }
+    .book-date { color: #1a1a1a; font-size: 0.85em; white-space: nowrap; }
+    .pagination { margin-top: 2em; text-align: center; }
+    .pagination a, .pagination span { display: inline-block; padding: 0.5em 1em; margin: 0 0.25em; text-decoration: underline; border: 2px solid #000000; border-radius: 4px; color: #0066cc; }
+    .pagination a:focus { outline: 3px solid #0066cc; outline-offset: 2px; }
+    .pagination .current { background: #000000; color: #ffffff; border-color: #000000; }
+    .pagination .disabled { color: #4a4a4a; cursor: not-allowed; pointer-events: none; }
+    .expand-button { margin: 1em 0; padding: 0.75em 1.5em; background: #000000; color: #ffffff; border: 2px solid #000000; border-radius: 4px; cursor: pointer; font-size: 1em; text-decoration: none; display: inline-block; font-weight: bold; }
+    .expand-button:focus { outline: 3px solid #0066cc; outline-offset: 2px; }
+    .controls { margin: 1em 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1em; }
+    .loading { text-align: center; color: #000000; padding: 2em; }
+    .book-count { color: #1a1a1a; margin-bottom: 1em; }
+  `;
+}
+
+/**
+ * Get EPUB viewer-specific styles
+ */
+function getEPUBViewerStyles() {
+  return `
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; background: #ffffff; color: #000000; height: 100vh; display: flex; flex-direction: column; }
+    .header { background: #ffffff; border-bottom: 2px solid #000000; padding: 1em; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+    .header h1 { font-size: 1.2em; font-weight: 600; color: #000000; margin: 0; }
+    .header .book-info { color: #1a1a1a; font-size: 0.9em; }
+    .header .actions { display: flex; gap: 0.5em; }
+    .header .actions a { padding: 0.5em 1em; background: #000000; color: #ffffff; text-decoration: none; border-radius: 4px; font-size: 0.9em; border: 2px solid #000000; }
+    .header .actions a:focus { outline: 3px solid #0066cc; outline-offset: 2px; }
+    .viewer-container { flex: 1; overflow: hidden; position: relative; background: white; }
+    #viewer { width: 100%; height: 100%; border: none; }
+    .loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: #000000; }
+    .loading-spinner { border: 4px solid #f3f3f3; border-top: 4px solid #007bff; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 1em; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .error { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: #000000; padding: 2em; background: #ffffff; border: 3px solid #cc0000; border-radius: 8px; max-width: 500px; }
+    .error h2 { margin-bottom: 0.5em; color: #cc0000; }
+    .error a { color: #0066cc; text-decoration: underline; margin-top: 1em; display: inline-block; }
+    .error a:focus { outline: 3px solid #0066cc; outline-offset: 2px; }
+    @media (max-width: 768px) {
+      .header { flex-direction: column; align-items: flex-start; gap: 0.5em; }
+      .header .actions { width: 100%; flex-direction: column; }
+      .header .actions a { text-align: center; }
+    }
+  `;
 }
 
 /**
@@ -1740,6 +2000,73 @@ function truncate(text, maxLength = 200) {
 }
 
 /**
+ * Calculate approximate size of an object in bytes
+ */
+function calculateObjectSize(obj) {
+  if (obj === null || obj === undefined) return 0;
+  try {
+    return new TextEncoder().encode(JSON.stringify(obj)).length;
+  } catch (e) {
+    // Fallback: estimate based on string representation
+    return String(obj).length * 2; // Rough estimate: 2 bytes per character
+  }
+}
+
+/**
+ * Format bytes to human-readable string
+ */
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+}
+
+/**
+ * Calculate total cache size
+ */
+function calculateCacheSize() {
+  let totalBytes = 0;
+  const sizes = {
+    bookList: 0,
+    topLevelBooks: 0,
+    bookDetails: 0,
+    bookHierarchy: 0,
+    bookComments: 0,
+    searchResults: 0,
+    generatedFiles: 0
+  };
+  
+  // Calculate size of Maps
+  for (const [key, map] of Object.entries(cache)) {
+    if (map instanceof Map) {
+      let mapSize = 0;
+      for (const [mapKey, value] of map.entries()) {
+        mapSize += calculateObjectSize(mapKey);
+        mapSize += calculateObjectSize(value);
+      }
+      if (key === 'bookList') sizes.bookList = mapSize;
+      else if (key === 'topLevelBooks') sizes.topLevelBooks = mapSize;
+      else if (key === 'bookDetails') sizes.bookDetails = mapSize;
+      else if (key === 'bookHierarchy') sizes.bookHierarchy = mapSize;
+      else if (key === 'bookComments') sizes.bookComments = mapSize;
+      else if (key === 'searchResults') sizes.searchResults = mapSize;
+      else if (key === 'generatedFiles') sizes.generatedFiles = mapSize;
+      totalBytes += mapSize;
+    } else if (typeof map === 'object' && map !== null) {
+      // For objects like bookList, topLevelBooks
+      const objSize = calculateObjectSize(map);
+      if (key === 'bookList') sizes.bookList = objSize;
+      else if (key === 'topLevelBooks') sizes.topLevelBooks = objSize;
+      totalBytes += objSize;
+    }
+  }
+  
+  return { total: totalBytes, sizes };
+}
+
+/**
  * Handle HTTP request
  */
 async function handleRequest(req, res) {
@@ -1756,7 +2083,26 @@ async function handleRequest(req, res) {
     return;
   }
 
-  if (req.method !== 'GET') {
+  // Handle POST requests for cache clearing
+  if (req.method === 'POST' && url.pathname === '/clear-cache') {
+    // Clear all caches
+    cache.bookList = { data: null, timestamp: 0, limit: 0, showAll: false };
+    cache.topLevelBooks = { data: null, timestamp: 0, limit: 0 };
+    cache.bookDetails.clear();
+    cache.bookHierarchy.clear();
+    cache.bookComments.clear();
+    cache.searchResults.clear();
+    cache.generatedFiles.clear();
+    
+    console.log('[Cache] All caches cleared');
+    
+    // Redirect back to status page with success message
+    res.writeHead(302, { 'Location': '/status?cleared=1' });
+    res.end();
+    return;
+  }
+
+  if (req.method !== 'GET' && req.method !== 'POST') {
     res.writeHead(405, { 'Content-Type': 'text/plain' });
     res.end('Method not allowed');
     return;
@@ -1834,39 +2180,17 @@ async function handleRequest(req, res) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/png" href="/favicon_alex-catalogue.png">
   <title>Search Results - Alexandria Catalogue</title>
-  <style>
-    body { font-family: sans-serif; max-width: 800px; margin: 2em auto; padding: 1em; }
-    nav { margin-bottom: 2em; padding-bottom: 1em; border-bottom: 1px solid #ddd; }
-    nav a { margin-right: 1em; color: #007bff; text-decoration: none; }
-    /* Removed hover effects for e-paper readers */
-    .search-form { margin-bottom: 2em; padding: 1em; background: #f5f5f5; border-radius: 4px; }
-    input[type="text"] { width: 70%; padding: 0.5em; font-size: 1em; margin-right: 0.5em; }
-    button { padding: 0.5em 1em; font-size: 1em; background: #007bff; color: white; border: none; cursor: pointer; }
-    /* Removed hover effects for e-paper readers */
-    .results-header { margin: 1.5em 0; }
-    .book-result { margin: 1.5em 0; padding: 1em; border: 1px solid #ddd; border-radius: 4px; background: #fafafa; }
-    .book-title { font-size: 1.2em; font-weight: bold; margin-bottom: 0.5em; }
-    .book-meta { color: #666; font-size: 0.9em; margin: 0.5em 0; }
-    .book-actions { margin-top: 0.5em; display: flex; flex-wrap: wrap; gap: 1em; align-items: center; }
-    .view-buttons { display: flex; gap: 0.5em; }
-    .view-buttons a { display: inline-block; padding: 0.5em 1em; color: white; background: #007bff; text-decoration: none; border-radius: 4px; }
-    /* Removed hover effects for e-paper readers */
-    .download-section { display: flex; gap: 0.5em; align-items: center; }
-    .download-section label { font-weight: bold; color: #333; }
-    .download-section select { padding: 0.5em; font-size: 1em; border: 1px solid #ddd; border-radius: 4px; }
-    .download-section button { padding: 0.5em 1em; color: white; background: #28a745; border: none; cursor: pointer; border-radius: 4px; }
-    /* Removed hover effects for e-paper readers */
-    .no-results { color: #666; font-style: italic; margin: 2em 0; text-align: center; }
-  </style>
+  <style>${getCommonStyles()}</style>
 </head>
 <body>
   <nav>
     <a href="/">Alexandria Catalogue</a>
     <a href="/books">Browse Library</a>
+    <a href="/status">Status</a>
   </nav>
   
   <h1><img src="/favicon_alex-catalogue.png" alt="" style="width: 1.2em; height: 1.2em; vertical-align: middle; margin-right: 0.3em;"> Alexandria Catalogue</h1>
-  <p style="color: #666; margin-bottom: 1em;">The e-book download portal for <a href="https://alexandria.gitcitadel.eu" style="color: #007bff; text-decoration: none;">Alexandria</a>.</p>
+  <p style="color: #000000; margin-bottom: 1em;">The e-book download portal for <a href="https://alexandria.gitcitadel.eu" style="color: #0066cc; text-decoration: underline;">Alexandria</a>.</p>
   
   <div class="search-form">
     <form method="GET" action="/">
@@ -1874,7 +2198,7 @@ async function handleRequest(req, res) {
       <button type="submit">Search</button>
     </form>
     <div style="margin-top: 0.5em;">
-      <a href="/books" style="color: #007bff; text-decoration: none; font-size: 0.9em;">← Browse Library</a>
+      <a href="/books" style="color: #0066cc; text-decoration: underline; font-size: 0.9em;">← Browse Library</a>
     </div>
   </div>
   
@@ -1883,18 +2207,18 @@ async function handleRequest(req, res) {
     <p>Found ${books.length} book${books.length !== 1 ? 's' : ''} matching your search:</p>
     <div style="margin-top: 0.5em; padding: 0.75em; background: #e7f3ff; border-left: 3px solid #007bff; border-radius: 4px; font-size: 0.9em;">
       <strong>Relays used:</strong> ${relaysUsed.map(r => escapeHtml(r)).join(', ')}
-      <br><span style="color: #666; font-size: 0.85em;">(${isCustomRelays ? 'Custom relays specified' : 'Default relays'})</span>
-      ${!showCustomRelays && !isCustomRelays ? `<br><a href="/?naddr=${encodeURIComponent(query)}&show_custom_relays=1" style="color: #007bff; text-decoration: none; font-size: 0.9em; margin-top: 0.5em; display: inline-block;">Use custom relays</a>` : ''}
+      <br><span style="color: #1a1a1a; font-size: 0.85em;">(${isCustomRelays ? 'Custom relays specified' : 'Default relays'})</span>
+      ${!showCustomRelays && !isCustomRelays ? `<br><a href="/?naddr=${encodeURIComponent(query)}&show_custom_relays=1" style="color: #0066cc; text-decoration: underline; font-size: 0.9em; margin-top: 0.5em; display: inline-block;">Use custom relays</a>` : ''}
     </div>
     ${showCustomRelays || isCustomRelays ? `
     <form method="GET" action="/" style="margin-top: 1em; padding: 1em; background: #f5f5f5; border-radius: 4px;">
       <input type="hidden" name="naddr" value="${escapeHtml(query)}">
-      <label for="relays-input-search" style="display: block; margin-bottom: 0.5em; font-weight: bold; color: #333;">Custom Relays:</label>
-      <p style="font-size: 0.9em; color: #666; margin-bottom: 0.5em;">Enter one or more relay URLs (ws:// or wss:// format). Separate multiple relays with commas or newlines. Example: wss://relay.example.com, ws://localhost:8080</p>
-      <textarea id="relays-input-search" name="relays" placeholder="wss://relay.example.com, ws://localhost:8080" rows="3" style="width: 100%; padding: 0.5em; font-size: 0.9em; font-family: monospace; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">${escapeHtml(relayInput)}</textarea>
+      <label for="relays-input-search" style="display: block; margin-bottom: 0.5em; font-weight: bold; color: #000000;">Custom Relays:</label>
+      <p style="font-size: 0.9em; color: #1a1a1a; margin-bottom: 0.5em;">Enter one or more relay URLs (ws:// or wss:// format). Separate multiple relays with commas or newlines. Example: wss://relay.example.com, ws://localhost:8080</p>
+      <textarea id="relays-input-search" name="relays" placeholder="wss://relay.example.com, ws://localhost:8080" rows="3" style="width: 100%; padding: 0.5em; font-size: 0.9em; font-family: monospace; border: 2px solid #000000; border-radius: 4px; box-sizing: border-box; background: #ffffff; color: #000000;"></textarea>
       <div style="margin-top: 0.5em;">
-        <button type="submit" style="padding: 0.5em 1em; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">Update Search</button>
-        <a href="/?naddr=${encodeURIComponent(query)}" style="color: #666; text-decoration: none; font-size: 0.9em; margin-left: 1em;">Cancel</a>
+        <button type="submit" style="padding: 0.5em 1em; background: #000000; color: #ffffff; border: 2px solid #000000; border-radius: 4px; cursor: pointer; font-size: 0.9em; font-weight: bold;">Update Search</button>
+        <a href="/?naddr=${encodeURIComponent(query)}" style="color: #1a1a1a; text-decoration: underline; font-size: 0.9em; margin-left: 1em;">Cancel</a>
       </div>
     </form>
     ` : ''}
@@ -1913,6 +2237,12 @@ async function handleRequest(req, res) {
               const identifier = book.tags.find(([k]) => k === 'd')?.[1] || book.id;
               const date = formatDate(book.created_at);
               
+              // Extract metadata
+              const version = book.tags.find(([k]) => k === 'version')?.[1];
+              const description = book.tags.find(([k]) => k === 'description')?.[1];
+              const summary = book.tags.find(([k]) => k === 'summary')?.[1];
+              const published_on = book.tags.find(([k]) => k === 'published_on')?.[1];
+              
               // Generate naddr
               let naddr = '';
               try {
@@ -1930,32 +2260,16 @@ async function handleRequest(req, res) {
   <div class="book-result">
     <div class="book-title">${escapeHtml(title)}</div>
     <div class="book-meta">
-      Author: ${escapeHtml(author)}<br>
-      Created: ${date}
+      ${author ? `Author: ${escapeHtml(author)}<br>` : ''}
+      ${version ? `Version: ${escapeHtml(version)}<br>` : ''}
+      ${published_on ? `Published: ${escapeHtml(published_on)}<br>` : ''}
+      Created: ${date}<br>
+      ${description ? `<div style="margin-top: 0.5em; font-style: italic; font-size: 0.9em;">${escapeHtml(description)}</div>` : ''}
+      ${summary ? `<div style="margin-top: 0.5em; font-size: 0.9em;">${escapeHtml(summary)}</div>` : ''}
     </div>
     <div class="book-actions">
       <div class="view-buttons">
-        <a href="/view?naddr=${encodeURIComponent(naddr)}">View as HTML</a>
-        <a href="/view-epub?naddr=${encodeURIComponent(naddr)}">View as EPUB</a>
-      </div>
-      <div class="download-section">
-        <form method="GET" action="/download" style="display: flex; gap: 0.5em; align-items: center;">
-          <input type="hidden" name="naddr" value="${encodeURIComponent(naddr)}">
-          <label for="download-format-search-${naddr.replace(/[^a-zA-Z0-9]/g, '_')}">Download as:</label>
-          <select id="download-format-search-${naddr.replace(/[^a-zA-Z0-9]/g, '_')}" name="format" required>
-            <option value="epub3">EPUB3</option>
-            <option value="pdf">PDF</option>
-            <option value="html5">HTML5</option>
-            <option value="docbook5">DocBook5</option>
-            <option value="asciidoc">AsciiDoc</option>
-            <optgroup label="Recommended for Kindle">
-              <option value="mobi">MOBI</option>
-              <option value="azw3">AZW3</option>
-            </optgroup>
-            <option value="jsonl">JSONL</option>
-          </select>
-          <button type="submit">Download File</button>
-        </form>
+        <a href="/?naddr=${encodeURIComponent(naddr)}">View Details</a>
       </div>
     </div>
   </div>
@@ -1963,14 +2277,7 @@ async function handleRequest(req, res) {
             }
           }
           
-          html += `
-  <script>
-    function downloadBook(naddr, format) {
-      const url = '/download?naddr=' + encodeURIComponent(naddr) + '&format=' + encodeURIComponent(format);
-      window.location.href = url;
-    }
-  </script>
-</body>
+          html += `</body>
 </html>
 `;
           
@@ -1987,24 +2294,17 @@ async function handleRequest(req, res) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/png" href="/favicon_alex-catalogue.png">
   <title>Error - Alexandria Catalogue</title>
-  <style>
-    body { font-family: sans-serif; max-width: 800px; margin: 2em auto; padding: 1em; }
-    nav { margin-bottom: 2em; padding-bottom: 1em; border-bottom: 1px solid #ddd; }
-    nav a { margin-right: 1em; color: #007bff; text-decoration: none; }
-    .search-form { margin-bottom: 2em; padding: 1em; background: #f5f5f5; border-radius: 4px; }
-    input[type="text"] { width: 70%; padding: 0.5em; font-size: 1em; margin-right: 0.5em; }
-    button { padding: 0.5em 1em; font-size: 1em; background: #007bff; color: white; border: none; cursor: pointer; }
-    .error { color: red; margin: 1em 0; padding: 1em; background: #fee; border: 1px solid #fcc; }
-  </style>
+  <style>${getCommonStyles()}</style>
 </head>
 <body>
   <nav>
     <a href="/">Alexandria Catalogue</a>
     <a href="/books">Browse Library</a>
+    <a href="/status">Status</a>
   </nav>
   
   <h1><img src="/favicon_alex-catalogue.png" alt="" style="width: 1.2em; height: 1.2em; vertical-align: middle; margin-right: 0.3em;"> Alexandria Catalogue</h1>
-  <p style="color: #666; margin-bottom: 1em;">The e-book download portal for <a href="https://alexandria.gitcitadel.eu" style="color: #007bff; text-decoration: none;">Alexandria</a>.</p>
+  <p style="color: #000000; margin-bottom: 1em;">The e-book download portal for <a href="https://alexandria.gitcitadel.eu" style="color: #0066cc; text-decoration: underline;">Alexandria</a>.</p>
   
   <div class="search-form">
     <form method="GET" action="/">
@@ -2012,7 +2312,7 @@ async function handleRequest(req, res) {
       <button type="submit">Search</button>
     </form>
     <div style="margin-top: 0.5em;">
-      <a href="/books" style="color: #007bff; text-decoration: none; font-size: 0.9em;">← Browse Library</a>
+      <a href="/books" style="color: #0066cc; text-decoration: underline; font-size: 0.9em;">← Browse Library</a>
     </div>
   </div>
   
@@ -2039,24 +2339,121 @@ async function handleRequest(req, res) {
         const bookEvent = await fetchBookEvent(naddr, customRelays && customRelays.length > 0 ? customRelays : undefined);
         console.log(`[Book View] Found book event: ${bookEvent.id}`);
 
-        // Fetch comments and highlights
-        console.log(`[Book View] Fetching comments and highlights...`);
-        const allItems = await fetchComments(bookEvent);
+        // Build book hierarchy to check if there's content (with caching)
+        // Normalize cache key: handle null, undefined, empty array consistently
+        const relayKey = (customRelays && customRelays.length > 0) ? customRelays.sort().join(',') : 'default';
+        const hierarchyCacheKey = `${naddr}:${relayKey}`;
+        let hierarchy;
+        const cachedHierarchy = cache.bookHierarchy.get(hierarchyCacheKey);
+        if (cachedHierarchy && (Date.now() - cachedHierarchy.timestamp) < CACHE_TTL.BOOK_DETAIL) {
+          console.log(`[Book View] Using cached hierarchy for: ${naddr}`);
+          hierarchy = cachedHierarchy.data;
+        } else {
+          console.log(`[Book View] Building book hierarchy to check for content...`);
+          hierarchy = await buildBookEventHierarchy(bookEvent, new Set(), customRelays && customRelays.length > 0 ? customRelays : undefined);
+          cache.bookHierarchy.set(hierarchyCacheKey, {
+            data: hierarchy,
+            timestamp: Date.now()
+          });
+          // Limit cache size (keep last 100 hierarchies)
+          if (cache.bookHierarchy.size > 100) {
+            const firstKey = cache.bookHierarchy.keys().next().value;
+            cache.bookHierarchy.delete(firstKey);
+          }
+        }
+        const hasContent = hierarchy.length > 0;
+        console.log(`[Book View] Book has content: ${hasContent} (${hierarchy.length} top-level nodes)`);
+
+        // Fetch comments and highlights (with caching)
+        // Use same normalized cache key
+        const commentsCacheKey = hierarchyCacheKey; // Same key as hierarchy since they use same relays
+        let allItems;
+        const cachedComments = cache.bookComments.get(commentsCacheKey);
+        if (cachedComments && (Date.now() - cachedComments.timestamp) < CACHE_TTL.BOOK_DETAIL) {
+          console.log(`[Book View] Using cached comments/highlights for: ${naddr}`);
+          allItems = cachedComments.data;
+        } else {
+          console.log(`[Book View] Fetching comments and highlights...`);
+          // Comments are only for the root 30040 event, highlights are for all events in hierarchy
+          allItems = await fetchComments(bookEvent, hierarchy, customRelays && customRelays.length > 0 ? customRelays : null);
+          cache.bookComments.set(commentsCacheKey, {
+            data: allItems,
+            timestamp: Date.now()
+          });
+          // Limit cache size (keep last 100 comment sets)
+          if (cache.bookComments.size > 100) {
+            const firstKey = cache.bookComments.keys().next().value;
+            cache.bookComments.delete(firstKey);
+          }
+        }
         console.log(`[Book View] Found ${allItems.length} comments and highlights`);
 
-        // Build threaded structure
-        const threadedItems = buildThreadedComments(allItems);
+        // Separate comments and highlights
+        const comments = allItems.filter(e => e.kind === 1111);
+        const highlights = allItems.filter(e => e.kind === 9802);
+        
+        // Build threaded structure for comments
+        const threadedComments = buildThreadedComments(comments);
+        
+        // Group highlights by pubkey, then build threaded structure for replies
+        const highlightsByPubkey = new Map();
+        for (const highlight of highlights) {
+          if (!highlightsByPubkey.has(highlight.pubkey)) {
+            highlightsByPubkey.set(highlight.pubkey, []);
+          }
+          highlightsByPubkey.get(highlight.pubkey).push(highlight);
+        }
+        
+        // For each pubkey group, build threaded structure (for replies to highlights)
+        const groupedHighlights = [];
+        for (const [pubkey, pubkeyHighlights] of highlightsByPubkey.entries()) {
+          const threaded = buildThreadedComments(pubkeyHighlights);
+          groupedHighlights.push({
+            pubkey: pubkey,
+            highlights: threaded
+          });
+        }
+        
+        // Sort groups by first highlight's created_at
+        groupedHighlights.sort((a, b) => {
+          const aFirst = a.highlights[0]?.created_at || 0;
+          const bFirst = b.highlights[0]?.created_at || 0;
+          return aFirst - bFirst;
+        });
         
         // Count comments and highlights separately
-        const commentCount = allItems.filter(e => e.kind === 1111).length;
-        const highlightCount = allItems.filter(e => e.kind === 9802).length;
+        const commentCount = comments.length;
+        const highlightCount = highlights.length;
 
+        // Extract all metadata
         const title = bookEvent.tags.find(([k]) => k === 'title')?.[1] || 
                      bookEvent.tags.find(([k]) => k === 'T')?.[1] ||
                      'Untitled';
         const author = bookEvent.tags.find(([k]) => k === 'author')?.[1] || 
                       nip19.npubEncode(bookEvent.pubkey).substring(0, 16) + '...';
         const date = formatDate(bookEvent.created_at);
+        
+        // Fetch user handle for pubkey display
+        const userHandle = await fetchUserHandle(bookEvent.pubkey, customRelays && customRelays.length > 0 ? customRelays : null);
+        
+        // Extract all metadata tags
+        const npub = nip19.npubEncode(bookEvent.pubkey);
+        const npubDisplay = npub.substring(0, 20) + '...';
+        const pubkeyDisplay = userHandle ? `${npubDisplay} (${escapeHtml(userHandle)})` : npubDisplay;
+        
+        const metadata = {
+          title: bookEvent.tags.find(([k]) => k === 'title')?.[1] || bookEvent.tags.find(([k]) => k === 'T')?.[1] || null,
+          author: bookEvent.tags.find(([k]) => k === 'author')?.[1] || null,
+          version: bookEvent.tags.find(([k]) => k === 'version')?.[1] || null,
+          description: bookEvent.tags.find(([k]) => k === 'description')?.[1] || null,
+          summary: bookEvent.tags.find(([k]) => k === 'summary')?.[1] || null,
+          published_on: bookEvent.tags.find(([k]) => k === 'published_on')?.[1] || null,
+          image: bookEvent.tags.find(([k]) => k === 'image')?.[1] || null,
+          d: bookEvent.tags.find(([k]) => k === 'd')?.[1] || null,
+          created_at: formatDate(bookEvent.created_at),
+          pubkey: pubkeyDisplay,
+          event_id: bookEvent.id
+        };
         
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         
@@ -2069,49 +2466,20 @@ async function handleRequest(req, res) {
   <link rel="icon" type="image/png" href="/favicon_alex-catalogue.png">
   <title>${escapeHtml(title)}</title>
   <style>
-    body { font-family: sans-serif; max-width: 800px; margin: 2em auto; padding: 1em; }
-    nav { margin-bottom: 2em; padding-bottom: 1em; border-bottom: 1px solid #ddd; }
-    nav a { margin-right: 1em; color: #007bff; text-decoration: none; }
-    /* Removed hover effects for e-paper readers */
-    .search-form { margin-bottom: 2em; padding: 1em; background: #f5f5f5; border-radius: 4px; }
-    input[type="text"] { width: 70%; padding: 0.5em; font-size: 1em; margin-right: 0.5em; }
-    button { padding: 0.5em 1em; font-size: 1em; background: #007bff; color: white; border: none; cursor: pointer; }
-    /* Removed hover effects for e-paper readers */
-    .book-header { margin-bottom: 2em; padding: 1em; background: #f5f5f5; border-radius: 4px; }
-    .book-title { font-size: 1.5em; font-weight: bold; margin-bottom: 0.5em; }
-    .book-meta { color: #666; font-size: 0.9em; margin: 0.5em 0; }
-    .book-actions { margin-top: 1em; display: flex; flex-wrap: wrap; gap: 1em; align-items: center; }
-    .view-buttons { display: flex; gap: 0.5em; }
-    .view-buttons a { display: inline-block; padding: 0.5em 1em; color: white; background: #007bff; text-decoration: none; border-radius: 4px; }
-    /* Removed hover effects for e-paper readers */
-    .download-section { display: flex; gap: 0.5em; align-items: center; }
-    .download-section label { font-weight: bold; color: #333; }
-    .download-section select { padding: 0.5em; font-size: 1em; border: 1px solid #ddd; border-radius: 4px; }
-    .download-section button { padding: 0.5em 1em; color: white; background: #28a745; border: none; cursor: pointer; border-radius: 4px; }
-    /* Removed hover effects for e-paper readers */
-    .comments-section { margin-top: 2em; }
-    .comment, .highlight { margin: 1.5em 0; padding: 1em; border-left: 3px solid #ddd; background: #fafafa; }
-    .highlight { border-left-color: #ffc107; background: #fffbf0; }
-    .comment-author, .highlight-author { font-weight: bold; color: #333; margin-bottom: 0.5em; }
-    .comment-date, .highlight-date { color: #666; font-size: 0.85em; }
-    .comment-content, .highlight-content { margin-top: 0.5em; white-space: pre-wrap; word-wrap: break-word; }
-    .comment-type { display: inline-block; padding: 0.2em 0.5em; font-size: 0.75em; border-radius: 3px; margin-left: 0.5em; }
-    .comment-type.comment { background: #e3f2fd; color: #1976d2; }
-    .comment-type.highlight { background: #fff3cd; color: #856404; }
-    .no-comments { color: #666; font-style: italic; margin: 1em 0; }
-    .thread-reply { margin-left: 2em; margin-top: 1em; border-left: 2px solid #ccc; padding-left: 1em; }
-    .thread-reply .comment, .thread-reply .highlight { border-left-width: 2px; }
-    .error { color: red; margin: 1em 0; padding: 1em; background: #fee; border: 1px solid #fcc; }
+    .book-title { font-size: 1.5em; }
+    .book-actions { margin-top: 1em; }
+    ${getCommonStyles()}
   </style>
 </head>
 <body>
   <nav>
     <a href="/">Alexandria Catalogue</a>
     <a href="/books">Browse Library</a>
+    <a href="/status">Status</a>
   </nav>
   
   <h1><img src="/favicon_alex-catalogue.png" alt="" style="width: 1.2em; height: 1.2em; vertical-align: middle; margin-right: 0.3em;"> Alexandria Catalogue</h1>
-  <p style="color: #666; margin-bottom: 1em;">The e-book download portal for <a href="https://alexandria.gitcitadel.eu" style="color: #007bff; text-decoration: none;">Alexandria</a>.</p>
+  <p style="color: #000000; margin-bottom: 1em;">The e-book download portal for <a href="https://alexandria.gitcitadel.eu" style="color: #0066cc; text-decoration: underline;">Alexandria</a>.</p>
   
   <div class="search-form">
     <form method="GET" action="/">
@@ -2119,16 +2487,27 @@ async function handleRequest(req, res) {
       <button type="submit">Search</button>
     </form>
     <div style="margin-top: 0.5em;">
-      <a href="/books" style="color: #007bff; text-decoration: none; font-size: 0.9em;">← Browse Library</a>
+      <a href="/books" style="color: #0066cc; text-decoration: underline; font-size: 0.9em;">← Browse Library</a>
     </div>
   </div>
   
   <div class="book-header">
     <div class="book-title">${escapeHtml(title)}</div>
     <div class="book-meta">
-      Author: ${escapeHtml(author)}<br>
-      Created: ${date}
+      ${metadata.author ? `Author: ${escapeHtml(metadata.author)}<br>` : ''}
+      ${metadata.version ? `Version: ${escapeHtml(metadata.version)}<br>` : ''}
+      ${metadata.published_on ? `Published: ${escapeHtml(metadata.published_on)}<br>` : ''}
+      Created: ${metadata.created_at}<br>
+      ${metadata.description ? `<div style="margin-top: 0.5em; font-style: italic;">${escapeHtml(metadata.description)}</div>` : ''}
+      ${metadata.summary ? `<div style="margin-top: 0.5em;">${escapeHtml(metadata.summary)}</div>` : ''}
+      ${metadata.image ? `<div style="margin-top: 0.5em;"><img src="${escapeHtml(metadata.image)}" alt="Cover" style="max-width: 200px; max-height: 300px; border: 1px solid #ddd; border-radius: 4px;"></div>` : ''}
+      <div style="margin-top: 0.5em; font-size: 0.85em; color: #4a4a4a;">
+        Event ID: ${escapeHtml(metadata.event_id.substring(0, 16))}...<br>
+        Pubkey: ${metadata.pubkey}<br>
+        ${metadata.d ? `D-tag: ${escapeHtml(metadata.d)}<br>` : ''}
+      </div>
     </div>
+    ${hasContent ? `
     <div class="book-actions">
       <div class="view-buttons">
         <a href="/view?naddr=${encodeURIComponent(naddr)}">View as HTML</a>
@@ -2154,54 +2533,113 @@ async function handleRequest(req, res) {
         </form>
       </div>
     </div>
+    ` : `
+    <div style="margin-top: 1em; padding: 1em; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; color: #856404;">
+      <strong>Library Index Card</strong><br>
+      This book entry has no content yet. It may be under copyright or not yet imported. Comments and highlights are still available below.
+    </div>
+    `}
   </div>
   
   <div class="comments-section">
     <h2>Comments & Highlights (${commentCount} comments, ${highlightCount} highlights)</h2>
 `;
 
-        if (threadedItems.length === 0) {
-          html += '<p class="no-comments">No comments or highlights yet.</p>';
-        } else {
-          // Recursive function to render threaded items
-          const renderItem = (item, depth = 0) => {
-            const isHighlight = item.kind === 9802;
-            const itemClass = isHighlight ? 'highlight' : 'comment';
-            const authorClass = isHighlight ? 'highlight-author' : 'comment-author';
-            const dateClass = isHighlight ? 'highlight-date' : 'comment-date';
-            const contentClass = isHighlight ? 'highlight-content' : 'comment-content';
-            
-            const author = nip19.npubEncode(item.pubkey).substring(0, 16) + '...';
-            const date = formatDate(item.created_at);
-            const content = escapeHtml(truncate(item.content || '', 1000));
-            const typeLabel = isHighlight ? 'Highlight' : 'Comment';
-            
-            let itemHtml = `
+        // Fetch handles for all unique pubkeys
+        const uniquePubkeys = new Set();
+        const collectPubkeys = (items) => {
+          for (const item of items) {
+            uniquePubkeys.add(item.pubkey);
+            if (item.children && item.children.length > 0) {
+              collectPubkeys(item.children);
+            }
+          }
+        };
+        collectPubkeys(threadedComments);
+        for (const group of groupedHighlights) {
+          collectPubkeys(group.highlights);
+        }
+        
+        const handleMap = new Map();
+        const handlePromises = Array.from(uniquePubkeys).map(async (pubkey) => {
+          const handle = await fetchUserHandle(pubkey, customRelays && customRelays.length > 0 ? customRelays : null);
+          handleMap.set(pubkey, handle);
+        });
+        await Promise.all(handlePromises);
+        
+        // Recursive function to render threaded items (for comments and replies to highlights)
+        const renderItem = (item, depth = 0) => {
+          const isHighlight = item.kind === 9802;
+          const itemClass = isHighlight ? 'highlight' : 'comment';
+          const authorClass = isHighlight ? 'highlight-author' : 'comment-author';
+          const dateClass = isHighlight ? 'highlight-date' : 'comment-date';
+          const contentClass = isHighlight ? 'highlight-content' : 'comment-content';
+          
+          // Format author with npub and handle
+          const npub = nip19.npubEncode(item.pubkey);
+          const npubDisplay = npub.substring(0, 20) + '...';
+          const handle = handleMap.get(item.pubkey);
+          const authorDisplay = handle ? `${npubDisplay} (${escapeHtml(handle)})` : npubDisplay;
+          
+          const date = formatDate(item.created_at);
+          const content = escapeHtml(truncate(item.content || '', 1000));
+          const typeLabel = isHighlight ? 'Highlight' : 'Comment';
+          
+          let itemHtml = `
     <div class="${itemClass}"${depth > 0 ? ' style="margin-left: ' + (depth * 2) + 'em;"' : ''}>
       <div class="${authorClass}">
-        ${escapeHtml(author)}
+        ${escapeHtml(authorDisplay)}
         <span class="comment-type ${itemClass}">${typeLabel}</span>
       </div>
       <div class="${dateClass}">${date}</div>
       <div class="${contentClass}">${content}</div>
 `;
-            
-            // Render children (replies)
-            if (item.children && item.children.length > 0) {
-              itemHtml += '      <div class="thread-replies">\n';
-              for (const child of item.children) {
-                itemHtml += renderItem(child, depth + 1);
-              }
-              itemHtml += '      </div>\n';
-            }
-            
-            itemHtml += '    </div>\n';
-            return itemHtml;
-          };
           
-          for (const item of threadedItems) {
-            html += renderItem(item);
+          // Render children (replies)
+          if (item.children && item.children.length > 0) {
+            itemHtml += '      <div class="thread-replies">\n';
+            for (const child of item.children) {
+              itemHtml += renderItem(child, depth + 1);
+            }
+            itemHtml += '      </div>\n';
           }
+          
+          itemHtml += '    </div>\n';
+          return itemHtml;
+        };
+        
+        // Render comments (threaded)
+        if (threadedComments.length > 0) {
+          html += '<div class="comments-group" style="margin-bottom: 2em;">';
+          html += '<h3 style="font-size: 1.1em; font-weight: 600; margin-bottom: 1em; color: #000000;">Comments</h3>';
+          for (const comment of threadedComments) {
+            html += renderItem(comment);
+          }
+          html += '</div>';
+        }
+        
+        // Render highlights (grouped by pubkey, with replies threaded)
+        if (groupedHighlights.length > 0) {
+          html += '<div class="highlights-group" style="margin-bottom: 2em;">';
+          html += '<h3 style="font-size: 1.1em; font-weight: 600; margin-bottom: 1em; color: #000000;">Highlights</h3>';
+          for (const group of groupedHighlights) {
+            const npub = nip19.npubEncode(group.pubkey);
+            const npubDisplay = npub.substring(0, 20) + '...';
+            const handle = handleMap.get(group.pubkey);
+            const authorDisplay = handle ? `${npubDisplay} (${escapeHtml(handle)})` : npubDisplay;
+            
+            html += `<div class="highlight-group" style="margin-bottom: 1.5em; padding: 1em; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745;">`;
+            html += `<div style="font-weight: 600; margin-bottom: 0.5em; color: #000000;">${escapeHtml(authorDisplay)}</div>`;
+            for (const highlight of group.highlights) {
+              html += renderItem(highlight);
+            }
+            html += '</div>';
+          }
+          html += '</div>';
+        }
+        
+        if (threadedComments.length === 0 && groupedHighlights.length === 0) {
+          html += '<p class="no-comments">No comments or highlights yet.</p>';
         }
         
         html += `
@@ -2223,24 +2661,17 @@ async function handleRequest(req, res) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/png" href="/favicon_alex-catalogue.png">
   <title>Error</title>
-  <style>
-    body { font-family: sans-serif; max-width: 800px; margin: 2em auto; padding: 1em; }
-    nav { margin-bottom: 2em; padding-bottom: 1em; border-bottom: 1px solid #ddd; }
-    nav a { margin-right: 1em; color: #007bff; text-decoration: none; }
-    .search-form { margin-bottom: 2em; padding: 1em; background: #f5f5f5; border-radius: 4px; }
-    input[type="text"] { width: 70%; padding: 0.5em; font-size: 1em; margin-right: 0.5em; }
-    button { padding: 0.5em 1em; font-size: 1em; background: #007bff; color: white; border: none; cursor: pointer; }
-    .error { color: red; margin: 1em 0; padding: 1em; background: #fee; border: 1px solid #fcc; }
-  </style>
+  <style>${getCommonStyles()}</style>
 </head>
 <body>
   <nav>
     <a href="/">Alexandria Catalogue</a>
     <a href="/books">Browse Library</a>
+    <a href="/status">Status</a>
   </nav>
   
   <h1><img src="/favicon_alex-catalogue.png" alt="" style="width: 1.2em; height: 1.2em; vertical-align: middle; margin-right: 0.3em;"> Alexandria Catalogue</h1>
-  <p style="color: #666; margin-bottom: 1em;">The e-book download portal for <a href="https://alexandria.gitcitadel.eu" style="color: #007bff; text-decoration: none;">Alexandria</a>.</p>
+  <p style="color: #000000; margin-bottom: 1em;">The e-book download portal for <a href="https://alexandria.gitcitadel.eu" style="color: #0066cc; text-decoration: underline;">Alexandria</a>.</p>
   
   <div class="search-form">
     <form method="GET" action="/">
@@ -2248,7 +2679,7 @@ async function handleRequest(req, res) {
       <button type="submit">Search</button>
     </form>
     <div style="margin-top: 0.5em;">
-      <a href="/books" style="color: #007bff; text-decoration: none; font-size: 0.9em;">← Browse Library</a>
+      <a href="/books" style="color: #0066cc; text-decoration: underline; font-size: 0.9em;">← Browse Library</a>
     </div>
   </div>
   
@@ -2273,22 +2704,13 @@ async function handleRequest(req, res) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/png" href="/favicon_alex-catalogue.png">
   <title>Alexandria Catalogue</title>
-  <style>
-    body { font-family: sans-serif; max-width: 800px; margin: 2em auto; padding: 1em; }
-    nav { margin-bottom: 2em; padding-bottom: 1em; border-bottom: 1px solid #ddd; }
-    nav a { margin-right: 1em; color: #007bff; text-decoration: none; }
-    /* Removed hover effects for e-paper readers */
-    .search-form { margin-bottom: 2em; padding: 1em; background: #f5f5f5; border-radius: 4px; }
-    input[type="text"] { width: 70%; padding: 0.5em; font-size: 1em; margin-right: 0.5em; }
-    button { padding: 0.5em 1em; font-size: 1em; background: #007bff; color: white; border: none; cursor: pointer; }
-    /* Removed hover effects for e-paper readers */
-    .info { color: #666; margin: 1em 0; }
-  </style>
+  <style>${getCommonStyles()}</style>
 </head>
 <body>
   <nav>
     <a href="/">Alexandria Catalogue</a>
     <a href="/books">Browse Library</a>
+    <a href="/status">Status</a>
   </nav>
   <h1><img src="/favicon_alex-catalogue.png" alt="" style="width: 1.2em; height: 1.2em; vertical-align: middle; margin-right: 0.3em;"> Alexandria Catalogue</h1>
     
@@ -2298,7 +2720,7 @@ async function handleRequest(req, res) {
       <button type="submit">Search</button>
     </form>
     <div style="margin-top: 0.5em;">
-      <a href="/books" style="color: #007bff; text-decoration: none; font-size: 0.9em;">← Browse Library</a>
+      <a href="/books" style="color: #0066cc; text-decoration: underline; font-size: 0.9em;">← Browse Library</a>
     </div>
   </div>
   <div style="margin-top: 1em; padding: 0.75em; background: #e7f3ff; border-left: 3px solid #007bff; border-radius: 4px; font-size: 0.9em;">
@@ -2307,19 +2729,19 @@ async function handleRequest(req, res) {
   </div>
   ${url.searchParams.get('show_custom_relays') === '1' ? `
   <form method="GET" action="/" style="margin-top: 1em; padding: 1em; background: #f5f5f5; border-radius: 4px;">
-    <label for="relays-input-home" style="display: block; margin-bottom: 0.5em; font-weight: bold; color: #333;">Custom Relays:</label>
-    <p style="font-size: 0.9em; color: #666; margin-bottom: 0.5em;">Enter one or more relay URLs (ws:// or wss:// format). Separate multiple relays with commas or newlines. Example: wss://relay.example.com, ws://localhost:8080</p>
-    <textarea id="relays-input-home" name="relays" placeholder="wss://relay.example.com, ws://localhost:8080" rows="3" style="width: 100%; padding: 0.5em; font-size: 0.9em; font-family: monospace; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;"></textarea>
+    <label for="relays-input-home" style="display: block; margin-bottom: 0.5em; font-weight: bold; color: #000000;">Custom Relays:</label>
+    <p style="font-size: 0.9em; color: #1a1a1a; margin-bottom: 0.5em;">Enter one or more relay URLs (ws:// or wss:// format). Separate multiple relays with commas or newlines. Example: wss://relay.example.com, ws://localhost:8080</p>
+    <textarea id="relays-input-home" name="relays" placeholder="wss://relay.example.com, ws://localhost:8080" rows="3" style="width: 100%; padding: 0.5em; font-size: 0.9em; font-family: monospace; border: 2px solid #000000; border-radius: 4px; box-sizing: border-box; background: #ffffff; color: #000000;"></textarea>
     <div style="margin-top: 0.5em;">
-      <button type="submit" style="padding: 0.5em 1em; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">Save Relays</button>
-      <a href="/" style="color: #666; text-decoration: none; font-size: 0.9em; margin-left: 1em;">Cancel</a>
+      <button type="submit" style="padding: 0.5em 1em; background: #000000; color: #ffffff; border: 2px solid #000000; border-radius: 4px; cursor: pointer; font-size: 0.9em; font-weight: bold;">Save Relays</button>
+      <a href="/" style="color: #1a1a1a; text-decoration: underline; font-size: 0.9em; margin-left: 1em;">Cancel</a>
     </div>
   </form>
   ` : ''}
   
   <details style="max-width: 800px; margin: 2em auto;">
-    <summary style="cursor: pointer; padding: 1em; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff; font-weight: bold; color: #333; user-select: none;">
-      Alexandria Catalogue - How It Works
+    <summary style="cursor: pointer; padding: 1em; background: #ffffff; border-radius: 8px; border-left: 4px solid #0066cc; border: 2px solid #000000; font-weight: bold; color: #000000; user-select: none;">
+      How It Works
     </summary>
     <div class="info" style="padding: 1.5em; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff; margin-top: 0.5em;">
      <p style="margin-bottom: 1em; line-height: 1.6;">The Alexandria Catalogue is an e-book download portal for <a href="https://alexandria.gitcitadel.eu" style="color: #007bff; text-decoration: none;">Alexandria</a>, a Nostr-based publishing platform. It allows you to browse, search, and download books (kind 30040 events) in various formats optimized for e-paper readers.</p>
@@ -2413,11 +2835,14 @@ async function handleRequest(req, res) {
       const htmlContent = await generateHTML(content, title, author);
       console.log(`[HTML View] HTML generated: ${htmlContent.length} chars`);
 
+      // Wrap HTML content with navigation header
+      const htmlWithNavigation = wrapHTMLWithNavigation(htmlContent, title, author, naddr);
+      
       // Send HTML as response
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8'
       });
-      res.end(htmlContent);
+      res.end(htmlWithNavigation);
       
       console.log(`[HTML View] HTML sent successfully`);
     } catch (error) {
@@ -2461,9 +2886,12 @@ async function handleRequest(req, res) {
       const { content, title, author } = combineBookEvents(indexEvent, hierarchy);
       console.log(`[EPUB Viewer] Combined content: ${content.length} chars`);
 
+      // Extract image tag if present
+      const image = indexEvent.tags.find(([k]) => k === 'image')?.[1];
+
       // Generate EPUB
       console.log(`[EPUB Viewer] Generating EPUB...`);
-      const epubBlob = await generateEPUB(content, title, author);
+      const epubBlob = await generateEPUB(content, title, author, image);
       console.log(`[EPUB Viewer] EPUB generated: ${epubBlob.size} bytes`);
 
       // Convert to data URI for EPUB.js
@@ -2530,9 +2958,12 @@ async function handleRequest(req, res) {
       const { content, title, author } = combineBookEvents(indexEvent, hierarchy);
       console.log(`[EPUB Viewer] Combined content: ${content.length} chars`);
 
+      // Extract image tag if present
+      const image = indexEvent.tags.find(([k]) => k === 'image')?.[1];
+
       // Generate EPUB
       console.log(`[EPUB Viewer] Generating EPUB...`);
-      const epubBlob = await generateEPUB(content, title, author);
+      const epubBlob = await generateEPUB(content, title, author, image);
       console.log(`[EPUB Viewer] EPUB generated: ${epubBlob.size} bytes`);
 
       // Convert blob to base64 data URI for embedding
@@ -2563,11 +2994,20 @@ async function handleRequest(req, res) {
   if (url.pathname === '/status') {
     const cacheStats = {
       bookDetails: cache.bookDetails.size,
+      bookHierarchy: cache.bookHierarchy.size,
+      bookComments: cache.bookComments.size,
       searchResults: cache.searchResults.size,
       generatedFiles: cache.generatedFiles.size,
       topLevelBooks: cache.topLevelBooks.data ? cache.topLevelBooks.data.length : 0,
       topLevelBooksTimestamp: cache.topLevelBooks.timestamp ? new Date(cache.topLevelBooks.timestamp).toISOString() : null
     };
+    
+    // Calculate cache sizes
+    const cacheSizes = calculateCacheSize();
+    
+    // Check if cache was just cleared
+    const cacheCleared = url.searchParams.get('cleared') === '1';
+    const successMessage = cacheCleared ? generateMessageBox('info', 'Cache cleared successfully! All cached data has been removed.', null) : '';
     
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(`
@@ -2578,17 +3018,7 @@ async function handleRequest(req, res) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/png" href="/favicon_alex-catalogue.png">
   <title>Server Status - Alexandria Catalogue</title>
-  <style>
-    body { font-family: sans-serif; max-width: 800px; margin: 2em auto; padding: 1em; }
-    nav { margin-bottom: 2em; padding-bottom: 1em; border-bottom: 1px solid #ddd; }
-    nav a { margin-right: 1em; color: #007bff; text-decoration: none; }
-    .status-section { margin: 1em 0; padding: 1em; background: #f5f5f5; border-radius: 4px; }
-    .status-section h2 { margin-top: 0; }
-    .status-item { margin: 0.5em 0; }
-    .status-label { font-weight: bold; display: inline-block; width: 200px; }
-    .message-box { margin: 1em 0; padding: 1em; border-radius: 4px; border-left: 4px solid; }
-    .message-box.info { background: #e3f2fd; border-color: #2196f3; color: #1976d2; }
-  </style>
+  <style>${getCommonStyles()}</style>
 </head>
 <body>
   <nav>
@@ -2597,14 +3027,19 @@ async function handleRequest(req, res) {
     <a href="/status">Status</a>
   </nav>
   <h1>Server Status</h1>
+  ${successMessage}
   ${generateMessageBox('info', 'Server is running. Cache statistics below.', null)}
   <div class="status-section">
     <h2>Cache Statistics</h2>
-    <div class="status-item"><span class="status-label">Cached Book Details:</span> ${cacheStats.bookDetails}</div>
-    <div class="status-item"><span class="status-label">Cached Search Results:</span> ${cacheStats.searchResults}</div>
-    <div class="status-item"><span class="status-label">Cached Generated Files:</span> ${cacheStats.generatedFiles}</div>
-    <div class="status-item"><span class="status-label">Top-Level Books Cached:</span> ${cacheStats.topLevelBooks}</div>
+    <div class="status-item"><span class="status-label">Cached Book Details:</span> ${cacheStats.bookDetails} entries (${formatBytes(cacheSizes.sizes.bookDetails || 0)})</div>
+    <div class="status-item"><span class="status-label">Cached Book Hierarchies:</span> ${cacheStats.bookHierarchy} entries (${formatBytes(cacheSizes.sizes.bookHierarchy || 0)})</div>
+    <div class="status-item"><span class="status-label">Cached Comments/Highlights:</span> ${cacheStats.bookComments} entries (${formatBytes(cacheSizes.sizes.bookComments || 0)})</div>
+    <div class="status-item"><span class="status-label">Cached Search Results:</span> ${cacheStats.searchResults} entries (${formatBytes(cacheSizes.sizes.searchResults || 0)})</div>
+    <div class="status-item"><span class="status-label">Cached Generated Files:</span> ${cacheStats.generatedFiles} entries (${formatBytes(cacheSizes.sizes.generatedFiles || 0)})</div>
+    <div class="status-item"><span class="status-label">Top-Level Books Cached:</span> ${cacheStats.topLevelBooks} entries (${formatBytes(cacheSizes.sizes.topLevelBooks || 0)})</div>
+    <div class="status-item"><span class="status-label">Book List Cache:</span> ${cache.bookList.data ? cache.bookList.data.length + ' entries' : 'empty'} (${formatBytes(cacheSizes.sizes.bookList || 0)})</div>
     ${cacheStats.topLevelBooksTimestamp ? `<div class="status-item"><span class="status-label">Last Updated:</span> ${cacheStats.topLevelBooksTimestamp}</div>` : ''}
+    <div class="status-item" style="margin-top: 1em; padding-top: 1em; border-top: 2px solid #000000; font-weight: bold;"><span class="status-label">Total Cache Size:</span> ${formatBytes(cacheSizes.total)}</div>
   </div>
   <div class="status-section">
     <h2>Cache Configuration</h2>
@@ -2612,6 +3047,13 @@ async function handleRequest(req, res) {
     <div class="status-item"><span class="status-label">Book Detail Cache:</span> ${CACHE_TTL.BOOK_DETAIL / 60000} minutes</div>
     <div class="status-item"><span class="status-label">Search Results Cache:</span> ${CACHE_TTL.SEARCH_RESULTS / 60000} minutes</div>
     <div class="status-item"><span class="status-label">Generated Files Cache:</span> ${CACHE_TTL.GENERATED_FILES / 60000} minutes</div>
+  </div>
+  <div class="status-section" style="margin-top: 2em; padding: 1em; background: #ffffff; border: 2px solid #cc0000; border-radius: 4px;">
+    <h2 style="margin-top: 0; color: #000000;">Cache Management</h2>
+    <p style="color: #000000; margin-bottom: 1em;">Clear all cached data. This will force the server to fetch fresh data from relays on the next request.</p>
+    <form method="POST" action="/clear-cache" style="margin: 0;">
+      <button type="submit" style="padding: 0.75em 1.5em; background: #cc0000; color: #ffffff; border: 2px solid #cc0000; border-radius: 4px; cursor: pointer; font-size: 1em; font-weight: bold;">Clear All Cache</button>
+    </form>
   </div>
   <p style="margin-top: 2em;"><a href="/">← Go back</a></p>
 </body>
@@ -2951,57 +3393,37 @@ async function handleRequest(req, res) {
   <link rel="icon" type="image/png" href="/favicon_alex-catalogue.png">
   <title>Alexandria Catalogue - Browse Library</title>
   <style>
-    body { font-family: sans-serif; max-width: 1200px; margin: 2em auto; padding: 1em; }
-    nav { margin-bottom: 2em; padding-bottom: 1em; border-bottom: 1px solid #ddd; }
-    nav a { margin-right: 1em; color: #007bff; text-decoration: none; }
-    /* Removed hover effects for e-paper readers */
-    table { width: 100%; border-collapse: collapse; margin-top: 1em; }
-    th, td { padding: 0.75em; text-align: left; border-bottom: 1px solid #ddd; }
-    th { background: #f5f5f5; font-weight: bold; }
-    tr:hover { background: #f9f9f9; }
-    .book-link { color: #007bff; text-decoration: none; }
-    /* Removed hover effects for e-paper readers */
-    .book-title { font-weight: bold; }
-    .book-author { color: #666; font-size: 0.9em; }
-    .book-date { color: #666; font-size: 0.85em; white-space: nowrap; }
-    .loading { text-align: center; color: #666; padding: 2em; }
-    .error { color: red; margin: 1em 0; padding: 1em; background: #fee; border: 1px solid #fcc; }
-    .book-count { color: #666; margin-bottom: 1em; }
-    .pagination { margin-top: 2em; text-align: center; }
-    .pagination a, .pagination span { display: inline-block; padding: 0.5em 1em; margin: 0 0.25em; 
-      text-decoration: none; border: 1px solid #ddd; border-radius: 4px; color: #007bff; }
-    /* Removed hover effects for e-paper readers */
-    .pagination .current { background: #007bff; color: white; border-color: #007bff; }
-    .pagination .disabled { color: #999; cursor: not-allowed; pointer-events: none; }
-    .expand-button { margin: 1em 0; padding: 0.75em 1.5em; background: #007bff; color: white; 
-      border: none; border-radius: 4px; cursor: pointer; font-size: 1em; text-decoration: none; display: inline-block; }
-    .expand-button:hover { background: #0056b3; }
-    .controls { margin: 1em 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1em; }
+    body { max-width: 1200px; }
+    input[type="text"] { width: 70%; margin-right: 0.5em; }
+    .results-header { margin: 1.5em 0; }
+    ${getCommonStyles()}
+    ${getTableStyles()}
   </style>
 </head>
 <body>
   <nav>
     <a href="/">Alexandria Catalogue</a>
     <a href="/books">Browse Library</a>
+    <a href="/status">Status</a>
   </nav>
   <h1><img src="/favicon_alex-catalogue.png" alt="" style="width: 1.2em; height: 1.2em; vertical-align: middle; margin-right: 0.3em;"> Alexandria Catalogue - Browse Library</h1>
-  <p style="color: #666; margin-bottom: 1em;">The e-book download portal for <a href="https://alexandria.gitcitadel.eu" style="color: #007bff; text-decoration: none;">Alexandria</a>.</p>
-  <div style="margin-bottom: 1em; padding: 0.75em; background: #e7f3ff; border-left: 3px solid #007bff; border-radius: 4px; font-size: 0.9em;">
+  <p style="color: #000000; margin-bottom: 1em;">The e-book download portal for <a href="https://alexandria.gitcitadel.eu" style="color: #0066cc; text-decoration: underline;">Alexandria</a>.</p>
+  <div style="margin-bottom: 1em; padding: 0.75em; background: #ffffff; border: 2px solid #0066cc; border-radius: 4px; font-size: 0.9em; color: #000000;">
     <strong>Relays used:</strong> ${(customRelays && customRelays.length > 0 ? customRelays : DEFAULT_RELAYS).map(r => escapeHtml(r)).join(', ')}
-    <br><span style="color: #666; font-size: 0.85em;">(${customRelays && customRelays.length > 0 ? 'Custom relays' : 'Default relays'})</span>
-    ${!showCustomRelays && !(customRelays && customRelays.length > 0) ? `<br><a href="/books?page=${page}&limit=${limit}&show_all=${showAll ? '1' : '0'}&show_custom_relays=1" style="color: #007bff; text-decoration: none; font-size: 0.9em; margin-top: 0.5em; display: inline-block;">Use custom relays</a>` : ''}
+    <br><span style="color: #1a1a1a; font-size: 0.85em;">(${customRelays && customRelays.length > 0 ? 'Custom relays' : 'Default relays'})</span>
+    ${!showCustomRelays && !(customRelays && customRelays.length > 0) ? `<br><a href="/books?page=${page}&limit=${limit}&show_all=${showAll ? '1' : '0'}&show_custom_relays=1" style="color: #0066cc; text-decoration: underline; font-size: 0.9em; margin-top: 0.5em; display: inline-block;">Use custom relays</a>` : ''}
   </div>
   ${showCustomRelays || (customRelays && customRelays.length > 0) ? `
-  <form method="GET" action="/books" style="margin-bottom: 1em; padding: 1em; background: #f5f5f5; border-radius: 4px;">
+  <form method="GET" action="/books" style="margin-bottom: 1em; padding: 1em; background: #ffffff; border: 2px solid #000000; border-radius: 4px;">
     <input type="hidden" name="page" value="${page}">
     <input type="hidden" name="limit" value="${limit}">
     <input type="hidden" name="show_all" value="${showAll ? '1' : '0'}">
-    <label for="relays-input-books" style="display: block; margin-bottom: 0.5em; font-weight: bold; color: #333;">Custom Relays:</label>
-    <p style="font-size: 0.9em; color: #666; margin-bottom: 0.5em;">Enter one or more relay URLs (ws:// or wss:// format). Separate multiple relays with commas or newlines. Example: wss://relay.example.com, ws://localhost:8080</p>
-    <textarea id="relays-input-books" name="relays" placeholder="wss://relay.example.com, ws://localhost:8080" rows="3" style="width: 100%; padding: 0.5em; font-size: 0.9em; font-family: monospace; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">${escapeHtml(relayInput)}</textarea>
+    <label for="relays-input-books" style="display: block; margin-bottom: 0.5em; font-weight: bold; color: #000000;">Custom Relays:</label>
+    <p style="font-size: 0.9em; color: #1a1a1a; margin-bottom: 0.5em;">Enter one or more relay URLs (ws:// or wss:// format). Separate multiple relays with commas or newlines. Example: wss://relay.example.com, ws://localhost:8080</p>
+      <textarea id="relays-input-books" name="relays" placeholder="wss://relay.example.com, ws://localhost:8080" rows="3" style="width: 100%; padding: 0.5em; font-size: 0.9em; font-family: monospace; border: 2px solid #000000; border-radius: 4px; box-sizing: border-box; background: #ffffff; color: #000000;"></textarea>
     <div style="margin-top: 0.5em;">
       <button type="submit" style="padding: 0.5em 1em; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">Update Relays</button>
-      <a href="/books?page=${page}&limit=${limit}&show_all=${showAll ? '1' : '0'}" style="color: #666; text-decoration: none; font-size: 0.9em; margin-left: 1em;">Cancel</a>
+      <a href="/books?page=${page}&limit=${limit}&show_all=${showAll ? '1' : '0'}" style="color: #1a1a1a; text-decoration: underline; font-size: 0.9em; margin-left: 1em;">Cancel</a>
     </div>
   </form>
   ` : ''}
@@ -3064,13 +3486,13 @@ async function handleRequest(req, res) {
             ${relayStatusHtml}
             <div style="margin-top: 1.5em; text-align: center;">
               <a href="${retryUrl}" style="display: inline-block; padding: 0.75em 1.5em; background: #007bff; color: white; text-decoration: none; border-radius: 4px; font-weight: bold; margin-right: 1em;">Retry</a>
-              <p style="margin-top: 1em; font-size: 0.9em; color: #666;">Try using custom relays or check the server logs for errors.</p>
+              <p style="margin-top: 1em; font-size: 0.9em; color: #1a1a1a;">Try using custom relays or check the server logs for errors.</p>
             </div>
           </div>`;
         } else {
           html += `<div class="loading">
             <p>Found ${allBooks.length} books, but none are top-level (all are nested within other books).</p>
-            <p style="font-size: 0.9em; color: #666; margin-top: 0.5em;">Try searching for a specific book using its naddr or d tag.</p>
+            <p style="font-size: 0.9em; color: #1a1a1a; margin-top: 0.5em;">Try searching for a specific book using its naddr or d tag.</p>
           </div>`;
         }
       } else {

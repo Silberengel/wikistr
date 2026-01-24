@@ -168,7 +168,13 @@ func (s *Server) handleConvert(w http.ResponseWriter, r *http.Request, format st
 		return
 	}
 	defer file.Close()
-	defer os.Remove(result.FilePath) // Clean up temp file
+	
+	// Clean up temp file and its parent directory after response is sent
+	workDir := filepath.Dir(result.FilePath)
+	defer func() {
+		os.Remove(result.FilePath) // Remove the output file
+		os.RemoveAll(workDir)       // Remove the entire work directory (including input files, images, etc.)
+	}()
 
 	// Set headers
 	filename := sanitizeFilename(req.Title) + "." + filepath.Ext(result.FilePath)[1:]
