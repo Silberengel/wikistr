@@ -1,0 +1,207 @@
+# Multi-stage build for Go server with Ruby asciidoctor tools
+FROM golang:1.21-alpine AS builder
+
+WORKDIR /build
+
+# Install build dependencies
+RUN apk add --no-cache git
+
+# Copy go mod files
+COPY deployment/asciidoctor-server/go.mod deployment/asciidoctor-server/go.sum* ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY deployment/asciidoctor-server/ ./
+
+# Ensure go.sum is up to date (tidy will download dependencies and update checksums)
+RUN go mod tidy
+
+# Build the Go binary
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o asciidoctor-server .
+
+# Final stage: Runtime with Ruby and asciidoctor tools
+FROM ruby:3.2-slim
+
+WORKDIR /app
+
+# Install system dependencies
+# curl is needed for health checks
+# Java is needed for PlantUML
+# Graphviz is needed for Graphviz diagrams
+# Python3 and pip are needed for some diagram backends
+# Calibre is needed for Kindle format conversion (MOBI, AZW3)
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    default-jre-headless \
+    graphviz \
+    python3 \
+    python3-pip \
+    ca-certificates \
+    calibre \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Ruby gems for asciidoctor
+COPY deployment/Gemfile deployment/Gemfile.lock* ./deployment/
+WORKDIR /app/deployment
+
+# Install dependencies
+RUN bundle install --without development test --path vendor/bundle && \
+    echo "=== Installed gems ===" && \
+    bundle list && \
+    echo "=== Bundle bin contents ===" && \
+    ls -la vendor/bundle/bin/ 2>/dev/null || echo "No bin directory found" && \
+    echo "=== Checking for asciidoctor ===" && \
+    (vendor/bundle/bin/asciidoctor --version 2>/dev/null || echo "asciidoctor not found in bundle bin")
+
+# Copy Go server binary from builder
+COPY --from=builder /build/asciidoctor-server /app/deployment/asciidoctor-server
+
+# Copy EPUB stylesheet (file exists, so copy directly)
+COPY deployment/epub-classic.css ./
+
+# Make server executable
+RUN chmod +x /app/deployment/asciidoctor-server
+
+# Create startup script with auto-restart
+RUN printf '#!/bin/bash\n\
+set -e\n\
+cd /app/deployment\n\
+\n\
+# Ensure bundle bin is in PATH (check for ruby version subdirectory)\n\
+if [ -d "/app/deployment/vendor/bundle/ruby" ]; then\n\
+    # Find the ruby version directory\n\
+    RUBY_VERSION_DIR=$(ls -d /app/deployment/vendor/bundle/ruby/*/bin 2>/dev/null | head -1)\n\
+    if [ -n "$RUBY_VERSION_DIR" ]; then\n\
+        export PATH="$RUBY_VERSION_DIR:$PATH"\n\
+    fi\n\
+fi\n\
+# Also add the standard bundle bin path\n\
+export PATH="/app/deployment/vendor/bundle/bin:$PATH"\n\
+export BUNDLE_PATH="/app/deployment/vendor/bundle"\n\
+\n\
+echo "=== AsciiDoctor Server Startup ==="\n\
+echo "Working directory: $(pwd)"\n\
+echo "PATH: $PATH"\n\
+echo "Verifying dependencies..."\n\
+\n\
+# Check Ruby and asciidoctor\n\
+if ! command -v ruby &> /dev/null; then\n\
+    echo "ERROR: Ruby not found"\n\
+    exit 1\n\
+fi\n\
+echo "✓ Ruby found: $(ruby --version)"\n\
+\n\
+# Set bundle environment\n\
+export BUNDLE_GEMFILE="/app/deployment/Gemfile"\n\
+export BUNDLE_PATH="/app/deployment/vendor/bundle"\n\
+\n\
+# Try bundle exec first (most reliable)\n\
+if bundle exec asciidoctor --version &>/dev/null; then\n\
+    echo "✓ asciidoctor found via bundle exec: $(bundle exec asciidoctor --version | head -1)"\n\
+elif command -v asciidoctor &> /dev/null && asciidoctor --version &>/dev/null; then\n\
+    echo "✓ asciidoctor found in PATH: $(asciidoctor --version | head -1)"\n\
+else\n\
+    echo "ERROR: asciidoctor command not found"\n\
+    echo "Trying to find asciidoctor..."\n\
+    FOUND_ASCIIDOCTOR=$(find /app/deployment/vendor/bundle -name asciidoctor -type f 2>/dev/null | head -1)\n\
+    if [ -n "$FOUND_ASCIIDOCTOR" ] && [ -x "$FOUND_ASCIIDOCTOR" ]; then\n\
+        echo "Found asciidoctor at: $FOUND_ASCIIDOCTOR"\n\
+        echo "Trying with bundle exec..."\n\
+        if bundle exec "$FOUND_ASCIIDOCTOR" --version &>/dev/null; then\n\
+            echo "✓ asciidoctor works with bundle exec"\n\
+        else\n\
+            echo "ERROR: asciidoctor found but cannot execute (bundle environment issue)"\n\
+            exit 1\n\
+        fi\n\
+    else\n\
+        echo "ERROR: asciidoctor executable not found"\n\
+        exit 1\n\
+    fi\n\
+fi\n\
+\n\
+# Check Go server binary\n\
+if [ ! -f /app/deployment/asciidoctor-server ]; then\n\
+    echo "ERROR: asciidoctor-server binary not found at /app/deployment/asciidoctor-server"\n\
+    echo "Current directory contents:"\n\
+    ls -la /app/deployment/\n\
+    exit 1\n\
+fi\n\
+echo "✓ Go server binary found"\n\
+\n\
+# Check if binary is executable\n\
+if [ ! -x /app/deployment/asciidoctor-server ]; then\n\
+    echo "WARNING: Binary is not executable, fixing..."\n\
+    chmod +x /app/deployment/asciidoctor-server\n\
+fi\n\
+\n\
+echo "All dependencies verified. Starting server..."\n\
+echo "Server will auto-restart on crash (max 5 restarts per minute)"\n\
+echo "Port: ${ASCIIDOCTOR_PORT:-8091}"\n\
+echo "Host: ${ASCIIDOCTOR_HOST:-0.0.0.0}"\n\
+\n\
+# Auto-restart loop with rate limiting\n\
+RESTART_COUNT=0\n\
+LAST_RESTART=0\n\
+MAX_RESTARTS_PER_MINUTE=5\n\
+\n\
+while true; do\n\
+    CURRENT_TIME=$(date +%%s)\n\
+    \n\
+    # Reset counter if more than a minute has passed\n\
+    if [ $((CURRENT_TIME - LAST_RESTART)) -gt 60 ]; then\n\
+        RESTART_COUNT=0\n\
+    fi\n\
+    \n\
+    # Check restart rate limit\n\
+    if [ $RESTART_COUNT -ge $MAX_RESTARTS_PER_MINUTE ]; then\n\
+        echo "ERROR: Too many restarts ($RESTART_COUNT) in the last minute. Stopping to prevent restart loop."\n\
+        echo "Check logs for errors and fix the underlying issue before restarting the container."\n\
+        exit 1\n\
+    fi\n\
+    \n\
+    # Start server\n\
+    if [ $RESTART_COUNT -gt 0 ]; then\n\
+        echo "Restarting server (attempt $RESTART_COUNT)..."\n\
+        sleep 2\n\
+    fi\n\
+    \n\
+    cd /app/deployment\n\
+    /app/deployment/asciidoctor-server\n\
+    EXIT_CODE=$?\n\
+    \n\
+    # If exit code is 0, server shut down gracefully\n\
+    if [ $EXIT_CODE -eq 0 ]; then\n\
+        echo "Server shut down gracefully. Exiting."\n\
+        exit 0\n\
+    fi\n\
+    \n\
+    # Server crashed, increment restart counter\n\
+    RESTART_COUNT=$((RESTART_COUNT + 1))\n\
+    LAST_RESTART=$(date +%%s)\n\
+    \n\
+    echo "Server crashed with exit code $EXIT_CODE. Will restart in 2 seconds..."\n\
+done\n' > /app/start.sh && chmod +x /app/start.sh
+
+# Expose port
+EXPOSE 8091
+
+# Set environment variables
+ENV ASCIIDOCTOR_PORT=8091
+ENV ASCIIDOCTOR_ALLOW_ORIGIN=*
+ENV ASCIIDOCTOR_CONVERSION_TIMEOUT=10m
+ENV BUNDLE_PATH=/app/deployment/vendor/bundle
+ENV TMPDIR=/tmp
+# PATH is set by startup script to include the correct ruby version bin directory
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8091/healthz || exit 1
+
+# Set working directory
+WORKDIR /app/deployment
+
+# Use the startup script
+CMD ["/app/start.sh"]

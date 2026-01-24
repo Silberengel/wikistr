@@ -25,6 +25,7 @@ export interface ExportOptions {
   content: string;
   title: string;
   author?: string;
+  image?: string; // Cover image URL
 }
 
 export type ExportFormat = 'html5' | 'epub' | 'pdf';
@@ -71,6 +72,7 @@ export async function makeExportRequest(
         content: options.content,
         title: options.title,
         author: options.author || '',
+        image: options.image || '',
       }),
       signal: combinedController.signal,
     });

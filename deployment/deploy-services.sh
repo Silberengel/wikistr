@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 
 REPO_PATH="${1:-}"
 
-echo -e "${GREEN}🚀 Deploying OG Proxy and Alexandria Catalogue services${NC}"
+echo -e "${GREEN}🚀 Deploying OG Proxy, AsciiDoctor, and Alexandria Catalogue services${NC}"
 echo
 
 # Check if Docker is running
@@ -44,7 +44,7 @@ if [ -n "${REPO_PATH}" ]; then
         echo -e "${YELLOW}⚠️  Repository path not found: ${REPO_PATH}${NC}"
         echo -e "${YELLOW}   Continuing without volume mounts (files are in the Docker image)${NC}"
         USE_VOLUMES=false
-    elif [ ! -f "${REPO_PATH}/deployment/proxy-server.js" ] || [ ! -f "${REPO_PATH}/deployment/epub-download-server.js" ]; then
+    elif [ ! -f "${REPO_PATH}/deployment/proxy-server.js" ] || [ ! -f "${REPO_PATH}/deployment/epub-download-server.js" ] || [ ! -d "${REPO_PATH}/deployment/asciidoctor-server" ]; then
         echo -e "${YELLOW}⚠️  Required files not found in repository path${NC}"
         echo -e "${YELLOW}   Continuing without volume mounts (files are in the Docker image)${NC}"
         USE_VOLUMES=false
@@ -171,7 +171,7 @@ if [ "$USE_VOLUMES" = true ]; then
       -p 127.0.0.1:8092:8092 \
       -v "${REPO_PATH}/deployment/epub-download-server.js:/app/deployment/epub-download-server.js:ro" \
       -e EPUB_DOWNLOAD_PORT=8092 \
-      # -e ASCIIDOCTOR_SERVER_URL=http://asciidoctor:8091  # Removed - bespoke implementation coming
+      -e ASCIIDOCTOR_SERVER_URL=http://asciidoctor:8091 \
       silberengel/wikistr:latest-alexandria-catalogue
 else
     docker run -d \
@@ -180,7 +180,7 @@ else
       --network ${NETWORK_NAME} \
       -p 127.0.0.1:8092:8092 \
       -e EPUB_DOWNLOAD_PORT=8092 \
-      # -e ASCIIDOCTOR_SERVER_URL=http://asciidoctor:8091  # Removed - bespoke implementation coming
+      -e ASCIIDOCTOR_SERVER_URL=http://asciidoctor:8091 \
       silberengel/wikistr:latest-alexandria-catalogue
 fi
 
@@ -195,17 +195,89 @@ else
 fi
 
 echo
+
+# Deploy AsciiDoctor
+echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BLUE}📦 Deploying AsciiDoctor on port 8091${NC}"
+echo
+
+# Pull or build AsciiDoctor image
+if docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "^silberengel/wikistr:latest-asciidoctor$"; then
+    echo -e "  ${BLUE}✓${NC} AsciiDoctor image already exists locally"
+else
+    echo -e "  ${BLUE}📥 Pulling AsciiDoctor image from Docker Hub...${NC}"
+    if ! docker pull silberengel/wikistr:latest-asciidoctor 2>/dev/null; then
+        if [ "$USE_VOLUMES" = true ] && [ -n "${REPO_PATH}" ]; then
+            echo -e "  ${YELLOW}⚠️  Image not found on Docker Hub, building from repository...${NC}"
+            docker build -f "${REPO_PATH}/deployment/Dockerfile.asciidoctor" -t silberengel/wikistr:latest-asciidoctor "${REPO_PATH}"
+        else
+            echo -e "  ${RED}❌ Image not found on Docker Hub and no repository path provided${NC}"
+            echo -e "  ${YELLOW}   Please provide repository path: ./deploy-services.sh /path/to/wikistr${NC}"
+            exit 1
+        fi
+    fi
+fi
+
+# Stop and remove existing AsciiDoctor container
+if docker ps -a --format '{{.Names}}' | grep -q "^asciidoctor$"; then
+    echo -e "  ${BLUE}🛑 Stopping existing AsciiDoctor container...${NC}"
+    docker stop asciidoctor > /dev/null 2>&1 || true
+    echo -e "  ${BLUE}🗑️  Removing existing AsciiDoctor container...${NC}"
+    docker rm asciidoctor > /dev/null 2>&1 || true
+fi
+
+# Run AsciiDoctor container
+echo -e "  ${BLUE}🚀 Starting AsciiDoctor container...${NC}"
+if [ "$USE_VOLUMES" = true ]; then
+    docker run -d \
+      --name asciidoctor \
+      --restart always \
+      --network ${NETWORK_NAME} \
+      -p 127.0.0.1:8091:8091 \
+      -v "${REPO_PATH}/deployment/asciidoctor-server:/app/asciidoctor-server:ro" \
+      -v "${REPO_PATH}/deployment/Gemfile:/app/deployment/Gemfile:ro" \
+      -e ASCIIDOCTOR_PORT=8091 \
+      -e ASCIIDOCTOR_ALLOW_ORIGIN="https://*.imwald.eu" \
+      -e ASCIIDOCTOR_CONVERSION_TIMEOUT=10m \
+      -e BUNDLE_PATH=/app/deployment/vendor/bundle \
+      silberengel/wikistr:latest-asciidoctor
+else
+    docker run -d \
+      --name asciidoctor \
+      --restart always \
+      --network ${NETWORK_NAME} \
+      -p 127.0.0.1:8091:8091 \
+      -e ASCIIDOCTOR_PORT=8091 \
+      -e ASCIIDOCTOR_ALLOW_ORIGIN="https://*.imwald.eu" \
+      -e ASCIIDOCTOR_CONVERSION_TIMEOUT=10m \
+      -e BUNDLE_PATH=/app/deployment/vendor/bundle \
+      silberengel/wikistr:latest-asciidoctor
+fi
+
+echo -e "  ${GREEN}✓${NC} AsciiDoctor container started"
+
+# Wait and health check AsciiDoctor
+sleep 2
+if curl -f "http://localhost:8091/healthz" > /dev/null 2>&1; then
+    echo -e "  ${GREEN}✓${NC} AsciiDoctor health check passed"
+else
+    echo -e "  ${YELLOW}⚠${NC} AsciiDoctor health check failed, but container is running"
+fi
+
+echo
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo
 echo -e "${GREEN}✅ All services deployed successfully!${NC}"
 echo
 echo -e "${BLUE}📋 Deployment Summary:${NC}"
 echo -e "  • OG Proxy: http://localhost:8090 (container: og-proxy)"
+echo -e "  • AsciiDoctor: http://localhost:8091 (container: asciidoctor)"
 echo -e "  • Alexandria Catalogue: http://localhost:8092 (container: alexandria-catalogue)"
 echo
 echo -e "${BLUE}💡 Next Steps:${NC}"
 echo -e "  1. Configure Apache to proxy /sites/ to http://127.0.0.1:8090/sites/"
-echo -e "  2. Configure Apache to proxy /alexandria/ to http://127.0.0.1:8092/"
+echo -e "  2. Configure Apache to proxy /asciidoctor/ to http://127.0.0.1:8091/"
+echo -e "  3. Configure Apache to proxy /alexandria/ to http://127.0.0.1:8092/"
 echo -e "  4. See REMOTE_SERVER_DEPLOYMENT.md for Apache configuration details"
 echo
 if [ "$USE_VOLUMES" = false ]; then
@@ -216,9 +288,10 @@ fi
 echo
 echo -e "${BLUE}💡 Useful Commands:${NC}"
 echo -e "  View OG Proxy logs:           docker logs -f og-proxy"
+echo -e "  View AsciiDoctor logs:        docker logs -f asciidoctor"
 echo -e "  View Alexandria Catalogue:   docker logs -f alexandria-catalogue"
-echo -e "  Restart services:             docker restart og-proxy alexandria-catalogue"
-echo -e "  Stop services:                docker stop og-proxy alexandria-catalogue"
+echo -e "  Restart services:             docker restart og-proxy asciidoctor alexandria-catalogue"
+echo -e "  Stop services:                docker stop og-proxy asciidoctor alexandria-catalogue"
 echo
 echo -e "${GREEN}🎉 Deployment complete!${NC}"
 

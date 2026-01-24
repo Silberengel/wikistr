@@ -22,13 +22,13 @@ NC='\033[0m' # No Color
 VERSION="v5.3.0"
 
 # All available services
-ALL_SERVICES=("wikistr" "biblestr" "quranstr" "torahstr" "og-proxy" "alexandria-catalogue")
+ALL_SERVICES=("wikistr" "biblestr" "quranstr" "torahstr" "og-proxy" "asciidoctor" "alexandria-catalogue")
 
 # Services that use version tags (themes)
 THEME_SERVICES=("wikistr" "biblestr" "quranstr" "torahstr")
 
 # Services that use latest tags only
-LATEST_ONLY_SERVICES=("og-proxy" "alexandria-catalogue")
+LATEST_ONLY_SERVICES=("og-proxy" "asciidoctor" "alexandria-catalogue")
 
 # Parse command-line arguments
 SERVICES_TO_BUILD=()
@@ -321,6 +321,7 @@ echo -e "  docker run -d --name biblestr -p 8081:80 silberengel/wikistr:latest-b
 echo -e "  docker run -d --name quranstr -p 8082:80 silberengel/wikistr:latest-quranstr"
 echo -e "  docker run -d --name torahstr -p 8083:80 silberengel/wikistr:latest-torahstr"
 echo -e "  docker run -d --name og-proxy -p 8090:8090 silberengel/wikistr:latest-og-proxy"
+echo -e "  docker run -d --name asciidoctor -p 8091:8091 silberengel/wikistr:latest-asciidoctor"
 echo -e "  docker run -d --name alexandria-catalogue -p 8092:8092 silberengel/wikistr:latest-alexandria-catalogue"
 echo
 echo -e "  # Deploy on cloud server"

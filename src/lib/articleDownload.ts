@@ -1125,7 +1125,8 @@ export async function downloadAsPDF(
 }
 
 /**
- * Download article as AsciiDoc
+ * Download article as AsciiDoc (simple - just raw content, no server)
+ * For articles (30818, 30041) only
  */
 export async function downloadAsAsciiDoc(
   event: NostrEvent, 
@@ -1134,16 +1135,18 @@ export async function downloadAsAsciiDoc(
   abortSignal?: AbortSignal
 ): Promise<void> {
   if (abortSignal?.aborted) throw new Error('Download cancelled');
-  onProgress?.(20, 'Preparing content...');
-  let { content, title } = await getEventContent(event, 'asciidoc');
+  
+  // Only allow for AsciiDoc article kinds
+  if (event.kind !== 30818 && event.kind !== 30041) {
+    throw new Error('AsciiDoc download is only available for AsciiDoc articles (kind 30818 or 30041)');
+  }
+  
+  onProgress?.(50, 'Preparing download...');
+  const title = getTitleFromEventTags(event);
+  const content = event.content; // Raw content, no processing
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
-  onProgress?.(60, 'Processing content...');
-  // Apply quality control AFTER all conversions and metadata additions
-  content = await processContentQualityAsync(content, event, true, getUserHandle);
-  
-  if (abortSignal?.aborted) throw new Error('Download cancelled');
-  onProgress?.(90, 'Preparing download...');
+  onProgress?.(90, 'Creating file...');
   const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.adoc`;
   const blob = new Blob([content], { type: 'text/asciidoc' });
   await downloadBlob(blob, name);
@@ -1153,7 +1156,8 @@ export async function downloadAsAsciiDoc(
 }
 
 /**
- * Download article as Markdown
+ * Download article as Markdown (simple - just raw content, no server)
+ * For Markdown articles (30817, 30023) only
  */
 export async function downloadAsMarkdown(
   event: NostrEvent, 
@@ -1162,34 +1166,18 @@ export async function downloadAsMarkdown(
   abortSignal?: AbortSignal
 ): Promise<void> {
   if (abortSignal?.aborted) throw new Error('Download cancelled');
-  onProgress?.(20, 'Preparing content...');
-  const title = getTitleFromEventTags(event);
-  let content = event.content;
   
-  if (abortSignal?.aborted) throw new Error('Download cancelled');
-  onProgress?.(60, 'Processing content...');
-  // Convert AsciiDoc to Markdown if needed
-  if (isAsciiDoc(content)) {
-    // Convert headers: = Title -> # Title, == Section -> ## Section, etc.
-    content = content.replace(/^(=+)\s+(.+)$/gm, (match, equals, text) => {
-      const level = equals.length;
-      const hashes = '#'.repeat(level);
-      return `${hashes} ${text}`;
-    });
-    
-    // Convert images: image::url[alt] -> ![alt](url)
-    content = content.replace(/image::([^\[]+)\[([^\]]*)\]/g, (match, url, alt) => {
-      return `![${alt || ''}](${url})`;
-    });
-    
-    // Convert inline images: image:url[alt] -> ![alt](url)
-    content = content.replace(/image:([^\[]+)\[([^\]]*)\]/g, (match, url, alt) => {
-      return `![${alt || ''}](${url})`;
-    });
+  // Only allow for Markdown article kinds
+  if (event.kind !== 30817 && event.kind !== 30023) {
+    throw new Error('Markdown download is only available for Markdown articles (kind 30817 or 30023)');
   }
   
+  onProgress?.(50, 'Preparing download...');
+  const title = getTitleFromEventTags(event);
+  const content = event.content; // Raw content, no processing
+  
   if (abortSignal?.aborted) throw new Error('Download cancelled');
-  onProgress?.(90, 'Preparing download...');
+  onProgress?.(90, 'Creating file...');
   const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.md`;
   const blob = new Blob([content], { type: 'text/markdown' });
   await downloadBlob(blob, name);
@@ -1199,46 +1187,65 @@ export async function downloadAsMarkdown(
 }
 
 /**
- * Download book (30040) as AsciiDoc
+ * Download book (30040) as AsciiDoc (using server processing pipeline)
  */
 export async function downloadBookAsAsciiDoc(
-  indexEvent: NostrEvent, 
-  filename?: string,
-  onProgress?: (progress: number, status: string) => void
-): Promise<void> {
-  onProgress?.(5, 'Building book structure...');
-  onProgress?.(25, 'Combining chapters...');
-  let combined = await combineBookEvents(indexEvent, undefined, true, 'asciidoc');
-  
-  onProgress?.(50, 'Processing content...');
-  // Apply quality control AFTER all conversions and metadata additions
-  combined = await processContentQualityAsync(combined, indexEvent, true, getUserHandle);
-  
-  onProgress?.(90, 'Preparing download...');
-  const title = indexEvent.tags.find(([k]) => k === 'title')?.[1] || 
-                indexEvent.tags.find(([k]) => k === 'T')?.[1] ||
-                indexEvent.id.slice(0, 8);
-  const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.adoc`;
-  const blob = new Blob([combined], { type: 'text/asciidoc' });
-  await downloadBlob(blob, name);
-  
-  onProgress?.(100, 'Download started!');
-}
-
-/**
- * Download book (30040) as EPUB
- */
-export async function downloadBookAsEPUB(
   indexEvent: NostrEvent, 
   filename?: string,
   onProgress?: (progress: number, status: string) => void,
   abortSignal?: AbortSignal
 ): Promise<void> {
   if (abortSignal?.aborted) throw new Error('Download cancelled');
+  if (indexEvent.kind !== 30040) {
+    throw new Error('Event is not a book index (30040)');
+  }
+  
   onProgress?.(5, 'Building book structure...');
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(25, 'Combining chapters...');
-  let combined = await combineBookEvents(indexEvent, undefined, true, 'epub');
+  let combined = await combineBookEvents(indexEvent, undefined, true, 'asciidoc');
+  
+  if (abortSignal?.aborted) throw new Error('Download cancelled');
+  onProgress?.(50, 'Processing content quality...');
+  // Apply quality control AFTER all conversions and metadata additions
+  combined = await processContentQualityAsync(combined, indexEvent, true, getUserHandle);
+  
+  if (abortSignal?.aborted) throw new Error('Download cancelled');
+  onProgress?.(55, 'Validating content...');
+  validateAsciiDocContent(combined, true);
+  
+  if (abortSignal?.aborted) throw new Error('Download cancelled');
+  onProgress?.(90, 'Preparing download...');
+  const title = indexEvent.tags.find(([k]) => k === 'title')?.[1] || 
+                indexEvent.tags.find(([k]) => k === 'T')?.[1] ||
+                indexEvent.id.slice(0, 8);
+  const name = filename || generateFilename(title, 'adoc');
+  const blob = new Blob([combined], { type: 'text/asciidoc' });
+  await downloadBlob(blob, name);
+  
+  if (abortSignal?.aborted) throw new Error('Download cancelled');
+  onProgress?.(100, 'Download started!');
+}
+
+/**
+ * Download book (30040) using server - supports all formats
+ */
+async function downloadBookViaServer(
+  indexEvent: NostrEvent,
+  format: 'epub3' | 'pdf' | 'html5' | 'docbook5' | 'mobi' | 'azw3',
+  filename?: string,
+  onProgress?: (progress: number, status: string) => void,
+  abortSignal?: AbortSignal
+): Promise<void> {
+  if (abortSignal?.aborted) throw new Error('Download cancelled');
+  if (indexEvent.kind !== 30040) {
+    throw new Error('Event is not a book index (30040)');
+  }
+  
+  onProgress?.(5, 'Building book structure...');
+  if (abortSignal?.aborted) throw new Error('Download cancelled');
+  onProgress?.(25, 'Combining chapters...');
+  let combined = await combineBookEvents(indexEvent, undefined, true, format === 'html5' ? 'html' : format === 'pdf' ? 'pdf' : 'epub');
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(50, 'Processing content quality...');
@@ -1260,18 +1267,139 @@ export async function downloadBookAsEPUB(
   if (!author || !author.trim()) {
     author = nip19.npubEncode(indexEvent.pubkey);
   }
+  const image = indexEvent.tags.find(([k]) => k === 'image')?.[1];
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
-  onProgress?.(60, 'Generating EPUB file...');
-  const blob = await exportToEPUB({ content: combined, title, author }, abortSignal, onProgress);
+  onProgress?.(60, `Generating ${format.toUpperCase()} file...`);
+  
+  // Import server export functions
+  const { exportToEPUB, exportToPDF, exportToHTML5 } = await import('./asciidoctorExport');
+  const { getAsciiDoctorServerUrl } = await import('./exportUtils');
+  
+  let blob: Blob;
+  let extension: string;
+  
+  if (format === 'epub3') {
+    blob = await exportToEPUB({ content: combined, title, author, image }, abortSignal, onProgress);
+    extension = 'epub';
+  } else if (format === 'pdf') {
+    blob = await exportToPDF({ content: combined, title, author, image }, abortSignal, onProgress);
+    extension = 'pdf';
+  } else if (format === 'html5') {
+    blob = await exportToHTML5({ content: combined, title, author, image }, abortSignal);
+    extension = 'html';
+  } else {
+    // For docbook5, mobi, azw3 - call server directly
+    const serverUrl = getAsciiDoctorServerUrl();
+    const baseUrl = serverUrl.endsWith('/') ? serverUrl : `${serverUrl}/`;
+    const url = `${baseUrl}convert/${format}`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: combined,
+        title,
+        author,
+        image: image || ''
+      }),
+      signal: abortSignal
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Server error: ${response.status} ${errorText}`);
+    }
+    
+    blob = await response.blob();
+    
+    const formatMap: Record<string, string> = {
+      'docbook5': 'xml',
+      'mobi': 'mobi',
+      'azw3': 'azw3'
+    };
+    extension = formatMap[format] || format;
+  }
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(95, 'Preparing download...');
-  const name = filename || generateFilename(title, 'epub');
+  const name = filename || generateFilename(title, extension);
   await downloadBlob(blob, name);
   
   if (abortSignal?.aborted) throw new Error('Download cancelled');
   onProgress?.(100, 'Download started!');
+}
+
+/**
+ * Download book (30040) as EPUB3 (via server)
+ */
+export async function downloadBookAsEPUB(
+  indexEvent: NostrEvent, 
+  filename?: string,
+  onProgress?: (progress: number, status: string) => void,
+  abortSignal?: AbortSignal
+): Promise<void> {
+  return downloadBookViaServer(indexEvent, 'epub3', filename, onProgress, abortSignal);
+}
+
+/**
+ * Download book (30040) as PDF (via server)
+ */
+export async function downloadBookAsPDF(
+  indexEvent: NostrEvent, 
+  filename?: string,
+  onProgress?: (progress: number, status: string) => void,
+  abortSignal?: AbortSignal
+): Promise<void> {
+  return downloadBookViaServer(indexEvent, 'pdf', filename, onProgress, abortSignal);
+}
+
+/**
+ * Download book (30040) as HTML5 (via server)
+ */
+export async function downloadBookAsHTML5(
+  indexEvent: NostrEvent, 
+  filename?: string,
+  onProgress?: (progress: number, status: string) => void,
+  abortSignal?: AbortSignal
+): Promise<void> {
+  return downloadBookViaServer(indexEvent, 'html5', filename, onProgress, abortSignal);
+}
+
+/**
+ * Download book (30040) as DocBook5 (via server)
+ */
+export async function downloadBookAsDocBook5(
+  indexEvent: NostrEvent, 
+  filename?: string,
+  onProgress?: (progress: number, status: string) => void,
+  abortSignal?: AbortSignal
+): Promise<void> {
+  return downloadBookViaServer(indexEvent, 'docbook5', filename, onProgress, abortSignal);
+}
+
+/**
+ * Download book (30040) as MOBI (via server)
+ */
+export async function downloadBookAsMOBI(
+  indexEvent: NostrEvent, 
+  filename?: string,
+  onProgress?: (progress: number, status: string) => void,
+  abortSignal?: AbortSignal
+): Promise<void> {
+  return downloadBookViaServer(indexEvent, 'mobi', filename, onProgress, abortSignal);
+}
+
+/**
+ * Download book (30040) as AZW3 (via server)
+ */
+export async function downloadBookAsAZW3(
+  indexEvent: NostrEvent, 
+  filename?: string,
+  onProgress?: (progress: number, status: string) => void,
+  abortSignal?: AbortSignal
+): Promise<void> {
+  return downloadBookViaServer(indexEvent, 'azw3', filename, onProgress, abortSignal);
 }
 
 /**
@@ -1293,3 +1421,73 @@ export async function downloadBookOverview(indexEvent: NostrEvent, filename?: st
   await downloadBlob(blob, name);
 }
 
+/**
+ * Collect all events in a book hierarchy (recursive)
+ */
+async function collectBookEvents(indexEvent: NostrEvent, visitedIds: Set<string> = new Set()): Promise<NostrEvent[]> {
+  if (visitedIds.has(indexEvent.id)) {
+    return [];
+  }
+  visitedIds.add(indexEvent.id);
+  
+  const events: NostrEvent[] = [indexEvent];
+  const hierarchy = await buildBookEventHierarchy(indexEvent, visitedIds);
+  
+  for (const node of hierarchy) {
+    events.push(node.event);
+    if (node.children.length > 0) {
+      // Recursively collect events from nested children
+      for (const childNode of node.children) {
+        const childEvents = await collectBookEvents(childNode.event, visitedIds);
+        events.push(...childEvents);
+      }
+    }
+  }
+  
+  return events;
+}
+
+/**
+ * Download article or book as JSONL (JSON Lines format)
+ * For articles: just the single event
+ * For books: all events in the nested structure (30040s, 30041s, 30818s, etc.)
+ */
+export async function downloadAsJSONL(
+  event: NostrEvent,
+  filename?: string,
+  onProgress?: (progress: number, status: string) => void,
+  abortSignal?: AbortSignal
+): Promise<void> {
+  if (abortSignal?.aborted) throw new Error('Download cancelled');
+  
+  onProgress?.(10, 'Collecting events...');
+  
+  let events: NostrEvent[];
+  
+  if (event.kind === 30040) {
+    // For books, collect all events in the hierarchy
+    onProgress?.(20, 'Building book structure...');
+    events = await collectBookEvents(event);
+  } else {
+    // For articles, just the single event
+    events = [event];
+  }
+  
+  if (abortSignal?.aborted) throw new Error('Download cancelled');
+  onProgress?.(80, 'Creating JSONL file...');
+  
+  // Create JSONL content (one JSON object per line)
+  const jsonlLines = events.map(e => JSON.stringify(e));
+  const jsonlContent = jsonlLines.join('\n');
+  
+  const title = getTitleFromEventTags(event);
+  const name = filename || `${title.replace(/[^a-z0-9]/gi, '_')}.jsonl`;
+  const blob = new Blob([jsonlContent], { type: 'application/x-ndjson' });
+  
+  if (abortSignal?.aborted) throw new Error('Download cancelled');
+  onProgress?.(95, 'Preparing download...');
+  await downloadBlob(blob, name);
+  
+  if (abortSignal?.aborted) throw new Error('Download cancelled');
+  onProgress?.(100, 'Download started!');
+}

@@ -21,14 +21,16 @@
   import { nip19 } from '@nostr/tools';
   import { cards } from '$lib/state';
   import {
-    downloadAsEPUB,
-    downloadAsHTML5,
     downloadAsAsciiDoc,
     downloadAsMarkdown,
-    downloadAsPDF,
     downloadBookAsAsciiDoc,
     downloadBookAsEPUB,
-    downloadBookOverview
+    downloadBookAsPDF,
+    downloadBookAsHTML5,
+    downloadBookAsDocBook5,
+    downloadBookAsMOBI,
+    downloadBookAsAZW3,
+    downloadAsJSONL
   } from '$lib/articleDownload';
   import { addBookmark, removeBookmark, isBookmarked, isBookmarkableKind } from '$lib/bookmarks';
   import { createDeletionEvent } from '$lib/deletion';
@@ -1377,17 +1379,17 @@
                       Download:
                     </div>
                     {#if event && event.kind === 30040}
-                      <!-- Book (30040) - HTML, EPUB, AsciiDoc, PDF -->
+                      <!-- Book (30040) - Server-based downloads with all formats -->
                       <button
                         onclick={() => {
                           if (!event) return;
-                          startDownload(downloadAsHTML5, event);
+                          startDownload(downloadBookAsHTML5, event);
                         }}
                         disabled={isDownloading}
                         class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                         style="color: var(--text-primary);"
                       >
-                        HTML
+                        HTML5
                       </button>
                       <button
                         onclick={() => {
@@ -1398,7 +1400,29 @@
                         class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                         style="color: var(--text-primary);"
                       >
-                        EPUB
+                        EPUB3
+                      </button>
+                      <button
+                        onclick={() => {
+                          if (!event) return;
+                          startDownload(downloadBookAsPDF, event);
+                        }}
+                        disabled={isDownloading}
+                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                        style="color: var(--text-primary);"
+                      >
+                        PDF
+                      </button>
+                      <button
+                        onclick={() => {
+                          if (!event) return;
+                          startDownload(downloadBookAsDocBook5, event);
+                        }}
+                        disabled={isDownloading}
+                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                        style="color: var(--text-primary);"
+                      >
+                        DocBook5
                       </button>
                       <button
                         onclick={() => {
@@ -1411,41 +1435,59 @@
                       >
                         AsciiDoc
                       </button>
+                      <div class="px-4 py-1 text-xs" style="color: var(--text-secondary);">
+                        Recommended for Kindle:
+                      </div>
                       <button
                         onclick={() => {
                           if (!event) return;
-                          startDownload(downloadAsPDF, event);
+                          startDownload(downloadBookAsMOBI, event);
                         }}
                         disabled={isDownloading}
                         class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                         style="color: var(--text-primary);"
                       >
-                        PDF
+                        MOBI
+                      </button>
+                      <button
+                        onclick={() => {
+                          if (!event) return;
+                          startDownload(downloadBookAsAZW3, event);
+                        }}
+                        disabled={isDownloading}
+                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                        style="color: var(--text-primary);"
+                      >
+                        AZW3
+                      </button>
+                      <div class="border-t my-1" style="border-color: var(--border);"></div>
+                      <button
+                        onclick={() => {
+                          if (!event) return;
+                          startDownload(downloadAsJSONL, event);
+                        }}
+                        disabled={isDownloading}
+                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                        style="color: var(--text-primary);"
+                      >
+                        JSONL
                       </button>
                     {:else if event}
-                      <!-- All events: HTML, EPUB, AsciiDoc -->
-                      <button
-                        onclick={() => {
-                          if (!event) return;
-                          startDownload(downloadAsHTML5, event);
-                        }}
-                        disabled={isDownloading}
-                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                        style="color: var(--text-primary);"
-                      >
-                        HTML
-                      </button>
+                      <!-- Articles - Simple downloads (no server) -->
+                      {#if event.kind === 30817 || event.kind === 30023}
                         <button
                           onclick={() => {
                             if (!event) return;
-                            startDownload(downloadAsEPUB, event);
+                            startDownload(downloadAsMarkdown, event);
                           }}
                           disabled={isDownloading}
                           class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                           style="color: var(--text-primary);"
                         >
-                          EPUB
+                          Markdown
                         </button>
+                      {/if}
+                      {#if event.kind === 30818 || event.kind === 30041}
                         <button
                           onclick={() => {
                             if (!event) return;
@@ -1457,32 +1499,19 @@
                         >
                           AsciiDoc
                         </button>
-                        {#if event && (event.kind === 30817 || event.kind === 30023)}
-                          <button
-                            onclick={() => {
-                              if (!event) return;
-                              startDownload(downloadAsMarkdown, event);
-                            }}
-                            disabled={isDownloading}
-                            class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                            style="color: var(--text-primary);"
-                          >
-                            Markdown
-                          </button>
-                        {/if}
-                        {#if event && (event.kind === 30818 || event.kind === 30040 || event.kind === 30041 || event.kind === 30023 || event.kind === 30817)}
-                          <button
-                            onclick={() => {
-                              if (!event) return;
-                              startDownload(downloadAsPDF, event);
-                            }}
-                            disabled={isDownloading}
-                            class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                            style="color: var(--text-primary);"
-                          >
-                            PDF
-                          </button>
-                        {/if}
+                      {/if}
+                      <div class="border-t my-1" style="border-color: var(--border);"></div>
+                      <button
+                        onclick={() => {
+                          if (!event) return;
+                          startDownload(downloadAsJSONL, event);
+                        }}
+                        disabled={isDownloading}
+                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                        style="color: var(--text-primary);"
+                      >
+                        JSONL
+                      </button>
                     {/if}
                   </div>
                 </div>
