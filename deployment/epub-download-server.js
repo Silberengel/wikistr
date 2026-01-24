@@ -544,19 +544,33 @@ function setCached(key, data, extra = {}) {
  */
 function filterTopLevelBooks(allBooks) {
   // Build a set of all book identifiers that are referenced by other books
+  // Books can be referenced via 'a' tags (kind:pubkey:d format) or 'e' tags (event ID)
   const referencedBookIds = new Set();
+  const referencedEventIds = new Set();
   
+  // First pass: collect all references
   for (const book of allBooks) {
-    // Check all 'a' tags in this book
+    // Check all tags in this book
     for (const tag of book.tags) {
       if (tag[0] === 'a' && tag[1]) {
         // Parse the 'a' tag: kind:pubkey:d
         const [kindStr, pubkey, dTag] = tag[1].split(':');
         if (kindStr === '30040' && pubkey && dTag) {
-          // This book references another 30040 event
+          // This book references another 30040 event via 'a' tag
           // Create a unique identifier for the referenced book
           const referencedId = `${pubkey}:${dTag}`;
           referencedBookIds.add(referencedId);
+        }
+      } else if (tag[0] === 'e' && tag[1]) {
+        // 'e' tag references another event by ID
+        // Check if the referenced event is a 30040 event in our list
+        const referencedEvent = allBooks.find(b => b.id === tag[1] && b.kind === 30040);
+        if (referencedEvent) {
+          // This is a reference to another 30040 event
+          const identifier = referencedEvent.tags.find(([k]) => k === 'd')?.[1] || referencedEvent.id;
+          const referencedId = `${referencedEvent.pubkey}:${identifier}`;
+          referencedBookIds.add(referencedId);
+          referencedEventIds.add(tag[1]); // Also track by event ID for direct lookup
         }
       }
     }
@@ -564,9 +578,17 @@ function filterTopLevelBooks(allBooks) {
   
   // Filter to only books that are NOT referenced by other books
   const topLevelBooks = allBooks.filter(book => {
+    // Check if referenced by 'a' tag (pubkey:d format)
     const identifier = book.tags.find(([k]) => k === 'd')?.[1] || book.id;
     const bookId = `${book.pubkey}:${identifier}`;
-    return !referencedBookIds.has(bookId);
+    if (referencedBookIds.has(bookId)) {
+      return false;
+    }
+    // Check if referenced by 'e' tag (event ID)
+    if (referencedEventIds.has(book.id)) {
+      return false;
+    }
+    return true;
   });
   
   console.log(`[Books] Filtered ${allBooks.length} books to ${topLevelBooks.length} top-level books`);
