@@ -69,33 +69,6 @@ services:
       - wikistr-network
     restart: unless-stopped
 
-  asciidoctor:
-    build:
-      context: ..
-      dockerfile: deployment/Dockerfile.asciidoctor
-    image: silberengel/wikistr:latest-asciidoctor
-    volumes:
-      # Mount only the server script for easy updates without rebuild
-      # Gems are installed in vendor/bundle in the image, so bundle exec won't need write access to Gemfile.lock
-      - ../deployment/asciidoctor-server.rb:/app/deployment/asciidoctor-server.rb:ro
-    working_dir: /app/deployment
-    ports:
-      - "127.0.0.1:8091:8091"
-    environment:
-      ASCIIDOCTOR_PORT: 8091
-      ASCIIDOCTOR_ALLOW_ORIGIN: "*"
-      BUNDLE_PATH: /app/deployment/vendor/bundle
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8091/healthz"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    networks:
-      - default
-      - wikistr-network
-    restart: always
-
   alexandria-catalogue:
     build:
       context: ..
@@ -109,9 +82,7 @@ services:
       - "127.0.0.1:8092:8092"
     environment:
       EPUB_DOWNLOAD_PORT: 8092
-      ASCIIDOCTOR_SERVER_URL: http://asciidoctor:8091
-    depends_on:
-      - asciidoctor
+      # ASCIIDOCTOR_SERVER_URL: http://asciidoctor:8091  # Removed - bespoke implementation coming
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8092/"]
       interval: 30s

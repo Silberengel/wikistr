@@ -22,7 +22,7 @@ EXPOSE 8092
 
 # Set environment variables
 ENV EPUB_DOWNLOAD_PORT=8092
-ENV ASCIIDOCTOR_SERVER_URL=http://asciidoctor:8091
+# ENV ASCIIDOCTOR_SERVER_URL=http://asciidoctor:8091  # Removed - bespoke implementation coming
 
 # Verify Node.js installation and that the script can be parsed
 RUN node --version && \

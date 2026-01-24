@@ -26,7 +26,7 @@ fi
 
 # Stop and remove existing containers if they exist
 echo -e "${BLUE}🧹 Cleaning up existing containers...${NC}"
-for container in wikistr biblestr quranstr torahstr og-proxy asciidoctor alexandria-catalogue; do
+for container in wikistr biblestr quranstr torahstr og-proxy alexandria-catalogue; do
     if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
         echo -e "  Stopping and removing ${container}..."
         docker stop "${container}" > /dev/null 2>&1 || true
@@ -34,28 +34,20 @@ for container in wikistr biblestr quranstr torahstr og-proxy asciidoctor alexand
     fi
 done
 # Also clean up docker-compose containers (they have different names like deployment_og-proxy_1)
-for container in deployment_og-proxy_1 deployment_asciidoctor_1 deployment_alexandria-catalogue_1; do
+for container in deployment_og-proxy_1 deployment_alexandria-catalogue_1; do
     if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
         echo -e "  Stopping and removing ${container}..."
         docker stop "${container}" > /dev/null 2>&1 || true
         docker rm "${container}" > /dev/null 2>&1 || true
     fi
 done
-# Also check for any container using port 8090, 8091, or 8092
+# Also check for any container using port 8090 or 8092
 if docker ps --format '{{.Names}}\t{{.Ports}}' | grep -q ":8090->"; then
     CONTAINER_8090=$(docker ps --format '{{.Names}}\t{{.Ports}}' | grep ":8090->" | awk '{print $1}' | head -1)
     if [ -n "$CONTAINER_8090" ] && [ "$CONTAINER_8090" != "og-proxy" ]; then
         echo -e "  Stopping container using port 8090: ${CONTAINER_8090}..."
         docker stop "${CONTAINER_8090}" > /dev/null 2>&1 || true
         docker rm "${CONTAINER_8090}" > /dev/null 2>&1 || true
-    fi
-fi
-if docker ps --format '{{.Names}}\t{{.Ports}}' | grep -q ":8091->"; then
-    CONTAINER_8091=$(docker ps --format '{{.Names}}\t{{.Ports}}' | grep ":8091->" | awk '{print $1}' | head -1)
-    if [ -n "$CONTAINER_8091" ] && [ "$CONTAINER_8091" != "asciidoctor" ]; then
-        echo -e "  Stopping container using port 8091: ${CONTAINER_8091}..."
-        docker stop "${CONTAINER_8091}" > /dev/null 2>&1 || true
-        docker rm "${CONTAINER_8091}" > /dev/null 2>&1 || true
     fi
 fi
 if docker ps --format '{{.Names}}\t{{.Ports}}' | grep -q ":8092->"; then
@@ -122,29 +114,6 @@ docker run -d \
   silberengel/wikistr:latest-og-proxy
 echo -e "  ${GREEN}✓${NC} og-proxy running on http://localhost:8090"
 
-# AsciiDoctor Server on port 8091 (mapped from container port 4567)
-echo -e "  Deploying asciidoctor on port 8091..."
-# Check if image exists, if not build it
-if ! docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "silberengel/wikistr:latest-asciidoctor"; then
-    echo -e "    Building asciidoctor image..."
-    docker build -f "${PARENT_DIR}/deployment/Dockerfile.asciidoctor" -t silberengel/wikistr:latest-asciidoctor "${PARENT_DIR}"
-fi
-# AsciiDoctor: Don't mount the deployment directory to avoid read-only filesystem issues
-# Mount only the server script for easy updates without rebuild
-# Gems are installed in vendor/bundle in the image, so Gemfile.lock won't be accessed
-docker run -d \
-  --name asciidoctor \
-  --restart always \
-  --network ${NETWORK_NAME} \
-  -p 127.0.0.1:8091:8091 \
-  -v "${PARENT_DIR}/deployment/asciidoctor-server.rb:/app/deployment/asciidoctor-server.rb:ro" \
-  -w /app/deployment \
-  -e ASCIIDOCTOR_PORT=8091 \
-  -e ASCIIDOCTOR_ALLOW_ORIGIN="*" \
-  -e BUNDLE_PATH=/app/deployment/vendor/bundle \
-  silberengel/wikistr:latest-asciidoctor
-echo -e "  ${GREEN}✓${NC} asciidoctor running on http://localhost:8091"
-
 # Alexandria Catalogue on port 8092
 echo -e "  Deploying alexandria-catalogue on port 8092..."
 # Check if image exists, if not build it
@@ -169,7 +138,7 @@ docker run -d \
   -v "${PARENT_DIR}/deployment/epub-download-server.js:/app/deployment/epub-download-server.js:ro" \
   -w /app/deployment \
   -e EPUB_DOWNLOAD_PORT=8092 \
-  -e ASCIIDOCTOR_SERVER_URL=http://asciidoctor:8091 \
+  # -e ASCIIDOCTOR_SERVER_URL=http://asciidoctor:8091  # Removed - bespoke implementation coming
   silberengel/wikistr:latest-alexandria-catalogue
 echo -e "  ${GREEN}✓${NC} alexandria-catalogue running on http://localhost:8092"
 
@@ -229,7 +198,6 @@ services=(
     "http://localhost:8082|Quranstr"
     "http://localhost:8083|Torahstr"
     "http://localhost:8090|OG Proxy"
-    "http://localhost:8091/healthz|AsciiDoctor"
     "http://localhost:8092|Alexandria Catalogue"
 )
 
@@ -259,7 +227,6 @@ echo -e "  • Biblestr: http://localhost:8081"
 echo -e "  • Quranstr: http://localhost:8082"
 echo -e "  • Torahstr: http://localhost:8083"
 echo -e "  • OG Proxy: http://localhost:8090"
-echo -e "  • AsciiDoctor: http://localhost:8091"
 echo -e "  • Alexandria Catalogue: http://localhost:8092"
 echo
 echo -e "${BLUE}💡 Management commands:${NC}"
@@ -269,14 +236,13 @@ echo -e "  docker logs -f biblestr"
 echo -e "  docker logs -f quranstr"
 echo -e "  docker logs -f torahstr"
 echo -e "  docker logs -f og-proxy"
-echo -e "  docker logs -f asciidoctor"
 echo -e "  docker logs -f alexandria-catalogue"
 echo
 echo -e "  # Stop all"
-echo -e "  docker stop wikistr biblestr quranstr torahstr og-proxy asciidoctor alexandria-catalogue"
+echo -e "  docker stop wikistr biblestr quranstr torahstr og-proxy alexandria-catalogue"
 echo
 echo -e "  # Remove all"
-echo -e "  docker rm wikistr biblestr quranstr torahstr og-proxy asciidoctor alexandria-catalogue"
+echo -e "  docker rm wikistr biblestr quranstr torahstr og-proxy alexandria-catalogue"
 echo
 echo -e "${GREEN}🎉 Deployment complete!${NC}"
 
