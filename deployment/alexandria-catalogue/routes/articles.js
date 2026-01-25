@@ -8,7 +8,7 @@ import { fetchArticles, fetchArticleEvent, fetchUserHandle, nip19 } from '../nos
 import { getCache, setCached, getCached, CACHE_TTL } from '../cache.js';
 import { escapeHtml, formatDate, normalizeForSearch, setCacheHeaders } from '../utils.js';
 import { getCommonStyles, getTableStyles } from '../styles.js';
-import { generateSearchBar, generateNavigation } from '../html.js';
+import { generateSearchBar, generateNavigation, generateErrorPage } from '../html.js';
 import { marked } from 'marked';
 
 // Configure marked for safe HTML rendering
@@ -211,12 +211,14 @@ async function searchArticles(articles, query) {
   
   const trimmedQuery = query.trim();
   let searchPubkeys = [];
+  let isPubkeySearch = false;
   
   // Check if query is NIP05 (user@domain.com)
   if (trimmedQuery.includes('@') && trimmedQuery.split('@').length === 2) {
     const pubkey = await resolveNip05(trimmedQuery);
     if (pubkey) {
       searchPubkeys.push(pubkey.toLowerCase());
+      isPubkeySearch = true;
     }
   }
   
@@ -225,9 +227,22 @@ async function searchArticles(articles, query) {
     const pubkey = resolveNpub(trimmedQuery);
     if (pubkey) {
       searchPubkeys.push(pubkey.toLowerCase());
+      isPubkeySearch = true;
+      console.log(`[Articles] Resolved npub ${trimmedQuery.substring(0, 16)}... to hex pubkey: ${pubkey.substring(0, 16)}...`);
+    } else {
+      console.log(`[Articles] Failed to resolve npub: ${trimmedQuery.substring(0, 16)}...`);
     }
   }
   
+  // If we have resolved pubkeys, search only by pubkey
+  if (isPubkeySearch && searchPubkeys.length > 0) {
+    return articles.filter(article => {
+      const pubkey = article.pubkey.toLowerCase();
+      return searchPubkeys.includes(pubkey);
+    });
+  }
+  
+  // Otherwise, do text search
   const normalizedQuery = normalizeForSearch(trimmedQuery.toLowerCase());
   
   return articles.filter(article => {
@@ -235,11 +250,6 @@ async function searchArticles(articles, query) {
     const summary = normalizeForSearch(getArticleSummary(article));
     const pubkey = article.pubkey.toLowerCase();
     const dTag = getArticleDTag(article).toLowerCase();
-    
-    // Check if matches any resolved pubkeys
-    if (searchPubkeys.length > 0 && searchPubkeys.includes(pubkey)) {
-      return true;
-    }
     
     return title.includes(normalizedQuery) ||
            summary.includes(normalizedQuery) ||
@@ -715,8 +725,8 @@ export async function handleArticlesList(req, res, url) {
     .relay-info {
       margin-bottom: 1em;
       padding: 0.75em;
-      background: ${relaysJustSaved ? '#d4edda' : '#e7f3ff'};
-      border-left: 3px solid ${relaysJustSaved ? '#28a745' : '#007bff'};
+      background: #e7f3ff;
+      border-left: 3px solid #007bff;
       border-radius: 4px;
       font-size: 0.9em;
     }
@@ -824,7 +834,7 @@ export async function handleArticlesList(req, res, url) {
         html += `
       <tr>
         <td>
-          <a href="/articles/${encodeURIComponent(article.pubkey)}/${encodeURIComponent(dTag)}" class="article-link" aria-label="Read article: ${escapeHtml(title)}">${escapeHtml(title)}</a>
+          <a href="/articles/${encodeURIComponent(article.pubkey)}/${encodeURIComponent(dTag)}${hasCustomRelays ? '?relays=' + encodeURIComponent(relayInput) : ''}" class="article-link" aria-label="Read article: ${escapeHtml(title)}">${escapeHtml(title)}</a>
           ${summary ? `<div class="article-summary" aria-label="Article summary">${escapeHtml(summary)}</div>` : ''}
         </td>
         <td class="article-author">${escapeHtml(authorName)}</td>
@@ -902,22 +912,11 @@ export async function handleArticlesList(req, res, url) {
     res.end(html);
   } catch (error) {
     console.error('[Articles] Error:', error);
-    res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
     const errorMsg = error?.message || String(error);
-    res.end(`
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Error</title>
-</head>
-<body>
-  <h1>Error</h1>
-  <p>${escapeHtml(errorMsg)}</p>
-  <p><a href="/articles">Go back</a></p>
-</body>
-</html>
-    `);
+    const relayInput = url.searchParams.get('relays') || '';
+    const backUrl = `/articles${relayInput ? '?relays=' + encodeURIComponent(relayInput) : ''}`;
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(generateErrorPage('Article Not Found', errorMsg, null, backUrl, relayInput));
   }
 }
 
@@ -929,7 +928,7 @@ export async function handleArticleDetail(req, res, url) {
     const pathParts = url.pathname.split('/').filter(p => p);
     if (pathParts.length !== 3 || pathParts[0] !== 'articles') {
       res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end('Invalid article path');
+      res.end(generateErrorPage('Invalid Article Path', 'Invalid article path format', null, '/articles', ''));
       return;
     }
     
@@ -942,7 +941,47 @@ export async function handleArticleDetail(req, res, url) {
     
     console.log(`[Articles] Fetching article: pubkey=${pubkey.substring(0, 16)}..., d-tag=${dTag}`);
     
-    const article = await fetchArticleEvent(pubkey, dTag, hasCustomRelays ? customRelays : undefined);
+    let article;
+    try {
+      article = await fetchArticleEvent(pubkey, dTag, hasCustomRelays ? customRelays : undefined);
+    } catch (fetchError) {
+      // If fetch fails, try to find it in cached article list
+      console.log(`[Articles] Article not found on relays, checking cached list...`);
+      const cache = getCache();
+      
+      // Try multiple possible cache keys (different limits might have been used)
+      const possibleLimits = [500, 1000, 5000, 10000];
+      let cachedArticles = null;
+      
+      for (const limit of possibleLimits) {
+        const cacheKey = `articleList_${limit}_${hasCustomRelays ? customRelays.join(',') : 'default'}`;
+        const cached = getCached(cacheKey, CACHE_TTL.ARTICLE_LIST);
+        if (cached && Array.isArray(cached)) {
+          cachedArticles = cached;
+          console.log(`[Articles] Found cached article list with limit ${limit}`);
+          break;
+        }
+      }
+      
+      if (cachedArticles && Array.isArray(cachedArticles)) {
+        // Try to find the article in the cached list
+        const foundArticle = cachedArticles.find(a => 
+          a.pubkey.toLowerCase() === pubkey.toLowerCase() && 
+          getArticleDTag(a).toLowerCase() === dTag.toLowerCase()
+        );
+        
+        if (foundArticle) {
+          console.log(`[Articles] Found article in cached list, using cached data`);
+          article = foundArticle;
+        } else {
+          console.log(`[Articles] Article not found in cached list either`);
+          throw fetchError; // Re-throw original error if not in cache
+        }
+      } else {
+        console.log(`[Articles] No cached article list available`);
+        throw fetchError; // Re-throw original error if no cache
+      }
+    }
     
     const title = getArticleTitle(article);
     const summary = getArticleSummary(article);
@@ -1024,21 +1063,10 @@ export async function handleArticleDetail(req, res, url) {
     res.end(html);
   } catch (error) {
     console.error('[Articles] Error:', error);
-    res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
     const errorMsg = error?.message || String(error);
-    res.end(`
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Error</title>
-</head>
-<body>
-  <h1>Error</h1>
-  <p>${escapeHtml(errorMsg)}</p>
-  <p><a href="/articles">Go back</a></p>
-</body>
-</html>
-    `);
+    const relayInput = url.searchParams.get('relays') || '';
+    const backUrl = `/articles${relayInput ? '?relays=' + encodeURIComponent(relayInput) : ''}`;
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(generateErrorPage('Article Not Found', errorMsg, null, backUrl, relayInput));
   }
 }

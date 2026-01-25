@@ -137,6 +137,7 @@ export async function handleStatus(req, res, url) {
     <div class="status-item"><span class="status-label">Cached Comments/Highlights:</span> ${cacheStats.bookComments} entries (${formatBytes(cacheSizes.sizes.bookComments || 0)})</div>
     <div class="status-item"><span class="status-label">Cached Search Results:</span> ${cacheStats.searchResults} entries (${formatBytes(cacheSizes.sizes.searchResults || 0)})</div>
     <div class="status-item"><span class="status-label">Cached Generated Files:</span> ${cacheStats.generatedFiles} entries (${formatBytes(cacheSizes.sizes.generatedFiles || 0)})</div>
+    <div class="status-item"><span class="status-label">Cached Article Lists:</span> ${cacheStats.articleList} entries (${formatBytes(cacheSizes.sizes.articleList || 0)})</div>
     <div class="status-item"><span class="status-label">Top-Level Books Cached:</span> ${cacheStats.topLevelBooks} entries (${formatBytes(cacheSizes.sizes.topLevelBooks || 0)})</div>
     <div class="status-item"><span class="status-label">Book List Cache:</span> ${getCache().bookList.data ? getCache().bookList.data.length + ' entries' : 'empty'} (${formatBytes(cacheSizes.sizes.bookList || 0)})</div>
     ${cacheStats.topLevelBooksTimestamp ? `<div class="status-item"><span class="status-label">Last Updated:</span> ${cacheStats.topLevelBooksTimestamp}</div>` : ''}

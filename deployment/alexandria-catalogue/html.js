@@ -337,9 +337,9 @@ export function generateSearchBar(options) {
     <form method="get" action="${escapeHtml(action)}" role="search" aria-label="${escapeHtml(label)}">
       ${label ? `<label for="search-query-${kinds}">${escapeHtml(label)}</label>` : ''}
       <div style="display: flex; gap: 0.5em; align-items: stretch;">
-        <input type="text" id="search-query-${kinds}" name="${escapeHtml(inputName)}" value="${escapeHtml(searchQuery)}" placeholder="${escapeHtml(placeholder)}" ${inputName === 'naddr' ? 'required' : ''} aria-label="Search query" style="flex: 1; min-width: 0;">
-        <button type="submit" aria-label="Submit search">Search</button>
-        ${showClearButton ? `<a href="${escapeHtml(defaultClearUrl)}" aria-label="Clear search" style="display: inline-block; padding: 0.75em 1em; font-size: 1em; background: #000000; color: #ffffff; border: 2px solid #000000; min-height: 44px; font-weight: bold; cursor: pointer; text-decoration: none; box-sizing: border-box; line-height: 1.5;">Clear</a>` : ''}
+        <input type="text" id="search-query-${kinds}" name="${escapeHtml(inputName)}" value="${escapeHtml(searchQuery)}" placeholder="${escapeHtml(placeholder)}" ${inputName === 'naddr' ? 'required' : ''} aria-label="Search query">
+        <button type="submit" aria-label="Submit search" style="flex-shrink: 0;">Search</button>
+        ${showClearButton ? `<a href="${escapeHtml(defaultClearUrl)}" aria-label="Clear search" style="display: inline-block; padding: 0.75em 1em; font-size: 1em; background: #000000; color: #ffffff; border: 2px solid #000000; min-height: 44px; font-weight: bold; cursor: pointer; text-decoration: none; box-sizing: border-box; line-height: 1.5; flex-shrink: 0;">Clear</a>` : ''}
       </div>
       ${inputName === 'q' ? `<input type="hidden" name="page" value="1">
       <input type="hidden" name="limit" value="${limit}">` : ''}

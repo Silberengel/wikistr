@@ -10,7 +10,7 @@ import { testRelayConnectivity } from '../nostr.js';
 import { getCache, setCached, getCached, CACHE_TTL } from '../cache.js';
 import { getCommonStyles, getTableStyles } from '../styles.js';
 import { escapeHtml, formatDate, getBookTitle, getBookAuthor, getBookIdentifier, setCacheHeaders } from '../utils.js';
-import { generateNavigation } from '../html.js';
+import { generateNavigation, generateErrorPage } from '../html.js';
 import { nip19 } from '../nostr.js';
 
 /**
@@ -307,21 +307,10 @@ export async function handleBooks(req, res, url) {
     res.end(html);
   } catch (error) {
     console.error('[Books] Error:', error);
-    res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
     const errorMsg = error?.message || String(error);
-    res.end(`
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Error</title>
-</head>
-<body>
-  <h1>Error</h1>
-  <p>${escapeHtml(errorMsg)}</p>
-  <p><a href="/">Go back</a></p>
-</body>
-</html>
-    `);
+    const relayInput = url.searchParams.get('relays') || '';
+    const backUrl = `/books${relayInput ? '?relays=' + encodeURIComponent(relayInput) : ''}`;
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(generateErrorPage('Error Loading Books', errorMsg, null, backUrl, relayInput));
   }
 }

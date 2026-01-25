@@ -10,7 +10,7 @@ import { buildBookEventHierarchy } from '../book.js';
 import { fetchComments } from '../comments.js';
 import { buildThreadedComments } from '../comments.js';
 import { fetchUserHandle } from '../nostr.js';
-import { getCache, CACHE_TTL } from '../cache.js';
+import { getCache, getCached, CACHE_TTL } from '../cache.js';
 import { getCommonStyles } from '../styles.js';
 import { escapeHtml, formatDate, getBookTitle, getBookAuthor, getBookIdentifier, setCacheHeaders } from '../utils.js';
 import { generateMessageBox, generateErrorPage, generateSearchBar, generateNavigation } from '../html.js';
@@ -178,7 +178,59 @@ async function handleBookDetail(req, res, url, naddr, customRelays) {
   try {
     console.log(`[Book View] Request received for naddr: ${naddr}`);
     
-    const bookEvent = await fetchBookEvent(naddr, customRelays && customRelays.length > 0 ? customRelays : undefined);
+    let bookEvent;
+    try {
+      bookEvent = await fetchBookEvent(naddr, customRelays && customRelays.length > 0 ? customRelays : undefined);
+    } catch (fetchError) {
+      // If fetch fails, try to find it in cached book list
+      console.log(`[Book View] Book not found on relays, checking cached list...`);
+      const cache = getCache();
+      
+      // Try multiple possible cache keys (different limits might have been used)
+      const possibleLimits = [100, 500, 1000, 5000, 10000];
+      let cachedBooks = null;
+      
+      for (const limit of possibleLimits) {
+        const cacheKey = `bookList_${limit}_${customRelays && customRelays.length > 0 ? customRelays.join(',') : 'default'}`;
+        const cached = getCached(cacheKey, CACHE_TTL.BOOK_LIST);
+        if (cached && Array.isArray(cached)) {
+          cachedBooks = cached;
+          console.log(`[Book View] Found cached book list with limit ${limit}`);
+          break;
+        }
+      }
+      
+      if (cachedBooks && Array.isArray(cachedBooks)) {
+        // Decode naddr to get pubkey and identifier
+        try {
+          const decoded = nip19.decode(naddr);
+          if (decoded.type === 'naddr') {
+            const { pubkey, identifier } = decoded.data;
+            // Try to find the book in the cached list
+            const foundBook = cachedBooks.find(b => {
+              const bookPubkey = b.pubkey.toLowerCase();
+              const bookIdentifier = getBookIdentifier(b).toLowerCase();
+              return bookPubkey === pubkey.toLowerCase() && bookIdentifier === identifier.toLowerCase();
+            });
+            
+            if (foundBook) {
+              console.log(`[Book View] Found book in cached list, using cached data`);
+              bookEvent = foundBook;
+            } else {
+              throw fetchError; // Re-throw original error if not in cache
+            }
+          } else {
+            throw fetchError; // Re-throw original error if not naddr
+          }
+        } catch (decodeError) {
+          throw fetchError; // Re-throw original error if decode fails
+        }
+      } else {
+        console.log(`[Book View] No cached book list available`);
+        throw fetchError; // Re-throw original error if no cache
+      }
+    }
+    
     console.log(`[Book View] Found book event: ${bookEvent.id}`);
 
     const relayKey = (customRelays && customRelays.length > 0) ? customRelays.sort().join(',') : 'default';
@@ -315,7 +367,7 @@ async function handleBookDetail(req, res, url, naddr, customRelays) {
     const relayInput = url.searchParams.get('relays') || '';
     const backUrl = relayInput ? `/?relays=${encodeURIComponent(relayInput)}` : '/';
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(generateErrorPage('Error', errorMsg, null, backUrl));
+    res.end(generateErrorPage('Error', errorMsg, null, backUrl, relayInput));
   }
 }
 

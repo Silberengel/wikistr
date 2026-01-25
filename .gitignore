@@ -11,3 +11,4 @@ vite.config.ts.timestamp-*
 .backup*
 package-lock.json
 deployment/vendor/bundle
+deployment/apache.conf.backup*
