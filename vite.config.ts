@@ -111,6 +111,22 @@ const config: UserConfig = {
           // Ensure leading slash
           return newPath.startsWith('/') ? newPath : '/' + newPath;
         }
+      },
+      '/alexandria-catalogue': {
+        target: 'http://localhost:8092',
+        changeOrigin: true,
+        rewrite: (path) => {
+          // Remove /alexandria-catalogue prefix (with or without trailing slash)
+          let newPath = path.replace(/^\/alexandria-catalogue\/?/, '');
+          // Ensure leading slash (empty path becomes /)
+          if (!newPath || newPath === '') {
+            newPath = '/';
+          } else if (!newPath.startsWith('/')) {
+            newPath = '/' + newPath;
+          }
+          console.log(`[Vite Proxy] Rewriting ${path} -> ${newPath}`);
+          return newPath;
+        }
       }
     }
   },

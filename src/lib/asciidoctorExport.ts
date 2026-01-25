@@ -1,6 +1,6 @@
 /**
  * AsciiDoctor export utilities
- * Connects to the AsciiDoctor server to generate EPUB, HTML5, and PDF files
+ * Connects to the Alexandria Catalogue server (which proxies to AsciiDoctor) to generate EPUB, HTML5, and PDF files
  * Refactored to use shared utilities for reduced redundancy
  */
 
@@ -64,25 +64,25 @@ export async function exportToHTML5(options: ExportOptions, abortSignal?: AbortS
     errorMsg += `Server health check: ${serverHealthy ? 'Reachable' : 'Not reachable'}\n\n`;
     
     if (!serverHealthy) {
-      errorMsg += 'The AsciiDoctor server is not reachable. ';
+      errorMsg += 'The Alexandria Catalogue server is not reachable. ';
       if (serverUrl.includes('localhost') || serverUrl.includes('127.0.0.1')) {
-        errorMsg += 'Please check if the server is running on port 8091.';
+        errorMsg += 'Please check if the server is running on port 8092.';
       } else if (serverUrl.startsWith('/')) {
         errorMsg += 'Please check if the proxy configuration is correct.';
       }
     } else {
       errorMsg += 'The server is reachable, but the proxy may not be configured correctly. ';
-      errorMsg += 'The request is being handled by the SvelteKit app instead of the AsciiDoctor server.';
+      errorMsg += 'The request is being handled by the SvelteKit app instead of the Alexandria Catalogue server.';
       if (serverUrl.startsWith('/')) {
         errorMsg += '\n\nCheck your Apache/web server configuration:';
-        errorMsg += '\nProxyPass /asciidoctor/ http://127.0.0.1:8091/';
+        errorMsg += '\nProxyPass /alexandria-catalogue/ http://127.0.0.1:8092/';
       }
     }
     
     throw new Error(errorMsg);
   }
   
-  // Verify it's actually HTML from AsciiDoctor
+  // Verify it's actually HTML from Alexandria Catalogue/AsciiDoctor
   if (!blobText.includes('<html') && !blobText.includes('<!DOCTYPE') && !blobText.includes('<!doctype')) {
     console.error('[HTML5 Export] Response does not appear to be HTML');
     console.error('[HTML5 Export] Response preview:', blobText.substring(0, 500));
@@ -305,7 +305,7 @@ export async function openInViewer(
 }
 
 /**
- * Check if the AsciiDoctor server is available
+ * Check if the Alexandria Catalogue server is available
  * Re-exported from exportUtils for backward compatibility
  */
 export { checkServerHealth };

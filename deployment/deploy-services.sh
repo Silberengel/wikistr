@@ -277,8 +277,37 @@ echo
 echo -e "${BLUE}💡 Next Steps:${NC}"
 echo -e "  1. Configure Apache to proxy /sites/ to http://127.0.0.1:8090/sites/"
 echo -e "  2. Configure Apache to proxy /asciidoctor/ to http://127.0.0.1:8091/"
-echo -e "  3. Configure Apache to proxy /alexandria/ to http://127.0.0.1:8092/"
+echo -e "  3. Configure Apache to proxy /alexandria-catalogue/ to http://127.0.0.1:8092/"
 echo -e "  4. See REMOTE_SERVER_DEPLOYMENT.md for Apache configuration details"
+echo
+echo -e "${BLUE}🔧 Updating Theme Container Proxy Configurations (if any are running)...${NC}"
+# Check for running theme containers and update their Apache proxy configs
+THEME_CONTAINERS=$(docker ps --format '{{.Names}}' | grep -E '^(wikistr|biblestr|quranstr|torahstr)$' || true)
+if [ -n "$THEME_CONTAINERS" ]; then
+    echo -e "  ${BLUE}Found running theme containers, updating proxy configurations...${NC}"
+    for container in $THEME_CONTAINERS; do
+        echo -e "  ${BLUE}Updating ${container}...${NC}"
+        # Get alexandria-catalogue IP (try both network names)
+        ALEX_IP=$(docker inspect alexandria-catalogue --format='{{range $k, $v := .NetworkSettings.Networks}}{{if eq $k "wikistr-services"}}{{$v.IPAddress}}{{end}}{{end}}' 2>/dev/null || \
+                  docker inspect alexandria-catalogue --format='{{range $k, $v := .NetworkSettings.Networks}}{{if eq $k "wikistr-network"}}{{$v.IPAddress}}{{end}}{{end}}' 2>/dev/null || \
+                  docker inspect alexandria-catalogue --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 2>/dev/null | head -1 || echo "")
+        if [ -n "$ALEX_IP" ]; then
+            # Update Apache config inside container (handle both ProxyPass and ProxyPassMatch)
+            docker exec "$container" sed -i "s|ProxyPassMatch \^/alexandria-catalogue(\.\*)\\\$ http://[0-9.]\\+:8092|ProxyPassMatch ^/alexandria-catalogue(.*)\$ http://${ALEX_IP}:8092|g" /usr/local/apache2/conf/httpd.conf 2>/dev/null || true
+            docker exec "$container" sed -i "s|ProxyPass /alexandria-catalogue http://[0-9.]\\+:8092/|ProxyPassMatch ^/alexandria-catalogue(.*)\$ http://${ALEX_IP}:8092\1|g" /usr/local/apache2/conf/httpd.conf 2>/dev/null || true
+            docker exec "$container" sed -i "s|ProxyPassReverse /alexandria-catalogue http://[0-9.]\\+:8092|ProxyPassReverse /alexandria-catalogue http://${ALEX_IP}:8092|g" /usr/local/apache2/conf/httpd.conf 2>/dev/null || true
+            # Restart Apache gracefully
+            docker exec "$container" httpd -k graceful 2>/dev/null || docker restart "$container" > /dev/null 2>&1 || true
+            echo -e "    ${GREEN}✓${NC} ${container} proxy config updated"
+        else
+            echo -e "    ${YELLOW}⚠${NC} Could not determine alexandria-catalogue IP for ${container}"
+        fi
+    done
+else
+    echo -e "  ${BLUE}No running theme containers found (this is normal for remote deployments)${NC}"
+    echo -e "  ${BLUE}If you deploy theme containers later, you may need to update their proxy configs${NC}"
+    echo -e "  ${BLUE}You can use: ./fix-alexandria-proxy.sh (if available) or update manually${NC}"
+fi
 echo
 if [ "$USE_VOLUMES" = false ]; then
     echo -e "${BLUE}ℹ️  Note: Running without volume mounts.${NC}"

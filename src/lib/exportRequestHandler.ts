@@ -48,7 +48,7 @@ export async function makeExportRequest(
   }
   
   const formatName = format.toUpperCase();
-  console.log(`[${formatName} Export] AsciiDoctor server URL:`, serverUrl);
+  console.log(`[${formatName} Export] Alexandria Catalogue server URL:`, serverUrl);
   console.log(`[${formatName} Export] Sending request to:`, url);
   console.log(`[${formatName} Export] Content length:`, options.content.length);
   console.log(`[${formatName} Export] Title:`, options.title);
@@ -82,6 +82,16 @@ export async function makeExportRequest(
   } catch (err) {
     cleanup();
     
+    // Log the actual error for debugging
+    console.error(`[${formatName} Export] Fetch failed with error:`, {
+      error: err,
+      errorType: err?.constructor?.name,
+      errorName: err instanceof Error ? err.name : 'unknown',
+      errorMessage: err instanceof Error ? err.message : String(err),
+      url,
+      serverUrl
+    });
+    
     // Check for abort errors first
     if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'))) {
       if (abortSignal?.aborted) {
@@ -99,7 +109,7 @@ export async function makeExportRequest(
     
     const errorMessage = err instanceof Error ? err.message : 'Network error';
     console.error(`[${formatName} Export] Network error:`, errorMessage);
-    throw new Error(`Failed to connect to ${formatName} conversion server: ${errorMessage}. Make sure the AsciiDoctor server is running.`);
+    throw new Error(`Failed to connect to ${formatName} conversion server: ${errorMessage}. Make sure the Alexandria Catalogue server is running.`);
   }
   
   onProgress?.(60, 'Waiting for server response...');
@@ -183,18 +193,18 @@ export async function validateResponseContentType(
     errorMsg += `Server health check: ${serverHealthy ? 'Reachable' : 'Not reachable'}\n\n`;
     
     if (!serverHealthy) {
-      errorMsg += 'The AsciiDoctor server is not reachable. ';
+      errorMsg += 'The Alexandria Catalogue server is not reachable. ';
       if (serverUrl.includes('localhost') || serverUrl.includes('127.0.0.1')) {
-        errorMsg += 'Please check if the server is running on port 8091.';
+        errorMsg += 'Please check if the server is running on port 8092.';
       } else if (serverUrl.startsWith('/')) {
         errorMsg += 'Please check if the proxy configuration is correct.';
       }
     } else {
       errorMsg += 'The server is reachable, but the proxy may not be configured correctly. ';
-      errorMsg += `The request is being handled by the SvelteKit app instead of the AsciiDoctor server.`;
+      errorMsg += `The request is being handled by the SvelteKit app instead of the Alexandria Catalogue server.`;
       if (serverUrl.startsWith('/')) {
         errorMsg += '\n\nCheck your Apache/web server configuration:';
-        errorMsg += '\nProxyPass /asciidoctor/ http://127.0.0.1:8091/';
+        errorMsg += '\nProxyPass /alexandria-catalogue/ http://127.0.0.1:8092/';
       }
     }
     

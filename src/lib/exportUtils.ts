@@ -12,13 +12,13 @@ const ASCIIDOCTOR_SERVER_URL = (() => {
     return url;
   }
   if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') {
-    return 'http://localhost:8091';
+    return 'http://localhost:8092';
   }
   if (typeof window !== 'undefined') {
-    // Always use proxy path in browser - works in both dev (vite proxy) and production (Apache proxy)
-    return '/asciidoctor/';
+    // Use alexandria-catalogue proxy path - it proxies to asciidoctor
+    return '/alexandria-catalogue/';
   }
-  return 'http://localhost:8091';
+  return 'http://localhost:8092';
 })();
 
 export const getAsciiDoctorServerUrl = () => ASCIIDOCTOR_SERVER_URL;
@@ -55,16 +55,16 @@ export function isFatalServerError(text: string): boolean {
  * Get fatal server error message
  */
 export function getFatalServerErrorMessage(): string {
-  return 'FATAL: AsciiDoctor server is in a broken state and needs to be restarted.\n\n' +
-         'The server is repeatedly reporting "Could not locate Gemfile or .bundle/ directory" errors.\n\n' +
-         'Please restart the AsciiDoctor server container:\n' +
-         '  docker restart asciidoctor\n\n' +
+  return 'FATAL: Alexandria Catalogue server is in a broken state and needs to be restarted.\n\n' +
+         'The server is repeatedly reporting errors.\n\n' +
+         'Please restart the Alexandria Catalogue server container:\n' +
+         '  docker restart alexandria-catalogue\n\n' +
          'Or if using docker-compose:\n' +
-         '  docker-compose restart asciidoctor';
+         '  docker-compose restart alexandria-catalogue';
 }
 
 /**
- * Check if the AsciiDoctor server is available
+ * Check if the Alexandria Catalogue server is available
  */
 export async function checkServerHealth(): Promise<boolean> {
   try {
@@ -87,22 +87,22 @@ export async function buildConnectionErrorMessage(
   const serverHealthy = await checkServerHealth();
   const serverUrl = ASCIIDOCTOR_SERVER_URL;
   
-  let errorMsg = `Failed to connect to AsciiDoctor server.\n\n`;
+  let errorMsg = `Failed to connect to Alexandria Catalogue server.\n\n`;
   errorMsg += `Server URL: ${serverUrl}\n`;
   errorMsg += `Status: ${serverHealthy ? 'Reachable but error occurred' : 'Not reachable'}\n\n`;
   
   if (serverUrl.includes('localhost') || serverUrl.includes('127.0.0.1')) {
-    errorMsg += 'The AsciiDoctor server appears to be running on localhost (port 8091).\n';
+    errorMsg += 'The Alexandria Catalogue server appears to be running on localhost (port 8092).\n';
     errorMsg += 'Please check:\n';
     errorMsg += '1. The server is running: `docker ps` or check the process\n';
-    errorMsg += '2. The server is accessible at http://localhost:8091\n';
+    errorMsg += '2. The server is accessible at http://localhost:8092\n';
     errorMsg += '3. There are no firewall or network issues blocking the connection\n';
   } else if (serverUrl.startsWith('/')) {
-    errorMsg += 'The AsciiDoctor server is configured to use a proxy path.\n';
+    errorMsg += 'The Alexandria Catalogue server is configured to use a proxy path.\n';
     errorMsg += 'Please check:\n';
-    errorMsg += '1. The server is running on port 8091\n';
+    errorMsg += '1. The server is running on port 8092\n';
     errorMsg += '2. The Apache/web server proxy is configured correctly\n';
-    errorMsg += '3. The proxy path /asciidoctor/ is working\n';
+    errorMsg += '3. The proxy path /alexandria-catalogue/ is working\n';
   } else {
     errorMsg += `The server is configured at: ${serverUrl}\n`;
     errorMsg += 'Please verify the server is running and accessible at this address.\n';
@@ -124,7 +124,7 @@ export function buildContentErrorMessage(
   
   let errorMsg = `${formatName} generation failed: ${originalError}\n\n`;
   errorMsg += `Server URL: ${serverUrl}\n`;
-  errorMsg += 'The AsciiDoctor server is running, but encountered an error processing your content.\n\n';
+  errorMsg += 'The Alexandria Catalogue server is running, but encountered an error processing your content.\n\n';
   errorMsg += 'This is likely due to:\n';
   errorMsg += '1. AsciiDoc syntax errors in the content\n';
   errorMsg += '2. Invalid or malformed AsciiDoc markup\n';

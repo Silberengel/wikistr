@@ -9,6 +9,9 @@ import { handleHome } from './home.js';
 import { handleView } from './view.js';
 import { handleDownload } from './download.js';
 import { handleBooks } from './books.js';
+import { handleConvert } from './convert.js';
+import { handleArticlesList, handleArticleDetail } from './articles.js';
+import { handleImageProxy } from './image-proxy.js';
 
 /**
  * Main request handler
@@ -43,6 +46,9 @@ export async function handleRequest(req, res) {
   try {
     if (url.pathname === '/favicon_alex-catalogue.png' || url.pathname === '/favicon.ico') {
       handleFavicon(req, res);
+    } else if (url.pathname === '/healthz') {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('OK');
     } else if (url.pathname === '/status') {
       await handleStatus(req, res, url);
     } else if (url.pathname === '/' || url.pathname === '') {
@@ -51,8 +57,19 @@ export async function handleRequest(req, res) {
       await handleView(req, res, url);
     } else if (url.pathname === '/download' || url.pathname === '/download-epub' || url.pathname === '/download-pdf') {
       await handleDownload(req, res, url);
+    } else if (url.pathname.startsWith('/convert/')) {
+      await handleConvert(req, res, url);
     } else if (url.pathname === '/books') {
       await handleBooks(req, res, url);
+    } else if (url.pathname.startsWith('/articles/') && url.pathname.split('/').filter(p => p).length === 3) {
+      // Article detail: /articles/{pubkey}/{d-tag}
+      await handleArticleDetail(req, res, url);
+    } else if (url.pathname === '/articles' || url.pathname.startsWith('/articles?')) {
+      // Articles list
+      await handleArticlesList(req, res, url);
+    } else if (url.pathname === '/image-proxy') {
+      // Image proxy for compression
+      await handleImageProxy(req, res, url);
     } else if (url.pathname.startsWith('/images/')) {
       // Handle image requests - return 404 gracefully (images should be absolute URLs or embedded)
       res.writeHead(404, { 'Content-Type': 'text/plain' });

@@ -4,7 +4,7 @@
 
 import { SimplePool, nip19 } from '@nostr/tools';
 import WebSocket from 'ws';
-import { DEFAULT_RELAYS } from './config.js';
+import { DEFAULT_RELAYS, DEFAULT_ARTICLE_RELAYS } from './config.js';
 import { getCache, CACHE_TTL } from './cache.js';
 
 // Create a simple pool for fetching events
@@ -203,6 +203,70 @@ export async function fetchBooks(limit = 50, customRelays = null) {
   const deduplicatedEvents = Array.from(dTagMap.values());
   console.log(`[Books] Found ${foundEvents.length} books, ${deduplicatedEvents.length} after d-tag deduplication`);
   return deduplicatedEvents;
+}
+
+/**
+ * Fetch kind 30023 events (markdown articles)
+ */
+export async function fetchArticles(limit = 500, customRelays = null) {
+  console.log(`[Articles] Fetching ${limit} articles from relays...`);
+  
+  const relays = customRelays && customRelays.length > 0 ? customRelays : DEFAULT_ARTICLE_RELAYS;
+  
+  const filter = {
+    kinds: [30023],
+    limit: Math.min(Number(limit), 500) // Cap at 500
+  };
+  
+  console.log(`[Articles] Using filter:`, JSON.stringify(filter));
+  console.log(`[Articles] Using relays: ${relays.join(', ')}`);
+  
+  const timeoutMs = Math.min(Math.max(15000, (limit / 100) * 1000), 120000);
+  const foundEvents = await fetchEventsFromRelays(filter, relays, timeoutMs);
+  
+  // Deduplicate by d-tag
+  const dTagMap = new Map();
+  for (const event of foundEvents) {
+    const dTag = event.tags.find(([k]) => k === 'd')?.[1];
+    if (dTag) {
+      const dTagKey = `${event.kind}:${event.pubkey}:${dTag}`;
+      const existing = dTagMap.get(dTagKey);
+      if (!existing || event.created_at > existing.created_at) {
+        dTagMap.set(dTagKey, event);
+      }
+    } else {
+      const idKey = `id:${event.id}`;
+      if (!dTagMap.has(idKey)) {
+        dTagMap.set(idKey, event);
+      }
+    }
+  }
+  
+  const deduplicatedEvents = Array.from(dTagMap.values());
+  console.log(`[Articles] Found ${foundEvents.length} articles, ${deduplicatedEvents.length} after d-tag deduplication`);
+  return deduplicatedEvents;
+}
+
+/**
+ * Fetch a single article event by pubkey and d-tag
+ */
+export async function fetchArticleEvent(pubkey, dTag, customRelays = null) {
+  const relays = customRelays && customRelays.length > 0 ? customRelays : DEFAULT_ARTICLE_RELAYS;
+  
+  const filter = {
+    kinds: [30023],
+    authors: [pubkey],
+    '#d': [dTag],
+    limit: 1
+  };
+  
+  const events = await fetchEventsFromRelays(filter, relays, 10000);
+  
+  if (events.length === 0) {
+    throw new Error('Article event not found on any relay');
+  }
+  
+  return events[0];
 }
 
 /**

@@ -9,7 +9,9 @@ export const CACHE_TTL = {
   BOOK_LIST: 5 * 60 * 1000,      // 5 minutes
   BOOK_DETAIL: 10 * 60 * 1000,   // 10 minutes
   SEARCH_RESULTS: 2 * 60 * 1000, // 2 minutes
-  GENERATED_FILES: 60 * 60 * 1000 // 1 hour
+  GENERATED_FILES: 60 * 60 * 1000, // 1 hour
+  ARTICLE_LIST: 5 * 60 * 1000,   // 5 minutes
+  ARTICLE_DETAIL: 10 * 60 * 1000 // 10 minutes
 };
 
 export const DEFAULT_RELAYS = [
@@ -17,6 +19,13 @@ export const DEFAULT_RELAYS = [
   'wss://thecitadel.nostr1.com',
   'wss://nostr.wine',
   'wss://orly-relay.imwald.eu'
+];
+
+export const DEFAULT_ARTICLE_RELAYS = [
+  'wss://theforest.nostr1.com',
+  'wss://nostr.land',
+  'wss://thecitadel.nostr1.com',
+  'wss://nostr.wine'
 ];
 
 export const ITEMS_PER_PAGE = 50;

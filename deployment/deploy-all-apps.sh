@@ -183,6 +183,12 @@ echo -e "  Deploying wikistr on port 8080..."
 docker run -d --name wikistr --network ${NETWORK_NAME} -p 8080:80 silberengel/wikistr:latest-wikistr
 echo -e "  ${GREEN}✓${NC} wikistr running on http://localhost:8080"
 
+# Update Apache proxy configuration with correct IPs
+echo -e "  ${BLUE}🔧 Updating Apache proxy configuration...${NC}"
+if [ -f "${SCRIPT_DIR}/fix-alexandria-proxy.sh" ]; then
+    "${SCRIPT_DIR}/fix-alexandria-proxy.sh" > /dev/null 2>&1 || echo -e "  ${YELLOW}⚠${NC}  Could not auto-update proxy config (run fix-alexandria-proxy.sh manually)"
+fi
+
 # Biblestr on port 8081
 echo -e "  Deploying biblestr on port 8081..."
 docker run -d --name biblestr --network ${NETWORK_NAME} -p 8081:80 silberengel/wikistr:latest-biblestr

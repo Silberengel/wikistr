@@ -34,7 +34,7 @@ RUN apk add --no-cache curl
 # Copy built application from builder stage
 COPY --from=builder /app/build /usr/local/apache2/htdocs/
 
-# Copy Apache configuration
+# Copy Apache configuration (with ProxyPassMatch for correct path forwarding)
 COPY deployment/apache.conf /usr/local/apache2/conf/httpd.conf
 
 # Expose port 80

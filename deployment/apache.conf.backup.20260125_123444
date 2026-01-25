@@ -44,9 +44,8 @@ ServerName localhost
         # update the IP here. To find the current IP:
         #   docker inspect alexandria-catalogue --format='{{range $k, $v := .NetworkSettings.Networks}}{{if eq $k "wikistr-network"}}{{$v.IPAddress}}{{end}}{{end}}'
         # Alexandria Catalogue handles /convert/{format} endpoints
-        # Use ProxyPassMatch to properly strip the /alexandria-catalogue prefix
-        ProxyPassMatch ^/alexandria-catalogue(.*)$ http://172.18.0.4:8092$1
-        ProxyPassReverse /alexandria-catalogue http://172.18.0.4:8092
+        ProxyPass /alexandria-catalogue http://172.19.0.4:8092/
+        ProxyPassReverse /alexandria-catalogue http://172.19.0.4:8092/
     </IfModule>
 </IfModule>
 

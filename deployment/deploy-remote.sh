@@ -109,6 +109,10 @@ deploy_theme() {
         echo -e "  ${YELLOW}   Check logs with: docker logs ${CONTAINER_NAME}${NC}"
     fi
     
+    # Note: If this container needs to proxy to services (alexandria-catalogue, asciidoctor, og-proxy),
+    # you may need to update the Apache proxy configuration inside the container.
+    # See deployment/fix-alexandria-proxy.sh for details.
+    
     echo
 }
 

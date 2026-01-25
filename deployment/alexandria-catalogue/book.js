@@ -10,7 +10,7 @@ import { DEFAULT_RELAYS } from './config.js';
  * Compress image buffer to reduce file size
  * Returns compressed buffer or original if compression fails
  */
-async function compressImage(buffer, contentType) {
+export async function compressImage(buffer, contentType) {
   try {
     // Try to use sharp if available (fast, efficient)
     let sharp;
