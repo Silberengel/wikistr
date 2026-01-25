@@ -480,6 +480,15 @@ function getArticleDetailStyles() {
     .article-content h2 { font-size: 1.5em; }
     .article-content h3 { font-size: 1.25em; }
     .article-content p { margin-bottom: 1em; word-wrap: break-word; }
+    .article-content ul, .article-content ol { 
+      margin: 1em 0; 
+      padding-left: 2em; 
+      word-wrap: break-word; 
+    }
+    .article-content li { 
+      margin: 0.5em 0; 
+      word-wrap: break-word; 
+    }
     .article-content img { 
       max-width: 100%; 
       max-height: 1000px; 
