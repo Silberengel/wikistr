@@ -153,6 +153,7 @@ export async function handleStatus(req, res, url) {
     <div class="status-item"><span class="status-label">Cached Generated Files:</span> ${cacheStats.generatedFiles} entries (${formatBytes(cacheSizes.sizes.generatedFiles || 0)})</div>
     <div class="status-item"><span class="status-label">Cached Article Lists:</span> ${cacheStats.articleList} entries (${formatBytes(cacheSizes.sizes.articleList || 0)})</div>
     <div class="status-item"><span class="status-label">Cached Highlights Lists:</span> ${cacheStats.highlightsList} entries (${formatBytes(cacheSizes.sizes.highlightsList || 0)})</div>
+    <div class="status-item"><span class="status-label">Cached User Profiles:</span> ${cacheStats.userProfiles || 0} entries (${formatBytes(cacheSizes.sizes.userProfiles || 0)})</div>
     <div class="status-item"><span class="status-label">Top-Level Books Cached:</span> ${cacheStats.topLevelBooks} entries (${formatBytes(cacheSizes.sizes.topLevelBooks || 0)})</div>
     <div class="status-item"><span class="status-label">Book List Cache:</span> ${getCache().bookList.data ? getCache().bookList.data.length + ' entries' : 'empty'} (${formatBytes(cacheSizes.sizes.bookList || 0)})</div>
     ${cacheStats.topLevelBooksTimestamp ? `<div class="status-item"><span class="status-label">Last Updated:</span> ${cacheStats.topLevelBooksTimestamp}</div>` : ''}
@@ -179,11 +180,11 @@ export async function handleStatus(req, res, url) {
   <div class="status-section" style="margin-top: 2em; padding: 1em; background: #ffffff; border: 2px solid #0066cc; border-radius: 4px;">
     <h2 style="margin-top: 0; color: #000000;">Cache Management</h2>
     <p style="color: #000000; margin-bottom: 1em;">Refresh cache to fetch new items from relays and append them to existing cache (with deduplication). This will add new items without clearing existing data.</p>
-    <form method="POST" action="${hasCustomRelays ? `/refresh-cache?relays=${encodeURIComponent(relayInput)}` : '/refresh-cache'}" style="margin: 0; display: inline-block;">
+    <form method="POST" action="${hasCustomRelays ? `/refresh-cache?relays=${encodeURIComponent(relayInput)}` : '/refresh-cache'}" style="margin: 0; display: inline-block;" target="_self">
       <button type="submit" style="padding: 0.75em 1.5em; background: #0066cc; color: #ffffff; border: 2px solid #0066cc; border-radius: 4px; cursor: pointer; font-size: 1em; font-weight: bold; margin-right: 1em;">Refresh Cache</button>
     </form>
     <p style="color: #000000; margin-top: 1em; margin-bottom: 1em;">Clear all cached data. This will force the server to fetch fresh data from relays on the next request.</p>
-    <form method="POST" action="/clear-cache" style="margin: 0; display: inline-block;">
+    <form method="POST" action="${hasCustomRelays ? `/clear-cache?relays=${encodeURIComponent(relayInput)}` : '/clear-cache'}" style="margin: 0; display: inline-block;" target="_self">
       <button type="submit" style="padding: 0.75em 1.5em; background: #cc0000; color: #ffffff; border: 2px solid #cc0000; border-radius: 4px; cursor: pointer; font-size: 1em; font-weight: bold;">Clear All Cache</button>
     </form>
   </div>
@@ -196,10 +197,18 @@ export async function handleStatus(req, res, url) {
 /**
  * Handle cache clearing POST request
  */
-export function handleClearCache(req, res) {
+export function handleClearCache(req, res, url) {
   clearAllCaches();
   console.log('[Cache] All caches cleared');
-  res.writeHead(302, { 'Location': '/status?cleared=1' });
+  
+  // Preserve custom relays in redirect if present
+  const relayInput = url.searchParams.get('relays') || '';
+  let redirectUrl = '/status?cleared=1';
+  if (relayInput) {
+    redirectUrl += `&relays=${encodeURIComponent(relayInput)}`;
+  }
+  
+  res.writeHead(302, { 'Location': redirectUrl });
   res.end();
 }
 

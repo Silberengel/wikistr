@@ -17,11 +17,17 @@ function getImageCacheKey(url) {
 
 /**
  * Download image from URL
+ * Handles redirects (301, 302, 303, 307, 308) up to 5 redirects
  */
-async function downloadImage(url) {
+async function downloadImage(url, redirectCount = 0) {
   // Use Node.js built-in https/http modules for better compatibility
   const https = await import('https');
   const http = await import('http');
+  
+  // Prevent infinite redirect loops
+  if (redirectCount > 5) {
+    throw new Error('Too many redirects (max 5)');
+  }
   
   return new Promise((resolve, reject) => {
     const urlObj = new URL(url);
@@ -35,10 +41,37 @@ async function downloadImage(url) {
     const req = client.get(url, {
       headers: {
         'User-Agent': 'Alexandria-Catalogue/1.0'
-      }
+      },
+      maxRedirects: 0 // Handle redirects manually for better control
     }, (res) => {
       clearTimeout(timeout);
       
+      // Handle redirects (301, 302, 303, 307, 308)
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        const redirectUrl = res.headers.location;
+        let newUrl;
+        
+        // Handle relative redirects
+        if (redirectUrl.startsWith('http://') || redirectUrl.startsWith('https://')) {
+          newUrl = redirectUrl;
+        } else if (redirectUrl.startsWith('//')) {
+          newUrl = urlObj.protocol + redirectUrl;
+        } else if (redirectUrl.startsWith('/')) {
+          newUrl = urlObj.origin + redirectUrl;
+        } else {
+          newUrl = new URL(redirectUrl, url).href;
+        }
+        
+        console.log(`[Image Proxy] Following redirect ${res.statusCode} from ${url.substring(0, 50)}... to ${newUrl.substring(0, 50)}...`);
+        
+        // Recursively follow redirect
+        downloadImage(newUrl, redirectCount + 1)
+          .then(resolve)
+          .catch(reject);
+        return;
+      }
+      
+      // Handle non-200 status codes (after redirects)
       if (res.statusCode !== 200) {
         reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
         return;

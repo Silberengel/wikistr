@@ -4,8 +4,9 @@
 
 import { SimplePool, nip19 } from '@nostr/tools';
 import WebSocket from 'ws';
-import { DEFAULT_RELAYS, DEFAULT_ARTICLE_RELAYS } from './config.js';
-import { getCache, CACHE_TTL } from './cache.js';
+import { DEFAULT_RELAYS, DEFAULT_ARTICLE_RELAYS, DEFAULT_FETCH_LIMIT } from './config.js';
+import { getCache, getCached, setCached, CACHE_TTL } from './cache.js';
+import { getBookIdentifier } from './utils.js';
 
 // Create a simple pool for fetching events
 const pool = new SimplePool({
@@ -121,12 +122,15 @@ export async function fetchEventsFromRelays(filter, relays, timeout = 5000, earl
 
 /**
  * Fetch a book event by naddr
+ * OPTIMIZED: Checks book list cache first, then bookDetails cache, then relays
  */
 export async function fetchBookEvent(naddr, customRelays = null) {
   const cache = getCache();
+  
+  // First check bookDetails cache (fastest)
   const cached = cache.bookDetails.get(naddr);
   if (cached && (Date.now() - cached.timestamp) < CACHE_TTL.BOOK_DETAIL) {
-    console.log(`[Book] Using cached data for: ${naddr}`);
+    console.log(`[Book] Using cached data from bookDetails for: ${naddr}`);
     return cached.data;
   }
   
@@ -141,6 +145,33 @@ export async function fetchBookEvent(naddr, customRelays = null) {
     throw new Error(`Unsupported kind: ${kind}. Only book kinds (30040, 30041) are supported.`);
   }
 
+  // Second: Check book list cache before fetching from relays
+  console.log(`[Book] Checking book list cache for: ${naddr}`);
+  const cacheKey = `bookList_${DEFAULT_FETCH_LIMIT}_${customRelays && customRelays.length > 0 ? customRelays.join(',') : 'default'}`;
+  const cachedBooks = getCached(cacheKey, Infinity) || []; // Check regardless of TTL
+  const foundInCache = cachedBooks.find(b => {
+    const bookPubkey = b.pubkey.toLowerCase();
+    const bookIdentifier = getBookIdentifier(b).toLowerCase();
+    return bookPubkey === pubkey.toLowerCase() && bookIdentifier === identifier.toLowerCase();
+  });
+  
+  if (foundInCache) {
+    console.log(`[Book] Found in book list cache, updating bookDetails cache`);
+    // Update bookDetails cache for faster future lookups
+    cache.bookDetails.set(naddr, {
+      data: foundInCache,
+      timestamp: Date.now()
+    });
+    
+    if (cache.bookDetails.size > 100) {
+      const firstKey = cache.bookDetails.keys().next().value;
+      cache.bookDetails.delete(firstKey);
+    }
+    
+    return foundInCache;
+  }
+
+  // Third: Fetch from relays if not in cache
   let relays = DEFAULT_RELAYS;
   if (customRelays && customRelays.length > 0) {
     relays = customRelays;
@@ -148,7 +179,7 @@ export async function fetchBookEvent(naddr, customRelays = null) {
     relays = decoded.data.relays;
   }
 
-  console.log(`[Book] Fetching book event: kind=${kind}, pubkey=${pubkey}, identifier=${identifier}`);
+  console.log(`[Book] Not in cache, fetching from relays: kind=${kind}, pubkey=${pubkey}, identifier=${identifier}`);
   console.log(`[Book] Using relays: ${relays.join(', ')}`);
 
   const filter = {
@@ -167,6 +198,10 @@ export async function fetchBookEvent(naddr, customRelays = null) {
 
   const bookEvent = events[0];
   
+  // Update both caches
+  console.log(`[Book] Found on relay, updating caches`);
+  
+  // Update bookDetails cache
   cache.bookDetails.set(naddr, {
     data: bookEvent,
     timestamp: Date.now()
@@ -177,11 +212,38 @@ export async function fetchBookEvent(naddr, customRelays = null) {
     cache.bookDetails.delete(firstKey);
   }
   
+  // Also add to book list cache if it exists (append and deduplicate)
+  if (cachedBooks.length > 0) {
+    const bookMap = new Map();
+    // Add existing books
+    for (const book of cachedBooks) {
+      const dTag = getBookIdentifier(book);
+      const key = `${book.kind}:${book.pubkey}:${dTag}`;
+      const existing = bookMap.get(key);
+      if (!existing || book.created_at > existing.created_at) {
+        bookMap.set(key, book);
+      }
+    }
+    // Add new book
+    const dTag = getBookIdentifier(bookEvent);
+    const key = `${bookEvent.kind}:${bookEvent.pubkey}:${dTag}`;
+    const existing = bookMap.get(key);
+    if (!existing || bookEvent.created_at > existing.created_at) {
+      bookMap.set(key, bookEvent);
+    }
+    
+    const updatedBooks = Array.from(bookMap.values());
+    // Update cache using setCached (which will also update cache.bookList)
+    setCached(cacheKey, updatedBooks);
+    console.log(`[Book] Updated book list cache: ${cachedBooks.length} -> ${updatedBooks.length} books`);
+  }
+  
   return bookEvent;
 }
 
 /**
  * Fetch an event by naddr (supports books 30040/30041 and articles 30023)
+ * OPTIMIZED: Checks list cache first, then details cache, then relays
  */
 export async function fetchEventByNaddr(naddr, customRelays = null) {
   const decoded = nip19.decode(naddr);
@@ -196,17 +258,17 @@ export async function fetchEventByNaddr(naddr, customRelays = null) {
   const isBook = kind === 30040 || kind === 30041;
   const isArticle = kind === 30023 || kind === 30041; // 30041 can be both book and article
   
-  // OPTIMIZED: Check cache first for both books and articles
+  // First: Check bookDetails/articleDetails cache (fastest)
   if (isBook) {
     const cached = cache.bookDetails.get(naddr);
     if (cached && (Date.now() - cached.timestamp) < CACHE_TTL.BOOK_DETAIL) {
-      console.log(`[Book] Using cached data for: ${naddr}`);
+      console.log(`[Book] Using cached data from bookDetails for: ${naddr}`);
       return cached.data;
     }
   } else if (isArticle) {
     const cached = cache.bookDetails.get(naddr);
     if (cached && (Date.now() - cached.timestamp) < CACHE_TTL.ARTICLE_DETAIL) {
-      console.log(`[Article] Using cached data for: ${naddr}`);
+      console.log(`[Article] Using cached data from bookDetails for: ${naddr}`);
       return cached.data;
     }
   }
@@ -215,6 +277,46 @@ export async function fetchEventByNaddr(naddr, customRelays = null) {
     throw new Error(`Unsupported kind: ${kind}. Only book kinds (30040, 30041) and article kind (30023) are supported.`);
   }
 
+  // Second: Check list cache before fetching from relays
+  let foundInCache = null;
+  
+  if (isBook) {
+    console.log(`[Book] Checking book list cache for: ${naddr}`);
+    const cacheKey = `bookList_${DEFAULT_FETCH_LIMIT}_${customRelays && customRelays.length > 0 ? customRelays.join(',') : 'default'}`;
+    const cachedBooks = getCached(cacheKey, Infinity) || [];
+    foundInCache = cachedBooks.find(b => {
+      const bookPubkey = b.pubkey.toLowerCase();
+      const bookIdentifier = getBookIdentifier(b).toLowerCase();
+      return bookPubkey === pubkey.toLowerCase() && bookIdentifier === identifier.toLowerCase();
+    });
+  } else if (isArticle) {
+    console.log(`[Article] Checking article list cache for: ${naddr}`);
+    const cacheKey = `articleList_${DEFAULT_FETCH_LIMIT}_${customRelays && customRelays.length > 0 ? customRelays.join(',') : 'default'}`;
+    const cachedArticles = getCached(cacheKey, Infinity) || [];
+    foundInCache = cachedArticles.find(a => {
+      const articlePubkey = a.pubkey.toLowerCase();
+      const articleDTag = a.tags.find(([k]) => k === 'd')?.[1] || a.id;
+      return articlePubkey === pubkey.toLowerCase() && articleDTag.toLowerCase() === identifier.toLowerCase();
+    });
+  }
+  
+  if (foundInCache) {
+    console.log(`[${isBook ? 'Book' : 'Article'}] Found in list cache, updating details cache`);
+    // Update bookDetails cache for faster future lookups
+    cache.bookDetails.set(naddr, {
+      data: foundInCache,
+      timestamp: Date.now()
+    });
+    
+    if (cache.bookDetails.size > 100) {
+      const firstKey = cache.bookDetails.keys().next().value;
+      cache.bookDetails.delete(firstKey);
+    }
+    
+    return foundInCache;
+  }
+
+  // Third: Fetch from relays if not in cache
   let relays = isArticle ? DEFAULT_ARTICLE_RELAYS : DEFAULT_RELAYS;
   if (customRelays && customRelays.length > 0) {
     relays = customRelays;
@@ -222,7 +324,7 @@ export async function fetchEventByNaddr(naddr, customRelays = null) {
     relays = decoded.data.relays;
   }
 
-  console.log(`[${isBook ? 'Book' : 'Article'}] Fetching event: kind=${kind}, pubkey=${pubkey}, identifier=${identifier}`);
+  console.log(`[${isBook ? 'Book' : 'Article'}] Not in cache, fetching from relays: kind=${kind}, pubkey=${pubkey}, identifier=${identifier}`);
   console.log(`[${isBook ? 'Book' : 'Article'}] Using relays: ${relays.join(', ')}`);
 
   const filter = {
@@ -241,26 +343,72 @@ export async function fetchEventByNaddr(naddr, customRelays = null) {
 
   const event = events[0];
   
-  // OPTIMIZED: Cache both book and article events
+  // Update both caches
+  console.log(`[${isBook ? 'Book' : 'Article'}] Found on relay, updating caches`);
+  
+  // Update bookDetails cache
+  cache.bookDetails.set(naddr, {
+    data: event,
+    timestamp: Date.now()
+  });
+  
+  if (cache.bookDetails.size > 100) {
+    const firstKey = cache.bookDetails.keys().next().value;
+    cache.bookDetails.delete(firstKey);
+  }
+  
+  // Also add to list cache if it exists (append and deduplicate)
   if (isBook) {
-    cache.bookDetails.set(naddr, {
-      data: event,
-      timestamp: Date.now()
-    });
-    
-    if (cache.bookDetails.size > 100) {
-      const firstKey = cache.bookDetails.keys().next().value;
-      cache.bookDetails.delete(firstKey);
+    const cacheKey = `bookList_${DEFAULT_FETCH_LIMIT}_${customRelays && customRelays.length > 0 ? customRelays.join(',') : 'default'}`;
+    const cachedBooks = getCached(cacheKey, Infinity) || [];
+    if (cachedBooks.length > 0) {
+      const bookMap = new Map();
+      // Add existing books
+      for (const book of cachedBooks) {
+        const dTag = getBookIdentifier(book);
+        const key = `${book.kind}:${book.pubkey}:${dTag}`;
+        const existing = bookMap.get(key);
+        if (!existing || book.created_at > existing.created_at) {
+          bookMap.set(key, book);
+        }
+      }
+      // Add new book
+      const dTag = getBookIdentifier(event);
+      const key = `${event.kind}:${event.pubkey}:${dTag}`;
+      const existing = bookMap.get(key);
+      if (!existing || event.created_at > existing.created_at) {
+        bookMap.set(key, event);
+      }
+      
+      const updatedBooks = Array.from(bookMap.values());
+      setCached(cacheKey, updatedBooks);
+      console.log(`[Book] Updated book list cache: ${cachedBooks.length} -> ${updatedBooks.length} books`);
     }
   } else if (isArticle) {
-    cache.bookDetails.set(naddr, {
-      data: event,
-      timestamp: Date.now()
-    });
-    
-    if (cache.bookDetails.size > 100) {
-      const firstKey = cache.bookDetails.keys().next().value;
-      cache.bookDetails.delete(firstKey);
+    const cacheKey = `articleList_${DEFAULT_FETCH_LIMIT}_${customRelays && customRelays.length > 0 ? customRelays.join(',') : 'default'}`;
+    const cachedArticles = getCached(cacheKey, Infinity) || [];
+    if (cachedArticles.length > 0) {
+      const articleMap = new Map();
+      // Add existing articles
+      for (const article of cachedArticles) {
+        const dTag = article.tags.find(([k]) => k === 'd')?.[1] || article.id;
+        const key = `${article.pubkey}:${dTag}`;
+        const existing = articleMap.get(key);
+        if (!existing || article.created_at > existing.created_at) {
+          articleMap.set(key, article);
+        }
+      }
+      // Add new article
+      const dTag = event.tags.find(([k]) => k === 'd')?.[1] || event.id;
+      const key = `${event.pubkey}:${dTag}`;
+      const existing = articleMap.get(key);
+      if (!existing || event.created_at > existing.created_at) {
+        articleMap.set(key, event);
+      }
+      
+      const updatedArticles = Array.from(articleMap.values());
+      setCached(cacheKey, updatedArticles);
+      console.log(`[Article] Updated article list cache: ${cachedArticles.length} -> ${updatedArticles.length} articles`);
     }
   }
   
@@ -321,9 +469,14 @@ export async function fetchBooks(limit = 50, customRelays = null) {
   console.log(`[Books] Using relays: ${relays.join(', ')}`);
   
   // Optimized: Reduced timeout for faster responses
-  const timeoutMs = Math.min(Math.max(5000, (limit / 200) * 1000), 30000);
-  // Early exit when we have enough results (50% of limit)
-  const foundEvents = await fetchEventsFromRelays(filter, relays, timeoutMs, true, Math.floor(limit * 0.5));
+  // For large limits (refresh operations), use longer timeout and disable early exit to get more results
+  const timeoutMs = limit > 1000 
+    ? Math.min(Math.max(10000, (limit / 100) * 1000), 60000) // Longer timeout for large fetches
+    : Math.min(Math.max(5000, (limit / 200) * 1000), 30000);
+  // Early exit only for smaller limits to avoid missing books during refresh
+  const useEarlyExit = limit <= 1000;
+  const minResults = useEarlyExit ? Math.floor(limit * 0.5) : 0;
+  const foundEvents = await fetchEventsFromRelays(filter, relays, timeoutMs, useEarlyExit, minResults);
   
   // Deduplicate by d-tag
   const dTagMap = new Map();
@@ -440,16 +593,43 @@ export async function fetchArticleEvent(pubkey, dTag, customRelays = null) {
 
 /**
  * Fetch user handle/name from kind 0 profile event
+ * OPTIMIZED: Caches full profile events for faster subsequent lookups
  */
 export async function fetchUserHandle(pubkey, customRelays = null) {
-  // OPTIMIZED: Check cache first before fetching from relays
   const cache = getCache();
-  const cached = cache.userHandles.get(pubkey);
-  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL.USER_HANDLE) {
+  const now = Date.now();
+  
+  // First: Check handle cache (fastest)
+  const cachedHandle = cache.userHandles.get(pubkey);
+  if (cachedHandle && (now - cachedHandle.timestamp) < CACHE_TTL.USER_HANDLE) {
     console.log(`[Profile] Using cached handle for: ${pubkey.substring(0, 16)}...`);
-    return cached.data;
+    return cachedHandle.data;
   }
   
+  // Second: Check profile event cache (full event, can extract handle)
+  const cachedProfile = cache.userProfiles.get(pubkey);
+  if (cachedProfile && (now - cachedProfile.timestamp) < CACHE_TTL.USER_HANDLE) {
+    console.log(`[Profile] Using cached profile event for: ${pubkey.substring(0, 16)}...`);
+    const profileEvent = cachedProfile.data;
+    let handle = null;
+    if (profileEvent && profileEvent.content) {
+      try {
+        const metadata = JSON.parse(profileEvent.content);
+        handle = metadata.name || metadata.display_name || metadata.nip05 || null;
+      } catch (e) {
+        console.error('[Profile] Error parsing cached metadata:', e);
+        handle = null;
+      }
+    }
+    // Update handle cache for faster future lookups
+    cache.userHandles.set(pubkey, {
+      data: handle,
+      timestamp: now
+    });
+    return handle;
+  }
+  
+  // Third: Fetch from relays if not in cache
   if (customRelays === undefined) {
     customRelays = null;
   }
@@ -462,13 +642,17 @@ export async function fetchUserHandle(pubkey, customRelays = null) {
     limit: 1
   };
   
+  console.log(`[Profile] Fetching profile event from relays for: ${pubkey.substring(0, 16)}...`);
   // Optimized: Reduced timeout for profile lookups
   const foundEvents = await fetchEventsFromRelays(filter, relays, 2000, true, 1);
   
   let handle = null;
+  let profileEvent = null;
+  
   if (foundEvents.length > 0) {
+    profileEvent = foundEvents[0];
     try {
-      const metadata = JSON.parse(foundEvents[0].content);
+      const metadata = JSON.parse(profileEvent.content);
       handle = metadata.name || metadata.display_name || metadata.nip05 || null;
     } catch (e) {
       console.error('[Profile] Error parsing metadata:', e);
@@ -476,10 +660,23 @@ export async function fetchUserHandle(pubkey, customRelays = null) {
     }
   }
   
-  // OPTIMIZED: Cache the handle (even if null) for future requests
+  // Cache both the full profile event and the extracted handle
+  if (profileEvent) {
+    cache.userProfiles.set(pubkey, {
+      data: profileEvent,
+      timestamp: now
+    });
+    
+    if (cache.userProfiles.size > 1000) {
+      const firstKey = cache.userProfiles.keys().next().value;
+      cache.userProfiles.delete(firstKey);
+    }
+  }
+  
+  // Cache the handle (even if null) for faster future lookups
   cache.userHandles.set(pubkey, {
     data: handle,
-    timestamp: Date.now()
+    timestamp: now
   });
   
   if (cache.userHandles.size > 500) {

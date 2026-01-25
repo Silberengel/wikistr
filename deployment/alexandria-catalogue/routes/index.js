@@ -33,7 +33,7 @@ export async function handleRequest(req, res) {
 
   // Handle POST requests for cache management
   if (req.method === 'POST' && url.pathname === '/clear-cache') {
-    handleClearCache(req, res);
+    handleClearCache(req, res, url);
     return;
   }
   

@@ -3,7 +3,7 @@
  * Pre-fetches popular data in the background when homepage is accessed
  */
 
-import { fetchBooks, fetchArticles, fetchEventsByFilters } from './nostr.js';
+import { fetchBooks, fetchArticles, fetchEventsByFilters, fetchEventsFromRelays } from './nostr.js';
 import { filterTopLevelBooks, buildBookEventHierarchy, collectAllEventsFromHierarchy } from './book.js';
 import { fetchComments, buildThreadedComments } from './comments.js';
 import { getCache, setCached, getCached, CACHE_TTL } from './cache.js';
@@ -16,7 +16,8 @@ const warmingStatus = {
   articles: { inProgress: false, lastWarmed: 0 },
   highlights: { inProgress: false, lastWarmed: 0 },
   comments: { inProgress: false, lastWarmed: 0 },
-  articleComments: { inProgress: false, lastWarmed: 0 }
+  articleComments: { inProgress: false, lastWarmed: 0 },
+  profiles: { inProgress: false, lastWarmed: 0 }
 };
 
 // Minimum time between warming attempts (5 minutes)
@@ -416,6 +417,116 @@ export async function warmArticleCommentsCache(customRelays = null) {
  * Comments warming runs after books/articles are warmed (since they depend on lists)
  */
 /**
+ * Warm user profile cache by fetching profiles for all unique pubkeys
+ * found in books, articles, and highlights
+ */
+export async function warmUserProfilesCache(customRelays = null) {
+  const now = Date.now();
+  const status = warmingStatus.profiles;
+  
+  // Skip if already warming or recently warmed
+  if (status.inProgress) {
+    console.log('[Cache Warming] Profile cache warming already in progress, skipping...');
+    return;
+  }
+  
+  if (now - status.lastWarmed < WARMING_COOLDOWN) {
+    console.log('[Cache Warming] Profile cache recently warmed, skipping...');
+    return;
+  }
+  
+  // Start warming
+  status.inProgress = true;
+  console.log('[Cache Warming] Starting background profile cache warming...');
+  
+  try {
+    const cache = getCache();
+    const pubkeys = new Set();
+    
+    // Collect pubkeys from cached books
+    const bookCacheKey = `bookList_${DEFAULT_FETCH_LIMIT}_${customRelays && customRelays.length > 0 ? customRelays.join(',') : 'default'}`;
+    const cachedBooks = getCached(bookCacheKey, Infinity) || [];
+    for (const book of cachedBooks) {
+      if (book.pubkey) pubkeys.add(book.pubkey);
+    }
+    
+    // Collect pubkeys from cached articles
+    const articleCacheKey = `articleList_${DEFAULT_FETCH_LIMIT}_${customRelays && customRelays.length > 0 ? customRelays.join(',') : 'default'}`;
+    const cachedArticles = getCached(articleCacheKey, Infinity) || [];
+    for (const article of cachedArticles) {
+      if (article.pubkey) pubkeys.add(article.pubkey);
+    }
+    
+    // Collect pubkeys from cached highlights
+    const highlightsCacheKey = `highlightsList_500_${customRelays && customRelays.length > 0 ? customRelays.join(',') : 'default'}`;
+    const cachedHighlights = getCached(highlightsCacheKey, Infinity) || [];
+    for (const highlight of cachedHighlights) {
+      if (highlight.pubkey) pubkeys.add(highlight.pubkey);
+    }
+    
+    // Filter out pubkeys that are already cached
+    const pubkeysToFetch = Array.from(pubkeys).filter(pubkey => {
+      const cached = cache.userProfiles.get(pubkey);
+      return !cached || (now - cached.timestamp) >= CACHE_TTL.USER_HANDLE;
+    });
+    
+    if (pubkeysToFetch.length === 0) {
+      console.log('[Cache Warming] All profiles already cached, skipping...');
+      status.lastWarmed = now;
+      return;
+    }
+    
+    console.log(`[Cache Warming] Fetching ${pubkeysToFetch.length} profile events (out of ${pubkeys.size} unique pubkeys)...`);
+    
+    const relays = customRelays && customRelays.length > 0 ? customRelays : DEFAULT_RELAYS;
+    
+    // Fetch profiles in batches to avoid overwhelming relays
+    const batchSize = 50;
+    let fetchedCount = 0;
+    
+    for (let i = 0; i < pubkeysToFetch.length; i += batchSize) {
+      const batch = pubkeysToFetch.slice(i, i + batchSize);
+      
+      const filter = {
+        kinds: [0],
+        authors: batch,
+        limit: batch.length
+      };
+      
+      try {
+        const profileEvents = await fetchEventsFromRelays(filter, relays, 5000, true, Math.floor(batch.length * 0.5));
+        
+        // Cache the profile events
+        for (const event of profileEvents) {
+          if (event.pubkey) {
+            cache.userProfiles.set(event.pubkey, {
+              data: event,
+              timestamp: now
+            });
+            fetchedCount++;
+          }
+        }
+        
+        // Limit cache size
+        if (cache.userProfiles.size > 1000) {
+          const firstKey = cache.userProfiles.keys().next().value;
+          cache.userProfiles.delete(firstKey);
+        }
+      } catch (error) {
+        console.error(`[Cache Warming] Error fetching profile batch ${i / batchSize + 1}:`, error);
+      }
+    }
+    
+    console.log(`[Cache Warming] Profile cache warmed successfully: ${fetchedCount} profiles cached`);
+    status.lastWarmed = now;
+  } catch (error) {
+    console.error('[Cache Warming] Error warming profile cache:', error);
+  } finally {
+    status.inProgress = false;
+  }
+}
+
+/**
  * Warm all caches in the background
  * OPTIMIZED: More efficient parallel execution with better error handling
  * Returns a Promise for error handling in server.js
@@ -445,10 +556,21 @@ export function warmAllCaches(customRelays = null) {
     
     warmHighlightsCache(customRelays).catch(err => {
       console.error('[Cache Warming] Highlights cache warming failed:', err);
+    }),
+    
+    // Warm profiles after books/articles/highlights are warmed (to collect pubkeys)
+    Promise.allSettled([
+      warmBookCache(customRelays),
+      warmArticleCache(customRelays),
+      warmHighlightsCache(customRelays)
+    ]).then(() => {
+      return warmUserProfilesCache(customRelays);
+    }).catch(err => {
+      console.error('[Cache Warming] Profile cache warming failed:', err);
     })
   ];
   
-  console.log('[Cache Warming] Background cache warming initiated (books, articles, highlights in parallel)');
+  console.log('[Cache Warming] Background cache warming initiated (books, articles, highlights, profiles in parallel)');
   
   // Return Promise for error handling in server.js
   return Promise.allSettled(warmingPromises).then(() => {
@@ -476,10 +598,20 @@ export async function refreshBookCache(customRelays = null) {
   try {
     const cache = getCache();
     const cacheKey = `bookList_${DEFAULT_FETCH_LIMIT}_${customRelays && customRelays.length > 0 ? customRelays.join(',') : 'default'}`;
-    const existingBooks = getCached(cacheKey, Infinity) || []; // Get existing regardless of TTL
     
-    // Fetch new books
+    // Get existing books - check both the Map cache and the bookList object
+    let existingBooks = getCached(cacheKey, Infinity) || [];
+    // Fallback: also check cache.bookList if Map lookup returned empty
+    if (existingBooks.length === 0 && cache.bookList?.data) {
+      existingBooks = cache.bookList.data;
+      console.log(`[Cache Refresh] Using fallback cache.bookList: ${existingBooks.length} books`);
+    }
+    
+    console.log(`[Cache Refresh] Existing books in cache: ${existingBooks.length}`);
+    
+    // Fetch new books - use a higher limit to ensure we get more results
     const newBooks = await fetchBooks(DEFAULT_FETCH_LIMIT, customRelays);
+    console.log(`[Cache Refresh] Fetched ${newBooks.length} new books from relays`);
     
     // Deduplicate: create a map by kind:pubkey:d-tag, keeping the newest version
     const bookMap = new Map();
@@ -715,10 +847,16 @@ export async function refreshAllCaches(customRelays = null) {
     refreshHighlightsCache(customRelays)
   ]);
   
+  // After refreshing books/articles/highlights, warm profiles for new pubkeys
+  const profileResult = await Promise.allSettled([
+    warmUserProfilesCache(customRelays)
+  ]);
+  
   const summary = {
     books: results[0].status === 'fulfilled' ? results[0].value : { success: false, error: results[0].reason?.message },
     articles: results[1].status === 'fulfilled' ? results[1].value : { success: false, error: results[1].reason?.message },
-    highlights: results[2].status === 'fulfilled' ? results[2].value : { success: false, error: results[2].reason?.message }
+    highlights: results[2].status === 'fulfilled' ? results[2].value : { success: false, error: results[2].reason?.message },
+    profiles: profileResult[0].status === 'fulfilled' ? { success: true } : { success: false, error: profileResult[0].reason?.message }
   };
   
   console.log('[Cache Refresh] All caches refreshed:', summary);

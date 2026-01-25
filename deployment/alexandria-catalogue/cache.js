@@ -16,6 +16,7 @@ const cache = {
   bookHierarchy: new Map(),
   bookComments: new Map(),
   userHandles: new Map(), // Cache for user handles (by pubkey)
+  userProfiles: new Map(), // Cache for kind 0 profile events (by pubkey)
   searchResults: new Map(),
   generatedFiles: new Map()
 };
@@ -39,6 +40,21 @@ export function getCached(key, ttl) {
   if (key.startsWith('highlightsList_')) {
     const cached = cache.highlightsList.get(key);
     if (cached?.data && (now - cached.timestamp) < ttl) {
+      return cached.data;
+    }
+    return null;
+  }
+  
+  if (key.startsWith('bookList_')) {
+    const cached = cache.articleList.get(key); // bookList uses articleList Map for storage
+    if (cached?.data && (ttl === Infinity || (now - cached.timestamp) < ttl)) {
+      // Also update cache.bookList for status page display
+      cache.bookList = {
+        data: cached.data,
+        timestamp: cached.timestamp,
+        limit: cached.limit || 0,
+        showAll: cached.showAll || false
+      };
       return cached.data;
     }
     return null;
@@ -80,6 +96,24 @@ export function setCached(key, data, extra = {}) {
     return;
   }
   
+  if (key.startsWith('bookList_')) {
+    // Store in articleList Map (reusing the Map structure)
+    cache.articleList.set(key, entry);
+    // Also update cache.bookList for status page display
+    cache.bookList = {
+      data: data,
+      timestamp: timestamp,
+      limit: extra.limit || 0,
+      showAll: extra.showAll || false
+    };
+    // Limit cache size efficiently
+    if (cache.articleList.size > 50) {
+      const firstKey = cache.articleList.keys().next().value;
+      cache.articleList.delete(firstKey);
+    }
+    return;
+  }
+  
   // For other caches, use direct property access
   cache[key] = entry;
 }
@@ -97,6 +131,7 @@ export function getCache() {
 export function clearAllCaches() {
   cache.bookList = { data: null, timestamp: 0, limit: 0, showAll: false };
   cache.topLevelBooks = { data: null, timestamp: 0, limit: 0 };
+  // Clear Map-based caches (including bookList entries stored in articleList Map)
   cache.articleList.clear();
   cache.highlightsList.clear();
   cache.bookDetails.clear();
@@ -104,6 +139,7 @@ export function clearAllCaches() {
   cache.bookHierarchy.clear();
   cache.bookComments.clear();
   cache.userHandles.clear();
+  cache.userProfiles.clear();
   cache.searchResults.clear();
   cache.generatedFiles.clear();
 }
@@ -123,6 +159,7 @@ export function calculateCacheSize() {
     bookHierarchy: 0,
     bookComments: 0,
     userHandles: 0,
+    userProfiles: 0,
     searchResults: 0,
     generatedFiles: 0
   };
@@ -130,26 +167,46 @@ export function calculateCacheSize() {
   for (const [key, map] of Object.entries(cache)) {
     if (map instanceof Map) {
       let mapSize = 0;
+      let bookListSize = 0;
+      let articleListSize = 0;
+      
       for (const [mapKey, value] of map.entries()) {
-        mapSize += calculateObjectSize(mapKey);
-        mapSize += calculateObjectSize(value);
+        const entrySize = calculateObjectSize(mapKey) + calculateObjectSize(value);
+        mapSize += entrySize;
+        
+        // Separate bookList and articleList entries in the articleList Map
+        if (key === 'articleList') {
+          if (typeof mapKey === 'string' && mapKey.startsWith('bookList_')) {
+            bookListSize += entrySize;
+          } else {
+            articleListSize += entrySize;
+          }
+        }
       }
-      if (key === 'bookList') sizes.bookList = mapSize;
-      else if (key === 'topLevelBooks') sizes.topLevelBooks = mapSize;
-      else if (key === 'articleList') sizes.articleList = mapSize;
+      
+      if (key === 'articleList') {
+        sizes.articleList = articleListSize;
+        sizes.bookList = bookListSize; // bookList entries stored in articleList Map
+      } else if (key === 'topLevelBooks') sizes.topLevelBooks = mapSize;
       else if (key === 'highlightsList') sizes.highlightsList = mapSize;
       else if (key === 'bookDetails') sizes.bookDetails = mapSize;
       else if (key === 'articleDetails') sizes.articleDetails = mapSize;
       else if (key === 'bookHierarchy') sizes.bookHierarchy = mapSize;
       else if (key === 'bookComments') sizes.bookComments = mapSize;
       else if (key === 'userHandles') sizes.userHandles = mapSize;
+      else if (key === 'userProfiles') sizes.userProfiles = mapSize;
       else if (key === 'searchResults') sizes.searchResults = mapSize;
       else if (key === 'generatedFiles') sizes.generatedFiles = mapSize;
       totalBytes += mapSize;
     } else if (typeof map === 'object' && map !== null) {
       const objSize = calculateObjectSize(map);
-      if (key === 'bookList') sizes.bookList = objSize;
-      else if (key === 'topLevelBooks') sizes.topLevelBooks = objSize;
+      // Only count bookList object if it has data and wasn't already counted from Map
+      if (key === 'bookList' && map.data && sizes.bookList === 0) {
+        // Don't double-count - bookList is already counted from Map entries
+        // sizes.bookList is already set from Map entries above
+      } else if (key === 'topLevelBooks') {
+        sizes.topLevelBooks = objSize;
+      }
       totalBytes += objSize;
     }
   }
@@ -170,6 +227,7 @@ export function getCacheStats() {
     generatedFiles: cache.generatedFiles.size,
     articleList: cache.articleList.size,
     highlightsList: cache.highlightsList.size,
+    userProfiles: cache.userProfiles.size,
     topLevelBooks: cache.topLevelBooks.data ? cache.topLevelBooks.data.length : 0,
     topLevelBooksTimestamp: cache.topLevelBooks.timestamp ? new Date(cache.topLevelBooks.timestamp).toISOString() : null
   };
