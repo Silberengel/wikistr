@@ -8,7 +8,7 @@ import { generateMessageBox, generateNavigation } from '../html.js';
 import { formatBytes, escapeHtml, setCacheHeaders, parseRelayUrls } from '../utils.js';
 import { testRelayConnectivity } from '../nostr.js';
 import { DEFAULT_RELAYS } from '../config.js';
-import { getWarmingStatus } from '../cache-warming.js';
+import { getWarmingStatus, refreshAllCaches } from '../cache-warming.js';
 
 /**
  * Generate HTML for a single relay status item
@@ -44,7 +44,19 @@ export async function handleStatus(req, res, url) {
   const cacheSizes = calculateCacheSize();
   const warmingStatus = getWarmingStatus();
   const cacheCleared = url.searchParams.get('cleared') === '1';
-  const successMessage = cacheCleared ? generateMessageBox('info', 'Cache cleared successfully! All cached data has been removed.', null) : '';
+  const cacheRefreshed = url.searchParams.get('refreshed') === '1';
+  
+  let successMessage = '';
+  if (cacheCleared) {
+    successMessage = generateMessageBox('info', 'Cache cleared successfully! All cached data has been removed.', null);
+  } else if (cacheRefreshed) {
+    const booksAdded = url.searchParams.get('books_added') || '0';
+    const articlesAdded = url.searchParams.get('articles_added') || '0';
+    const highlightsAdded = url.searchParams.get('highlights_added') || '0';
+    successMessage = generateMessageBox('info', 
+      `Cache refreshed successfully! Added ${booksAdded} books, ${articlesAdded} articles, ${highlightsAdded} highlights. All items have been deduplicated.`, 
+      null);
+  }
   
   // Get custom relays from URL if provided
   const relayInput = url.searchParams.get('relays') || '';
@@ -164,10 +176,14 @@ export async function handleStatus(req, res, url) {
     <div class="status-item"><span class="status-label">Article Comments Warming:</span> ${warmingStatus.articleComments.inProgress ? '🔄 In Progress' : warmingStatus.articleComments.lastWarmed ? '✓ Last warmed: ' + warmingStatus.articleComments.lastWarmed : '⏸ Not warmed yet'}</div>
     <p style="color: #1a1a1a; margin-top: 0.5em; font-size: 0.9em;">Cache warming runs automatically when the homepage is accessed. This pre-fetches popular data in the background for faster subsequent requests.</p>
   </div>
-  <div class="status-section" style="margin-top: 2em; padding: 1em; background: #ffffff; border: 2px solid #cc0000; border-radius: 4px;">
+  <div class="status-section" style="margin-top: 2em; padding: 1em; background: #ffffff; border: 2px solid #0066cc; border-radius: 4px;">
     <h2 style="margin-top: 0; color: #000000;">Cache Management</h2>
-    <p style="color: #000000; margin-bottom: 1em;">Clear all cached data. This will force the server to fetch fresh data from relays on the next request.</p>
-    <form method="POST" action="/clear-cache" style="margin: 0;">
+    <p style="color: #000000; margin-bottom: 1em;">Refresh cache to fetch new items from relays and append them to existing cache (with deduplication). This will add new items without clearing existing data.</p>
+    <form method="POST" action="${hasCustomRelays ? `/refresh-cache?relays=${encodeURIComponent(relayInput)}` : '/refresh-cache'}" style="margin: 0; display: inline-block;">
+      <button type="submit" style="padding: 0.75em 1.5em; background: #0066cc; color: #ffffff; border: 2px solid #0066cc; border-radius: 4px; cursor: pointer; font-size: 1em; font-weight: bold; margin-right: 1em;">Refresh Cache</button>
+    </form>
+    <p style="color: #000000; margin-top: 1em; margin-bottom: 1em;">Clear all cached data. This will force the server to fetch fresh data from relays on the next request.</p>
+    <form method="POST" action="/clear-cache" style="margin: 0; display: inline-block;">
       <button type="submit" style="padding: 0.75em 1.5em; background: #cc0000; color: #ffffff; border: 2px solid #cc0000; border-radius: 4px; cursor: pointer; font-size: 1em; font-weight: bold;">Clear All Cache</button>
     </form>
   </div>
@@ -187,3 +203,31 @@ export function handleClearCache(req, res) {
   res.end();
 }
 
+/**
+ * Handle cache refresh POST request
+ */
+export async function handleRefreshCache(req, res, url) {
+  // Parse custom relays from URL query string (form data is sent as query params in POST)
+  const relayInput = url.searchParams.get('relays') || '';
+  const customRelays = parseRelayUrls(relayInput);
+  
+  console.log('[Cache Refresh] Starting cache refresh...');
+  const results = await refreshAllCaches(customRelays && customRelays.length > 0 ? customRelays : null);
+  
+  // Build redirect URL with results
+  const booksAdded = results.books?.added || 0;
+  const articlesAdded = results.articles?.added || 0;
+  const highlightsAdded = results.highlights?.added || 0;
+  
+  let redirectUrl = '/status?refreshed=1';
+  redirectUrl += `&books_added=${booksAdded}`;
+  redirectUrl += `&articles_added=${articlesAdded}`;
+  redirectUrl += `&highlights_added=${highlightsAdded}`;
+  if (relayInput) {
+    redirectUrl += `&relays=${encodeURIComponent(relayInput)}`;
+  }
+  
+  console.log(`[Cache Refresh] Cache refresh completed: ${booksAdded} books, ${articlesAdded} articles, ${highlightsAdded} highlights added`);
+  res.writeHead(302, { 'Location': redirectUrl });
+  res.end();
+}

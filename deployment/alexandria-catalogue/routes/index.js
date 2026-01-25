@@ -4,7 +4,7 @@
 
 import { URL } from 'url';
 import { handleFavicon } from './favicon.js';
-import { handleStatus, handleClearCache } from './status.js';
+import { handleStatus, handleClearCache, handleRefreshCache } from './status.js';
 import { handleHome } from './home.js';
 import { handleView } from './view.js';
 import { handleDownload } from './download.js';
@@ -31,9 +31,14 @@ export async function handleRequest(req, res) {
     return;
   }
 
-  // Handle POST requests for cache clearing
+  // Handle POST requests for cache management
   if (req.method === 'POST' && url.pathname === '/clear-cache') {
     handleClearCache(req, res);
+    return;
+  }
+  
+  if (req.method === 'POST' && url.pathname === '/refresh-cache') {
+    await handleRefreshCache(req, res, url);
     return;
   }
 

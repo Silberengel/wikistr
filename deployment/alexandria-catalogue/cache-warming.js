@@ -457,6 +457,276 @@ export function warmAllCaches(customRelays = null) {
 }
 
 /**
+ * Refresh book cache - append new items and deduplicate
+ * OPTIMIZED: Merges new items with existing cache, deduplicates by kind:pubkey:d-tag
+ */
+export async function refreshBookCache(customRelays = null) {
+  const now = Date.now();
+  const status = warmingStatus.books;
+  
+  // Skip if already warming
+  if (status.inProgress) {
+    console.log('[Cache Refresh] Book cache refresh already in progress, skipping...');
+    return { success: false, message: 'Already in progress' };
+  }
+  
+  status.inProgress = true;
+  console.log('[Cache Refresh] Starting book cache refresh (append and deduplicate)...');
+  
+  try {
+    const cache = getCache();
+    const cacheKey = `bookList_${DEFAULT_FETCH_LIMIT}_${customRelays && customRelays.length > 0 ? customRelays.join(',') : 'default'}`;
+    const existingBooks = getCached(cacheKey, Infinity) || []; // Get existing regardless of TTL
+    
+    // Fetch new books
+    const newBooks = await fetchBooks(DEFAULT_FETCH_LIMIT, customRelays);
+    
+    // Deduplicate: create a map by kind:pubkey:d-tag, keeping the newest version
+    const bookMap = new Map();
+    
+    // Add existing books first
+    for (const book of existingBooks) {
+      const dTag = book.tags.find(([k]) => k === 'd')?.[1] || book.id;
+      const key = `${book.kind}:${book.pubkey}:${dTag}`;
+      const existing = bookMap.get(key);
+      if (!existing || book.created_at > existing.created_at) {
+        bookMap.set(key, book);
+      }
+    }
+    
+    // Add new books, keeping newest if duplicate
+    for (const book of newBooks) {
+      const dTag = book.tags.find(([k]) => k === 'd')?.[1] || book.id;
+      const key = `${book.kind}:${book.pubkey}:${dTag}`;
+      const existing = bookMap.get(key);
+      if (!existing || book.created_at > existing.created_at) {
+        bookMap.set(key, book);
+      }
+    }
+    
+    const mergedBooks = Array.from(bookMap.values());
+    const topLevelBooks = filterTopLevelBooks(mergedBooks);
+    
+    setCached(cacheKey, mergedBooks);
+    cache.topLevelBooks = {
+      data: topLevelBooks,
+      timestamp: now,
+      limit: DEFAULT_FETCH_LIMIT
+    };
+    
+    const added = mergedBooks.length - existingBooks.length;
+    console.log(`[Cache Refresh] Book cache refreshed: ${existingBooks.length} existing + ${newBooks.length} new = ${mergedBooks.length} total (${added} new, ${mergedBooks.length - added} deduplicated), ${topLevelBooks.length} top-level`);
+    status.lastWarmed = now;
+    
+    return { 
+      success: true, 
+      existing: existingBooks.length,
+      new: newBooks.length,
+      total: mergedBooks.length,
+      added: added,
+      topLevel: topLevelBooks.length
+    };
+  } catch (error) {
+    console.error('[Cache Refresh] Error refreshing book cache:', error);
+    return { success: false, error: error.message };
+  } finally {
+    status.inProgress = false;
+  }
+}
+
+/**
+ * Refresh article cache - append new items and deduplicate
+ * OPTIMIZED: Merges new items with existing cache, deduplicates by pubkey:d-tag
+ */
+export async function refreshArticleCache(customRelays = null) {
+  const now = Date.now();
+  const status = warmingStatus.articles;
+  
+  // Skip if already warming
+  if (status.inProgress) {
+    console.log('[Cache Refresh] Article cache refresh already in progress, skipping...');
+    return { success: false, message: 'Already in progress' };
+  }
+  
+  status.inProgress = true;
+  console.log('[Cache Refresh] Starting article cache refresh (append and deduplicate)...');
+  
+  try {
+    const cache = getCache();
+    const cacheKey = `articleList_${DEFAULT_FETCH_LIMIT}_${customRelays && customRelays.length > 0 ? customRelays.join(',') : 'default'}`;
+    const existingArticles = getCached(cacheKey, Infinity) || []; // Get existing regardless of TTL
+    
+    // Fetch new articles
+    const newArticles = await fetchArticles(500, customRelays);
+    
+    // Deduplicate: create a map by pubkey:d-tag, keeping the newest version
+    const articleMap = new Map();
+    
+    // Add existing articles first
+    for (const article of existingArticles) {
+      const dTag = article.tags.find(([k]) => k === 'd')?.[1] || article.id;
+      const key = `${article.pubkey}:${dTag}`;
+      const existing = articleMap.get(key);
+      if (!existing || article.created_at > existing.created_at) {
+        articleMap.set(key, article);
+      }
+    }
+    
+    // Add new articles, keeping newest if duplicate
+    for (const article of newArticles) {
+      const dTag = article.tags.find(([k]) => k === 'd')?.[1] || article.id;
+      const key = `${article.pubkey}:${dTag}`;
+      const existing = articleMap.get(key);
+      if (!existing || article.created_at > existing.created_at) {
+        articleMap.set(key, article);
+      }
+    }
+    
+    const mergedArticles = Array.from(articleMap.values());
+    
+    setCached(cacheKey, mergedArticles);
+    
+    const added = mergedArticles.length - existingArticles.length;
+    console.log(`[Cache Refresh] Article cache refreshed: ${existingArticles.length} existing + ${newArticles.length} new = ${mergedArticles.length} total (${added} new, ${mergedArticles.length - added} deduplicated)`);
+    status.lastWarmed = now;
+    
+    return { 
+      success: true, 
+      existing: existingArticles.length,
+      new: newArticles.length,
+      total: mergedArticles.length,
+      added: added
+    };
+  } catch (error) {
+    console.error('[Cache Refresh] Error refreshing article cache:', error);
+    return { success: false, error: error.message };
+  } finally {
+    status.inProgress = false;
+  }
+}
+
+/**
+ * Refresh highlights cache - append new items and deduplicate
+ * OPTIMIZED: Merges new items with existing cache, deduplicates by event ID
+ */
+export async function refreshHighlightsCache(customRelays = null) {
+  const now = Date.now();
+  const status = warmingStatus.highlights;
+  
+  // Skip if already warming
+  if (status.inProgress) {
+    console.log('[Cache Refresh] Highlights cache refresh already in progress, skipping...');
+    return { success: false, message: 'Already in progress' };
+  }
+  
+  status.inProgress = true;
+  console.log('[Cache Refresh] Starting highlights cache refresh (append and deduplicate)...');
+  
+  try {
+    const cache = getCache();
+    const fetchLimit = 500;
+    const cacheKey = `highlightsList_${fetchLimit}_${customRelays && customRelays.length > 0 ? customRelays.join(',') : 'default'}`;
+    const existingHighlights = getCached(cacheKey, Infinity) || []; // Get existing regardless of TTL
+    
+    // Fetch new highlights
+    const relaysUsed = customRelays && customRelays.length > 0 ? customRelays : DEFAULT_ARTICLE_RELAYS;
+    const highlightFilter = {
+      kinds: [9802],
+      limit: fetchLimit
+    };
+    
+    let newHighlights = await fetchEventsByFilters([highlightFilter], relaysUsed, 10000);
+    
+    // Filter highlights (same logic as warming)
+    newHighlights = newHighlights.filter(highlight => {
+      const aTag = highlight.tags.find(([k]) => k === 'a');
+      const eTag = highlight.tags.find(([k]) => k === 'e');
+      const rTag = highlight.tags.find(([k]) => k === 'r');
+      
+      if (rTag && rTag[1]) return true;
+      
+      if (aTag && aTag[1]) {
+        const parts = aTag[1].split(':');
+        if (parts.length >= 1) {
+          const kind = parseInt(parts[0], 10);
+          return kind === 30023 || kind === 30041;
+        }
+      }
+      
+      if (eTag && eTag[1]) return true;
+      
+      return false;
+    });
+    
+    // Deduplicate: create a map by event ID, keeping the newest version
+    const highlightMap = new Map();
+    
+    // Add existing highlights first
+    for (const highlight of existingHighlights) {
+      const key = highlight.id;
+      const existing = highlightMap.get(key);
+      if (!existing || highlight.created_at > existing.created_at) {
+        highlightMap.set(key, highlight);
+      }
+    }
+    
+    // Add new highlights, keeping newest if duplicate
+    for (const highlight of newHighlights) {
+      const key = highlight.id;
+      const existing = highlightMap.get(key);
+      if (!existing || highlight.created_at > existing.created_at) {
+        highlightMap.set(key, highlight);
+      }
+    }
+    
+    const mergedHighlights = Array.from(highlightMap.values());
+    
+    setCached(cacheKey, mergedHighlights);
+    
+    const added = mergedHighlights.length - existingHighlights.length;
+    console.log(`[Cache Refresh] Highlights cache refreshed: ${existingHighlights.length} existing + ${newHighlights.length} new = ${mergedHighlights.length} total (${added} new, ${mergedHighlights.length - added} deduplicated)`);
+    status.lastWarmed = now;
+    
+    return { 
+      success: true, 
+      existing: existingHighlights.length,
+      new: newHighlights.length,
+      total: mergedHighlights.length,
+      added: added
+    };
+  } catch (error) {
+    console.error('[Cache Refresh] Error refreshing highlights cache:', error);
+    return { success: false, error: error.message };
+  } finally {
+    status.inProgress = false;
+  }
+}
+
+/**
+ * Refresh all caches - append new items and deduplicate
+ * Returns a Promise with results
+ */
+export async function refreshAllCaches(customRelays = null) {
+  console.log('[Cache Refresh] Starting refresh of all caches (append and deduplicate)...');
+  
+  const results = await Promise.allSettled([
+    refreshBookCache(customRelays),
+    refreshArticleCache(customRelays),
+    refreshHighlightsCache(customRelays)
+  ]);
+  
+  const summary = {
+    books: results[0].status === 'fulfilled' ? results[0].value : { success: false, error: results[0].reason?.message },
+    articles: results[1].status === 'fulfilled' ? results[1].value : { success: false, error: results[1].reason?.message },
+    highlights: results[2].status === 'fulfilled' ? results[2].value : { success: false, error: results[2].reason?.message }
+  };
+  
+  console.log('[Cache Refresh] All caches refreshed:', summary);
+  
+  return summary;
+}
+
+/**
  * Get warming status (for monitoring/debugging)
  */
 export function getWarmingStatus() {
