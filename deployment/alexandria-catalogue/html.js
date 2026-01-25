@@ -285,6 +285,7 @@ export function generateNavigation(relayInput = '') {
     <a href="/${relayParam}">Alexandria Catalogue</a>
     <a href="/books${relayParam}">Browse Library</a>
     <a href="/articles${relayParam}">Browse Articles</a>
+    <a href="/highlights${relayParam}">Browse Highlights</a>
     <a href="/status${relayParam}">Status</a>
   </nav>`;
 }

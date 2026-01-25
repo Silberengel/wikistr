@@ -207,6 +207,7 @@ export async function fetchBooks(limit = 50, customRelays = null) {
 
 /**
  * Fetch kind 30023 events (markdown articles)
+ * Note: 30041 (asciidoc) articles are parts of publications and should not be included in browse/search
  */
 export async function fetchArticles(limit = 500, customRelays = null) {
   console.log(`[Articles] Fetching ${limit} articles from relays...`);
@@ -214,7 +215,7 @@ export async function fetchArticles(limit = 500, customRelays = null) {
   const relays = customRelays && customRelays.length > 0 ? customRelays : DEFAULT_ARTICLE_RELAYS;
   
   const filter = {
-    kinds: [30023],
+    kinds: [30023], // Only markdown articles (30041 are publication parts, not standalone articles)
     limit: Math.min(Number(limit), 500) // Cap at 500
   };
   
@@ -248,13 +249,13 @@ export async function fetchArticles(limit = 500, customRelays = null) {
 }
 
 /**
- * Fetch a single article event by pubkey and d-tag
+ * Fetch a single article event by pubkey and d-tag (supports both 30023 and 30041)
  */
 export async function fetchArticleEvent(pubkey, dTag, customRelays = null) {
   const relays = customRelays && customRelays.length > 0 ? customRelays : DEFAULT_ARTICLE_RELAYS;
   
   const filter = {
-    kinds: [30023],
+    kinds: [30023, 30041], // Both markdown and asciidoc articles
     authors: [pubkey],
     '#d': [dTag],
     limit: 1

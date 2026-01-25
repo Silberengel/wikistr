@@ -13,7 +13,6 @@ import { generateNavigation } from './html.js';
 export function generateBookDetailPage(naddr, bookEvent, hierarchy, threadedComments, groupedHighlights, metadata, hasContent, customRelays) {
   const title = metadata.title || 'Untitled';
   const commentCount = threadedComments.reduce((sum, c) => sum + 1 + (c.children?.length || 0), 0);
-  const highlightCount = groupedHighlights.reduce((sum, g) => sum + g.highlights.reduce((s, h) => s + 1 + (h.children?.length || 0), 0), 0);
   const hasCustomRelays = customRelays && customRelays.length > 0;
   const relayInput = hasCustomRelays ? customRelays.join(',') : '';
   const relayParam = hasCustomRelays ? `?relays=${encodeURIComponent(relayInput)}` : '';
@@ -101,45 +100,38 @@ export function generateBookDetailPage(naddr, bookEvent, hierarchy, threadedComm
   </div>
   
   <div class="comments-section">
-    <h2>Comments & Highlights (${commentCount} comments, ${highlightCount} highlights)</h2>
+    <h2>Comments (${commentCount} comments)</h2>
 `;
 
-  // Render comments and highlights
-  const renderItem = (item, depth = 0, handleMap) => {
-    const isHighlight = item.kind === 9802;
-    const itemClass = isHighlight ? 'highlight' : 'comment';
-    const authorClass = isHighlight ? 'highlight-author' : 'comment-author';
-    const dateClass = isHighlight ? 'highlight-date' : 'comment-date';
-    const contentClass = isHighlight ? 'highlight-content' : 'comment-content';
-    
-    const npub = nip19.npubEncode(item.pubkey);
+  // Render comments (threaded)
+  const renderComment = (comment, depth = 0, handleMap) => {
+    const npub = nip19.npubEncode(comment.pubkey);
     const npubDisplay = npub.substring(0, 20) + '...';
-    const handle = handleMap.get(item.pubkey);
+    const handle = handleMap.get(comment.pubkey);
     const authorDisplay = handle ? `${npubDisplay} (${escapeHtml(handle)})` : npubDisplay;
     
-    const date = formatDate(item.created_at);
-    const content = escapeHtml(truncate(item.content || '', 1000));
-    const typeLabel = isHighlight ? 'Highlight' : 'Comment';
+    const date = formatDate(comment.created_at);
+    const content = escapeHtml(truncate(comment.content || '', 1000));
     
-    let itemHtml = `
-    <div class="${itemClass}"${depth > 0 ? ' style="margin-left: ' + (depth * 2) + 'em;"' : ''}>
-      <div class="${authorClass}">
+    let commentHtml = `
+    <div class="comment"${depth > 0 ? ' style="margin-left: ' + (depth * 2) + 'em;"' : ''}>
+      <div class="comment-author">
         ${escapeHtml(authorDisplay)}
-        <span class="comment-type ${itemClass}">${typeLabel}</span>
+        <span class="comment-type comment">Comment</span>
       </div>
-      <div class="${dateClass}">${date}</div>
-      <div class="${contentClass}">${content}</div>`;
+      <div class="comment-date">${date}</div>
+      <div class="comment-content">${content}</div>`;
     
-    if (item.children && item.children.length > 0) {
-      itemHtml += '      <div class="thread-replies">\n';
-      for (const child of item.children) {
-        itemHtml += renderItem(child, depth + 1, handleMap);
+    if (comment.children && comment.children.length > 0) {
+      commentHtml += '      <div class="thread-replies">\n';
+      for (const child of comment.children) {
+        commentHtml += renderComment(child, depth + 1, handleMap);
       }
-      itemHtml += '      </div>\n';
+      commentHtml += '      </div>\n';
     }
     
-    itemHtml += '    </div>\n';
-    return itemHtml;
+    commentHtml += '    </div>\n';
+    return commentHtml;
   };
   
   // Render comments (threaded)
@@ -147,33 +139,13 @@ export function generateBookDetailPage(naddr, bookEvent, hierarchy, threadedComm
     html += '<div class="comments-group" style="margin-bottom: 2em;">';
     html += '<h3 style="font-size: 1.1em; font-weight: 600; margin-bottom: 1em; color: #000000;">Comments</h3>';
     for (const comment of threadedComments) {
-      html += renderItem(comment, 0, metadata.handleMap);
+      html += renderComment(comment, 0, metadata.handleMap);
     }
     html += '</div>';
   }
   
-  // Render highlights (grouped by pubkey, with replies threaded)
-  if (groupedHighlights.length > 0) {
-    html += '<div class="highlights-group" style="margin-bottom: 2em;">';
-    html += '<h3 style="font-size: 1.1em; font-weight: 600; margin-bottom: 1em; color: #000000;">Highlights</h3>';
-    for (const group of groupedHighlights) {
-      const npub = nip19.npubEncode(group.pubkey);
-      const npubDisplay = npub.substring(0, 20) + '...';
-      const handle = metadata.handleMap.get(group.pubkey);
-      const authorDisplay = handle ? `${npubDisplay} (${escapeHtml(handle)})` : npubDisplay;
-      
-      html += `<div class="highlight-group" style="margin-bottom: 1.5em; padding: 1em; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745;">`;
-      html += `<div style="font-weight: 600; margin-bottom: 0.5em; color: #000000;">${escapeHtml(authorDisplay)}</div>`;
-      for (const highlight of group.highlights) {
-        html += renderItem(highlight, 0, metadata.handleMap);
-      }
-      html += '</div>';
-    }
-    html += '</div>';
-  }
-  
-  if (threadedComments.length === 0 && groupedHighlights.length === 0) {
-    html += '<p class="no-comments">No comments or highlights yet.</p>';
+  if (threadedComments.length === 0) {
+    html += '<p class="no-comments">No comments yet.</p>';
   }
   
   html += `

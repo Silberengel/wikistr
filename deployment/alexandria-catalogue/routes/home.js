@@ -277,32 +277,8 @@ async function handleBookDetail(req, res, url, naddr, customRelays) {
     console.log(`[Book View] Found ${allItems.length} comments and highlights`);
 
     const commentsRaw = allItems.filter(e => e.kind === 1111);
-    const highlightsRaw = allItems.filter(e => e.kind === 9802);
     
     const threadedComments = buildThreadedComments(commentsRaw);
-    
-    const highlightsByPubkey = new Map();
-    for (const highlight of highlightsRaw) {
-      if (!highlightsByPubkey.has(highlight.pubkey)) {
-        highlightsByPubkey.set(highlight.pubkey, []);
-      }
-      highlightsByPubkey.get(highlight.pubkey).push(highlight);
-    }
-    
-    const groupedHighlights = [];
-    for (const [pubkey, pubkeyHighlights] of highlightsByPubkey.entries()) {
-      const threaded = buildThreadedComments(pubkeyHighlights);
-      groupedHighlights.push({
-        pubkey: pubkey,
-        highlights: threaded
-      });
-    }
-    
-    groupedHighlights.sort((a, b) => {
-      const aFirst = a.highlights[0]?.created_at || 0;
-      const bFirst = b.highlights[0]?.created_at || 0;
-      return aFirst - bFirst;
-    });
 
     const title = getBookTitle(bookEvent);
     const date = formatDate(bookEvent.created_at);
@@ -324,9 +300,6 @@ async function handleBookDetail(req, res, url, naddr, customRelays) {
       }
     };
     collectPubkeys(threadedComments);
-    for (const group of groupedHighlights) {
-      collectPubkeys(group.highlights);
-    }
     
     const handleMap = new Map();
     const handlePromises = Array.from(uniquePubkeys).map(async (pubkey) => {
@@ -358,7 +331,7 @@ async function handleBookDetail(req, res, url, naddr, customRelays) {
     res.writeHead(200, headers);
     
     // Generate HTML using template
-    const html = generateBookDetailPage(naddr, bookEvent, hierarchy, threadedComments, groupedHighlights, metadata, hasContent, customRelays);
+    const html = generateBookDetailPage(naddr, bookEvent, hierarchy, threadedComments, [], metadata, hasContent, customRelays);
     res.end(html);
   } catch (error) {
     console.error('[Book View] Error:', error);

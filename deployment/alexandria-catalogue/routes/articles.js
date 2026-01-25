@@ -1,14 +1,15 @@
 /**
- * Articles route handler - displays kind 30023 (Markdown) articles
+ * Articles route handler - displays kind 30023 (Markdown) and 30041 (AsciiDoc) articles
  */
 
 import { parseRelayUrls } from '../utils.js';
-import { DEFAULT_ARTICLE_RELAYS, DEFAULT_RELAYS, ITEMS_PER_PAGE, DEFAULT_FETCH_LIMIT } from '../config.js';
-import { fetchArticles, fetchArticleEvent, fetchUserHandle, nip19 } from '../nostr.js';
+import { DEFAULT_ARTICLE_RELAYS, DEFAULT_RELAYS, ITEMS_PER_PAGE, DEFAULT_FETCH_LIMIT, ASCIIDOCTOR_SERVER_URL } from '../config.js';
+import { fetchArticles, fetchArticleEvent, fetchUserHandle, nip19, fetchEventsByFilters } from '../nostr.js';
 import { getCache, setCached, getCached, CACHE_TTL } from '../cache.js';
-import { escapeHtml, formatDate, normalizeForSearch, setCacheHeaders } from '../utils.js';
+import { escapeHtml, formatDate, normalizeForSearch, setCacheHeaders, truncate } from '../utils.js';
 import { getCommonStyles, getTableStyles } from '../styles.js';
 import { generateSearchBar, generateNavigation, generateErrorPage } from '../html.js';
+import { buildThreadedComments } from '../comments.js';
 import { marked } from 'marked';
 
 // Configure marked for safe HTML rendering
@@ -817,8 +818,9 @@ export async function handleArticlesList(req, res, url) {
     <tbody>
 `;
       
-      // Fetch user handles for all articles on this page (in parallel for performance)
+      // Fetch user handles and comment counts for all articles on this page (in parallel for performance)
       const authorHandles = new Map();
+      const commentCounts = new Map();
       const handlePromises = paginatedArticles.map(async (article) => {
         try {
           const handle = await fetchUserHandle(article.pubkey, hasCustomRelays ? customRelays : undefined);
@@ -829,13 +831,33 @@ export async function handleArticlesList(req, res, url) {
           // Silently fail - will use npub fallback
         }
       });
-      await Promise.all(handlePromises);
+      
+      // Fetch comment counts for all articles
+      const commentPromises = paginatedArticles.map(async (article) => {
+        try {
+          const dTag = getArticleDTag(article);
+          const articleCoordinate = `${article.kind}:${article.pubkey}:${dTag}`;
+          const commentFilter = {
+            kinds: [1111],
+            '#A': [articleCoordinate],
+            limit: 500
+          };
+          const comments = await fetchEventsByFilters([commentFilter], relaysUsed, 5000);
+          commentCounts.set(`${article.pubkey}:${dTag}`, comments.length);
+        } catch (e) {
+          // Silently fail - will show 0 comments
+          commentCounts.set(`${article.pubkey}:${getArticleDTag(article)}`, 0);
+        }
+      });
+      
+      await Promise.all([...handlePromises, ...commentPromises]);
       
       for (const article of paginatedArticles) {
         const title = getArticleTitle(article);
         const summary = getArticleSummary(article);
         const dTag = getArticleDTag(article);
         const date = formatDate(article.created_at);
+        const commentCount = commentCounts.get(`${article.pubkey}:${dTag}`) || 0;
         
         // Get author name (use handle if available, otherwise npub)
         let authorName = authorHandles.get(article.pubkey) || nip19.npubEncode(article.pubkey).substring(0, 16) + '...';
@@ -845,6 +867,7 @@ export async function handleArticlesList(req, res, url) {
         <td>
           <a href="/articles/${encodeURIComponent(article.pubkey)}/${encodeURIComponent(dTag)}${hasCustomRelays ? '?relays=' + encodeURIComponent(relayInput) : ''}" class="article-link" aria-label="Read article: ${escapeHtml(title)}">${escapeHtml(title)}</a>
           ${summary ? `<div class="article-summary" aria-label="Article summary">${escapeHtml(summary)}</div>` : ''}
+          ${commentCount > 0 ? `<div style="font-size: 0.85em; color: #666; margin-top: 0.25em;">${commentCount} comment${commentCount !== 1 ? 's' : ''}</div>` : ''}
         </td>
         <td class="article-author">${escapeHtml(authorName)}</td>
         <td class="article-date"><time datetime="${new Date(article.created_at * 1000).toISOString()}">${date}</time></td>
@@ -1008,16 +1031,131 @@ export async function handleArticleDetail(req, res, url) {
       console.log('[Articles] Could not fetch user handle:', e);
     }
     
-    // Render markdown to HTML
-    const markdownContent = article.content || '';
-    let htmlContent = marked.parse(markdownContent);
-    
-    // Replace image URLs with proxy URLs for compression
+    // Render content based on article kind
     const baseUrl = `http://${req.headers.host}`;
-    htmlContent = replaceImageUrlsWithProxy(htmlContent, baseUrl);
+    let htmlContent = '';
     
-    // Replace media (video/audio) with placeholders
-    htmlContent = replaceMediaWithPlaceholders(htmlContent);
+    if (article.kind === 30023) {
+      // Render markdown to HTML
+      const markdownContent = article.content || '';
+      htmlContent = marked.parse(markdownContent);
+      
+      // Replace image URLs with proxy URLs for compression
+      htmlContent = replaceImageUrlsWithProxy(htmlContent, baseUrl);
+      
+      // Replace media (video/audio) with placeholders
+      htmlContent = replaceMediaWithPlaceholders(htmlContent);
+    } else if (article.kind === 30041) {
+      // Render AsciiDoc to HTML using AsciiDoctor server
+      try {
+        const asciidocContent = article.content || '';
+        const asciidoctorUrl = `${ASCIIDOCTOR_SERVER_URL}/convert/html5`;
+        
+        // Use the same format as files.js for consistency
+        const requestBody = {
+          content: asciidocContent,
+          title: getArticleTitle(article),
+          author: authorName || ''
+        };
+        
+        const image = getArticleImage(article);
+        if (image) {
+          requestBody.image = image;
+        }
+        
+        const response = await fetch(asciidoctorUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+          signal: AbortSignal.timeout(30000) // 30 second timeout
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`AsciiDoctor server returned ${response.status}: ${errorText}`);
+        }
+        
+        htmlContent = await response.text();
+        
+        // Replace image URLs with proxy URLs for compression
+        htmlContent = replaceImageUrlsWithProxy(htmlContent, baseUrl);
+        
+        // Replace media (video/audio) with placeholders
+        htmlContent = replaceMediaWithPlaceholders(htmlContent);
+      } catch (error) {
+        console.error('[Articles] Error converting AsciiDoc:', error);
+        // Fallback: display as plain text with line breaks
+        htmlContent = `<pre style="white-space: pre-wrap; word-wrap: break-word;">${escapeHtml(article.content || '')}</pre>`;
+      }
+    } else {
+      // Unknown kind, display as plain text
+      htmlContent = `<pre style="white-space: pre-wrap; word-wrap: break-word;">${escapeHtml(article.content || '')}</pre>`;
+    }
+    
+    // Fetch comments (kind 1111) for this article (NIP-22)
+    const articleCoordinate = `${article.kind}:${article.pubkey}:${dTag}`;
+    const commentFilter = {
+      kinds: [1111],
+      '#A': [articleCoordinate],
+      limit: 500
+    };
+    
+    const relaysUsed = hasCustomRelays ? customRelays : DEFAULT_ARTICLE_RELAYS;
+    const allComments = await fetchEventsByFilters([commentFilter], relaysUsed, 10000);
+    const threadedComments = buildThreadedComments(allComments);
+    
+    // Collect all unique pubkeys for handle fetching
+    const uniquePubkeys = new Set();
+    const collectPubkeys = (items) => {
+      for (const item of items) {
+        uniquePubkeys.add(item.pubkey);
+        if (item.children && item.children.length > 0) {
+          collectPubkeys(item.children);
+        }
+      }
+    };
+    collectPubkeys(threadedComments);
+    
+    const handleMap = new Map();
+    const handlePromises = Array.from(uniquePubkeys).map(async (pubkey) => {
+      const handle = await fetchUserHandle(pubkey, hasCustomRelays ? customRelays : undefined);
+      handleMap.set(pubkey, handle);
+    });
+    await Promise.all(handlePromises);
+    
+    // Render comment function
+    const renderComment = (comment, depth = 0) => {
+      const npub = nip19.npubEncode(comment.pubkey);
+      const npubDisplay = npub.substring(0, 20) + '...';
+      const handle = handleMap.get(comment.pubkey);
+      const authorDisplay = handle ? `${npubDisplay} (${escapeHtml(handle)})` : npubDisplay;
+      
+      const date = formatDate(comment.created_at);
+      const content = escapeHtml(truncate(comment.content || '', 1000));
+      
+      let commentHtml = `
+    <div class="comment"${depth > 0 ? ' style="margin-left: ' + (depth * 2) + 'em; margin-top: 0.5em;"' : ' style="margin-top: 1em;"'}>
+      <div class="comment-author" style="font-weight: 600; color: #000000; margin-bottom: 0.25em;">
+        ${escapeHtml(authorDisplay)}
+      </div>
+      <div class="comment-date" style="font-size: 0.85em; color: #666; margin-bottom: 0.5em;">${date}</div>
+      <div class="comment-content" style="color: #000000; line-height: 1.6;">${content}</div>`;
+      
+      if (comment.children && comment.children.length > 0) {
+        commentHtml += '      <div class="thread-replies" style="margin-top: 0.5em;">\n';
+        for (const child of comment.children) {
+          commentHtml += renderComment(child, depth + 1);
+        }
+        commentHtml += '      </div>\n';
+      }
+      
+      commentHtml += '    </div>\n';
+      return commentHtml;
+    };
+    
+    const commentCount = threadedComments.reduce((sum, c) => sum + 1 + (c.children?.length || 0), 0);
     
     // Set cache headers
     const headers = {
@@ -1052,7 +1190,8 @@ export async function handleArticleDetail(req, res, url) {
     ${summary ? `<p style="font-size: 1.1em; font-style: italic; margin-top: 1em;">${escapeHtml(summary)}</p>` : ''}
     <div class="article-header-meta">
       <strong>Author:</strong> ${escapeHtml(authorName)}<br>
-      <strong>Published:</strong> <time datetime="${new Date(article.created_at * 1000).toISOString()}">${date}</time>
+      <strong>Published:</strong> <time datetime="${new Date(article.created_at * 1000).toISOString()}">${date}</time><br>
+      <strong>Format:</strong> ${article.kind === 30041 ? 'AsciiDoc' : 'Markdown'} (kind ${article.kind})
     </div>
   </header>
   
@@ -1060,6 +1199,23 @@ export async function handleArticleDetail(req, res, url) {
     ${htmlContent}
   </div>
   </article>
+  
+  <div class="comments-section" style="margin-top: 3em; padding-top: 2em; border-top: 2px solid #000000;">
+    <h2 style="font-size: 1.5em; font-weight: bold; margin-bottom: 1em; color: #000000;">Comments (${commentCount})</h2>
+`;
+    
+    if (threadedComments.length > 0) {
+      html += '<div class="comments-group" style="margin-bottom: 2em;">';
+      for (const comment of threadedComments) {
+        html += renderComment(comment, 0);
+      }
+      html += '</div>';
+    } else {
+      html += '<p style="color: #666; font-style: italic;">No comments yet.</p>';
+    }
+    
+    html += `
+  </div>
   </main>
   
   <nav role="navigation" aria-label="Article navigation" style="margin-top: 2em; text-align: center;">

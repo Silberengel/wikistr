@@ -12,6 +12,7 @@ import { handleBooks } from './books.js';
 import { handleConvert } from './convert.js';
 import { handleArticlesList, handleArticleDetail } from './articles.js';
 import { handleImageProxy } from './image-proxy.js';
+import { handleHighlightsList } from './highlights.js';
 
 /**
  * Main request handler
@@ -67,6 +68,9 @@ export async function handleRequest(req, res) {
     } else if (url.pathname === '/articles' || url.pathname.startsWith('/articles?')) {
       // Articles list
       await handleArticlesList(req, res, url);
+    } else if (url.pathname === '/highlights' || url.pathname.startsWith('/highlights?')) {
+      // Highlights list
+      await handleHighlightsList(req, res, url);
     } else if (url.pathname === '/image-proxy') {
       // Image proxy for compression
       await handleImageProxy(req, res, url);

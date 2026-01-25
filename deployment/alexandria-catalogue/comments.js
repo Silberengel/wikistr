@@ -7,67 +7,37 @@ import { DEFAULT_RELAYS } from './config.js';
 import { collectAllEventsFromHierarchy } from './book.js';
 
 /**
- * Fetch comments (kind 1111) and highlights (kind 9802) for a book event
+ * Fetch comments (kind 1111) for a book event (NIP-22)
+ * Comments are scoped to the root event using A tags
  */
 export async function fetchComments(bookEvent, hierarchy = [], customRelays = null) {
   const relays = customRelays && customRelays.length > 0 ? customRelays : DEFAULT_RELAYS;
   
-  // Build article coordinate for the root 30040 event (for comments only)
+  // Build article coordinate for the root 30040 event (for comments)
   const identifier = bookEvent.tags.find(([k]) => k === 'd')?.[1] || bookEvent.id;
   const rootCoordinate = `${bookEvent.kind}:${bookEvent.pubkey}:${identifier}`;
   
-  // Collect all event coordinates from the hierarchy (for highlights)
-  const allEvents = collectAllEventsFromHierarchy(bookEvent, hierarchy);
-  const highlightCoordinates = [];
-  const coordinateSet = new Set();
-  
-  for (const event of allEvents) {
-    const dTag = event.tags.find(([k]) => k === 'd')?.[1];
-    if (dTag) {
-      const coordinate = `${event.kind}:${event.pubkey}:${dTag}`;
-      if (!coordinateSet.has(coordinate)) {
-        coordinateSet.add(coordinate);
-        highlightCoordinates.push(coordinate);
-      }
-    } else {
-      const coordinate = `${event.kind}:${event.pubkey}:${event.id}`;
-      if (!coordinateSet.has(coordinate)) {
-        coordinateSet.add(coordinate);
-        highlightCoordinates.push(coordinate);
-      }
-    }
-  }
-  
   console.log(`[Comments] Fetching comments for root coordinate: ${rootCoordinate}`);
-  console.log(`[Comments] Fetching highlights for ${highlightCoordinates.length} events in hierarchy`);
   
-  // Fetch comments (kind 1111) only for the root 30040 event
+  // Fetch comments (kind 1111) for the root 30040 event
+  // NIP-22: Comments use A tags to reference the root scope
   const commentFilter = {
     kinds: [1111],
     '#A': [rootCoordinate],
     limit: 500
   };
   
-  // Fetch highlights (kind 9802) for all events in the hierarchy
-  const highlightFilter = {
-    kinds: [9802],
-    '#A': highlightCoordinates,
-    limit: 1000
-  };
-  
-  // Fetch both comments and highlights using batch filter (both filters in one subscription per relay)
-  // Increase timeout for large books with many events
-  const timeout = Math.min(Math.max(10000, highlightCoordinates.length * 50), 30000); // 10s minimum, 50ms per coordinate, 30s maximum
-  const allItems = await fetchEventsByFilters([commentFilter, highlightFilter], relays, timeout);
+  const allItems = await fetchEventsByFilters([commentFilter], relays, 10000);
   
   const commentCount = allItems.filter(e => e.kind === 1111).length;
-  const highlightCount = allItems.filter(e => e.kind === 9802).length;
-  console.log(`[Comments] Found ${commentCount} comments and ${highlightCount} highlights`);
+  console.log(`[Comments] Found ${commentCount} comments`);
   return allItems;
 }
 
 /**
- * Build threaded structure for comments and highlights
+ * Build threaded structure for comments (NIP-22)
+ * NIP-22: Comments use lowercase tags (e, a, i) for parent items
+ * and uppercase tags (E, A, I) for root scope
  */
 export function buildThreadedComments(events) {
   const eventMap = new Map();
@@ -81,24 +51,55 @@ export function buildThreadedComments(events) {
   for (const event of events) {
     if (processed.has(event.id)) continue;
     
+    // NIP-22: Check for parent using lowercase tags (e, a, i)
+    // First check 'e' tag (parent event id)
     const parentETag = event.tags.find(([k]) => k === 'e');
     const parentEventId = parentETag?.[1];
     
+    // Then check 'a' tag (parent event address)
     const parentATag = event.tags.find(([k]) => k === 'a');
+    
+    // Also check 'i' tag (parent I-tag reference)
+    const parentITag = event.tags.find(([k]) => k === 'i');
+    
     let parentEvent = null;
     
+    // Priority: e tag > a tag > i tag
     if (parentEventId && eventMap.has(parentEventId)) {
+      // Parent is another comment (reply to comment)
       parentEvent = eventMap.get(parentEventId);
     } else if (parentATag && parentATag[1]) {
-      const [kindStr, pubkey, identifier] = parentATag[1].split(':');
-      if (kindStr && pubkey && identifier) {
-        for (const e of events) {
-          if (e.kind === parseInt(kindStr, 10) && 
-              e.pubkey === pubkey && 
-              e.tags.find(([k]) => k === 'd')?.[1] === identifier) {
+      // Try to find parent by event address (kind:pubkey:identifier)
+      // For comments, the 'a' tag with lowercase refers to the parent comment's address
+      // We need to find a comment that matches this address
+      for (const e of events) {
+        if (e.id === event.id) continue; // Skip self
+        
+        // Check if this event's address matches the parent 'a' tag
+        const eDTag = e.tags.find(([k]) => k === 'd')?.[1];
+        if (eDTag) {
+          const eCoordinate = `${e.kind}:${e.pubkey}:${eDTag}`;
+          if (eCoordinate === parentATag[1]) {
             parentEvent = eventMap.get(e.id);
             break;
           }
+        }
+        // Also check if the event id matches (in case parentATag[1] is actually an event id)
+        if (e.id === parentATag[1]) {
+          parentEvent = eventMap.get(e.id);
+          break;
+        }
+      }
+    } else if (parentITag && parentITag[1]) {
+      // For I-tag references, match by the I value
+      for (const e of events) {
+        if (e.id === event.id) continue; // Skip self
+        
+        // Check if this event has a matching I tag
+        const eITag = e.tags.find(([k]) => k === 'I' || k === 'i');
+        if (eITag && eITag[1] === parentITag[1]) {
+          parentEvent = eventMap.get(e.id);
+          break;
         }
       }
     }
