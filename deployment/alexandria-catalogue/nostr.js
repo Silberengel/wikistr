@@ -129,6 +129,75 @@ export async function fetchBookEvent(naddr, customRelays = null) {
 }
 
 /**
+ * Fetch an event by naddr (supports books 30040/30041 and articles 30023)
+ */
+export async function fetchEventByNaddr(naddr, customRelays = null) {
+  const decoded = nip19.decode(naddr);
+  if (decoded.type !== 'naddr') {
+    throw new Error('Invalid naddr format');
+  }
+
+  const { kind, pubkey, identifier } = decoded.data;
+  
+  // Determine which cache and relays to use based on kind
+  const cache = getCache();
+  const isBook = kind === 30040 || kind === 30041;
+  const isArticle = kind === 30023;
+  
+  if (isBook) {
+    const cached = cache.bookDetails.get(naddr);
+    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL.BOOK_DETAIL) {
+      console.log(`[Book] Using cached data for: ${naddr}`);
+      return cached.data;
+    }
+  }
+  
+  if (!isBook && !isArticle) {
+    throw new Error(`Unsupported kind: ${kind}. Only book kinds (30040, 30041) and article kind (30023) are supported.`);
+  }
+
+  let relays = isArticle ? DEFAULT_ARTICLE_RELAYS : DEFAULT_RELAYS;
+  if (customRelays && customRelays.length > 0) {
+    relays = customRelays;
+  } else if (decoded.data.relays && decoded.data.relays.length > 0) {
+    relays = decoded.data.relays;
+  }
+
+  console.log(`[${isBook ? 'Book' : 'Article'}] Fetching event: kind=${kind}, pubkey=${pubkey}, identifier=${identifier}`);
+  console.log(`[${isBook ? 'Book' : 'Article'}] Using relays: ${relays.join(', ')}`);
+
+  const filter = {
+    kinds: [kind],
+    authors: [pubkey],
+    '#d': [identifier],
+    limit: 1
+  };
+  
+  const events = await fetchEventsFromRelays(filter, relays, 10000);
+
+  if (events.length === 0) {
+    throw new Error(`${isBook ? 'Book' : 'Article'} event not found on any relay`);
+  }
+
+  const event = events[0];
+  
+  // Cache book events
+  if (isBook) {
+    cache.bookDetails.set(naddr, {
+      data: event,
+      timestamp: Date.now()
+    });
+    
+    if (cache.bookDetails.size > 100) {
+      const firstKey = cache.bookDetails.keys().next().value;
+      cache.bookDetails.delete(firstKey);
+    }
+  }
+  
+  return event;
+}
+
+/**
  * Fetch books by d tag
  */
 export async function fetchBooksByDTag(dTag, customRelays = null, limit = 10000) {

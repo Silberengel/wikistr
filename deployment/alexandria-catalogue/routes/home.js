@@ -5,7 +5,7 @@
 import { parseRelayUrls, isNaddr } from '../utils.js';
 import { DEFAULT_RELAYS } from '../config.js';
 import { searchBooks } from '../search.js';
-import { fetchBookEvent } from '../nostr.js';
+import { fetchBookEvent, fetchEventByNaddr, nip19 } from '../nostr.js';
 import { buildBookEventHierarchy } from '../book.js';
 import { fetchComments } from '../comments.js';
 import { buildThreadedComments } from '../comments.js';
@@ -15,7 +15,6 @@ import { getCommonStyles } from '../styles.js';
 import { escapeHtml, formatDate, getBookTitle, getBookAuthor, getBookIdentifier, setCacheHeaders } from '../utils.js';
 import { generateMessageBox, generateErrorPage, generateSearchBar, generateNavigation } from '../html.js';
 import { generateBookDetailPage } from '../templates.js';
-import { nip19 } from '../nostr.js';
 
 /**
  * Handle homepage route
@@ -42,7 +41,34 @@ export async function handleHome(req, res, url) {
       return await handleSearchResults(req, res, url, query, customRelays);
     }
     
-    // It's a naddr, show single book
+    // It's a naddr, determine if it's a book or article and route accordingly
+    try {
+      const decoded = nip19.decode(query);
+      if (decoded.type === 'naddr') {
+        const kind = decoded.data.kind;
+        if (kind === 30023) {
+          // Article - redirect to article detail page
+          const pubkey = decoded.data.pubkey;
+          const identifier = decoded.data.identifier;
+          const relayParam = relayInput ? `?relays=${encodeURIComponent(relayInput)}` : '';
+          res.writeHead(302, {
+            'Location': `/articles/${encodeURIComponent(pubkey)}/${encodeURIComponent(identifier)}${relayParam}`
+          });
+          res.end();
+          return;
+        } else if (kind === 30040 || kind === 30041) {
+          // Book - show book detail
+          return await handleBookDetail(req, res, url, query, customRelays);
+        } else {
+          throw new Error(`Unsupported kind: ${kind}. Only books (30040, 30041) and articles (30023) are supported.`);
+        }
+      }
+    } catch (error) {
+      console.error('[Home] Error decoding naddr:', error);
+      // Fall through to book detail handler for backwards compatibility
+    }
+    
+    // Fallback: try as book (for backwards compatibility)
     return await handleBookDetail(req, res, url, query, customRelays);
   }
   

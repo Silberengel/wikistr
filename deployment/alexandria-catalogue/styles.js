@@ -20,10 +20,10 @@ export function getCommonStyles() {
     textarea:focus { outline: 3px solid #0066cc; outline-offset: 2px; }
     select { padding: 0.5em; font-size: 1em; border: 2px solid #000000; border-radius: 4px; background: #ffffff; color: #000000; }
     select:focus { outline: 3px solid #0066cc; outline-offset: 2px; }
-    .search-form { margin-bottom: 2em; padding: 1em; background: #ffffff; border: 2px solid #000000; border-radius: 4px; }
+    .search-form { margin-bottom: 2em; padding: 1em; background: #ffffff; border: 2px solid #000000; border-radius: 4px; max-width: 100%; overflow-x: auto; }
     .search-form form { display: block; }
-    .search-form > form > div { display: flex; gap: 0.5em; align-items: stretch; }
-    .search-form input[type="text"] { flex: 1 1 auto; min-width: 300px; width: 100%; }
+    .search-form > form > div { display: flex; gap: 0.5em; align-items: stretch; max-width: 100%; flex-wrap: wrap; }
+    .search-form input[type="text"] { flex: 1 1 auto; min-width: 200px; max-width: 100%; width: 100%; word-break: break-all; overflow-wrap: break-word; font-family: monospace; font-size: 0.9em; }
     .search-form button { flex-shrink: 0; }
     .book-result { margin: 1.5em 0; padding: 1em; border: 2px solid #000000; border-radius: 4px; background: #ffffff; }
     .book-title { font-size: 1.2em; font-weight: bold; margin-bottom: 0.5em; }

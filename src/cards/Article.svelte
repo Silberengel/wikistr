@@ -20,18 +20,6 @@
   import Comments from '$components/Comments.svelte';
   import { nip19 } from '@nostr/tools';
   import { cards } from '$lib/state';
-  import {
-    downloadAsAsciiDoc,
-    downloadAsMarkdown,
-    downloadBookAsAsciiDoc,
-    downloadBookAsEPUB,
-    downloadBookAsPDF,
-    downloadBookAsHTML5,
-    downloadBookAsDocBook5,
-    downloadBookAsMOBI,
-    downloadBookAsAZW3,
-    downloadAsJSONL
-  } from '$lib/articleDownload';
   import { addBookmark, removeBookmark, isBookmarked, isBookmarkableKind } from '$lib/bookmarks';
   import { createDeletionEvent } from '$lib/deletion';
   import { showToast } from '$lib/toast';
@@ -65,17 +53,6 @@
   let isVoting = $state(false); // Prevent multiple votes
   let rawJsonWordWrap = $state(true); // Word-wrap ON by default
   let rawJsonCopied = $state(false);
-  let showDownloadMenu = $state(false);
-  let isDownloading = $state(false);
-  let downloadProgress = $state(0);
-  let downloadStatus = $state('');
-  let downloadState = $state<'downloading' | 'success' | 'error'>('downloading');
-  let downloadLogs = $state<string[]>([]);
-  let downloadError = $state<string>('');
-  let downloadAbortController: AbortController | null = null;
-  let showDownloadModal = $state(false);
-  let currentDownloadFn: ((event: NostrEvent, filename?: string, onProgress?: (progress: number, status: string) => void, abortSignal?: AbortSignal) => Promise<void>) | null = null;
-  let currentDownloadEvent: NostrEvent | null = null;
   let isBookmarkedState = $state(false);
   let isBookmarking = $state(false);
   let errorDialogOpen = $state(false);
@@ -141,264 +118,6 @@
     errorCopied = false;
   }
 
-  // Console log capture for download progress modal
-  let originalConsoleLog: typeof console.log | null = null;
-  let originalConsoleError: typeof console.error | null = null;
-  let originalConsoleWarn: typeof console.warn | null = null;
-
-  // Import console log store
-  let consoleLogStore: typeof import('$lib/consoleLogStore').consoleLogStore;
-  import('$lib/consoleLogStore').then(module => {
-    consoleLogStore = module.consoleLogStore;
-  });
-
-  // Check if a log message is related to downloads
-  function isDownloadRelated(message: string): boolean {
-    // Only capture logs with specific download/export prefixes
-    const downloadPrefixes = [
-      '[Book Export]',
-      '[PDF Export]',
-      '[EPUB Export]',
-      '[HTML5 Export]',
-      '[HTML Export]',
-      '[Download]',
-      '[EPUB]',  // Server-side EPUB logs
-      '[PDF]', // Server-side PDF logs
-      '[HTML5]', // Server-side HTML logs
-      'asciidoctor:',  // AsciiDoctor error messages
-      'Conversion error',
-      'Conversion failed',
-      'Stylesheet error',
-      'failed to parse'
-    ];
-    return downloadPrefixes.some(prefix => message.includes(prefix));
-  }
-
-  function startLogCapture() {
-    // Store original console methods
-    originalConsoleLog = console.log;
-    originalConsoleError = console.error;
-    originalConsoleWarn = console.warn;
-
-    // Override console methods to capture logs
-    console.log = (...args: any[]) => {
-      const message = args.map(arg => {
-        if (typeof arg === 'object' && arg !== null) {
-          try {
-            return JSON.stringify(arg);
-          } catch {
-            return String(arg);
-          }
-        }
-        return String(arg);
-      }).join(' ');
-      
-      // Only capture download-related logs for modal
-      if (isDownloadRelated(message)) {
-        downloadLogs = [...downloadLogs, `[LOG] ${message}`];
-      }
-      
-      // Also add to global console store (for settings viewer)
-      if (consoleLogStore) {
-        consoleLogStore.addLog('LOG', ...args);
-      }
-      
-      // Call original console method (which may be settings capture)
-      originalConsoleLog?.apply(console, args);
-    };
-
-    console.error = (...args: any[]) => {
-      const message = args.map(arg => {
-        if (typeof arg === 'object' && arg !== null) {
-          try {
-            return JSON.stringify(arg);
-          } catch {
-            return String(arg);
-          }
-        }
-        return String(arg);
-      }).join(' ');
-      
-      // Only capture download-related errors for modal
-      if (isDownloadRelated(message)) {
-        downloadLogs = [...downloadLogs, `[ERROR] ${message}`];
-      }
-      
-      // Also add to global console store (for settings viewer)
-      if (consoleLogStore) {
-        consoleLogStore.addLog('ERROR', ...args);
-      }
-      
-      // Call original console method (which may be settings capture)
-      originalConsoleError?.apply(console, args);
-    };
-
-    console.warn = (...args: any[]) => {
-      const message = args.map(arg => {
-        if (typeof arg === 'object' && arg !== null) {
-          try {
-            return JSON.stringify(arg);
-          } catch {
-            return String(arg);
-          }
-        }
-        return String(arg);
-      }).join(' ');
-      
-      // Only capture download-related warnings for modal
-      if (isDownloadRelated(message)) {
-        downloadLogs = [...downloadLogs, `[WARN] ${message}`];
-      }
-      
-      // Also add to global console store (for settings viewer)
-      if (consoleLogStore) {
-        consoleLogStore.addLog('WARN', ...args);
-      }
-      
-      // Call original console method (which may be settings capture)
-      originalConsoleWarn?.apply(console, args);
-    };
-  }
-
-  function stopLogCapture() {
-    // Restore original console methods
-    if (originalConsoleLog) {
-      console.log = originalConsoleLog;
-      originalConsoleLog = null;
-    }
-    if (originalConsoleError) {
-      console.error = originalConsoleError;
-      originalConsoleError = null;
-    }
-    if (originalConsoleWarn) {
-      console.warn = originalConsoleWarn;
-      originalConsoleWarn = null;
-    }
-  }
-
-  // Helper function to close download modal
-  function closeDownloadModal() {
-    if (isDownloading && downloadState === 'downloading') {
-      // Don't close if download is in progress, just hide the modal
-      // The download will continue in the background
-      showDownloadModal = false;
-    } else {
-      // Close and reset if download is complete or failed
-      showDownloadModal = false;
-      downloadLogs = [];
-      downloadError = '';
-      downloadProgress = 0;
-      downloadStatus = '';
-      downloadState = 'downloading';
-      isDownloading = false;
-      downloadAbortController = null;
-    }
-  }
-
-  // Helper function to cancel download
-  function cancelDownload() {
-    if (downloadAbortController && !downloadAbortController.signal.aborted) {
-      downloadAbortController.abort();
-      downloadStatus = 'Cancelling...';
-      // Immediately update UI to show cancellation in progress
-      // The download promise will handle final state updates
-    } else if (downloadState === 'error' || downloadState === 'success') {
-      // If already in error or success state, just close the modal
-      closeDownloadModal();
-    }
-  }
-
-  // Helper function to retry download
-  function retryDownload() {
-    if (currentDownloadFn && currentDownloadEvent) {
-      // Stop any existing log capture
-      stopLogCapture();
-      
-      // Abort any existing download
-      if (downloadAbortController) {
-        downloadAbortController.abort();
-        downloadAbortController = null;
-      }
-      
-      // Reset all state to beginning
-      downloadProgress = 0;
-      downloadStatus = 'Preparing...';
-      downloadState = 'downloading';
-      downloadError = '';
-      downloadLogs = [];
-      isDownloading = false; // Will be set to true by startDownload
-      
-      // Ensure modal is visible
-      showDownloadModal = true;
-      
-      // Start fresh download
-      startDownload(currentDownloadFn, currentDownloadEvent);
-    } else {
-      showErrorDialog('Cannot retry: download context lost.');
-      closeDownloadModal();
-    }
-  }
-
-  // Helper function to start download with progress tracking
-  function startDownload(
-    downloadFn: (event: NostrEvent, filename?: string, onProgress?: (progress: number, status: string) => void, abortSignal?: AbortSignal) => Promise<void>,
-    event: NostrEvent
-  ) {
-    showDownloadMenu = false;
-    isDownloading = true;
-    showDownloadModal = true;
-    downloadProgress = 0;
-    downloadStatus = 'Preparing...';
-    downloadState = 'downloading';
-    downloadError = '';
-    downloadLogs = [];
-    currentDownloadFn = downloadFn;
-    currentDownloadEvent = event;
-    
-    // Create abort controller for cancellation
-    downloadAbortController = new AbortController();
-    const abortSignal = downloadAbortController.signal;
-    
-    // Start capturing console logs
-    startLogCapture();
-    
-    downloadFn(event, undefined, (progress, status) => {
-      if (abortSignal.aborted) return;
-      downloadProgress = progress;
-      downloadStatus = status;
-    }, abortSignal)
-      .then(() => {
-        if (abortSignal.aborted) return;
-        downloadProgress = 100;
-        downloadStatus = 'Download completed successfully!';
-        downloadState = 'success';
-        isDownloading = false;
-        stopLogCapture();
-      })
-      .catch((error) => {
-        if (abortSignal.aborted) {
-          downloadProgress = 100;
-          downloadStatus = 'Download cancelled successfully';
-          downloadState = 'success';
-          isDownloading = false;
-          stopLogCapture();
-          return;
-        }
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        console.error('[Download] Error occurred:', error);
-        console.error('[Download] Error message:', errorMessage);
-        
-        // Log error to captured logs as well
-        const errorLog = `[ERROR] ${errorMessage}`;
-        downloadLogs = [...downloadLogs, errorLog];
-        
-        downloadError = errorMessage;
-        downloadStatus = `Error: ${errorMessage}`;
-        downloadState = 'error';
-        isDownloading = false;
-        stopLogCapture();
-      });
-  }
 
   // Copy error message to clipboard
   async function copyError() {
@@ -949,8 +668,6 @@
       return;
     }
 
-    // Close the menu
-    showDownloadMenu = false;
     
     console.log('deleteArticle: Starting deletion process');
     isDeleting = true;
@@ -1328,193 +1045,54 @@
             {/if}
           </div>
           {#if event}
-            <div class="relative">
-              <button
-                onclick={() => showDownloadMenu = !showDownloadMenu}
-                class="px-3 py-2 rounded-lg transition-colors hover:bg-gray-200 dark:hover:bg-gray-700 text-sm"
-                style="color: var(--text-secondary);"
-                title="Open"
-              >
-                ...
-              </button>
-              {#if showDownloadMenu}
-                <div
-                  class="absolute right-0 mt-2 w-56 rounded-lg shadow-lg z-50"
-                  style="background-color: var(--bg-primary); border: 1px solid var(--border);"
+            {@const articleNaddr = (() => {
+              try {
+                const identifier = getTagOr(event, 'd') || event.id;
+                return naddrEncode({
+                  kind: event.kind,
+                  pubkey: event.pubkey,
+                  identifier: identifier
+                });
+              } catch (e) {
+                return '';
+              }
+            })()}
+            <div class="flex items-center gap-2">
+              {#if event && event.pubkey === $account?.pubkey}
+                <button
                   onclick={(e) => {
-                    console.log('Menu clicked', e.target);
+                    console.log('Delete button clicked!', e);
                     e.stopPropagation();
+                    e.preventDefault();
+                    console.log('About to call deleteArticle');
+                    deleteArticle().catch(err => {
+                      console.error('Error in deleteArticle:', err);
+                    });
                   }}
+                  disabled={isDeleting}
+                  class="px-3 py-2 rounded-lg transition-colors hover:bg-red-100 dark:hover:bg-red-900 disabled:opacity-50 text-sm"
+                  style="color: var(--text-primary);"
+                  type="button"
+                  title="Request deletion"
                 >
-                  <div class="py-1">
-                    {#if event && event.pubkey === $account?.pubkey}
-                      <button
-                        onclick={(e) => {
-                          console.log('Delete button clicked!', e);
-                          e.stopPropagation();
-                          e.preventDefault();
-                          console.log('About to call deleteArticle');
-                          deleteArticle().catch(err => {
-                            console.error('Error in deleteArticle:', err);
-                          });
-                        }}
-                        onmousedown={(e) => {
-                          console.log('Delete button mousedown!', e);
-                          e.stopPropagation();
-                        }}
-                        disabled={isDeleting}
-                        class="w-full text-left px-4 py-2 text-sm hover:bg-red-100 dark:hover:bg-red-900 transition-colors disabled:opacity-50 cursor-pointer"
-                        style="color: var(--text-primary); pointer-events: auto;"
-                        type="button"
-                      >
-                        {#if isDeleting}
-                          Requesting deletion...
-                        {:else}
-                          Request deletion
-                        {/if}
-                      </button>
-                      <div class="border-t my-1" style="border-color: var(--border);"></div>
-                    {/if}
-                    <div class="px-4 py-2 text-xs font-semibold" style="color: var(--text-secondary);">
-                      Download:
-                    </div>
-                    {#if event && event.kind === 30040}
-                      <!-- Book (30040) - Server-based downloads with all formats -->
-                      <button
-                        onclick={() => {
-                          if (!event) return;
-                          startDownload(downloadBookAsHTML5, event);
-                        }}
-                        disabled={isDownloading}
-                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                        style="color: var(--text-primary);"
-                      >
-                        HTML5
-                      </button>
-                      <button
-                        onclick={() => {
-                          if (!event) return;
-                          startDownload(downloadBookAsEPUB, event);
-                        }}
-                        disabled={isDownloading}
-                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                        style="color: var(--text-primary);"
-                      >
-                        EPUB3
-                      </button>
-                      <button
-                        onclick={() => {
-                          if (!event) return;
-                          startDownload(downloadBookAsPDF, event);
-                        }}
-                        disabled={isDownloading}
-                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                        style="color: var(--text-primary);"
-                      >
-                        PDF
-                      </button>
-                      <button
-                        onclick={() => {
-                          if (!event) return;
-                          startDownload(downloadBookAsDocBook5, event);
-                        }}
-                        disabled={isDownloading}
-                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                        style="color: var(--text-primary);"
-                      >
-                        DocBook5
-                      </button>
-                      <button
-                        onclick={() => {
-                          if (!event) return;
-                          startDownload(downloadBookAsAsciiDoc, event);
-                        }}
-                        disabled={isDownloading}
-                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                        style="color: var(--text-primary);"
-                      >
-                        AsciiDoc
-                      </button>
-                      <div class="px-4 py-1 text-xs" style="color: var(--text-secondary);">
-                        Recommended for Kindle:
-                      </div>
-                      <button
-                        onclick={() => {
-                          if (!event) return;
-                          startDownload(downloadBookAsMOBI, event);
-                        }}
-                        disabled={isDownloading}
-                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                        style="color: var(--text-primary);"
-                      >
-                        MOBI
-                      </button>
-                      <button
-                        onclick={() => {
-                          if (!event) return;
-                          startDownload(downloadBookAsAZW3, event);
-                        }}
-                        disabled={isDownloading}
-                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                        style="color: var(--text-primary);"
-                      >
-                        AZW3
-                      </button>
-                      <div class="border-t my-1" style="border-color: var(--border);"></div>
-                      <button
-                        onclick={() => {
-                          if (!event) return;
-                          startDownload(downloadAsJSONL, event);
-                        }}
-                        disabled={isDownloading}
-                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                        style="color: var(--text-primary);"
-                      >
-                        JSONL
-                      </button>
-                    {:else if event}
-                      <!-- Articles - Simple downloads (no server) -->
-                      {#if event.kind === 30817 || event.kind === 30023}
-                        <button
-                          onclick={() => {
-                            if (!event) return;
-                            startDownload(downloadAsMarkdown, event);
-                          }}
-                          disabled={isDownloading}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                          style="color: var(--text-primary);"
-                        >
-                          Markdown
-                        </button>
-                      {/if}
-                      {#if event.kind === 30818 || event.kind === 30041}
-                        <button
-                          onclick={() => {
-                            if (!event) return;
-                            startDownload(downloadAsAsciiDoc, event);
-                          }}
-                          disabled={isDownloading}
-                          class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                          style="color: var(--text-primary);"
-                        >
-                          AsciiDoc
-                        </button>
-                      {/if}
-                      <div class="border-t my-1" style="border-color: var(--border);"></div>
-                      <button
-                        onclick={() => {
-                          if (!event) return;
-                          startDownload(downloadAsJSONL, event);
-                        }}
-                        disabled={isDownloading}
-                        class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                        style="color: var(--text-primary);"
-                      >
-                        JSONL
-                      </button>
-                    {/if}
-                  </div>
-                </div>
+                  {#if isDeleting}
+                    Requesting deletion...
+                  {:else}
+                    Request deletion
+                  {/if}
+                </button>
+              {/if}
+              {#if event && event.kind === 30040}
+                <a
+                  href="https://alex-catalogue.imwald.eu/?naddr={articleNaddr}"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="px-3 py-2 rounded-lg transition-colors hover:bg-gray-200 dark:hover:bg-gray-700 text-sm"
+                  style="color: var(--text-secondary); text-decoration: none;"
+                  title="Open in Alexandria Catalogue"
+                >
+                  Download
+                </a>
               {/if}
             </div>
           {/if}
@@ -1671,18 +1249,6 @@
   {/if}
 </div>
 
-<!-- Click outside to close download menu -->
-{#if showDownloadMenu}
-  <div
-    class="fixed inset-0 z-40"
-    role="button"
-    tabindex="-1"
-    onclick={() => showDownloadMenu = false}
-    onkeydown={(e) => e.key === 'Escape' && (showDownloadMenu = false)}
-    aria-label="Close menu"
-    style="z-index: 40;"
-  ></div>
-{/if}
 
 <!-- Error Dialog -->
 {#if errorDialogOpen}
@@ -1754,131 +1320,6 @@
   </div>
 {/if}
 
-<!-- Download Progress Modal -->
-{#if showDownloadModal}
-  <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
-    role="dialog"
-    aria-labelledby="download-progress-title"
-    aria-modal="true"
-    tabindex="-1"
-    onclick={(e) => { if (e.target === e.currentTarget) closeDownloadModal(); }}
-    onkeydown={(e) => { if (e.key === 'Escape' && e.target === e.currentTarget) closeDownloadModal(); }}
-  >
-    <div
-      class="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-2xl w-full mx-4 max-h-[90vh] flex flex-col"
-      style="background-color: var(--bg-primary); border: 1px solid var(--border);"
-    >
-      <!-- Header with X button -->
-      <div class="flex items-center justify-between mb-4">
-        <h3 id="download-progress-title" class="text-lg font-semibold" style="color: var(--text-primary);">
-          {#if downloadState === 'success'}
-            Download Complete
-          {:else if downloadState === 'error'}
-            Download Error
-          {:else}
-            Downloading
-          {/if}
-        </h3>
-        <button
-          onclick={closeDownloadModal}
-          class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-          aria-label="Close"
-          title="Close (download continues in background)"
-        >
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-
-      <!-- Status Message -->
-      <div class="mb-4">
-        {#if downloadState === 'success'}
-          <div class="text-sm p-3 rounded" style="background-color: var(--accent); color: white; opacity: 0.9;">
-            ✓ {downloadStatus}
-          </div>
-        {:else if downloadState === 'error'}
-          <div class="text-sm p-3 rounded bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200">
-            ✗ {downloadError || downloadStatus}
-          </div>
-        {:else}
-          <div class="text-sm mb-2" style="color: var(--text-secondary);">
-            {downloadStatus}
-          </div>
-          <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-            <div
-              class="bg-blue-600 h-3 rounded-full transition-all duration-300 ease-out"
-              style="width: {downloadProgress}%"
-              role="progressbar"
-              aria-valuenow={downloadProgress}
-              aria-valuemin="0"
-              aria-valuemax="100"
-            ></div>
-          </div>
-          <div class="text-xs mt-2 text-right" style="color: var(--text-secondary);">
-            {Math.round(downloadProgress)}%
-          </div>
-        {/if}
-      </div>
-
-      <!-- Console Logs -->
-      {#if downloadLogs.length > 0}
-        <div class="flex-1 min-h-0 mb-4">
-          <div class="text-xs font-semibold mb-2" style="color: var(--text-secondary);">
-            Console Logs:
-          </div>
-          <div 
-            class="overflow-y-auto p-3 rounded text-xs font-mono"
-            style="background-color: var(--bg-secondary); border: 1px solid var(--border); max-height: 300px;"
-          >
-            {#each downloadLogs as log}
-              <div class="mb-1" style="color: var(--text-secondary);">
-                {log}
-              </div>
-            {/each}
-          </div>
-        </div>
-      {/if}
-
-      <!-- Action Buttons -->
-      <div class="flex items-center justify-end gap-2">
-        {#if downloadState === 'success'}
-          <button
-            onclick={() => { showDownloadModal = false; }}
-            class="px-4 py-2 rounded transition-colors hover:opacity-90"
-            style="background-color: var(--accent); color: white;"
-          >
-            OK
-          </button>
-        {:else if downloadState === 'error'}
-          <button
-            onclick={retryDownload}
-            class="px-4 py-2 rounded transition-colors hover:opacity-90"
-            style="background-color: var(--accent); color: white;"
-          >
-            Retry
-          </button>
-          <button
-            onclick={cancelDownload}
-            class="px-4 py-2 rounded transition-colors hover:opacity-90"
-            style="background-color: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border);"
-          >
-            Cancel
-          </button>
-        {:else}
-          <button
-            onclick={cancelDownload}
-            class="px-4 py-2 rounded transition-colors hover:opacity-90"
-            style="background-color: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border);"
-          >
-            Cancel
-          </button>
-        {/if}
-      </div>
-    </div>
-  </div>
-{/if}
 
 <!-- Profile Popup -->
 <ProfilePopup 

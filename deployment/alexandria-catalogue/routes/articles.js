@@ -4,7 +4,7 @@
 
 import { parseRelayUrls } from '../utils.js';
 import { DEFAULT_ARTICLE_RELAYS, DEFAULT_RELAYS, ITEMS_PER_PAGE, DEFAULT_FETCH_LIMIT, ASCIIDOCTOR_SERVER_URL } from '../config.js';
-import { fetchArticles, fetchArticleEvent, fetchUserHandle, nip19, fetchEventsByFilters } from '../nostr.js';
+import { fetchArticles, fetchArticleEvent, fetchUserHandle, nip19, fetchEventsByFilters, fetchEventByNaddr } from '../nostr.js';
 import { getCache, setCached, getCached, CACHE_TTL } from '../cache.js';
 import { escapeHtml, formatDate, normalizeForSearch, setCacheHeaders, truncate } from '../utils.js';
 import { getCommonStyles, getTableStyles } from '../styles.js';
@@ -203,7 +203,7 @@ function resolveNpub(npub) {
 }
 
 /**
- * Search articles by query (title, summary, pubkey, d-tag, NIP05, npub)
+ * Search articles by query (title, summary, pubkey, d-tag, NIP05, npub, naddr)
  */
 async function searchArticles(articles, query) {
   if (!query || query.trim() === '') {
@@ -213,6 +213,24 @@ async function searchArticles(articles, query) {
   const trimmedQuery = query.trim();
   let searchPubkeys = [];
   let isPubkeySearch = false;
+  
+  // Check if query is naddr (for articles)
+  if (trimmedQuery.startsWith('naddr1')) {
+    try {
+      const decoded = nip19.decode(trimmedQuery);
+      if (decoded.type === 'naddr' && decoded.data.kind === 30023) {
+        // It's an article naddr - filter to match this specific article
+        const pubkey = decoded.data.pubkey;
+        const identifier = decoded.data.identifier;
+        return articles.filter(article => 
+          article.pubkey.toLowerCase() === pubkey.toLowerCase() &&
+          getArticleDTag(article).toLowerCase() === identifier.toLowerCase()
+        );
+      }
+    } catch (e) {
+      console.log(`[Articles] Failed to decode naddr: ${e?.message || String(e)}`);
+    }
+  }
   
   // Check if query is NIP05 (user@domain.com)
   if (trimmedQuery.includes('@') && trimmedQuery.split('@').length === 2) {
@@ -344,12 +362,17 @@ function getArticleDetailStyles() {
     }
     .search-form input[type="text"] { 
       width: 100%;
+      max-width: 100%;
       padding: 0.75em; 
-      font-size: 1em; 
+      font-size: 0.9em; 
+      font-family: monospace;
       border: 2px solid #000000; 
       margin-bottom: 0.5em;
       background: #ffffff;
       color: #000000;
+      word-break: break-all;
+      overflow-wrap: break-word;
+      box-sizing: border-box;
     }
     .search-form input[type="text"]:focus { 
       outline: 3px solid #0000ff; 
@@ -971,12 +994,26 @@ export async function handleArticleDetail(req, res, url) {
     const customRelays = parseRelayUrls(relayInput);
     const hasCustomRelays = customRelays && customRelays.length > 0;
     
-    console.log(`[Articles] Fetching article: pubkey=${pubkey.substring(0, 16)}..., d-tag=${dTag}`);
-    
+    // Check if dTag is actually an naddr (for direct naddr access)
     let article;
-    try {
-      article = await fetchArticleEvent(pubkey, dTag, hasCustomRelays ? customRelays : undefined);
-    } catch (fetchError) {
+    if (dTag.startsWith('naddr1')) {
+      try {
+        console.log(`[Articles] Detected naddr in path, fetching by naddr: ${dTag}`);
+        article = await fetchEventByNaddr(dTag, hasCustomRelays ? customRelays : undefined);
+        if (article.kind !== 30023 && article.kind !== 30041) {
+          throw new Error(`Invalid article kind: ${article.kind}. Expected 30023 or 30041.`);
+        }
+      } catch (error) {
+        console.error('[Articles] Error fetching article by naddr:', error);
+        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(generateErrorPage('Invalid Article', error?.message || 'Failed to fetch article by naddr', null, '/articles', relayInput));
+        return;
+      }
+    } else {
+      console.log(`[Articles] Fetching article: pubkey=${pubkey.substring(0, 16)}..., d-tag=${dTag}`);
+      try {
+        article = await fetchArticleEvent(pubkey, dTag, hasCustomRelays ? customRelays : undefined);
+      } catch (fetchError) {
       // If fetch fails, try to find it in cached article list
       console.log(`[Articles] Article not found on relays, checking cached list...`);
       const cache = getCache();
@@ -1012,6 +1049,7 @@ export async function handleArticleDetail(req, res, url) {
       } else {
         console.log(`[Articles] No cached article list available`);
         throw fetchError; // Re-throw original error if no cache
+      }
       }
     }
     

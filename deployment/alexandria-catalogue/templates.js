@@ -39,7 +39,7 @@ export function generateBookDetailPage(naddr, bookEvent, hierarchy, threadedComm
   
   <div class="search-form">
     <form method="GET" action="/">
-      <input type="text" name="naddr" placeholder="Enter book naddr (naddr1...) or d tag..." value="${escapeHtml(naddr)}" required>
+      <input type="text" name="naddr" placeholder="Enter book naddr (naddr1...) or d tag..." value="${escapeHtml(naddr)}" required style="width: 100%; max-width: 100%; word-break: break-all; overflow-wrap: break-word; font-family: monospace; font-size: 0.9em; box-sizing: border-box;">
       ${hasCustomRelays ? `<input type="hidden" name="relays" value="${escapeHtml(customRelays.join(','))}">` : ''}
       <button type="submit">Search</button>
     </form>
