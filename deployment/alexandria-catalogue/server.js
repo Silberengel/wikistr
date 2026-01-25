@@ -19,6 +19,7 @@ import { handleRequest } from './routes/index.js';
 import { warmAllCaches } from './cache-warming.js';
 
 // Optimized request handler with compression and keep-alive
+// REFACTORED: Simplified compression logic, only buffer when needed
 async function optimizedHandleRequest(req, res) {
   // Set keep-alive for connection reuse
   res.setHeader('Connection', 'keep-alive');
@@ -28,28 +29,39 @@ async function optimizedHandleRequest(req, res) {
   const acceptEncoding = req.headers['accept-encoding'] || '';
   const useGzip = acceptEncoding.includes('gzip');
   
-  // Buffer response for compression if needed
-  let responseBuffer = [];
+  // Only buffer if compression is needed
+  let responseBuffer = null;
   let headersWritten = false;
+  let contentType = '';
+  
   const originalWrite = res.write.bind(res);
   const originalEnd = res.end.bind(res);
   const originalWriteHead = res.writeHead.bind(res);
+  const originalSetHeader = res.setHeader.bind(res);
   
-  // Override writeHead to capture content type
+  // Override setHeader to capture content type early
+  res.setHeader = function(name, value) {
+    if (name.toLowerCase() === 'content-type') {
+      contentType = value;
+    }
+    return originalSetHeader.call(this, name, value);
+  };
+  
+  // Override writeHead
   res.writeHead = function(statusCode, statusMessage, headers) {
     if (headersWritten) return originalWriteHead.call(this, statusCode, statusMessage, headers);
     headersWritten = true;
     
     const finalHeaders = headers || {};
-    const contentType = finalHeaders['Content-Type'] || res.getHeader('Content-Type') || '';
+    const finalContentType = finalHeaders['Content-Type'] || contentType || '';
     
     // Apply compression for text content
     if (useGzip && statusCode === 200 && (
-      contentType.includes('text/html') || 
-      contentType.includes('text/css') || 
-      contentType.includes('application/json') ||
-      contentType.includes('text/javascript') ||
-      contentType.includes('text/plain')
+      finalContentType.includes('text/html') || 
+      finalContentType.includes('text/css') || 
+      finalContentType.includes('application/json') ||
+      finalContentType.includes('text/javascript') ||
+      finalContentType.includes('text/plain')
     )) {
       finalHeaders['Content-Encoding'] = 'gzip';
       finalHeaders['Vary'] = 'Accept-Encoding';
@@ -58,10 +70,11 @@ async function optimizedHandleRequest(req, res) {
     return originalWriteHead.call(this, statusCode, statusMessage, finalHeaders);
   };
   
-  // Override write to buffer
+  // Override write to buffer if compression needed
   res.write = function(chunk, encoding) {
-    if (!headersWritten) {
-      responseBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
+    if (!headersWritten && useGzip) {
+      if (!responseBuffer) responseBuffer = [];
+      responseBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding || 'utf8'));
       return true;
     }
     return originalWrite.call(this, chunk, encoding);
@@ -69,14 +82,15 @@ async function optimizedHandleRequest(req, res) {
   
   // Override end to compress and send
   res.end = function(chunk, encoding) {
-    if (chunk && !headersWritten) {
-      responseBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
+    if (chunk && !headersWritten && useGzip) {
+      if (!responseBuffer) responseBuffer = [];
+      responseBuffer.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding || 'utf8'));
     }
     
-    if (responseBuffer.length > 0 && !headersWritten) {
-      const contentType = res.getHeader('Content-Type') || 'text/html; charset=utf-8';
+    if (responseBuffer && responseBuffer.length > 0 && !headersWritten) {
+      const finalContentType = contentType || res.getHeader('Content-Type') || 'text/html; charset=utf-8';
       const shouldCompress = useGzip && (
-        contentType.includes('text/') || contentType.includes('application/json')
+        finalContentType.includes('text/') || finalContentType.includes('application/json')
       );
       
       const allData = Buffer.concat(responseBuffer);
@@ -90,7 +104,7 @@ async function optimizedHandleRequest(req, res) {
       
       res.setHeader('Content-Length', finalData.length);
       if (!headersWritten) {
-        res.writeHead(res.statusCode || 200, { 'Content-Type': contentType });
+        res.writeHead(res.statusCode || 200, { 'Content-Type': finalContentType });
       }
       originalWrite(finalData);
       originalEnd();

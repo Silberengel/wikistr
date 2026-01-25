@@ -22,12 +22,15 @@ const cache = {
 
 /**
  * Get cached data if still valid
+ * Optimized: Fast path for common cache types
  */
 export function getCached(key, ttl) {
-  // Check if it's a Map-based cache (articleList, highlightsList, bookDetails, etc.)
+  const now = Date.now();
+  
+  // Fast path for Map-based caches
   if (key.startsWith('articleList_')) {
     const cached = cache.articleList.get(key);
-    if (cached && cached.data && (Date.now() - cached.timestamp) < ttl) {
+    if (cached?.data && (now - cached.timestamp) < ttl) {
       return cached.data;
     }
     return null;
@@ -35,15 +38,15 @@ export function getCached(key, ttl) {
   
   if (key.startsWith('highlightsList_')) {
     const cached = cache.highlightsList.get(key);
-    if (cached && cached.data && (Date.now() - cached.timestamp) < ttl) {
+    if (cached?.data && (now - cached.timestamp) < ttl) {
       return cached.data;
     }
     return null;
   }
   
-  // For other caches, use direct property access
+  // Fast path for object-based caches
   const cached = cache[key];
-  if (cached && cached.data && (Date.now() - cached.timestamp) < ttl) {
+  if (cached?.data && (now - cached.timestamp) < ttl) {
     return cached.data;
   }
   return null;
@@ -51,16 +54,16 @@ export function getCached(key, ttl) {
 
 /**
  * Set cache data
+ * Optimized: Use single timestamp calculation
  */
 export function setCached(key, data, extra = {}) {
-  // Check if it's a Map-based cache (articleList, highlightsList, bookDetails, etc.)
+  const timestamp = Date.now();
+  const entry = { data, timestamp, ...extra };
+  
+  // Fast path for Map-based caches
   if (key.startsWith('articleList_')) {
-    cache.articleList.set(key, {
-      data,
-      timestamp: Date.now(),
-      ...extra
-    });
-    // Limit articleList cache size
+    cache.articleList.set(key, entry);
+    // Limit cache size efficiently
     if (cache.articleList.size > 50) {
       const firstKey = cache.articleList.keys().next().value;
       cache.articleList.delete(firstKey);
@@ -69,12 +72,7 @@ export function setCached(key, data, extra = {}) {
   }
   
   if (key.startsWith('highlightsList_')) {
-    cache.highlightsList.set(key, {
-      data,
-      timestamp: Date.now(),
-      ...extra
-    });
-    // Limit highlightsList cache size
+    cache.highlightsList.set(key, entry);
     if (cache.highlightsList.size > 50) {
       const firstKey = cache.highlightsList.keys().next().value;
       cache.highlightsList.delete(firstKey);
@@ -83,11 +81,7 @@ export function setCached(key, data, extra = {}) {
   }
   
   // For other caches, use direct property access
-  cache[key] = {
-    data,
-    timestamp: Date.now(),
-    ...extra
-  };
+  cache[key] = entry;
 }
 
 /**

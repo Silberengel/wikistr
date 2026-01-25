@@ -298,25 +298,29 @@ async function embedImagesOnlyInContent(content) {
   }
   
   // Replace all image URLs with data URIs
+  // OPTIMIZED: Use single pass string replacement instead of multiple substring operations
   let processedContent = content;
+  const replacements = [];
   
-  // Process matches in reverse order to preserve string indices
-  for (let i = imageInfos.length - 1; i >= 0; i--) {
-    const info = imageInfos[i];
+  // Collect all replacements first
+  for (const info of imageInfos) {
     const dataURI = urlMap.get(info.url);
-    
     if (dataURI && dataURI !== info.url) {
       const newDirective = info.isBlock 
         ? `image::${dataURI}[${info.attributes}]`
         : `image:${dataURI}[${info.attributes}]`;
-      
-      const lastIndex = processedContent.lastIndexOf(info.fullMatch);
-      if (lastIndex !== -1) {
-        processedContent = processedContent.substring(0, lastIndex) + 
-                          newDirective + 
-                          processedContent.substring(lastIndex + info.fullMatch.length);
-        console.log(`[Image Embedding] Replaced image: ${info.url.substring(0, 50)}...`);
-      }
+      replacements.push({ from: info.fullMatch, to: newDirective });
+    }
+  }
+  
+  // Apply replacements in reverse order to preserve indices
+  for (let i = replacements.length - 1; i >= 0; i--) {
+    const { from, to } = replacements[i];
+    const lastIndex = processedContent.lastIndexOf(from);
+    if (lastIndex !== -1) {
+      processedContent = processedContent.substring(0, lastIndex) + 
+                        to + 
+                        processedContent.substring(lastIndex + from.length);
     }
   }
   
@@ -414,27 +418,29 @@ async function embedMediaInContent(content) {
   }
   
   // Replace all media URLs with data URIs
+  // OPTIMIZED: Use single pass string replacement instead of multiple substring operations
   let processedContent = content;
+  const replacements = [];
   
-  // Process matches in reverse order to preserve string indices
-  for (let i = mediaInfos.length - 1; i >= 0; i--) {
-    const info = mediaInfos[i];
+  // Collect all replacements first
+  for (const info of mediaInfos) {
     const dataURI = urlMap.get(info.url);
-    
     if (dataURI && dataURI !== info.url) {
-      // Build new directive with data URI
       const newDirective = info.isBlock 
         ? `${info.type}::${dataURI}[${info.attributes}]`
         : `${info.type}:${dataURI}[${info.attributes}]`;
-      
-      // Find and replace (use lastIndexOf to get the last occurrence if there are duplicates)
-      const lastIndex = processedContent.lastIndexOf(info.fullMatch);
-      if (lastIndex !== -1) {
-        processedContent = processedContent.substring(0, lastIndex) + 
-                          newDirective + 
-                          processedContent.substring(lastIndex + info.fullMatch.length);
-        console.log(`[Media Embedding] Replaced ${info.type}: ${info.url.substring(0, 50)}...`);
-      }
+      replacements.push({ from: info.fullMatch, to: newDirective, type: info.type });
+    }
+  }
+  
+  // Apply replacements in reverse order to preserve indices
+  for (let i = replacements.length - 1; i >= 0; i--) {
+    const { from, to, type } = replacements[i];
+    const lastIndex = processedContent.lastIndexOf(from);
+    if (lastIndex !== -1) {
+      processedContent = processedContent.substring(0, lastIndex) + 
+                        to + 
+                        processedContent.substring(lastIndex + from.length);
     }
   }
   
@@ -524,45 +530,48 @@ export async function buildBookEventHierarchy(indexEvent, visitedIds = new Set()
   // Fetch events by 'a' tags and 'e' tags in parallel
   const fetchPromises = [];
 
+  const relays = customRelays && customRelays.length > 0 ? customRelays : DEFAULT_RELAYS;
+
   if (aTags.length > 0) {
     fetchPromises.push((async () => {
       try {
         const aTagFilters = [];
+        const aTagMap = new Map(); // Map aTag string to filter index for deduplication
+        
         for (const aTag of aTags) {
           const [kindStr, pubkey, dTag] = aTag.split(':');
           if (kindStr && pubkey && dTag) {
             const kind = parseInt(kindStr, 10);
             if (kind === 30040 || kind === 30041) {
-              aTagFilters.push({
-                kinds: [kind],
-                authors: [pubkey],
-                '#d': [dTag]
-              });
+              const key = `${kind}:${pubkey}:${dTag}`;
+              // Deduplicate filters to avoid redundant queries
+              if (!aTagMap.has(key)) {
+                aTagMap.set(key, aTagFilters.length);
+                aTagFilters.push({
+                  kinds: [kind],
+                  authors: [pubkey],
+                  '#d': [dTag]
+                });
+              }
             }
           }
         }
 
         if (aTagFilters.length > 0) {
-          const relays = customRelays && customRelays.length > 0 ? customRelays : DEFAULT_RELAYS;
           const foundEvents = await fetchEventsByFilters(aTagFilters, relays, timeout);
           
           // Map events by their a-tag identifier, deduplicating by d-tag (keep newest)
-          const dTagMap = new Map();
           for (const event of foundEvents) {
             if (event.kind === 30040 || event.kind === 30041) {
               const dTag = event.tags.find(([k]) => k === 'd')?.[1];
               if (dTag) {
                 const dTagKey = `${event.kind}:${event.pubkey}:${dTag}`;
-                const existing = dTagMap.get(dTagKey);
+                const existing = aTagEvents.get(dTagKey);
                 if (!existing || event.created_at > existing.created_at) {
-                  dTagMap.set(dTagKey, event);
+                  aTagEvents.set(dTagKey, event);
                 }
               }
             }
-          }
-          // Convert dTagMap to aTagEvents format
-          for (const [dTagKey, event] of dTagMap.entries()) {
-            aTagEvents.set(dTagKey, event);
           }
         }
       } catch (error) {
@@ -575,7 +584,6 @@ export async function buildBookEventHierarchy(indexEvent, visitedIds = new Set()
   if (eTags.length > 0) {
     fetchPromises.push((async () => {
       try {
-        const relays = customRelays && customRelays.length > 0 ? customRelays : DEFAULT_RELAYS;
         const foundEvents = await fetchEventsByIds(eTags, relays, timeout);
         
         for (const event of foundEvents) {

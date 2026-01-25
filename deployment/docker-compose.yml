@@ -94,7 +94,6 @@ services:
           cpus: '2'
           memory: 2G
         reservations:
-          cpus: '0.5'
           memory: 512M
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8091/healthz"]
@@ -121,6 +120,10 @@ services:
     environment:
       EPUB_DOWNLOAD_PORT: 8092
       ASCIIDOCTOR_SERVER_URL: http://asciidoctor:8091
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
     # OPTIMIZED: Resource limits for better performance
     deploy:
       resources:
@@ -128,7 +131,6 @@ services:
           cpus: '1'
           memory: 1G
         reservations:
-          cpus: '0.25'
           memory: 256M
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8092/"]

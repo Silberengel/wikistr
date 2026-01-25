@@ -20,7 +20,8 @@ const warmingStatus = {
 };
 
 // Minimum time between warming attempts (5 minutes)
-const WARMING_COOLDOWN = 5 * 60 * 1000;
+// OPTIMIZED: Reduced cooldown for faster cache updates while still preventing excessive warming
+const WARMING_COOLDOWN = 3 * 60 * 1000; // 3 minutes (was 5)
 
 /**
  * Warm book list cache in the background
@@ -414,39 +415,45 @@ export async function warmArticleCommentsCache(customRelays = null) {
  * YES: All three (books, articles, highlights) run in PARALLEL
  * Comments warming runs after books/articles are warmed (since they depend on lists)
  */
+/**
+ * Warm all caches in the background
+ * OPTIMIZED: More efficient parallel execution with better error handling
+ * Returns a Promise for error handling in server.js
+ */
 export function warmAllCaches(customRelays = null) {
   // Start all warming operations in parallel, but don't wait for them
   // This ensures the homepage response is not delayed
-  // YES: These three run in PARALLEL
-  warmBookCache(customRelays)
-    .then(() => {
-      // After books are warmed, warm comments for top books
-      // Comments depend on book list, so we warm them after books
-      warmCommentsCache(customRelays).catch(err => {
-        console.error('[Cache Warming] Comments cache warming failed:', err);
-      });
+  // OPTIMIZED: Use Promise.allSettled for better parallel execution
+  const warmingPromises = [
+    warmBookCache(customRelays)
+      .then(() => {
+        // After books are warmed, warm comments for top books
+        return warmCommentsCache(customRelays);
+      })
+      .catch(err => {
+        console.error('[Cache Warming] Book/comments cache warming failed:', err);
+      }),
+    
+    warmArticleCache(customRelays)
+      .then(() => {
+        // After articles are warmed, warm comments for top articles
+        return warmArticleCommentsCache(customRelays);
+      })
+      .catch(err => {
+        console.error('[Cache Warming] Article/comments cache warming failed:', err);
+      }),
+    
+    warmHighlightsCache(customRelays).catch(err => {
+      console.error('[Cache Warming] Highlights cache warming failed:', err);
     })
-    .catch(err => {
-      console.error('[Cache Warming] Book cache warming failed:', err);
-    });
-  
-  warmArticleCache(customRelays)
-    .then(() => {
-      // After articles are warmed, warm comments for top articles
-      // Comments depend on article list, so we warm them after articles
-      warmArticleCommentsCache(customRelays).catch(err => {
-        console.error('[Cache Warming] Article comments cache warming failed:', err);
-      });
-    })
-    .catch(err => {
-      console.error('[Cache Warming] Article cache warming failed:', err);
-    });
-  
-  warmHighlightsCache(customRelays).catch(err => {
-    console.error('[Cache Warming] Highlights cache warming failed:', err);
-  });
+  ];
   
   console.log('[Cache Warming] Background cache warming initiated (books, articles, highlights in parallel)');
+  
+  // Return Promise for error handling in server.js
+  return Promise.allSettled(warmingPromises).then(() => {
+    console.log('[Cache Warming] Background cache warming completed');
+  });
 }
 
 /**

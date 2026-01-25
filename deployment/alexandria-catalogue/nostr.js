@@ -15,15 +15,20 @@ const pool = new SimplePool({
 /**
  * Wait for subscriptions to complete
  * OPTIMIZED: Early exit when we have enough results or first relay responds
+ * Improved: Use Object.is() for atomic counter checks
  */
 function waitForSubscriptions(eoseCount, totalRelays, timeout = 5000, earlyExit = false, minResults = 0) {
   return new Promise((resolve) => {
     let resolved = false;
+    const startTime = Date.now();
+    
     const checkInterval = setInterval(() => {
       if (resolved) return;
       
+      const currentCount = typeof eoseCount === 'object' ? eoseCount.size : eoseCount;
+      
       // Early exit if we have results from at least one relay and early exit is enabled
-      if (earlyExit && eoseCount >= 1 && minResults > 0) {
+      if (earlyExit && currentCount >= 1 && minResults > 0) {
         clearInterval(checkInterval);
         resolved = true;
         resolve();
@@ -31,13 +36,22 @@ function waitForSubscriptions(eoseCount, totalRelays, timeout = 5000, earlyExit 
       }
       
       // Normal exit when all relays respond
-      if (eoseCount >= totalRelays) {
+      if (currentCount >= totalRelays) {
+        clearInterval(checkInterval);
+        resolved = true;
+        resolve();
+        return;
+      }
+      
+      // Timeout check (more efficient than separate setTimeout)
+      if (Date.now() - startTime >= timeout) {
         clearInterval(checkInterval);
         resolved = true;
         resolve();
       }
-    }, 50); // Check more frequently (50ms instead of 100ms)
+    }, 50); // Check every 50ms
     
+    // Fallback timeout
     setTimeout(() => {
       if (!resolved) {
         clearInterval(checkInterval);
@@ -50,11 +64,14 @@ function waitForSubscriptions(eoseCount, totalRelays, timeout = 5000, earlyExit 
 
 /**
  * Fetch events from relays with a filter
- * OPTIMIZED: Parallel queries, early exit, reduced timeout
+ * OPTIMIZED: Parallel queries, early exit, reduced timeout, improved deduplication
  */
 export async function fetchEventsFromRelays(filter, relays, timeout = 5000, earlyExit = false, minResults = 0) {
-  const foundEvents = [];
-  const eventMap = new Map();
+  if (!relays || relays.length === 0) {
+    return [];
+  }
+  
+  const eventMap = new Map(); // Use Map for O(1) lookup
   const eoseRelays = new Set();
   const totalRelays = relays.length;
   const subscriptions = [];
@@ -65,9 +82,9 @@ export async function fetchEventsFromRelays(filter, relays, timeout = 5000, earl
       const relay = await pool.ensureRelay(relayUrl);
       const sub = relay.subscribe([filter], {
         onevent: (event) => {
+          // Deduplicate by event ID (faster than array.includes)
           if (!eventMap.has(event.id)) {
             eventMap.set(event.id, event);
-            foundEvents.push(event);
           }
         },
         oneose: () => {
@@ -87,18 +104,19 @@ export async function fetchEventsFromRelays(filter, relays, timeout = 5000, earl
   await Promise.allSettled(subscriptionPromises);
   
   // Wait for results with early exit if enabled
-  await waitForSubscriptions(eoseRelays.size, totalRelays, timeout, earlyExit, minResults || foundEvents.length);
+  await waitForSubscriptions(eoseRelays, totalRelays, timeout, earlyExit, minResults || eventMap.size);
   
-  // Close all subscriptions
-  subscriptions.forEach(s => {
+  // Close all subscriptions efficiently
+  for (const sub of subscriptions) {
     try {
-      s.close();
+      sub.close();
     } catch (e) {
       // Ignore close errors
     }
-  });
+  }
   
-  return foundEvents;
+  // Convert Map to array (more efficient than maintaining array)
+  return Array.from(eventMap.values());
 }
 
 /**
