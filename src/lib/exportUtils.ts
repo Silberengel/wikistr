@@ -15,9 +15,7 @@ const ASCIIDOCTOR_SERVER_URL = (() => {
     return 'http://localhost:8091';
   }
   if (typeof window !== 'undefined') {
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      return 'http://localhost:8091/';
-    }
+    // Always use proxy path in browser - works in both dev (vite proxy) and production (Apache proxy)
     return '/asciidoctor/';
   }
   return 'http://localhost:8091';

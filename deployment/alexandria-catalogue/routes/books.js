@@ -44,7 +44,7 @@ export async function handleBooks(req, res, url) {
     }
     
     const topLevelBooks = filterTopLevelBooks(allBooks);
-    console.log(`[Books] Filtered to ${topLevelBooks.length} top-level books`);
+    console.log(`[Books] Fetched ${allBooks.length} total books, filtered to ${topLevelBooks.length} top-level books (${allBooks.length - topLevelBooks.length} are nested)`);
     
     // Sort based on sortBy parameter
     if (sortBy === 'title') {
@@ -169,7 +169,7 @@ export async function handleBooks(req, res, url) {
       }
     } else {
       html += `<div class="controls" style="margin: 1em 0; padding: 1em; background: #f5f5f5; border-radius: 4px;">
-        <p class="book-count" style="margin: 0 0 0.5em 0;">Showing ${startIndex + 1}-${Math.min(endIndex, totalBooks)} of ${totalBooks} top-level books</p>
+        <p class="book-count" style="margin: 0 0 0.5em 0;">Showing ${startIndex + 1}-${Math.min(endIndex, totalBooks)} of ${totalBooks} top-level books${allBooks.length > totalBooks ? ` (${allBooks.length} total books fetched, ${allBooks.length - totalBooks} are nested)` : ''}</p>
       </div>`;
       
       // Build sort URLs for table headers

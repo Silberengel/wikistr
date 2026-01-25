@@ -3,6 +3,92 @@
  */
 
 import { ASCIIDOCTOR_SERVER_URL } from './config.js';
+import http from 'http';
+import https from 'https';
+import { URL } from 'url';
+
+/**
+ * Make HTTP request using Node.js http/https modules
+ */
+async function makeHttpRequest(url, options) {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(url);
+    const isHttps = urlObj.protocol === 'https:';
+    const httpModule = isHttps ? https : http;
+    
+    const requestOptions = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || (isHttps ? 443 : 80),
+      path: urlObj.pathname + urlObj.search,
+      method: options.method || 'GET',
+      headers: options.headers || {}
+    };
+
+    const req = httpModule.request(requestOptions, (res) => {
+      const chunks = [];
+      
+      // Handle response errors early
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        // Still read the response body for error details
+        res.on('data', (chunk) => {
+          chunks.push(chunk);
+        });
+        
+        res.on('end', () => {
+          const buffer = Buffer.concat(chunks);
+          const errorText = buffer.toString('utf-8');
+          const error = new Error(`HTTP ${res.statusCode}: ${res.statusMessage}${errorText ? ' - ' + errorText.substring(0, 200) : ''}`);
+          error.statusCode = res.statusCode;
+          reject(error);
+        });
+        return;
+      }
+      
+      res.on('data', (chunk) => {
+        chunks.push(chunk);
+      });
+      
+      res.on('end', () => {
+        const buffer = Buffer.concat(chunks);
+        resolve({
+          ok: true,
+          status: res.statusCode,
+          statusText: res.statusMessage,
+          headers: res.headers,
+          arrayBuffer: async () => {
+            // Convert Buffer to ArrayBuffer
+            const ab = new ArrayBuffer(buffer.length);
+            const view = new Uint8Array(ab);
+            for (let i = 0; i < buffer.length; i++) {
+              view[i] = buffer[i];
+            }
+            return ab;
+          },
+          buffer: buffer,
+          text: async () => buffer.toString('utf-8')
+        });
+      });
+    });
+    
+    req.on('error', (error) => {
+      console.error(`[HTTP Request] Connection error to ${url}:`, error);
+      reject(error);
+    });
+    
+    if (options.timeout) {
+      req.setTimeout(options.timeout, () => {
+        req.destroy();
+        reject(new Error('Request timeout'));
+      });
+    }
+    
+    if (options.body) {
+      req.write(options.body);
+    }
+    
+    req.end();
+  });
+}
 
 /**
  * Generate file in specified format using AsciiDoctor server
@@ -10,8 +96,23 @@ import { ASCIIDOCTOR_SERVER_URL } from './config.js';
 export async function generateFile(content, title, author, format, image) {
   // Handle AsciiDoc separately
   if (format.toLowerCase() === 'asciidoc' || format.toLowerCase() === 'adoc') {
+    // Return a Buffer-like object for Node.js compatibility
+    const buffer = Buffer.from(content, 'utf-8');
     return {
-      blob: new Blob([content], { type: 'text/asciidoc' }),
+      blob: {
+        size: buffer.length,
+        arrayBuffer: async () => {
+          // Convert Buffer to ArrayBuffer
+          const ab = new ArrayBuffer(buffer.length);
+          const view = new Uint8Array(ab);
+          for (let i = 0; i < buffer.length; i++) {
+            view[i] = buffer[i];
+          }
+          return ab;
+        },
+        buffer: buffer,
+        text: async () => buffer.toString('utf-8')
+      },
       mimeType: 'text/asciidoc',
       extension: 'adoc'
     };
@@ -35,6 +136,7 @@ export async function generateFile(content, title, author, format, image) {
   
   console.log(`[File Generation] Generating ${format} via ${url}`);
   console.log(`[File Generation] Content length: ${content.length} chars`);
+  console.log(`[File Generation] AsciiDoctor server URL from config: ${ASCIIDOCTOR_SERVER_URL}`);
 
   const requestBody = {
     content,
@@ -50,47 +152,73 @@ export async function generateFile(content, title, author, format, image) {
   const isKindleFormat = format.toLowerCase() === 'azw3' || format.toLowerCase() === 'mobi';
   const timeoutMs = isKindleFormat ? 120000 : 60000; // 2 minutes for Kindle formats, 1 minute for others
   
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  
   try {
-    const response = await fetch(url, {
+    console.log(`[File Generation] Making HTTP request to: ${url}`);
+    const response = await makeHttpRequest(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(requestBody),
-      signal: controller.signal
+      timeout: timeoutMs
     });
     
-    clearTimeout(timeoutId);
+    console.log(`[File Generation] Received response: ${response.status} ${response.statusText}`);
     
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`AsciiDoctor server error: ${response.status} ${errorText}`);
     }
 
-    // For Kindle formats, check if response is actually a blob
-    const blob = await response.blob();
+    // Get the buffer from response
+    const buffer = response.buffer;
     
-    // Verify blob is not empty and has correct type
-    if (blob.size === 0) {
+    // Verify buffer is not empty
+    if (buffer.length === 0) {
       throw new Error(`AsciiDoctor server returned empty ${format} file. The conversion may have failed.`);
     }
     
-    // Check if blob type matches expected mime type (or is application/octet-stream which is acceptable)
-    const blobType = blob.type;
-    if (blobType && blobType !== 'application/octet-stream' && blobType !== formatInfo.mimeType) {
-      console.warn(`[File Generation] Blob type (${blobType}) doesn't match expected (${formatInfo.mimeType}), but proceeding anyway`);
+    // Check content type from headers
+    const contentType = response.headers['content-type'] || '';
+    if (contentType && contentType !== 'application/octet-stream' && !contentType.includes(formatInfo.mimeType.split('/')[1])) {
+      console.warn(`[File Generation] Content type (${contentType}) doesn't match expected (${formatInfo.mimeType}), but proceeding anyway`);
     }
     
-    return { blob, mimeType: formatInfo.mimeType, extension: formatInfo.extension };
+    // Return a Blob-like object for compatibility
+    return {
+      blob: {
+        size: buffer.length,
+        arrayBuffer: async () => {
+          // Convert Buffer to ArrayBuffer
+          const ab = new ArrayBuffer(buffer.length);
+          const view = new Uint8Array(ab);
+          for (let i = 0; i < buffer.length; i++) {
+            view[i] = buffer[i];
+          }
+          return ab;
+        },
+        buffer: buffer,
+        text: async () => buffer.toString('utf-8')
+      },
+      mimeType: formatInfo.mimeType,
+      extension: formatInfo.extension
+    };
   } catch (error) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
+    if (error.message === 'Request timeout') {
       throw new Error(`Request timeout after ${timeoutMs / 1000} seconds. ${format} conversion may take longer for large books.`);
     }
-    throw error;
+    // Improve error message for connection errors
+    if (error.code === 'ECONNREFUSED') {
+      throw new Error(`Failed to connect to AsciiDoctor server at ${url}. Connection refused. Please check: 1. The server is running (check with 'docker ps' or process list), 2. The server is listening on port 8091, 3. There are no firewall issues.`);
+    }
+    if (error.code === 'ENOTFOUND') {
+      throw new Error(`Failed to connect to AsciiDoctor server at ${url}. Host not found. Please check the server URL is correct.`);
+    }
+    if (error.code === 'ETIMEDOUT') {
+      throw new Error(`Failed to connect to AsciiDoctor server at ${url}. Connection timeout. Please check: 1. The server is running, 2. The server is accessible, 3. There are no network issues.`);
+    }
+    // Re-throw with more context
+    throw new Error(`AsciiDoctor server request failed: ${error.message} (code: ${error.code || 'unknown'})`);
   }
 }
 
@@ -121,12 +249,13 @@ export async function generateHTML(content, title, author, image = null) {
     requestBody.image = image;
   }
 
-  const response = await fetch(url, {
+  const response = await makeHttpRequest(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(requestBody)
+    body: JSON.stringify(requestBody),
+    timeout: 60000
   });
 
   if (!response.ok) {

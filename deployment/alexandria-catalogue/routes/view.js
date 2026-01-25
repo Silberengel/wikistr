@@ -40,14 +40,20 @@ export async function handleView(req, res, url) {
       const image = indexEvent.tags.find(([k]) => k === 'image')?.[1];
       const epubBlob = await generateEPUB(content, title, author, image);
       
-      if (!epubBlob || !(epubBlob instanceof Blob)) {
+      if (!epubBlob || !epubBlob.size) {
         throw new Error('Failed to generate EPUB: invalid blob returned');
       }
       
       console.log(`[EPUB Viewer] EPUB generated: ${epubBlob.size} bytes`);
 
-      const arrayBuffer = await epubBlob.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
+      // Use buffer directly if available, otherwise get from arrayBuffer
+      let buffer;
+      if (epubBlob.buffer) {
+        buffer = epubBlob.buffer;
+      } else {
+        const arrayBuffer = await epubBlob.arrayBuffer();
+        buffer = Buffer.from(arrayBuffer);
+      }
       const base64 = buffer.toString('base64');
       
       if (!base64 || base64.length === 0) {

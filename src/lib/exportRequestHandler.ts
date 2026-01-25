@@ -48,6 +48,7 @@ export async function makeExportRequest(
   }
   
   const formatName = format.toUpperCase();
+  console.log(`[${formatName} Export] AsciiDoctor server URL:`, serverUrl);
   console.log(`[${formatName} Export] Sending request to:`, url);
   console.log(`[${formatName} Export] Content length:`, options.content.length);
   console.log(`[${formatName} Export] Title:`, options.title);

@@ -130,8 +130,13 @@ export async function handleDownload(req, res, url) {
         const htmlWithCSS = addResponsiveCSSToHTML(htmlText);
         buffer = Buffer.from(htmlWithCSS, 'utf-8');
       } else {
-        const arrayBuffer = await blob.arrayBuffer();
-        buffer = Buffer.from(arrayBuffer);
+        // Use the buffer directly if available, otherwise get from arrayBuffer
+        if (blob.buffer) {
+          buffer = blob.buffer;
+        } else {
+          const arrayBuffer = await blob.arrayBuffer();
+          buffer = Buffer.from(arrayBuffer);
+        }
       }
         mimeType = mt;
         extension = ext;

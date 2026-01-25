@@ -11,7 +11,7 @@
 
 import http from 'http';
 import { URL } from 'url';
-import { PORT } from './config.js';
+import { PORT, ASCIIDOCTOR_SERVER_URL } from './config.js';
 import { closePool } from './nostr.js';
 import { handleRequest } from './routes/index.js';
 
@@ -21,6 +21,8 @@ const server = http.createServer(handleRequest);
 server.listen(PORT, () => {
   console.log(`[Alexandria Catalogue] Listening on port ${PORT}`);
   console.log(`[Alexandria Catalogue] Access at http://localhost:${PORT}`);
+  console.log(`[Alexandria Catalogue] AsciiDoctor server URL: ${ASCIIDOCTOR_SERVER_URL}`);
+  console.log(`[Alexandria Catalogue] Environment ASCIIDOCTOR_SERVER_URL: ${process.env.ASCIIDOCTOR_SERVER_URL || 'not set'}`);
 });
 
 // Graceful shutdown
