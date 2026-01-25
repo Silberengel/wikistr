@@ -84,9 +84,18 @@ services:
     environment:
       ASCIIDOCTOR_PORT: 8091
       ASCIIDOCTOR_ALLOW_ORIGIN: "*"
-      ASCIIDOCTOR_CONVERSION_TIMEOUT: 10m
+      ASCIIDOCTOR_CONVERSION_TIMEOUT: 5m  # OPTIMIZED: Reduced from 10m
       BUNDLE_PATH: /app/deployment/vendor/bundle
       TMPDIR: /tmp
+    # OPTIMIZED: Resource limits for better performance
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8091/healthz"]
       interval: 30s
@@ -112,6 +121,15 @@ services:
     environment:
       EPUB_DOWNLOAD_PORT: 8092
       ASCIIDOCTOR_SERVER_URL: http://asciidoctor:8091
+    # OPTIMIZED: Resource limits for better performance
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8092/"]
       interval: 30s

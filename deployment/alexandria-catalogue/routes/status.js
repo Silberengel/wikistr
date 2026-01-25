@@ -8,6 +8,7 @@ import { generateMessageBox, generateNavigation } from '../html.js';
 import { formatBytes, escapeHtml, setCacheHeaders, parseRelayUrls } from '../utils.js';
 import { testRelayConnectivity } from '../nostr.js';
 import { DEFAULT_RELAYS } from '../config.js';
+import { getWarmingStatus } from '../cache-warming.js';
 
 /**
  * Generate HTML for a single relay status item
@@ -41,6 +42,7 @@ function generateRelayStatusItem(status) {
 export async function handleStatus(req, res, url) {
   const cacheStats = getCacheStats();
   const cacheSizes = calculateCacheSize();
+  const warmingStatus = getWarmingStatus();
   const cacheCleared = url.searchParams.get('cleared') === '1';
   const successMessage = cacheCleared ? generateMessageBox('info', 'Cache cleared successfully! All cached data has been removed.', null) : '';
   
@@ -138,6 +140,7 @@ export async function handleStatus(req, res, url) {
     <div class="status-item"><span class="status-label">Cached Search Results:</span> ${cacheStats.searchResults} entries (${formatBytes(cacheSizes.sizes.searchResults || 0)})</div>
     <div class="status-item"><span class="status-label">Cached Generated Files:</span> ${cacheStats.generatedFiles} entries (${formatBytes(cacheSizes.sizes.generatedFiles || 0)})</div>
     <div class="status-item"><span class="status-label">Cached Article Lists:</span> ${cacheStats.articleList} entries (${formatBytes(cacheSizes.sizes.articleList || 0)})</div>
+    <div class="status-item"><span class="status-label">Cached Highlights Lists:</span> ${cacheStats.highlightsList} entries (${formatBytes(cacheSizes.sizes.highlightsList || 0)})</div>
     <div class="status-item"><span class="status-label">Top-Level Books Cached:</span> ${cacheStats.topLevelBooks} entries (${formatBytes(cacheSizes.sizes.topLevelBooks || 0)})</div>
     <div class="status-item"><span class="status-label">Book List Cache:</span> ${getCache().bookList.data ? getCache().bookList.data.length + ' entries' : 'empty'} (${formatBytes(cacheSizes.sizes.bookList || 0)})</div>
     ${cacheStats.topLevelBooksTimestamp ? `<div class="status-item"><span class="status-label">Last Updated:</span> ${cacheStats.topLevelBooksTimestamp}</div>` : ''}
@@ -147,8 +150,19 @@ export async function handleStatus(req, res, url) {
     <h2>Cache Configuration</h2>
     <div class="status-item"><span class="status-label">Book List Cache:</span> ${CACHE_TTL.BOOK_LIST / 60000} minutes</div>
     <div class="status-item"><span class="status-label">Book Detail Cache:</span> ${CACHE_TTL.BOOK_DETAIL / 60000} minutes</div>
+    <div class="status-item"><span class="status-label">Article List Cache:</span> ${CACHE_TTL.ARTICLE_LIST / 60000} minutes</div>
+    <div class="status-item"><span class="status-label">Highlights List Cache:</span> ${CACHE_TTL.HIGHLIGHTS_LIST / 60000} minutes</div>
     <div class="status-item"><span class="status-label">Search Results Cache:</span> ${CACHE_TTL.SEARCH_RESULTS / 60000} minutes</div>
     <div class="status-item"><span class="status-label">Generated Files Cache:</span> ${CACHE_TTL.GENERATED_FILES / 60000} minutes</div>
+  </div>
+  <div class="status-section">
+    <h2>Background Cache Warming</h2>
+    <div class="status-item"><span class="status-label">Book Cache Warming:</span> ${warmingStatus.books.inProgress ? '🔄 In Progress' : warmingStatus.books.lastWarmed ? '✓ Last warmed: ' + warmingStatus.books.lastWarmed : '⏸ Not warmed yet'}</div>
+    <div class="status-item"><span class="status-label">Article Cache Warming:</span> ${warmingStatus.articles.inProgress ? '🔄 In Progress' : warmingStatus.articles.lastWarmed ? '✓ Last warmed: ' + warmingStatus.articles.lastWarmed : '⏸ Not warmed yet'}</div>
+    <div class="status-item"><span class="status-label">Highlights Cache Warming:</span> ${warmingStatus.highlights.inProgress ? '🔄 In Progress' : warmingStatus.highlights.lastWarmed ? '✓ Last warmed: ' + warmingStatus.highlights.lastWarmed : '⏸ Not warmed yet'}</div>
+    <div class="status-item"><span class="status-label">Book Comments Warming:</span> ${warmingStatus.comments.inProgress ? '🔄 In Progress' : warmingStatus.comments.lastWarmed ? '✓ Last warmed: ' + warmingStatus.comments.lastWarmed : '⏸ Not warmed yet'}</div>
+    <div class="status-item"><span class="status-label">Article Comments Warming:</span> ${warmingStatus.articleComments.inProgress ? '🔄 In Progress' : warmingStatus.articleComments.lastWarmed ? '✓ Last warmed: ' + warmingStatus.articleComments.lastWarmed : '⏸ Not warmed yet'}</div>
+    <p style="color: #1a1a1a; margin-top: 0.5em; font-size: 0.9em;">Cache warming runs automatically when the homepage is accessed. This pre-fetches popular data in the background for faster subsequent requests.</p>
   </div>
   <div class="status-section" style="margin-top: 2em; padding: 1em; background: #ffffff; border: 2px solid #cc0000; border-radius: 4px;">
     <h2 style="margin-top: 0; color: #000000;">Cache Management</h2>

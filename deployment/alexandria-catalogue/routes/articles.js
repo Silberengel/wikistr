@@ -395,9 +395,7 @@ function getArticleDetailStyles() {
       outline-offset: 2px;
       background: #0000ff;
     }
-    .search-form button:hover {
-      background: #0000ff;
-    }
+    /* Removed hover effect for e-reader compatibility */
     table { 
       width: 100%; 
       border-collapse: collapse; 
@@ -855,18 +853,40 @@ export async function handleArticlesList(req, res, url) {
         }
       });
       
-      // Fetch comment counts for all articles
+      // OPTIMIZED: Fetch comment counts for all articles (check cache first)
       const commentPromises = paginatedArticles.map(async (article) => {
         try {
           const dTag = getArticleDTag(article);
           const articleCoordinate = `${article.kind}:${article.pubkey}:${dTag}`;
-          const commentFilter = {
-            kinds: [1111],
-            '#A': [articleCoordinate],
-            limit: 500
-          };
-          const comments = await fetchEventsByFilters([commentFilter], relaysUsed, 5000);
-          commentCounts.set(`${article.pubkey}:${dTag}`, comments.length);
+          const commentsCacheKey = `article_${articleCoordinate}`;
+          
+          // OPTIMIZED: Check cache first before fetching from relays
+          const cache = getCache();
+          const cachedComments = cache.bookComments.get(commentsCacheKey);
+          if (cachedComments && (Date.now() - cachedComments.timestamp) < CACHE_TTL.ARTICLE_DETAIL) {
+            // Use cached comment count
+            const commentCount = cachedComments.data ? cachedComments.data.length : 0;
+            commentCounts.set(`${article.pubkey}:${dTag}`, commentCount);
+          } else {
+            // Fetch from relays if not cached
+            const commentFilter = {
+              kinds: [1111],
+              '#A': [articleCoordinate],
+              limit: 500
+            };
+            const comments = await fetchEventsByFilters([commentFilter], relaysUsed, 5000);
+            commentCounts.set(`${article.pubkey}:${dTag}`, comments.length);
+            
+            // OPTIMIZED: Cache the comments for future requests
+            cache.bookComments.set(commentsCacheKey, {
+              data: comments,
+              timestamp: Date.now()
+            });
+            if (cache.bookComments.size > 100) {
+              const firstKey = cache.bookComments.keys().next().value;
+              cache.bookComments.delete(firstKey);
+            }
+          }
         } catch (e) {
           // Silently fail - will show 0 comments
           commentCounts.set(`${article.pubkey}:${getArticleDTag(article)}`, 0);
@@ -1134,15 +1154,43 @@ export async function handleArticleDetail(req, res, url) {
     
     // Fetch comments (kind 1111) for this article (NIP-22)
     const articleCoordinate = `${article.kind}:${article.pubkey}:${dTag}`;
-    const commentFilter = {
-      kinds: [1111],
-      '#A': [articleCoordinate],
-      limit: 500
-    };
     
-    const relaysUsed = hasCustomRelays ? customRelays : DEFAULT_ARTICLE_RELAYS;
-    const allComments = await fetchEventsByFilters([commentFilter], relaysUsed, 10000);
-    const threadedComments = buildThreadedComments(allComments);
+    // Check cache first
+    const cache = getCache();
+    const commentsCacheKey = `article_${articleCoordinate}`;
+    let allComments;
+    let threadedComments;
+    
+    const cachedComments = cache.bookComments.get(commentsCacheKey);
+    if (cachedComments && (Date.now() - cachedComments.timestamp) < CACHE_TTL.ARTICLE_DETAIL) {
+      console.log(`[Article] Using cached comments for: ${articleCoordinate}`);
+      allComments = cachedComments.data;
+      threadedComments = cachedComments.threaded || buildThreadedComments(allComments);
+    } else {
+      console.log(`[Article] Fetching comments for: ${articleCoordinate}`);
+      const commentFilter = {
+        kinds: [1111],
+        '#A': [articleCoordinate],
+        limit: 500
+      };
+      
+      const relaysUsed = hasCustomRelays ? customRelays : DEFAULT_ARTICLE_RELAYS;
+      allComments = await fetchEventsByFilters([commentFilter], relaysUsed, 10000);
+      threadedComments = buildThreadedComments(allComments);
+      
+      // Cache comments
+      cache.bookComments.set(commentsCacheKey, {
+        data: allComments,
+        threaded: threadedComments,
+        timestamp: Date.now()
+      });
+      
+      // Limit cache size
+      if (cache.bookComments.size > 100) {
+        const firstKey = cache.bookComments.keys().next().value;
+        cache.bookComments.delete(firstKey);
+      }
+    }
     
     // Collect all unique pubkeys for handle fetching
     const uniquePubkeys = new Set();

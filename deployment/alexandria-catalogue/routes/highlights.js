@@ -161,7 +161,7 @@ export async function handleHighlightsList(req, res, url) {
     let allHighlights;
     const cache = getCache();
     const cacheKey = `highlightsList_${fetchLimit}_${hasCustomRelays ? customRelays.join(',') : 'default'}`;
-    allHighlights = getCached(cacheKey, CACHE_TTL.ARTICLE_LIST);
+    allHighlights = getCached(cacheKey, CACHE_TTL.HIGHLIGHTS_LIST);
     
     if (!allHighlights) {
       console.log(`[Highlights] Cache miss - fetching fresh data...`);

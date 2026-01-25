@@ -15,6 +15,7 @@ import { getCommonStyles } from '../styles.js';
 import { escapeHtml, formatDate, getBookTitle, getBookAuthor, getBookIdentifier, setCacheHeaders } from '../utils.js';
 import { generateMessageBox, generateErrorPage, generateSearchBar, generateNavigation } from '../html.js';
 import { generateBookDetailPage } from '../templates.js';
+import { warmAllCaches } from '../cache-warming.js';
 
 /**
  * Handle homepage route
@@ -73,6 +74,9 @@ export async function handleHome(req, res, url) {
   }
   
   // No query - show search form
+  // OPTIMIZED: Start background cache warming (non-blocking)
+  warmAllCaches(customRelays && customRelays.length > 0 ? customRelays : undefined);
+  
   return await handleHomePage(req, res, url);
 }
 

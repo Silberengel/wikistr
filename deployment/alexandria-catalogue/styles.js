@@ -109,7 +109,7 @@ export function getEPUBViewerStyles() {
     .header .actions a:focus { outline: 3px solid #0066cc; outline-offset: 2px; }
     .navigation-controls { background: #ffffff; border-bottom: 2px solid #000000; padding: 0.5em 1em; display: flex; justify-content: space-between; align-items: center; gap: 1em; flex-shrink: 0; }
     .navigation-controls button { padding: 0.5em 1em; background: #000000; color: #ffffff; border: 2px solid #000000; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.9em; }
-    .navigation-controls button:hover { opacity: 0.9; }
+    /* Removed hover effect for e-reader compatibility */
     .navigation-controls button:focus { outline: 3px solid #0066cc; outline-offset: 2px; }
     .navigation-controls button:disabled { opacity: 0.5; cursor: not-allowed; }
     .viewer-container { flex: 1; overflow: hidden; position: relative; background: white; }

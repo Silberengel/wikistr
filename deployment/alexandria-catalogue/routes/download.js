@@ -44,10 +44,31 @@ export async function handleDownload(req, res, url) {
   try {
     console.log(`[Download] Request received for naddr: ${naddr}, format: ${format}`);
     
+    // OPTIMIZED: Check cache first before fetching from relays
     const indexEvent = await fetchBookEvent(naddr, customRelays && customRelays.length > 0 ? customRelays : undefined);
     console.log(`[Download] Found book event: ${indexEvent.id}`);
 
-    const hierarchy = await buildBookEventHierarchy(indexEvent, new Set(), customRelays && customRelays.length > 0 ? customRelays : undefined);
+    // OPTIMIZED: Check cache for hierarchy before building
+    const relayKey = (customRelays && customRelays.length > 0) ? customRelays.sort().join(',') : 'default';
+    const hierarchyCacheKey = `${naddr}:${relayKey}`;
+    const cache = getCache();
+    let hierarchy;
+    const cachedHierarchy = cache.bookHierarchy.get(hierarchyCacheKey);
+    if (cachedHierarchy && (Date.now() - cachedHierarchy.timestamp) < CACHE_TTL.BOOK_DETAIL) {
+      console.log(`[Download] Using cached hierarchy for: ${naddr}`);
+      hierarchy = cachedHierarchy.data;
+    } else {
+      console.log(`[Download] Building book hierarchy...`);
+      hierarchy = await buildBookEventHierarchy(indexEvent, new Set(), customRelays && customRelays.length > 0 ? customRelays : undefined);
+      cache.bookHierarchy.set(hierarchyCacheKey, {
+        data: hierarchy,
+        timestamp: Date.now()
+      });
+      if (cache.bookHierarchy.size > 100) {
+        const firstKey = cache.bookHierarchy.keys().next().value;
+        cache.bookHierarchy.delete(firstKey);
+      }
+    }
     console.log(`[Download] Built hierarchy with ${hierarchy.length} top-level nodes`);
 
     // Handle JSONL format separately
@@ -103,8 +124,7 @@ export async function handleDownload(req, res, url) {
       return;
     }
 
-    // Check cache for generated file
-    const cache = getCache();
+    // Check cache for generated file (cache already retrieved above)
     const cacheKey = `${naddr}:${format}`;
     let buffer, mimeType, extension;
     

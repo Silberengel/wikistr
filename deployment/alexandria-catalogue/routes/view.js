@@ -8,6 +8,7 @@ import { buildBookEventHierarchy } from '../book.js';
 import { combineBookEvents } from '../book.js';
 import { generateHTML, generateEPUB } from '../files.js';
 import { wrapHTMLWithNavigation, generateEPUBViewerHTML, generateErrorPage } from '../html.js';
+import { getCache, CACHE_TTL } from '../cache.js';
 
 /**
  * Handle view routes (/view and /view-epub)
@@ -27,10 +28,31 @@ export async function handleView(req, res, url) {
   try {
     console.log(`[${isEPUB ? 'EPUB' : 'HTML'} View] Request received for naddr: ${naddr}`);
     
+    // OPTIMIZED: Check cache first before fetching from relays
     const indexEvent = await fetchBookEvent(naddr, customRelays && customRelays.length > 0 ? customRelays : undefined);
     console.log(`[${isEPUB ? 'EPUB' : 'HTML'} View] Found book event: ${indexEvent.id}`);
 
-    const hierarchy = await buildBookEventHierarchy(indexEvent, new Set(), customRelays && customRelays.length > 0 ? customRelays : undefined);
+    // OPTIMIZED: Check cache for hierarchy before building
+    const relayKey = (customRelays && customRelays.length > 0) ? customRelays.sort().join(',') : 'default';
+    const hierarchyCacheKey = `${naddr}:${relayKey}`;
+    const cache = getCache();
+    let hierarchy;
+    const cachedHierarchy = cache.bookHierarchy.get(hierarchyCacheKey);
+    if (cachedHierarchy && (Date.now() - cachedHierarchy.timestamp) < CACHE_TTL.BOOK_DETAIL) {
+      console.log(`[${isEPUB ? 'EPUB' : 'HTML'} View] Using cached hierarchy for: ${naddr}`);
+      hierarchy = cachedHierarchy.data;
+    } else {
+      console.log(`[${isEPUB ? 'EPUB' : 'HTML'} View] Building book hierarchy...`);
+      hierarchy = await buildBookEventHierarchy(indexEvent, new Set(), customRelays && customRelays.length > 0 ? customRelays : undefined);
+      cache.bookHierarchy.set(hierarchyCacheKey, {
+        data: hierarchy,
+        timestamp: Date.now()
+      });
+      if (cache.bookHierarchy.size > 100) {
+        const firstKey = cache.bookHierarchy.keys().next().value;
+        cache.bookHierarchy.delete(firstKey);
+      }
+    }
     console.log(`[${isEPUB ? 'EPUB' : 'HTML'} View] Built hierarchy with ${hierarchy.length} top-level nodes`);
 
     const { content, title, author, embeddedCoverImage } = await combineBookEvents(indexEvent, hierarchy);

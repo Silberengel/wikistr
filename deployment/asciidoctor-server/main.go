@@ -18,10 +18,10 @@ const (
 	DefaultHost        = "0.0.0.0"
 	DefaultAllowOrigin = "*"
 	
-	// Timeouts
-	DefaultConversionTimeout = 10 * time.Minute
-	DefaultReadTimeout       = 5 * time.Minute
-	DefaultWriteTimeout      = 15 * time.Minute
+	// Timeouts - OPTIMIZED for e-reader performance
+	DefaultConversionTimeout = 5 * time.Minute  // Reduced from 10 minutes
+	DefaultReadTimeout       = 2 * time.Minute   // Reduced from 5 minutes
+	DefaultWriteTimeout      = 5 * time.Minute    // Reduced from 15 minutes
 	DefaultIdleTimeout       = 120 * time.Second
 	DefaultShutdownTimeout   = 30 * time.Second
 	
@@ -160,7 +160,8 @@ func NewServer(config *Config, logger *Logger, converter *Converter) *Server {
 }
 
 func (s *Server) setupRoutes(allowOrigin string) {
-	// Middleware
+	// Middleware - OPTIMIZED: Compression first for better performance
+	s.router.Use(s.compressionMiddleware)
 	s.router.Use(s.loggingMiddleware)
 	s.router.Use(s.corsMiddleware(allowOrigin))
 	s.router.Use(s.recoveryMiddleware)

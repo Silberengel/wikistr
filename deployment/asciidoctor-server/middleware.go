@@ -1,11 +1,14 @@
 package main
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -127,4 +130,59 @@ type responseWriter struct {
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+// compressionMiddleware compresses responses with gzip when supported
+func (s *Server) compressionMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check if client supports gzip
+		acceptEncoding := r.Header.Get("Accept-Encoding")
+		if !strings.Contains(acceptEncoding, "gzip") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Check if response should be compressed
+		contentType := ""
+		if ct := w.Header().Get("Content-Type"); ct != "" {
+			contentType = ct
+		}
+
+		// Only compress text-based content
+		shouldCompress := strings.HasPrefix(contentType, "text/") ||
+			strings.HasPrefix(contentType, "application/json") ||
+			strings.HasPrefix(contentType, "application/javascript") ||
+			contentType == ""
+
+		if !shouldCompress {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Create gzip writer
+		gz := gzip.NewWriter(w)
+		defer gz.Close()
+
+		// Set headers
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Vary", "Accept-Encoding")
+
+		// Wrap response writer
+		gzw := &gzipResponseWriter{
+			ResponseWriter: w,
+			Writer:        gz,
+		}
+
+		next.ServeHTTP(gzw, r)
+	})
+}
+
+// gzipResponseWriter wraps http.ResponseWriter with gzip compression
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	Writer io.Writer
+}
+
+func (gzw *gzipResponseWriter) Write(b []byte) (int, error) {
+	return gzw.Writer.Write(b)
 }
