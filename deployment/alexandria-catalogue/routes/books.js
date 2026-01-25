@@ -10,6 +10,7 @@ import { testRelayConnectivity } from '../nostr.js';
 import { getCache, setCached, getCached, CACHE_TTL } from '../cache.js';
 import { getCommonStyles, getTableStyles } from '../styles.js';
 import { escapeHtml, formatDate, getBookTitle, getBookAuthor, getBookIdentifier, setCacheHeaders } from '../utils.js';
+import { generateNavigation } from '../html.js';
 import { nip19 } from '../nostr.js';
 
 /**
@@ -19,7 +20,6 @@ export async function handleBooks(req, res, url) {
   try {
     const page = parseInt(url.searchParams.get('page') || '1', 10);
     const limit = parseInt(url.searchParams.get('limit') || String(DEFAULT_FETCH_LIMIT), 10);
-    const showCustomRelays = url.searchParams.get('show_custom_relays') === '1';
     const relayInput = url.searchParams.get('relays') || '';
     const customRelays = parseRelayUrls(relayInput);
     const sortBy = url.searchParams.get('sort') || 'created';
@@ -95,17 +95,13 @@ export async function handleBooks(req, res, url) {
   </style>
 </head>
 <body>
-  <nav>
-    <a href="/${customRelays && customRelays.length > 0 ? '?relays=' + encodeURIComponent(customRelays.join(',')) : ''}">Alexandria Catalogue</a>
-    <a href="/books${customRelays && customRelays.length > 0 ? '?relays=' + encodeURIComponent(customRelays.join(',')) : ''}">Browse Library</a>
-    <a href="/status${customRelays && customRelays.length > 0 ? '?relays=' + encodeURIComponent(customRelays.join(',')) : ''}">Status</a>
-  </nav>
+  ${generateNavigation(customRelays && customRelays.length > 0 ? customRelays.join(',') : '')}
   <h1><img src="/favicon_alex-catalogue.png" alt="" style="width: 1.2em; height: 1.2em; vertical-align: middle; margin-right: 0.3em;"> Alexandria Catalogue - Browse Library</h1>
   <p style="color: #000000; margin-bottom: 1em;">The e-book download portal for <a href="https://alexandria.gitcitadel.eu" style="color: #0066cc; text-decoration: underline;">Alexandria</a>.</p>
   <div style="margin-bottom: 1em; padding: 0.75em; background: #ffffff; border: 2px solid #0066cc; border-radius: 4px; font-size: 0.9em; color: #000000;">
     <strong>Relays used:</strong> ${(customRelays && customRelays.length > 0 ? customRelays : DEFAULT_RELAYS).map(r => escapeHtml(r)).join(', ')}
     <br><span style="color: #1a1a1a; font-size: 0.85em;">(${customRelays && customRelays.length > 0 ? 'Custom relays' : 'Default relays'})</span>
-    ${!showCustomRelays && !(customRelays && customRelays.length > 0) ? `<br><a href="/books?page=${page}&limit=${limit}&show_custom_relays=1" style="color: #0066cc; text-decoration: underline; font-size: 0.9em; margin-top: 0.5em; display: inline-block;">Use custom relays</a>` : ''}
+    ${customRelays && customRelays.length > 0 ? `<div style="margin-top: 0.5em;"><a href="/status?relays=${encodeURIComponent(relayInput)}" style="color: #0066cc; text-decoration: underline; font-size: 0.9em; display: inline-block;">View relay status</a></div>` : ''}
   </div>
 `;
 

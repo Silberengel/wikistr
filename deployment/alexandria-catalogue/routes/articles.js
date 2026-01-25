@@ -3,10 +3,12 @@
  */
 
 import { parseRelayUrls } from '../utils.js';
-import { DEFAULT_ARTICLE_RELAYS, ITEMS_PER_PAGE, DEFAULT_FETCH_LIMIT } from '../config.js';
+import { DEFAULT_ARTICLE_RELAYS, DEFAULT_RELAYS, ITEMS_PER_PAGE, DEFAULT_FETCH_LIMIT } from '../config.js';
 import { fetchArticles, fetchArticleEvent, fetchUserHandle, nip19 } from '../nostr.js';
 import { getCache, setCached, getCached, CACHE_TTL } from '../cache.js';
 import { escapeHtml, formatDate, normalizeForSearch, setCacheHeaders } from '../utils.js';
+import { getCommonStyles, getTableStyles } from '../styles.js';
+import { generateSearchBar, generateNavigation } from '../html.js';
 import { marked } from 'marked';
 
 // Configure marked for safe HTML rendering
@@ -155,20 +157,89 @@ function replaceMediaWithPlaceholders(html) {
 }
 
 /**
- * Search articles by query (title, summary, pubkey, d-tag)
+ * Resolve NIP05 identifier to pubkey
  */
-function searchArticles(articles, query) {
+async function resolveNip05(nip05) {
+  try {
+    const [localPart, domain] = nip05.split('@');
+    if (!domain) return null;
+    
+    const wellKnownUrl = `https://${domain}/.well-known/nostr.json?name=${localPart}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    
+    const response = await fetch(wellKnownUrl, {
+      signal: controller.signal,
+      mode: 'cors'
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (response.ok) {
+      const data = await response.json();
+      const names = data.names || {};
+      return names[localPart] || null;
+    }
+  } catch (e) {
+    console.error('[Articles] Failed to resolve NIP05:', e);
+  }
+  return null;
+}
+
+/**
+ * Resolve npub to hex pubkey
+ */
+function resolveNpub(npub) {
+  try {
+    const decoded = nip19.decode(npub);
+    if (decoded.type === 'npub') {
+      return decoded.data;
+    }
+  } catch (e) {
+    console.error('[Articles] Failed to decode npub:', e);
+  }
+  return null;
+}
+
+/**
+ * Search articles by query (title, summary, pubkey, d-tag, NIP05, npub)
+ */
+async function searchArticles(articles, query) {
   if (!query || query.trim() === '') {
     return articles;
   }
   
-  const normalizedQuery = normalizeForSearch(query.trim().toLowerCase());
+  const trimmedQuery = query.trim();
+  let searchPubkeys = [];
+  
+  // Check if query is NIP05 (user@domain.com)
+  if (trimmedQuery.includes('@') && trimmedQuery.split('@').length === 2) {
+    const pubkey = await resolveNip05(trimmedQuery);
+    if (pubkey) {
+      searchPubkeys.push(pubkey.toLowerCase());
+    }
+  }
+  
+  // Check if query is npub
+  if (trimmedQuery.startsWith('npub1')) {
+    const pubkey = resolveNpub(trimmedQuery);
+    if (pubkey) {
+      searchPubkeys.push(pubkey.toLowerCase());
+    }
+  }
+  
+  const normalizedQuery = normalizeForSearch(trimmedQuery.toLowerCase());
   
   return articles.filter(article => {
     const title = normalizeForSearch(getArticleTitle(article));
     const summary = normalizeForSearch(getArticleSummary(article));
     const pubkey = article.pubkey.toLowerCase();
     const dTag = getArticleDTag(article).toLowerCase();
+    
+    // Check if matches any resolved pubkeys
+    if (searchPubkeys.length > 0 && searchPubkeys.includes(pubkey)) {
+      return true;
+    }
     
     return title.includes(normalizedQuery) ||
            summary.includes(normalizedQuery) ||
@@ -178,9 +249,9 @@ function searchArticles(articles, query) {
 }
 
 /**
- * Get article styles - high contrast, accessible, e-paper optimized
+ * Get article-specific styles (for article detail pages)
  */
-function getArticleStyles() {
+function getArticleDetailStyles() {
   return `
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html { -webkit-text-size-adjust: 100%; }
@@ -538,9 +609,10 @@ export async function handleArticlesList(req, res, url) {
   try {
     const page = parseInt(url.searchParams.get('page') || '1', 10);
     const limit = parseInt(url.searchParams.get('limit') || String(DEFAULT_FETCH_LIMIT), 10);
-    const showCustomRelays = url.searchParams.get('show_custom_relays') === '1';
     const relayInput = url.searchParams.get('relays') || '';
     const customRelays = parseRelayUrls(relayInput);
+    const hasCustomRelays = customRelays && customRelays.length > 0;
+    const relaysUsed = hasCustomRelays ? customRelays : DEFAULT_ARTICLE_RELAYS;
     const sortBy = url.searchParams.get('sort') || 'created';
     const sortOrder = url.searchParams.get('order') || 'desc';
     const searchQuery = url.searchParams.get('q') || '';
@@ -551,12 +623,12 @@ export async function handleArticlesList(req, res, url) {
     
     let allArticles;
     const cache = getCache();
-    const cacheKey = `articleList_${fetchLimit}_${customRelays && customRelays.length > 0 ? customRelays.join(',') : 'default'}`;
+    const cacheKey = `articleList_${fetchLimit}_${hasCustomRelays ? customRelays.join(',') : 'default'}`;
     allArticles = getCached(cacheKey, CACHE_TTL.ARTICLE_LIST);
     
     if (!allArticles) {
       console.log(`[Articles] Cache miss - fetching fresh data...`);
-      allArticles = await fetchArticles(fetchLimit, customRelays && customRelays.length > 0 ? customRelays : undefined);
+      allArticles = await fetchArticles(fetchLimit, hasCustomRelays ? customRelays : undefined);
       setCached(cacheKey, allArticles);
       console.log(`[Articles] Fetched ${allArticles.length} total articles from relays`);
     } else {
@@ -566,7 +638,7 @@ export async function handleArticlesList(req, res, url) {
     // Apply search filter
     let filteredArticles = allArticles;
     if (searchQuery) {
-      filteredArticles = searchArticles(allArticles, searchQuery);
+      filteredArticles = await searchArticles(allArticles, searchQuery);
       console.log(`[Articles] Filtered to ${filteredArticles.length} articles matching "${searchQuery}"`);
     }
     
@@ -609,8 +681,8 @@ export async function handleArticlesList(req, res, url) {
       params.set('page', '1');
       params.set('limit', limit.toString());
       if (searchQuery) params.set('q', searchQuery);
-      if (customRelays && customRelays.length > 0) {
-        params.set('relays', customRelays.join(','));
+      if (hasCustomRelays) {
+        params.set('relays', relayInput);
       }
       if (sortBy === column) {
         params.set('sort', column);
@@ -637,37 +709,70 @@ export async function handleArticlesList(req, res, url) {
   <link rel="icon" type="image/png" href="/favicon_alex-catalogue.png">
   <title>Alexandria Articles - Browse Markdown Articles</title>
   <style>
-    ${getArticleStyles()}
+    body { max-width: 1200px; }
+    ${getCommonStyles()}
+    ${getTableStyles()}
+    .relay-info {
+      margin-bottom: 1em;
+      padding: 0.75em;
+      background: ${relaysJustSaved ? '#d4edda' : '#e7f3ff'};
+      border-left: 3px solid ${relaysJustSaved ? '#28a745' : '#007bff'};
+      border-radius: 4px;
+      font-size: 0.9em;
+    }
+    .article-link { 
+      color: #0066cc; 
+      text-decoration: underline; 
+      font-weight: bold;
+    }
+    .article-link:focus { 
+      outline: 3px solid #0066cc; 
+      outline-offset: 2px;
+      background: #ffff00;
+    }
+    .article-summary { color: #1a1a1a; font-size: 0.9em; font-style: italic; margin-top: 0.25em; }
+    .article-date { color: #1a1a1a; font-size: 0.85em; }
+    .article-author { color: #1a1a1a; font-size: 0.9em; }
+    .search-form button[type="button"] {
+      padding: 0.75em 1em;
+      font-size: 1em;
+      background: #000000;
+      color: #ffffff;
+      border: 2px solid #000000;
+      min-height: 44px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-left: 0.5em;
+    }
+    .search-form button[type="button"]:focus {
+      outline: 3px solid #0000ff;
+      outline-offset: 2px;
+      background: #0000ff;
+    }
+    .search-form button[type="button"]:hover {
+      background: #0000ff;
+    }
   </style>
 </head>
 <body>
-  <a href="#main-content" class="skip-link">Skip to main content</a>
-  <nav role="navigation" aria-label="Main navigation">
-    <a href="/articles">Alexandria Articles</a>
-    <a href="/books">Browse Books</a>
-    <a href="/">Search</a>
-  </nav>
-  <main id="main-content" role="main">
-  <h1>Alexandria Articles</h1>
-  <p>Browse and read Markdown articles (kind 30023) from Nostr relays.</p>
+  ${generateNavigation(relayInput)}
+  <h1><img src="/favicon_alex-catalogue.png" alt="" style="width: 1.2em; height: 1.2em; vertical-align: middle; margin-right: 0.3em;"> Alexandria Articles</h1>
+  <p style="color: #000000; margin-bottom: 1em;">Browse and read Markdown articles (kind 30023) from Nostr relays.</p>
   
   <div class="relay-info">
-    <strong>Relays used:</strong> ${(customRelays && customRelays.length > 0 ? customRelays : DEFAULT_ARTICLE_RELAYS).map(r => escapeHtml(r)).join(', ')}
-    <br><span>(${customRelays && customRelays.length > 0 ? 'Custom relays' : 'Default relays'})</span>
-    ${!showCustomRelays && !(customRelays && customRelays.length > 0) ? `<br><a href="/articles?page=${page}&limit=${limit}">Use custom relays</a>` : ''}
+    <strong>Relays used:</strong> ${relaysUsed.map(r => escapeHtml(r)).join(', ')}
+    <br><span style="color: #1a1a1a; font-size: 0.85em;">(${hasCustomRelays ? 'Custom relays specified' : 'Default relays'})</span>
+    ${hasCustomRelays ? `<div style="margin-top: 0.5em;"><a href="/status?relays=${encodeURIComponent(relayInput)}" style="color: #0066cc; text-decoration: underline; font-size: 0.9em; display: inline-block;">View relay status</a></div>` : ''}
   </div>
   
-  <div class="search-form">
-    <form method="get" action="/articles" role="search" aria-label="Search articles">
-      <label for="search-query">Search articles</label>
-      <input type="text" id="search-query" name="q" value="${escapeHtml(searchQuery)}" placeholder="Search by title, summary, pubkey, or d-tag..." aria-label="Search query">
-      <button type="submit" aria-label="Submit search">Search</button>
-      ${searchQuery ? `<a href="/articles?page=${page}&limit=${limit}" aria-label="Clear search">Clear</a>` : ''}
-      <input type="hidden" name="page" value="1">
-      <input type="hidden" name="limit" value="${limit}">
-      ${customRelays && customRelays.length > 0 ? `<input type="hidden" name="relays" value="${escapeHtml(customRelays.join(','))}">` : ''}
-    </form>
-  </div>
+  ${generateSearchBar({
+    action: '/articles',
+    searchQuery: searchQuery,
+    kinds: 'articles',
+    hasCustomRelays: hasCustomRelays,
+    relayInput: relayInput,
+    limit: limit
+  })}
 `;
     
     if (paginatedArticles.length === 0) {
@@ -697,7 +802,7 @@ export async function handleArticlesList(req, res, url) {
       const authorHandles = new Map();
       const handlePromises = paginatedArticles.map(async (article) => {
         try {
-          const handle = await fetchUserHandle(article.pubkey, customRelays && customRelays.length > 0 ? customRelays : undefined);
+          const handle = await fetchUserHandle(article.pubkey, hasCustomRelays ? customRelays : undefined);
           if (handle) {
             authorHandles.set(article.pubkey, handle);
           }
@@ -743,8 +848,8 @@ export async function handleArticlesList(req, res, url) {
           if (searchQuery) params.set('q', searchQuery);
           if (sortBy && sortBy !== 'created') params.set('sort', sortBy);
           if (sortOrder && sortOrder !== 'desc') params.set('order', sortOrder);
-          if (customRelays && customRelays.length > 0) {
-            params.set('relays', customRelays.join(','));
+          if (hasCustomRelays) {
+            params.set('relays', relayInput);
           }
           return `/articles?${params.toString()}`;
         };
@@ -833,10 +938,11 @@ export async function handleArticleDetail(req, res, url) {
     
     const relayInput = url.searchParams.get('relays') || '';
     const customRelays = parseRelayUrls(relayInput);
+    const hasCustomRelays = customRelays && customRelays.length > 0;
     
     console.log(`[Articles] Fetching article: pubkey=${pubkey.substring(0, 16)}..., d-tag=${dTag}`);
     
-    const article = await fetchArticleEvent(pubkey, dTag, customRelays && customRelays.length > 0 ? customRelays : undefined);
+    const article = await fetchArticleEvent(pubkey, dTag, hasCustomRelays ? customRelays : undefined);
     
     const title = getArticleTitle(article);
     const summary = getArticleSummary(article);
@@ -846,7 +952,7 @@ export async function handleArticleDetail(req, res, url) {
     // Get author name
     let authorName = nip19.npubEncode(article.pubkey).substring(0, 16) + '...';
     try {
-      const handle = await fetchUserHandle(article.pubkey, customRelays && customRelays.length > 0 ? customRelays : undefined);
+      const handle = await fetchUserHandle(article.pubkey, hasCustomRelays ? customRelays : undefined);
       if (handle) {
         authorName = handle;
       }
@@ -882,16 +988,13 @@ export async function handleArticleDetail(req, res, url) {
   <link rel="icon" type="image/png" href="/favicon_alex-catalogue.png">
   <title>${escapeHtml(title)} - Alexandria Articles</title>
   <style>
-    ${getArticleStyles()}
+    body { max-width: 1200px; }
+    ${getCommonStyles()}
+    ${getArticleDetailStyles()}
   </style>
 </head>
 <body>
-  <a href="#main-content" class="skip-link">Skip to main content</a>
-  <nav role="navigation" aria-label="Main navigation">
-    <a href="/articles">Alexandria Articles</a>
-    <a href="/books">Browse Books</a>
-    <a href="/">Search</a>
-  </nav>
+  ${generateNavigation(relayInput)}
   
   <main id="main-content" role="main">
   <article>
@@ -912,7 +1015,7 @@ export async function handleArticleDetail(req, res, url) {
   </main>
   
   <nav role="navigation" aria-label="Article navigation" style="margin-top: 2em; text-align: center;">
-    <a href="/articles" aria-label="Back to articles list">← Back to Articles</a>
+    <a href="/articles${hasCustomRelays ? '?relays=' + encodeURIComponent(relayInput) : ''}" aria-label="Back to articles list">← Back to Articles</a>
   </nav>
 </body>
 </html>

@@ -13,7 +13,7 @@ import { fetchUserHandle } from '../nostr.js';
 import { getCache, CACHE_TTL } from '../cache.js';
 import { getCommonStyles } from '../styles.js';
 import { escapeHtml, formatDate, getBookTitle, getBookAuthor, getBookIdentifier, setCacheHeaders } from '../utils.js';
-import { generateMessageBox, generateErrorPage } from '../html.js';
+import { generateMessageBox, generateErrorPage, generateSearchBar, generateNavigation } from '../html.js';
 import { generateBookDetailPage } from '../templates.js';
 import { nip19 } from '../nostr.js';
 
@@ -55,7 +55,6 @@ export async function handleHome(req, res, url) {
  */
 async function handleSearchResults(req, res, url, query, customRelays) {
   try {
-    const showCustomRelays = url.searchParams.get('show_custom_relays') === '1';
     const relayInput = url.searchParams.get('relays') || '';
     console.log(`[Search] Searching for books with query: ${query}`);
     
@@ -83,24 +82,21 @@ async function handleSearchResults(req, res, url, query, customRelays) {
   <style>${getCommonStyles()}</style>
 </head>
 <body>
-  <nav>
-    <a href="/${isCustomRelays ? '?relays=' + encodeURIComponent(relayInput) : ''}">Alexandria Catalogue</a>
-    <a href="/books${isCustomRelays ? '?relays=' + encodeURIComponent(relayInput) : ''}">Browse Library</a>
-    <a href="/status${isCustomRelays ? '?relays=' + encodeURIComponent(relayInput) : ''}">Status</a>
-  </nav>
+  ${generateNavigation(relayInput)}
   
   <h1><img src="/favicon_alex-catalogue.png" alt="" style="width: 1.2em; height: 1.2em; vertical-align: middle; margin-right: 0.3em;"> Alexandria Catalogue</h1>
   <p style="color: #000000; margin-bottom: 1em;">The e-book download portal for <a href="https://alexandria.gitcitadel.eu" style="color: #0066cc; text-decoration: underline;">Alexandria</a>.</p>
   
-  <div class="search-form">
-    <form method="GET" action="/">
-      <input type="text" name="naddr" placeholder="Enter book naddr or d tag..." value="${escapeHtml(query)}" required>
-      ${isCustomRelays ? `<input type="hidden" name="relays" value="${escapeHtml(relayInput)}">` : ''}
-      <button type="submit">Search</button>
-    </form>
-    <div style="margin-top: 0.5em;">
-      <a href="/books${isCustomRelays ? '?relays=' + encodeURIComponent(relayInput) : ''}" style="color: #0066cc; text-decoration: underline; font-size: 0.9em;">← Browse Library</a>
-    </div>
+  ${generateSearchBar({
+    action: '/',
+    searchQuery: query,
+    kinds: 'books',
+    hasCustomRelays: isCustomRelays,
+    relayInput: relayInput,
+    inputName: 'naddr'
+  })}
+  <div style="margin-top: 0.5em;">
+    <a href="/books${isCustomRelays ? '?relays=' + encodeURIComponent(relayInput) : ''}" style="color: #0066cc; text-decoration: underline; font-size: 0.9em;">← Browse Library</a>
   </div>
   
   <div class="results-header">
@@ -109,20 +105,8 @@ async function handleSearchResults(req, res, url, query, customRelays) {
     <div style="margin-top: 0.5em; padding: 0.75em; background: #e7f3ff; border-left: 3px solid #007bff; border-radius: 4px; font-size: 0.9em;">
       <strong>Relays used:</strong> ${relaysUsed.map(r => escapeHtml(r)).join(', ')}
       <br><span style="color: #1a1a1a; font-size: 0.85em;">(${isCustomRelays ? 'Custom relays specified' : 'Default relays'})</span>
-      ${!showCustomRelays && !isCustomRelays ? `<br><a href="/?naddr=${encodeURIComponent(query)}&show_custom_relays=1" style="color: #0066cc; text-decoration: underline; font-size: 0.9em; margin-top: 0.5em; display: inline-block;">Use custom relays</a>` : ''}
+      ${isCustomRelays ? `<div style="margin-top: 0.5em;"><a href="/status?relays=${encodeURIComponent(relayInput)}" style="color: #0066cc; text-decoration: underline; font-size: 0.9em; display: inline-block;">View relay status</a></div>` : ''}
     </div>
-    ${showCustomRelays || isCustomRelays ? `
-    <form method="GET" action="/" style="margin-top: 1em; padding: 1em; background: #f5f5f5; border-radius: 4px;">
-      <input type="hidden" name="naddr" value="${escapeHtml(query)}">
-      <label for="relays-input-search" style="display: block; margin-bottom: 0.5em; font-weight: bold; color: #000000;">Custom Relays:</label>
-      <p style="font-size: 0.9em; color: #1a1a1a; margin-bottom: 0.5em;">Enter one or more relay URLs (ws:// or wss:// format). Separate multiple relays with commas or newlines. Example: wss://relay.example.com, ws://localhost:8080</p>
-      <textarea id="relays-input-search" name="relays" placeholder="wss://relay.example.com, ws://localhost:8080" rows="3" style="width: 100%; padding: 0.5em; font-size: 0.9em; font-family: monospace; border: 2px solid #000000; border-radius: 4px; box-sizing: border-box; background: #ffffff; color: #000000;"></textarea>
-      <div style="margin-top: 0.5em;">
-        <button type="submit" style="padding: 0.5em 1em; background: #000000; color: #ffffff; border: 2px solid #000000; border-radius: 4px; cursor: pointer; font-size: 0.9em; font-weight: bold;">Update Search</button>
-        <a href="/?naddr=${encodeURIComponent(query)}" style="color: #1a1a1a; text-decoration: underline; font-size: 0.9em; margin-left: 1em;">Cancel</a>
-      </div>
-    </form>
-    ` : ''}
   </div>
 `;
 
@@ -342,11 +326,7 @@ async function handleHomePage(req, res, url) {
   const relayInput = url.searchParams.get('relays') || '';
   const customRelays = parseRelayUrls(relayInput);
   const hasCustomRelays = customRelays && customRelays.length > 0;
-  // Show form if explicitly requested OR if custom relays are set (so user can see/edit them)
-  const showCustomRelaysForm = url.searchParams.get('show_custom_relays') === '1' || hasCustomRelays;
   const relaysUsed = hasCustomRelays ? customRelays : DEFAULT_RELAYS;
-  // Check if relays were just saved (form was submitted with relays but no show_custom_relays param)
-  const relaysJustSaved = hasCustomRelays && url.searchParams.get('show_custom_relays') !== '1';
   
   // Set cache headers for homepage (static content, can cache longer)
   const headers = {
@@ -365,44 +345,26 @@ async function handleHomePage(req, res, url) {
   <style>${getCommonStyles()}</style>
 </head>
 <body>
-  <nav>
-    <a href="/${hasCustomRelays ? '?relays=' + encodeURIComponent(relayInput) : ''}">Alexandria Catalogue</a>
-    <a href="/books${hasCustomRelays ? '?relays=' + encodeURIComponent(relayInput) : ''}">Browse Library</a>
-    <a href="/status${hasCustomRelays ? '?relays=' + encodeURIComponent(relayInput) : ''}">Status</a>
-  </nav>
+  ${generateNavigation(relayInput)}
   <h1><img src="/favicon_alex-catalogue.png" alt="" style="width: 1.2em; height: 1.2em; vertical-align: middle; margin-right: 0.3em;"> Alexandria Catalogue</h1>
     
-  <div class="search-form">
-    <form method="GET" action="/">
-      <input type="text" name="naddr" placeholder="naddr1... or d tag..." required>
-      ${hasCustomRelays ? `<input type="hidden" name="relays" value="${escapeHtml(relayInput)}">` : ''}
-      <button type="submit">Search</button>
-    </form>
-    <div style="margin-top: 0.5em;">
-      <a href="/books${hasCustomRelays ? '?relays=' + encodeURIComponent(relayInput) : ''}" style="color: #0066cc; text-decoration: underline; font-size: 0.9em;">← Browse Library</a>
-    </div>
+  ${generateSearchBar({
+    action: '/',
+    searchQuery: '',
+    kinds: 'books',
+    hasCustomRelays: hasCustomRelays,
+    relayInput: relayInput,
+    inputName: 'naddr',
+    showClearButton: false
+  })}
+  <div style="margin-top: 0.5em;">
+    <a href="/books${hasCustomRelays ? '?relays=' + encodeURIComponent(relayInput) : ''}" style="color: #0066cc; text-decoration: underline; font-size: 0.9em;">← Browse Library</a>
   </div>
-  <div style="margin-top: 1em; padding: 0.75em; background: ${relaysJustSaved ? '#d4edda' : '#e7f3ff'}; border-left: 3px solid ${relaysJustSaved ? '#28a745' : '#007bff'}; border-radius: 4px; font-size: 0.9em;" id="relay-info-box">
-    ${relaysJustSaved ? '<strong style="color: #155724;">✓ Custom relays saved!</strong><br>' : ''}
+  <div style="margin-top: 1em; padding: 0.75em; background: #e7f3ff; border-left: 3px solid #007bff; border-radius: 4px; font-size: 0.9em;" id="relay-info-box">
     <strong>Relays used:</strong> ${relaysUsed.map(r => escapeHtml(r)).join(', ')}
     <br><span style="color: #1a1a1a; font-size: 0.85em;">(${hasCustomRelays ? 'Custom relays specified' : 'Default relays'})</span>
-    <div style="margin-top: 0.5em; display: flex; gap: 0.5em; flex-wrap: wrap;">
-      ${!hasCustomRelays ? `<a href="/?show_custom_relays=1" style="color: #007bff; text-decoration: none; font-size: 0.9em; display: inline-block;">Use custom relays</a>` : ''}
-      ${hasCustomRelays ? `<a href="/" style="color: #0066cc; text-decoration: underline; font-size: 0.9em; display: inline-block;">← Use default relays</a>` : ''}
-      <a href="/status${hasCustomRelays ? '?relays=' + encodeURIComponent(relayInput) : ''}" style="color: #0066cc; text-decoration: underline; font-size: 0.9em; display: inline-block;">View relay status</a>
-    </div>
+    ${hasCustomRelays ? `<div style="margin-top: 0.5em;"><a href="/status?relays=${encodeURIComponent(relayInput)}" style="color: #0066cc; text-decoration: underline; font-size: 0.9em; display: inline-block;">View relay status</a></div>` : ''}
   </div>
-  ${showCustomRelaysForm || hasCustomRelays ? `
-  <form method="GET" action="/" style="margin-top: 1em; padding: 1em; background: #f5f5f5; border-radius: 4px;">
-    <label for="relays-input-home" style="display: block; margin-bottom: 0.5em; font-weight: bold; color: #000000;">Custom Relays:</label>
-    <p style="font-size: 0.9em; color: #1a1a1a; margin-bottom: 0.5em;">Enter one or more relay URLs (ws:// or wss:// format). Separate multiple relays with commas or newlines. Example: wss://relay.example.com, ws://localhost:8080</p>
-    <textarea id="relays-input-home" name="relays" placeholder="wss://relay.example.com, ws://localhost:8080" rows="3" style="width: 100%; padding: 0.5em; font-size: 0.9em; font-family: monospace; border: 2px solid #000000; border-radius: 4px; box-sizing: border-box; background: #ffffff; color: #000000;">${escapeHtml(relayInput)}</textarea>
-    <div style="margin-top: 0.5em;">
-      <button type="submit" style="padding: 0.5em 1em; background: #000000; color: #ffffff; border: 2px solid #000000; border-radius: 4px; cursor: pointer; font-size: 0.9em; font-weight: bold;">${hasCustomRelays ? 'Update Relays' : 'Save Relays'}</button>
-      ${hasCustomRelays ? `<a href="/" style="color: #1a1a1a; text-decoration: underline; font-size: 0.9em; margin-left: 1em;">Use Default Relays</a>` : `<a href="/" style="color: #1a1a1a; text-decoration: underline; font-size: 0.9em; margin-left: 1em;">Cancel</a>`}
-    </div>
-  </form>
-  ` : ''}
   
   <details style="max-width: 800px; margin: 2em auto;">
     <summary style="cursor: pointer; padding: 1em; background: #ffffff; border-radius: 8px; border-left: 4px solid #0066cc; border: 2px solid #000000; font-weight: bold; color: #000000; user-select: none;">
@@ -455,7 +417,7 @@ async function handleHomePage(req, res, url) {
     <p style="margin-bottom: 1em; line-height: 1.6;">Visit the <a href="/books${hasCustomRelays ? '?relays=' + encodeURIComponent(relayInput) : ''}" style="color: #007bff; text-decoration: none;">Browse Library</a> page to see all available books. The library shows top-level books (not nested within other books) and supports pagination. You can expand to view up to 10,000 books.</p>
     
     <h3 style="color: #555; margin-top: 1.5em; margin-bottom: 0.5em;">Custom Relays</h3>
-    <p style="margin-bottom: 0; line-height: 1.6;">By default, the catalogue searches public Nostr relays. You can specify custom relays (ws:// or wss:// format) to search your local or private relays. Click "Use custom relays" in the relay information box to configure custom relays.</p>
+    <p style="margin-bottom: 0; line-height: 1.6;">By default, the catalogue searches public Nostr relays. You can specify custom relays (ws:// or wss:// format) to search your local or private relays. Visit the <a href="/status${hasCustomRelays ? '?relays=' + encodeURIComponent(relayInput) : ''}" style="color: #007bff; text-decoration: none;">Status page</a> to configure custom relays.</p>
     </div>
   </details>
 </body>

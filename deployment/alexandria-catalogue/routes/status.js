@@ -4,7 +4,7 @@
 
 import { getCacheStats, calculateCacheSize, clearAllCaches, CACHE_TTL, getCache } from '../cache.js';
 import { getCommonStyles } from '../styles.js';
-import { generateMessageBox } from '../html.js';
+import { generateMessageBox, generateNavigation } from '../html.js';
 import { formatBytes, escapeHtml, setCacheHeaders, parseRelayUrls } from '../utils.js';
 import { testRelayConnectivity } from '../nostr.js';
 import { DEFAULT_RELAYS } from '../config.js';
@@ -93,6 +93,21 @@ export async function handleStatus(req, res, url) {
   }
   relayStatusHtml += '</div>';
   
+  // Add custom relay configuration form
+  relayStatusHtml += '<div class="status-section" style="margin-top: 2em;">';
+  relayStatusHtml += '<h2>Configure Custom Relays</h2>';
+  relayStatusHtml += '<p style="color: #1a1a1a; margin-bottom: 1em;">Enter one or more relay URLs (ws:// or wss:// format). Separate multiple relays with commas or newlines. Example: wss://relay.example.com, ws://localhost:8080</p>';
+  relayStatusHtml += '<form method="GET" action="/status" style="margin: 0;">';
+  relayStatusHtml += '<textarea name="relays" placeholder="wss://relay.example.com, ws://localhost:8080" rows="3" style="width: 100%; padding: 0.5em; font-size: 0.9em; font-family: monospace; border: 2px solid #000000; border-radius: 4px; box-sizing: border-box; background: #ffffff; color: #000000;">' + escapeHtml(relayInput) + '</textarea>';
+  relayStatusHtml += '<div style="margin-top: 0.5em;">';
+  relayStatusHtml += '<button type="submit" style="padding: 0.5em 1em; background: #000000; color: #ffffff; border: 2px solid #000000; border-radius: 4px; cursor: pointer; font-size: 0.9em; font-weight: bold;">Test Custom Relays</button>';
+  if (hasCustomRelays) {
+    relayStatusHtml += '<a href="/status" style="color: #1a1a1a; text-decoration: underline; font-size: 0.9em; margin-left: 1em;">Use Default Relays</a>';
+  }
+  relayStatusHtml += '</div>';
+  relayStatusHtml += '</form>';
+  relayStatusHtml += '</div>';
+  
   // Set cache headers for status page (dynamic content, short cache)
   const headers = {
     'Content-Type': 'text/html; charset=utf-8',
@@ -110,11 +125,7 @@ export async function handleStatus(req, res, url) {
   <style>${getCommonStyles()}</style>
 </head>
 <body>
-  <nav>
-    <a href="/${hasCustomRelays ? '?relays=' + encodeURIComponent(relayInput) : ''}">Alexandria Catalogue</a>
-    <a href="/books${hasCustomRelays ? '?relays=' + encodeURIComponent(relayInput) : ''}">Browse Library</a>
-    <a href="/status${hasCustomRelays ? '?relays=' + encodeURIComponent(relayInput) : ''}">Status</a>
-  </nav>
+  ${generateNavigation(relayInput)}
   <h1>Server Status</h1>
   ${successMessage}
   ${generateMessageBox('info', 'Server is running. System status information below.', null)}

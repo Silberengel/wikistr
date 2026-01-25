@@ -5,6 +5,7 @@
 import { escapeHtml, formatDate, truncate } from './utils.js';
 import { nip19 } from './nostr.js';
 import { getCommonStyles } from './styles.js';
+import { generateNavigation } from './html.js';
 
 /**
  * Generate book detail page HTML
@@ -14,7 +15,8 @@ export function generateBookDetailPage(naddr, bookEvent, hierarchy, threadedComm
   const commentCount = threadedComments.reduce((sum, c) => sum + 1 + (c.children?.length || 0), 0);
   const highlightCount = groupedHighlights.reduce((sum, g) => sum + g.highlights.reduce((s, h) => s + 1 + (h.children?.length || 0), 0), 0);
   const hasCustomRelays = customRelays && customRelays.length > 0;
-  const relayParam = hasCustomRelays ? `?relays=${encodeURIComponent(customRelays.join(','))}` : '';
+  const relayInput = hasCustomRelays ? customRelays.join(',') : '';
+  const relayParam = hasCustomRelays ? `?relays=${encodeURIComponent(relayInput)}` : '';
   
   let html = `
 <!DOCTYPE html>
@@ -31,11 +33,7 @@ export function generateBookDetailPage(naddr, bookEvent, hierarchy, threadedComm
   </style>
 </head>
 <body>
-  <nav>
-    <a href="/${relayParam}">Alexandria Catalogue</a>
-    <a href="/books${relayParam}">Browse Library</a>
-    <a href="/status${relayParam}">Status</a>
-  </nav>
+  ${generateNavigation(relayInput)}
   
   <h1><img src="/favicon_alex-catalogue.png" alt="" style="width: 1.2em; height: 1.2em; vertical-align: middle; margin-right: 0.3em;"> Alexandria Catalogue</h1>
   <p style="color: #000000; margin-bottom: 1em;">The e-book download portal for <a href="https://alexandria.gitcitadel.eu" style="color: #0066cc; text-decoration: underline;">Alexandria</a>.</p>

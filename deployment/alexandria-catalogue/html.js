@@ -272,11 +272,88 @@ export function generateMessageBox(type, message, details = null) {
 }
 
 /**
+ * Generate navigation menu component
+ * @param {string} relayInput - Custom relay input string (empty string for default relays)
+ * @returns {string} HTML for navigation menu
+ */
+export function generateNavigation(relayInput = '') {
+  const hasCustomRelays = relayInput && relayInput.trim().length > 0;
+  const relayParam = hasCustomRelays ? `?relays=${encodeURIComponent(relayInput)}` : '';
+  
+  return `
+  <nav>
+    <a href="/${relayParam}">Alexandria Catalogue</a>
+    <a href="/books${relayParam}">Browse Library</a>
+    <a href="/articles${relayParam}">Browse Articles</a>
+    <a href="/status${relayParam}">Status</a>
+  </nav>`;
+}
+
+/**
+ * Generate search bar component
+ * @param {Object} options - Search bar configuration
+ * @param {string} options.action - Form action URL (e.g., '/articles' or '/')
+ * @param {string} options.searchQuery - Current search query value
+ * @param {string} options.kinds - Content kinds ('books' or 'articles') - used to customize placeholder and label
+ * @param {boolean} options.hasCustomRelays - Whether custom relays are set
+ * @param {string} options.relayInput - Custom relay input string
+ * @param {number} options.limit - Items per page limit
+ * @param {string} options.inputName - Input field name (default: 'q' for articles, 'naddr' for books)
+ * @param {boolean} options.showClearButton - Whether to show clear button (default: true if searchQuery exists)
+ * @param {string} options.clearUrl - URL to navigate to when clearing (default: action URL with page/limit)
+ * @returns {string} HTML for search bar
+ */
+export function generateSearchBar(options) {
+  const {
+    action,
+    searchQuery = '',
+    kinds = 'books', // 'books' or 'articles'
+    hasCustomRelays = false,
+    relayInput = '',
+    limit = 50,
+    inputName = kinds === 'articles' ? 'q' : 'naddr',
+    showClearButton = searchQuery ? true : false,
+    clearUrl = null
+  } = options;
+  
+  // Determine placeholder and label based on kinds
+  let placeholder, label;
+  if (kinds === 'articles') {
+    placeholder = 'Search by title, summary, pubkey (npub1...), NIP05 (user@domain.com), or d-tag...';
+    label = 'Search articles';
+  } else {
+    placeholder = 'naddr1... or d tag...';
+    label = 'Search books';
+  }
+  
+  // Build clear URL if not provided
+  // For articles, include page/limit; for books, just the action URL
+  const defaultClearUrl = clearUrl || (kinds === 'articles' 
+    ? `${action}?page=1&limit=${limit}${hasCustomRelays ? '&relays=' + encodeURIComponent(relayInput) : ''}`
+    : `${action}${hasCustomRelays ? '?relays=' + encodeURIComponent(relayInput) : ''}`);
+  
+  let html = `
+  <div class="search-form">
+    <form method="get" action="${escapeHtml(action)}" role="search" aria-label="${escapeHtml(label)}">
+      ${label ? `<label for="search-query-${kinds}">${escapeHtml(label)}</label>` : ''}
+      <div style="display: flex; gap: 0.5em; align-items: stretch;">
+        <input type="text" id="search-query-${kinds}" name="${escapeHtml(inputName)}" value="${escapeHtml(searchQuery)}" placeholder="${escapeHtml(placeholder)}" ${inputName === 'naddr' ? 'required' : ''} aria-label="Search query" style="flex: 1; min-width: 0;">
+        <button type="submit" aria-label="Submit search">Search</button>
+        ${showClearButton ? `<a href="${escapeHtml(defaultClearUrl)}" aria-label="Clear search" style="display: inline-block; padding: 0.75em 1em; font-size: 1em; background: #000000; color: #ffffff; border: 2px solid #000000; min-height: 44px; font-weight: bold; cursor: pointer; text-decoration: none; box-sizing: border-box; line-height: 1.5;">Clear</a>` : ''}
+      </div>
+      ${inputName === 'q' ? `<input type="hidden" name="page" value="1">
+      <input type="hidden" name="limit" value="${limit}">` : ''}
+      ${hasCustomRelays ? `<input type="hidden" name="relays" value="${escapeHtml(relayInput)}">` : ''}
+    </form>
+  </div>`;
+  
+  return html;
+}
+
+/**
  * Generate error page
  */
 export function generateErrorPage(title, errorMessage, details = null, backUrl = '/', relayInput = '') {
-  const hasCustomRelays = relayInput && relayInput.trim().length > 0;
-  const relayParam = hasCustomRelays ? `?relays=${encodeURIComponent(relayInput)}` : '';
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -287,11 +364,7 @@ export function generateErrorPage(title, errorMessage, details = null, backUrl =
   <style>${getCommonStyles()}</style>
 </head>
 <body>
-  <nav>
-    <a href="/${relayParam}">Alexandria Catalogue</a>
-    <a href="/books${relayParam}">Browse Library</a>
-    <a href="/status${relayParam}">Status</a>
-  </nav>
+  ${generateNavigation(relayInput)}
   <h1>${escapeHtml(title)}</h1>
   ${generateMessageBox('error', errorMessage, details)}
   <p style="margin-top: 2em;"><a href="${escapeHtml(backUrl)}">← Go back</a></p>

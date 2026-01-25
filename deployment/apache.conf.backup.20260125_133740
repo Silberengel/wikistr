@@ -1,0 +1,124 @@
+ServerRoot "/usr/local/apache2"
+Listen 80
+LoadModule mpm_event_module modules/mod_mpm_event.so
+LoadModule unixd_module modules/mod_unixd.so
+LoadModule authz_core_module modules/mod_authz_core.so
+LoadModule alias_module modules/mod_alias.so
+LoadModule dir_module modules/mod_dir.so
+LoadModule mime_module modules/mod_mime.so
+LoadModule rewrite_module modules/mod_rewrite.so
+LoadModule proxy_module modules/mod_proxy.so
+LoadModule proxy_http_module modules/mod_proxy_http.so
+LoadModule headers_module modules/mod_headers.so
+
+User daemon
+Group daemon
+
+ServerAdmin you@example.com
+ServerName localhost
+
+
+# Proxy configurations for external services
+# These must be defined early, before Directory blocks, to ensure they're processed first
+<IfModule proxy_module>
+    <IfModule proxy_http_module>
+        # Proxy /sites to OG proxy server (port 8090)
+        # NOTE: Container IPs change when containers are recreated. If og-proxy is recreated,
+        # update the IP here. To find the current IP:
+        #   docker inspect deployment_og-proxy_1 --format='{{range $k, $v := .NetworkSettings.Networks}}{{if eq $k "wikistr-network"}}{{$v.IPAddress}}{{end}}{{end}}'
+        # Or ensure og-proxy is on wikistr-network: docker network connect wikistr-network deployment_og-proxy_1
+        # Proxy uses query parameter: /sites/?url=https://example.com
+        ProxyPassMatch ^/sites(.*)$ http://172.19.0.2:8090/sites$1
+        ProxyPassReverse /sites http://172.19.0.2:8090/sites
+        
+        # Proxy /asciidoctor to AsciiDoctor server (port 8091)
+        # NOTE: Container IPs change when containers are recreated. If asciidoctor is recreated,
+        # update the IP here. To find the current IP:
+        #   docker inspect asciidoctor --format='{{range $k, $v := .NetworkSettings.Networks}}{{if eq $k "wikistr-network"}}{{$v.IPAddress}}{{end}}{{end}}'
+        # AsciiDoctor expects paths without /asciidoctor prefix (e.g., /convert/pdf)
+        ProxyPass /asciidoctor http://172.19.0.3:8091/
+        ProxyPassReverse /asciidoctor http://172.19.0.3:8091/
+        
+        # Proxy /alexandria-catalogue to Alexandria Catalogue server (port 8092)
+        # NOTE: Container IPs change when containers are recreated. If alexandria-catalogue is recreated,
+        # update the IP here. To find the current IP:
+        #   docker inspect alexandria-catalogue --format='{{range $k, $v := .NetworkSettings.Networks}}{{if eq $k "wikistr-network"}}{{$v.IPAddress}}{{end}}{{end}}'
+        # Alexandria Catalogue handles /convert/{format} endpoints
+        # Use ProxyPassMatch to properly strip the /alexandria-catalogue prefix
+        ProxyPassMatch ^/alexandria-catalogue(.*)$ http://172.18.0.4:8092$1
+        ProxyPassReverse /alexandria-catalogue http://172.18.0.4:8092
+    </IfModule>
+</IfModule>
+
+<Directory />
+    AllowOverride none
+    Require all denied
+</Directory>
+
+DocumentRoot "/usr/local/apache2/htdocs"
+<Directory "/usr/local/apache2/htdocs">
+    Options Indexes FollowSymLinks
+    AllowOverride None
+    Require all granted
+    
+    # Enable rewrite engine
+    RewriteEngine On
+    
+    # Handle client-side routing - redirect all requests to index.html
+    # But exclude proxy paths (/sites, /asciidoctor, /alexandria-catalogue) - these are handled by ProxyPass
+    # Also exclude static assets (_app directory and common file extensions)
+    RewriteBase /
+    RewriteRule ^index\.html$ - [L]
+    
+    # Exclude proxy paths
+    RewriteCond %{REQUEST_URI} !^/sites
+    RewriteCond %{REQUEST_URI} !^/asciidoctor
+    RewriteCond %{REQUEST_URI} !^/alexandria-catalogue
+    
+    # Exclude _app directory (SvelteKit static assets)
+    RewriteCond %{REQUEST_URI} !^/_app
+    
+    # Exclude common static file extensions
+    RewriteCond %{REQUEST_URI} !\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|json|xml|txt|pdf|yml|yaml)$ [NC]
+    
+    # Only rewrite if file doesn't exist and isn't a directory
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    
+    # Rewrite to index.html for client-side routing
+    RewriteRule . /index.html [L]
+</Directory>
+
+<IfModule dir_module>
+    DirectoryIndex index.html
+</IfModule>
+
+<Files ".ht*">
+    Require all denied
+</Files>
+
+ErrorLog /proc/self/fd/2
+LogLevel warn
+<IfModule log_config_module>
+    LogFormat "%h %l %u %t \"%r\" %>s %b" common
+    CustomLog /proc/self/fd/1 common
+</IfModule>
+
+<IfModule mime_module>
+    TypesConfig conf/mime.types
+    AddType application/javascript js
+    AddType text/css css
+</IfModule>
+
+# Health check endpoint
+Alias /health /usr/local/apache2/htdocs/health.txt
+<IfModule rewrite_module>
+    RewriteRule ^/health$ /health.txt [L]
+</IfModule>
+
+# Headers for proper proxying
+<IfModule headers_module>
+    RequestHeader set X-Forwarded-Proto "http"
+    RequestHeader set X-Forwarded-Port "80"
+</IfModule>
+
